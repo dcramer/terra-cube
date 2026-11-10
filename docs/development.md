@@ -29,6 +29,17 @@ The first build compiles Bevy: several minutes. After that a change to the game 
 
 Both `forge` and `sandbox` build in release: Bevy unoptimised is too slow to judge motion by.
 
+## Windows, from WSL
+
+`make windows` builds the game as a Windows program inside WSL and starts it, so it opens as an ordinary Windows window on the real GPU (DirectX 12 or Vulkan). The code, the agent and every other command stay in WSL. `SPAWN=wolf,player` picks the creatures, as with `make run`.
+
+- **Once:** `sudo apt install mingw-w64` for the Windows linker. The Rust half (`x86_64-pc-windows-gnu`) comes with the pinned toolchain. `make setup` says if the linker is missing.
+- **Why not run the Linux build through WSLg:** `make run` does open a window that way, but WSL reaches the GPU through a Vulkan-on-DirectX layer, which is slower than the native path and a known source of trouble for wgpu. Try it if you like; `make windows` is the supported way.
+- **How it finds its files:** the program looks for `assets/` in the folder it was started from and then above where it sits, so it runs from the repository in WSL with nothing copied to the Windows side.
+- The first build compiles Bevy a second time, for Windows. Outside WSL the target only builds the `.exe` (`target/x86_64-pc-windows-gnu/release/cube_game.exe`).
+
+`make cross`, part of `make check`, type-checks every crate for Windows without needing the linker. macOS has no such check yet; it is expected to work and has not been built. The Windows program builds and links here but has not yet been started on a Windows machine.
+
 ## The sandbox
 
 A panel on the left: spawn any creature by kind, or one of each; pick one; play a clip, set its speed, hold and scrub a frame; send it wandering or running at its measured speed; draw skeletons. Right-drag orbits, the wheel zooms, WASD and QE move the focus, F looks at the picked creature.

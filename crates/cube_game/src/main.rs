@@ -93,7 +93,22 @@ fn parse_args() -> Args {
     args
 }
 
+/// Makes the folder that holds `assets/` the working directory, and returns `assets/` in
+/// full for Bevy. Started by cargo that is already so; a built program started on its own
+/// (a Windows build launched from WSL, a double click) finds it above where it sits.
+fn asset_root() -> String {
+    let here = std::env::current_dir().unwrap_or_default();
+    let exe = std::env::current_exe().unwrap_or_default();
+    let found = here.ancestors().chain(exe.ancestors()).find(|dir| dir.join("assets/creatures/style.toml").exists());
+    let Some(root) = found else { fail("no assets/ folder here or above the program; run it from the repository") };
+    if std::env::set_current_dir(root).is_err() {
+        fail(&format!("cannot enter {}", root.display()));
+    }
+    root.join("assets").to_string_lossy().into_owned()
+}
+
 fn main() {
+    let assets = asset_root();
     let args = parse_args();
     let scene = args.scene.is_some();
     let shot = args.shot.is_some() || scene;
@@ -104,7 +119,7 @@ fn main() {
         WindowPlugin { primary_window: None, exit_condition: bevy::window::ExitCondition::DontExit, ..default() }
     } else {
         WindowPlugin { primary_window: Some(Window { title: "terra-cube sandbox".into(), resolution: (1600, 900).into(), ..default() }), ..default() }
-    }))
+    }).set(bevy::asset::AssetPlugin { file_path: assets, ..default() }))
     .insert_resource(args)
     .add_plugins(creatures::CreaturesPlugin);
     if scene {

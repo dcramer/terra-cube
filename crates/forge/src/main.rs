@@ -241,13 +241,20 @@ fn doctor() -> bool {
     let built = ids.iter().filter(|id| spec::dir(id).join("model.glb").exists()).count();
     report(built > 0, "creatures", format!("{built} of {} have a model", ids.len()));
 
+    // In WSL the game runs best as a Windows program, which needs a Windows linker here.
+    let wsl = std::fs::read_to_string("/proc/version").is_ok_and(|v| v.to_lowercase().contains("microsoft"));
+    if wsl {
+        let linker = Command::new("x86_64-w64-mingw32-gcc").arg("--version").output().is_ok_and(|o| o.status.success());
+        report(linker, "windows", if linker { "linker found".into() } else { "no linker for `make windows`; sudo apt install mingw-w64".into() });
+    }
+
     for line in &lines {
         if !ok || line.starts_with("FAIL") || std::env::var_os("FORGE_VERBOSE").is_some() {
             println!("{line}");
         }
     }
     if ok {
-        println!("ok: {}. Start with: make run", lines.iter().map(|l| l.trim_start_matches("ok ")).collect::<Vec<_>>().join(" · "));
+        println!("ok: {}. Start with: make {}", lines.iter().map(|l| l.trim_start_matches("ok ")).collect::<Vec<_>>().join(" · "), if wsl { "windows" } else { "run" });
     }
     ok
 }
