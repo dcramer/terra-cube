@@ -2,10 +2,12 @@
 //! `assets/creatures/ID-cubes/`, the same skeleton and clips with the skin replaced by little
 //! cubes, so it is made of the same stuff as the world (a bit is 5 cm).
 //!
-//! The model is stood as it stands in its idle, so the cubes line up with the world's when it
-//! is at ease. Its surface is sampled into a grid, the inside filled, and each cube given to
-//! the one bone that pulls on it most and the colour most of the texture there has. A cube
-//! moves with its bone and never bends: limbs turn as rigid pieces, like a jointed toy.
+//! The figure is cut into a dozen or so rigid parts, as games that draw characters in cubes
+//! do (docs/research/2026-11-10-cube-characters.md): hips, chest, head, each limb in up to
+//! three pieces. The model is stood as in its idle, each part straightened to the grid where
+//! it is nearly straight already, its surface sampled into cubes and its inside filled, and
+//! the legs moved apart until there is air between them. A cube takes the colour most of the
+//! texture there has, moves with its part's bone and never bends, like a jointed toy.
 //!
 //! A face needs help: a head of true size is four cubes wide, and eyes are smaller than a
 //! cube, so they vanish. The head is made bigger first (`--head`, 1.4 times: a toy's
@@ -13,15 +15,17 @@
 //! surroundings, one each side, are made eyes.
 
 use crate::glb::Glb;
-use crate::rig::Skeleton;
+use crate::rig::{Facing, Leg, Roles, Skeleton};
 use crate::{clips, spec};
 use anyhow::{Context, Result, bail, ensure};
-use glam::{IVec3, Mat4, Vec2, Vec3};
+use glam::{IVec3, Mat4, Quat, Vec2, Vec3};
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 
 struct Cube {
     colour: Vec3,
+    /// The rigid part it is of, and the bone that carries that part.
+    part: usize,
     bone: usize,
 }
 
@@ -29,7 +33,6 @@ struct Cube {
 #[derive(Default)]
 struct Tally {
     colours: Vec<Vec3>,
-    pull: HashMap<usize, f32>,
 }
 
 fn light(c: Vec3) -> f32 {
@@ -79,10 +82,160 @@ fn texture(glb: &Glb, primitive: &Value) -> Option<image::RgbImage> {
     image::load_from_memory(&glb.bin[from..from + view["byteLength"].as_u64()? as usize]).ok().map(|i| i.to_rgb8())
 }
 
-/// The cubes of a model stood in a pose: its surface sampled, its inside filled.
-fn cubes(glb: &Glb, sk: &Skeleton, world: &[Mat4], size: f32, head: &[usize]) -> Result<HashMap<IVec3, Cube>> {
+/// A rigid piece of the figure: the bone that carries it, and how its share of the skin is
+/// moved from where the model stands to where the toy's piece is cut (straightened, and for
+/// the head, grown).
+struct Part {
+    driver: usize,
+    /// The joint its direction is read toward, when it has one worth straightening along.
+    tip: Option<usize>,
+    to_toy: Mat4,
+    turn: Quat,
+    cells: HashMap<IVec3, Tally>,
+}
+
+/// Which part each bone belongs to (by the part's place in the list), and the parts, parents
+/// before children. A dozen or so whatever the skeleton: hips, chest, head, each limb in up
+/// to three pieces, each tail bone. Fingers, toes, ears and collar bones go with what they
+/// hang from.
+fn parts(sk: &Skeleton, roles: &Roles) -> (Vec<usize>, Vec<Part>) {
+    const NONE: usize = usize::MAX;
+    let mut driver = vec![NONE; sk.joints.len()];
+    let mut tips: HashMap<usize, usize> = HashMap::new();
+    driver[sk.root] = sk.root;
+    let chest = roles.spine.get(roles.spine.len() * 2 / 3).copied();
+    for &bone in &roles.spine {
+        driver[bone] = chest.unwrap_or(sk.root);
+    }
+    if let Some((&neck, rest)) = roles.head.split_first() {
+        driver[neck] = chest.unwrap_or(neck);
+        if let Some(c) = chest {
+            tips.insert(c, neck);
+        }
+        let head = rest.first().copied().unwrap_or(neck);
+        for &bone in rest {
+            driver[bone] = head;
+        }
+        tips.insert(head, *roles.head.last().unwrap());
+    }
+    // A limb: up to three pieces, the last taking the rest of the chain.
+    let mut limb = |chain: &[usize], driver: &mut Vec<usize>| {
+        for (i, &bone) in chain.iter().enumerate() {
+            driver[bone] = chain[i.min(2)];
+            if i < 2 && i + 1 < chain.len() {
+                tips.insert(bone, chain[i + 1]);
+            }
+        }
+        if chain.len() > 3 {
+            tips.insert(chain[2], *chain.last().unwrap());
+        }
+    };
+    for leg in &roles.legs {
+        limb(&leg.chain, &mut driver);
+    }
+    for arm in &roles.arms {
+        // A collar bone is part of the chest.
+        let chain = if arm.chain.len() >= 4 { &arm.chain[1..] } else { &arm.chain[..] };
+        if arm.chain.len() >= 4 {
+            driver[arm.chain[0]] = chest.unwrap_or(arm.chain[0]);
+        }
+        limb(chain, &mut driver);
+    }
+    for pair in roles.tail.windows(2) {
+        tips.insert(pair[0], pair[1]);
+    }
+    for &bone in &roles.tail {
+        driver[bone] = bone;
+    }
+    // Everything else goes with the nearest thing above it that is spoken for.
+    for bone in 0..sk.joints.len() {
+        let mut at = bone;
+        while driver[at] == NONE {
+            at = sk.joints[at].parent.unwrap_or(sk.root);
+        }
+        driver[bone] = driver[at];
+    }
+    let depth = |mut bone: usize| {
+        let mut d = 0;
+        while let Some(p) = sk.joints[bone].parent {
+            (bone, d) = (p, d + 1);
+        }
+        d
+    };
+    let mut drivers: Vec<usize> = driver.clone();
+    drivers.sort_by_key(|&d| (depth(d), d));
+    drivers.dedup();
+    let part_of: Vec<usize> = driver.iter().map(|d| drivers.iter().position(|x| x == d).unwrap()).collect();
+    let made = drivers.iter().map(|&d| Part { driver: d, tip: tips.get(&d).copied(), to_toy: Mat4::IDENTITY, turn: Quat::IDENTITY, cells: HashMap::new() }).collect();
+    (part_of, made)
+}
+
+/// The colour of each cube of one part, its inside filled: whatever the outside cannot reach
+/// from a corner of the box round it takes after the nearest surface cube, so a limb that
+/// turns shows no hollow.
+fn solid(cells: &HashMap<IVec3, Tally>) -> HashMap<IVec3, Vec3> {
+    let mut out: HashMap<IVec3, Vec3> = cells.iter().map(|(at, t)| (*at, t.colour())).collect();
+    if out.is_empty() {
+        return out;
+    }
+    let (lo, hi) = out.keys().fold((IVec3::MAX, IVec3::MIN), |(lo, hi), k| (lo.min(*k), hi.max(*k)));
+    let (lo, hi) = (lo - 1, hi + 1);
+    let inside_box = |p: IVec3| p.cmpge(lo).all() && p.cmple(hi).all();
+    let mut outside = std::collections::HashSet::from([lo]);
+    let mut queue = VecDeque::from([lo]);
+    while let Some(at) = queue.pop_front() {
+        for (n, ..) in FACES {
+            let next = at + n;
+            if inside_box(next) && !out.contains_key(&next) && outside.insert(next) {
+                queue.push_back(next);
+            }
+        }
+    }
+    let mut keys: Vec<IVec3> = out.keys().copied().collect();
+    keys.sort_by_key(|k| k.to_array());
+    let mut queue: VecDeque<IVec3> = keys.into();
+    while let Some(at) = queue.pop_front() {
+        let colour = out[&at];
+        for (n, ..) in FACES {
+            let next = at + n;
+            if inside_box(next) && !outside.contains(&next) && !out.contains_key(&next) {
+                out.insert(next, colour);
+                queue.push_back(next);
+            }
+        }
+    }
+    out
+}
+
+/// The cubes of a model stood in a pose, as a toy of rigid parts: each part straightened to
+/// the grid where it is nearly straight already, the head grown, each cut into cubes on its
+/// own, and the legs moved apart until there is air between them.
+fn cubes(glb: &Glb, sk: &Skeleton, roles: &Roles, world: &[Mat4], size: f32, head_scale: f32) -> Result<HashMap<IVec3, Cube>> {
+    let (part_of, mut parts) = parts(sk, roles);
+    let at = |joint: usize| world[joint].w_axis.truncate();
+    let head = roles.head.get(1).map(|&h| part_of[h]);
+    for i in 0..parts.len() {
+        let driver = parts[i].driver;
+        let Some(parent) = sk.joints[driver].parent.map(|p| part_of[p]).filter(|&p| p != i) else { continue };
+        let (above, above_turn) = (parts[parent].to_toy, parts[parent].turn);
+        let pivot = at(driver);
+        // Along the nearest axis, if it is within 25° of one: a leg that leans a little
+        // stands straight; a wolf's neck, which slopes, is left sloping.
+        let mut turn = above_turn;
+        if let Some(way) = parts[i].tip.and_then(|tip| (at(tip) - pivot).try_normalize()) {
+            let now = above_turn * way;
+            let axis = now.abs().max_position();
+            let straight = Vec3::AXES[axis] * now[axis].signum();
+            if now.angle_between(straight) < 25f32.to_radians() {
+                turn = Quat::from_rotation_arc(now, straight) * above_turn;
+            }
+        }
+        let grow = if Some(i) == head { head_scale } else { 1.0 };
+        parts[i].turn = turn;
+        parts[i].to_toy = Mat4::from_translation(above.transform_point3(pivot)) * Mat4::from_quat(turn) * Mat4::from_scale(Vec3::splat(grow)) * Mat4::from_translation(-pivot);
+    }
+
     let skin: Vec<Mat4> = world.iter().zip(&sk.inverse_bind).map(|(w, ib)| *w * *ib).collect();
-    let mut shell: HashMap<IVec3, Tally> = HashMap::new();
     for mesh in glb.array("meshes") {
         for p in mesh["primitives"].as_array().into_iter().flatten() {
             let attr = |name: &str| p["attributes"][name].as_u64().map(|a| a as usize);
@@ -107,74 +260,87 @@ fn cubes(glb: &Glb, sk: &Skeleton, world: &[Mat4], size: f32, head: &[usize]) ->
                 for i in 0..=n {
                     for k in 0..=n - i {
                         let (u, v) = (i as f32 / n as f32, k as f32 / n as f32);
-                        let part = [1.0 - u - v, u, v];
-                        let point = a * part[0] + b * part[1] + c * part[2];
-                        let uv = uvs[t[0]] * part[0] + uvs[t[1]] * part[1] + uvs[t[2]] * part[2];
+                        let share = [1.0 - u - v, u, v];
+                        let point = a * share[0] + b * share[1] + c * share[2];
+                        let uv = uvs[t[0]] * share[0] + uvs[t[1]] * share[1] + uvs[t[2]] * share[2];
                         let colour = picture.as_ref().map_or(Vec3::splat(0.5), |img| {
                             let (x, y) = ((uv.x.rem_euclid(1.0) * img.width() as f32) as u32, (uv.y.rem_euclid(1.0) * img.height() as f32) as u32);
                             let px = img.get_pixel(x.min(img.width() - 1), y.min(img.height() - 1));
                             Vec3::new(linear(px[0]), linear(px[1]), linear(px[2]))
                         });
-                        let tally = shell.entry((point / size).floor().as_ivec3()).or_default();
-                        tally.colours.push(colour);
-                        for (corner, share) in t.iter().zip(part) {
+                        // The part that pulls on this point most has it.
+                        let mut pull = vec![0.0f32; parts.len()];
+                        for (corner, share) in t.iter().zip(share) {
                             for k in 0..4 {
-                                *tally.pull.entry(joints[*corner][k]).or_default() += weights[*corner][k] * share;
+                                pull[part_of[joints[*corner][k]]] += weights[*corner][k] * share;
                             }
                         }
+                        let part = (0..parts.len()).max_by(|a, b| pull[*a].total_cmp(&pull[*b]).then(b.cmp(a))).unwrap();
+                        let cell = (parts[part].to_toy.transform_point3(point) / size).floor().as_ivec3();
+                        parts[part].cells.entry(cell).or_default().colours.push(colour);
                     }
                 }
             }
         }
     }
-    ensure!(!shell.is_empty(), "no skinned mesh to make cubes of");
-    let mut out: HashMap<IVec3, Cube> = shell
-        .iter()
-        .map(|(at, t)| (*at, Cube { colour: t.colour(), bone: t.pull.iter().max_by(|a, b| a.1.total_cmp(b.1).then(a.0.cmp(b.0))).map_or(0, |b| *b.0) }))
-        .collect();
+    ensure!(parts.iter().any(|p| !p.cells.is_empty()), "no skinned mesh to make cubes of");
+
+    // Legs apart: each pair is moved out, a cube at a time, until a column of air is between
+    // them. Fused legs are what makes a figure of cubes look wrong.
+    let mut shift = vec![0i32; parts.len()];
+    let pairs: Vec<(&Leg, &Leg)> = match &roles.legs[..] {
+        [a, b] => vec![(a, b)],
+        legs => legs.iter().filter(|l| l.left).filter_map(|l| legs.iter().find(|r| !r.left && r.front == l.front).map(|r| (l, r))).collect(),
+    };
+    for (a, b) in pairs {
+        let of = |leg: &Leg| -> Vec<usize> { (0..parts.len()).filter(|&i| leg.chain.contains(&parts[i].driver)).collect() };
+        let span = |ids: &[usize]| ids.iter().flat_map(|&i| parts[i].cells.keys().map(|c| c.x)).fold((i32::MAX, i32::MIN), |(lo, hi), x| (lo.min(x), hi.max(x)));
+        let (mut plus, mut minus) = (of(a), of(b));
+        if span(&plus).0 == i32::MAX || span(&minus).0 == i32::MAX {
+            continue;
+        }
+        if span(&plus).0 + span(&plus).1 < span(&minus).0 + span(&minus).1 {
+            std::mem::swap(&mut plus, &mut minus);
+        }
+        let air = span(&plus).0 - span(&minus).1 - 1;
+        if air < 1 {
+            let need = 1 - air;
+            plus.iter().for_each(|&i| shift[i] = (need + 1) / 2);
+            minus.iter().for_each(|&i| shift[i] = -(need / 2));
+        }
+    }
+
+    // One figure: a cell two parts both fill belongs to the one nearer the root.
+    let mut out: HashMap<IVec3, Cube> = HashMap::new();
+    let mut eyes: HashMap<IVec3, f32> = HashMap::new();
+    for (i, part) in parts.iter().enumerate() {
+        let mut cells: Vec<(IVec3, Vec3)> = solid(&part.cells).into_iter().collect();
+        cells.sort_by_key(|c| c.0.to_array());
+        for (cell, colour) in cells {
+            let moved = cell + IVec3::X * shift[i];
+            if let std::collections::hash_map::Entry::Vacant(free) = out.entry(moved) {
+                free.insert(Cube { colour, part: i, bone: part.driver });
+                if Some(i) == head {
+                    eyes.insert(moved, part.cells.get(&cell).map_or(0.0, Tally::dark));
+                }
+            }
+        }
+    }
 
     // Eyes: on the front of the head (a finished model faces +Z), the pair of cubes mirrored
     // across its middle, at least a cube apart, with the most black in them. Each becomes
     // one dark cube.
-    let of_head = |at: &IVec3| out.get(at).is_some_and(|c| head.contains(&c.bone));
-    let on_head: Vec<IVec3> = out.keys().filter(|at| of_head(at) && !(1..4).any(|ahead| of_head(&(**at + IVec3::Z * ahead)))).copied().collect();
+    let front: Vec<IVec3> = eyes.keys().filter(|at| !(1..4).any(|ahead| eyes.contains_key(&(**at + IVec3::Z * ahead)))).copied().collect();
     let mirrored = |at: &IVec3| IVec3::new(-1 - at.x, at.y, at.z);
-    let pair = on_head
+    let pair = front
         .iter()
-        .filter(|at| at.x >= 1 && on_head.contains(&mirrored(at)))
-        .map(|at| (*at, shell[at].dark().min(shell[&mirrored(at)].dark())))
+        .filter(|at| at.x >= 1 && front.contains(&mirrored(at)))
+        .map(|at| (*at, eyes[at].min(eyes[&mirrored(at)])))
         .filter(|(_, dark)| *dark > 0.04)
         .max_by(|a, b| a.1.total_cmp(&b.1).then(a.0.to_array().cmp(&b.0.to_array())));
     if let Some((at, _)) = pair {
         for eye in [at, mirrored(&at)] {
             out.get_mut(&eye).unwrap().colour = Vec3::splat(0.012);
-        }
-    }
-
-    // The inside: whatever the outside cannot reach from a corner of the box round it. Each
-    // inside cube takes after the nearest surface one, so a limb that turns shows no hollow.
-    let (lo, hi) = out.keys().fold((IVec3::MAX, IVec3::MIN), |(lo, hi), k| (lo.min(*k), hi.max(*k)));
-    let (lo, hi) = (lo - 1, hi + 1);
-    let inside_box = |p: IVec3| p.cmpge(lo).all() && p.cmple(hi).all();
-    let mut outside = std::collections::HashSet::from([lo]);
-    let mut queue = VecDeque::from([lo]);
-    while let Some(at) = queue.pop_front() {
-        for (n, ..) in FACES {
-            let next = at + n;
-            if inside_box(next) && !out.contains_key(&next) && outside.insert(next) {
-                queue.push_back(next);
-            }
-        }
-    }
-    let mut queue: VecDeque<IVec3> = out.keys().copied().collect();
-    while let Some(at) = queue.pop_front() {
-        let (colour, bone) = (out[&at].colour, out[&at].bone);
-        for (n, ..) in FACES {
-            let next = at + n;
-            if inside_box(next) && !outside.contains(&next) && !out.contains_key(&next) {
-                out.insert(next, Cube { colour, bone });
-                queue.push_back(next);
-            }
         }
     }
     Ok(out)
@@ -189,26 +355,11 @@ pub fn run(id: &str, size: f32, head_scale: f32) -> Result<String> {
     let clips = clips::read(&glb, &sk)?;
     let stand = clips.iter().find(|c| c.name == "idle").map_or(sk.rest(), |c| c.frames[0].clone());
     let world = sk.pose_world(&stand);
-    // The head is everything past the neck, and grows about where it joins it.
     let mut meta: spec::Meta = spec::load(&from.join("meta.toml"))?;
-    let neck = meta.bones.get("neck").and_then(|name| sk.joints.iter().position(|j| &j.name == name));
-    let mut head: Vec<usize> = neck.map_or(Vec::new(), |n| sk.joints[n].children.clone());
-    let mut next = 0;
-    while next < head.len() {
-        head.extend(sk.joints[head[next]].children.clone());
-        next += 1;
-    }
-    let mut bigger = world.clone();
-    if let Some(&first) = head.first() {
-        let pivot = world[first].w_axis.truncate();
-        let grow = Mat4::from_translation(pivot) * Mat4::from_scale(Vec3::splat(head_scale)) * Mat4::from_translation(-pivot);
-        for &j in &head {
-            bigger[j] = grow * world[j];
-        }
-    }
-    let made = cubes(&glb, &sk, &bigger, size, &head)?;
+    let roles = Roles::read(&sk, Facing::Told(Vec3::Z));
+    let made = cubes(&glb, &sk, &roles, &world, size, head_scale)?;
 
-    // Every face of a cube that is not against another cube of the same bone, taken back to
+    // Every face of a cube that is not against another cube of the same part, taken back to
     // where its bone has it at rest, which is where a skin's vertices are kept.
     let back: Vec<Mat4> = world.iter().zip(&sk.inverse_bind).map(|(w, ib)| (*w * *ib).inverse()).collect();
     let mut keys: Vec<IVec3> = made.keys().copied().collect();
@@ -221,7 +372,7 @@ pub fn run(id: &str, size: f32, head_scale: f32) -> Result<String> {
         // A little lighter or darker a cube, as the ground is, so a flat colour has grain.
         let grain = 0.92 + 0.16 * ((at.x.wrapping_mul(73856093) ^ at.y.wrapping_mul(19349663) ^ at.z.wrapping_mul(83492791)) as u32 % 1000) as f32 / 1000.0;
         for (n, u, v) in FACES {
-            if made.get(&(at + n)).is_some_and(|other| other.bone == cube.bone) {
+            if made.get(&(at + n)).is_some_and(|other| other.part == cube.part) {
                 continue;
             }
             let normal = back[cube.bone].transform_vector3(n.as_vec3()).normalize();
@@ -280,5 +431,5 @@ pub fn run(id: &str, size: f32, head_scale: f32) -> Result<String> {
     }
     std::fs::write(to.join("creature.toml"), format!("{}\ncubes_of = \"{id}\"\n", text.trim_end()))?;
     let bones: std::collections::HashSet<usize> = made.values().map(|c| c.bone).collect();
-    Ok(format!("{id}-cubes: {} cubes of {:.0} cm on {} of {} bones · {} triangles (was {}) · {} kB", made.len(), size * 100.0, bones.len(), sk.joints.len(), meta.triangles, spec::load::<spec::Meta>(&from.join("meta.toml"))?.triangles, std::fs::metadata(to.join("model.glb"))?.len() / 1000))
+    Ok(format!("{id}-cubes: {} cubes of {:.0} cm in {} parts (of {} bones) · {} triangles (was {}) · {} kB", made.len(), size * 100.0, bones.len(), sk.joints.len(), meta.triangles, spec::load::<spec::Meta>(&from.join("meta.toml"))?.triangles, std::fs::metadata(to.join("model.glb"))?.len() / 1000))
 }
