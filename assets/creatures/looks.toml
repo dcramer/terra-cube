@@ -1,0 +1,32 @@
+# Looks being tried against the house style (style.toml), drawn by `cargo forge looks` as
+# shots/looks.jpg, a row a look. Each must fit a world of cubes without being made of them, and
+# must keep limbs of natural length and set apart, so Tripo's rig and the clips fit: the stout
+# toy figure tried on 2026-11-10 tore its skin in every clip.
+
+of = ["player", "wolf", "troll"]
+
+frame = "single character, full body in frame, nothing held and nothing loose, plain light grey background, even studio light, no ground shadow"
+
+[looks.carved]
+note = "carved from blocks: squared limbs and chamfered edges, the nearest to the world's cubes"
+style = """
+stylized game character that looks carved from wooden blocks, every part a simple squared-off volume with \
+softened chamfered edges, flat planes meeting at crisp bevels, limbs of natural length as straight box shapes \
+set clearly apart, a slightly oversized squared head with a simple friendly face, flat matte colour in a few \
+large areas with slightly darker painted edges, no fine detail, no fur strands, no noise, no photorealism"""
+
+[looks.painted]
+note = "hand-painted and smooth, as Eco: natural proportions, the safest to animate"
+style = """
+stylized hand-painted game character, natural athletic proportions with a slightly large head and hands, \
+smooth simple rounded forms, clean readable silhouette, soft painted gradients with a little brushwork, \
+warm earthy palette with one accent colour, large simple shapes with no small fiddly parts, \
+no noise, no grain, no photorealism, no fur strands"""
+
+[looks.flat]
+note = "strict flat-shaded low-poly: big plain triangles, one colour a surface"
+style = """
+minimalist flat-shaded low-poly game character, built from a small number of large flat triangles, \
+each surface one solid colour with no texture detail and no gradients, natural proportions, \
+crisp angular silhouette, limbs set clearly apart, limited palette of five colours, \
+no noise, no grain, no photorealism, no fur strands, no outlines"""

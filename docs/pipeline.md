@@ -102,6 +102,12 @@ The bars are first guesses calibrated on eight creatures. Terra measured a hand-
 
 In the sandbox (`cargo sandbox --spawn ID`) the panel plays clips, scrubs a held frame, sets speed, sends the creature wandering at its measured walk or run speed (so sliding feet show), and draws skeletons.
 
+## Trying a look
+
+`cargo forge looks` draws the creatures named in `assets/creatures/looks.toml` in each look listed there and lays them out as `shots/looks.jpg`, a row a look under the house style's own row. A look is the text that stands where the house style does in a concept prompt. Only concept images are made, 2 credits each, once: they are kept under `assets/creatures/looks/`. A look is judged for more than how it draws: limbs of natural length and set apart (so the rig and clips fit), a biped in a true T-pose, an animal square on and solid (a flat drawing makes a poor model). The one that wins is copied into `style.toml` by hand, and one creature is built in it and held to the checks before the rest are bought.
+
+Tried 2026-11-10 on the player, wolf and troll (18 credits): `carved` (squared, chamfered block shapes: the nearest to the world), `flat` (strict flat-shaded low-poly; its wolf came back a flat drawing and its troll out of the T-pose) and `painted` (hand-painted and smooth, as Eco; its troll also out of the T-pose).
+
 ## Cubes
 
 **Parked 2026-11-10: the game keeps its smooth models** ([engine.md](engine.md#creatures) says why). What follows is kept so the trial need not be repeated.
