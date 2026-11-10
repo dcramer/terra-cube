@@ -13,9 +13,14 @@ use cube_sim::body::{self, Body, Intent, Pillar, Tuning};
 
 pub struct MotionPlugin;
 
+/// Draw the shape each creature is bumped as (`--bodies`, or the panel).
+#[derive(Resource, Default)]
+pub struct ShowBodies(pub bool);
+
 impl Plugin for MotionPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(Time::<Fixed>::from_hz(cube_sim::TICKS as f64)).add_systems(FixedUpdate, tick).add_systems(Update, (enrol, show).chain());
+        let drawn = app.world().resource::<crate::Args>().bodies;
+        app.insert_resource(Time::<Fixed>::from_hz(cube_sim::TICKS as f64)).insert_resource(ShowBodies(drawn)).add_systems(FixedUpdate, tick).add_systems(Update, ((enrol, show).chain(), bodies));
     }
 }
 
@@ -55,9 +60,21 @@ pub struct Mover {
     was_speed: f32,
 }
 
-/// Half the width of a creature's body box, from its measured size.
-pub fn half_width(def: &Def) -> f32 {
-    (def.meta.length.max(def.meta.height * 0.35) * 0.45).clamp(0.2, 0.6)
+/// The shape a creature is bumped as, from its measured standing size: its radius, and for a
+/// body longer than it is wide how far its capsule runs fore and aft of its middle.
+pub fn shape(def: &Def) -> (f32, f32) {
+    let (length, width) = (def.meta.length, if def.meta.width > 0.0 { def.meta.width } else { def.meta.length });
+    if length > width * 1.3 {
+        let radius = (width * 0.425).clamp(0.1, 0.6);
+        (radius, (length / 2.0 - radius).max(0.0))
+    } else {
+        (((length + width) / 4.0).clamp(0.1, 0.6), 0.0)
+    }
+}
+
+/// The capsule's half-line over the ground for a body facing `facing`.
+fn along(facing: f32, reach: f32) -> Vec2 {
+    Vec2::new(facing.sin(), facing.cos()) * reach
 }
 
 /// The speed a gait moves at: the speed its clip was built or measured for (`meta.toml`), so
@@ -86,7 +103,7 @@ fn enrol(
         let def = &registry.0[creature.def];
         let mut pos = at.translation;
         pos.y = pos.y.max(terrain.0.ground_height(pos.x, pos.z));
-        let body = Body::new(pos, half_width(def), def.meta.height.max(0.3));
+        let body = Body::new(pos, shape(def).0, def.meta.height.max(0.3));
         let facing = at.rotation.to_euler(EulerRot::YXZ).0;
         commands.entity(entity).insert(Mover { body, intent: Intent::default(), gait: Gait::Walk, facing, turn_to: None, before: pos, lift: 0.0, airborne: 0.0, jumped: false, want_jump: 0.0, hold_jump: false, landing: 0.0, tilt: Vec2::ZERO, was_speed: 0.0 });
     }
@@ -95,14 +112,24 @@ fn enrol(
     }
 }
 
-fn tick(terrain: Option<Res<Terrain>>, registry: Res<Registry>, mut movers: Query<&mut Mover>, standing: Query<(&Creature, &Transform), Without<Mover>>) {
+fn tick(terrain: Option<Res<Terrain>>, registry: Res<Registry>, mut movers: Query<(&mut Mover, &Creature)>, standing: Query<(&Creature, &Transform), Without<Mover>>) {
     let Some(terrain) = terrain else { return };
     let world = &terrain.0;
     // Creatures standing about are pillars to walk round; movers push each other.
-    let pillars: Vec<Pillar> = standing.iter().map(|(c, at)| Pillar { pos: at.translation, half: half_width(&registry.0[c.def]), height: registry.0[c.def].meta.height }).collect();
-    let mut bodies: Vec<Body> = movers.iter().map(|m| m.body).collect();
+    let pillars: Vec<Pillar> = standing
+        .iter()
+        .map(|(c, at)| {
+            let def = &registry.0[c.def];
+            let (half, reach) = shape(def);
+            Pillar { pos: at.translation, half, height: def.meta.height, long: along(at.rotation.to_euler(EulerRot::YXZ).0, reach) }
+        })
+        .collect();
+    for (mut m, c) in &mut movers {
+        m.body.long = along(m.facing, shape(&registry.0[c.def]).1);
+    }
+    let mut bodies: Vec<Body> = movers.iter().map(|(m, _)| m.body).collect();
     body::separate(world, &mut bodies, &pillars);
-    for (mut m, pushed) in movers.iter_mut().zip(bodies) {
+    for ((mut m, _), pushed) in movers.iter_mut().zip(bodies) {
         let (was, was_grounded) = (m.body.pos, m.body.grounded);
         m.body = pushed;
         let mut intent = m.intent;
@@ -183,5 +210,31 @@ fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, mut m
             creature.speed = rate.clamp(0.3, 2.5);
             creature.hold = None;
         }
+    }
+}
+
+/// The shape each creature is bumped as: a ring at each end of its capsule, at its feet and
+/// its top, joined along the sides.
+fn bodies(show: Res<ShowBodies>, registry: Res<Registry>, creatures: Query<(&Creature, &Transform)>, mut gizmos: Gizmos) {
+    if !show.0 {
+        return;
+    }
+    let colour = Color::srgb(0.2, 0.9, 1.0);
+    for (creature, at) in &creatures {
+        let def = &registry.0[creature.def];
+        let (radius, reach) = shape(def);
+        let facing = Quat::from_rotation_y(at.rotation.to_euler(EulerRot::YXZ).0);
+        let (ahead, side) = (facing * Vec3::Z * reach, facing * Vec3::X * radius);
+        for up in [0.02, def.meta.height] {
+            let middle = at.translation + Vec3::Y * up;
+            for end in [ahead, -ahead] {
+                gizmos.circle(Isometry3d::new(middle + end, Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)), radius, colour);
+            }
+            for edge in [side, -side] {
+                gizmos.line(middle + ahead + edge, middle - ahead + edge, colour);
+            }
+        }
+        gizmos.line(at.translation + ahead, at.translation + ahead + Vec3::Y * def.meta.height, colour);
+        gizmos.line(at.translation - ahead, at.translation - ahead + Vec3::Y * def.meta.height, colour);
     }
 }

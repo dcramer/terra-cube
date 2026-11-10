@@ -47,6 +47,10 @@ pub struct Plan {
     /// A cut of a preset that runs long: clip → [from seconds, to seconds, speed].
     #[serde(default)]
     pub trim: BTreeMap<String, [f32; 3]>,
+    /// How much further than recorded a foot travels while it is down, by gait: a longer
+    /// stride at the same cadence, so the gait covers more ground without quicker legs.
+    #[serde(default)]
+    pub stride: BTreeMap<String, f32>,
     /// This plan's own stretch bar, where its rest pose is far from how it stands (a T-pose).
     #[serde(default)]
     pub max_stretch: Option<f32>,
@@ -118,6 +122,9 @@ pub struct Lock {
 pub struct Meta {
     pub height: f32,
     pub length: f32,
+    /// Side to side as it stands, metres. With `length`, the shape other creatures bump into.
+    #[serde(default)]
+    pub width: f32,
     pub walk_speed: f32,
     pub run_speed: f32,
     /// 0 when the plan has no sprint.

@@ -62,6 +62,7 @@ fn panel(
     mut debug: ResMut<Debug>,
     mut creatures: Query<(Entity, &mut Creature, Option<&mut Wander>, &Transform)>,
     mut orbit: Query<&mut Orbit>,
+    mut show_bodies: ResMut<crate::motion::ShowBodies>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     egui::Window::new("Sandbox").default_pos([8.0, 8.0]).default_width(260.0).show(ctx, |ui| {
@@ -97,6 +98,7 @@ fn panel(
             }
         });
         ui.checkbox(&mut debug.skeletons, "Show skeletons");
+        ui.checkbox(&mut show_bodies.0, "Show bodies").on_hover_text("The shape each creature is bumped as");
         ui.separator();
 
         ui.heading("In the world");

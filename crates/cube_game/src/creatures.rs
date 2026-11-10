@@ -36,6 +36,8 @@ pub struct Meta {
     pub sprint_speed: f32,
     pub height: f32,
     pub length: f32,
+    #[serde(default)]
+    pub width: f32,
     pub triangles: usize,
     pub joints: usize,
     #[serde(default)]

@@ -111,7 +111,8 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -
         // A recorded gait: find its speed and hold its feet to it. If they still will not hold
         // (the preset is fitted to another body's proportions), a made gait takes its place.
         if matches!(name.as_str(), "walk" | "run" | "sprint") && clip.speed.is_none() && roles.legs.len() >= 2 {
-            if let Some(pace) = ground_speed(&skeleton, &roles, &clip) {
+            let longer = plan.stride.get(name).copied().unwrap_or(1.0);
+            if let Some(pace) = ground_speed(&skeleton, &roles, &clip).map(|p| p * longer) {
                 clips::planted(&skeleton, &roles, &mut clip.frames, pace);
                 clip.speed = Some(pace);
             }
@@ -158,9 +159,13 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -
     for (i, leg) in roles.legs.iter().enumerate() {
         bones.insert(format!("foot{i}"), skeleton.joints[leg.foot()].name.clone());
     }
+    // Its size as it stands (the first frame of idle), not as it rests: a T-pose is all arms.
+    let stand = out.iter().find(|c| c.name == "idle").map_or_else(|| skeleton.rest(), |c| c.frames[0].clone());
+    let (slo, shi) = crate::check::bounds(&glb, &skeleton, &stand).unwrap_or((lo, hi));
     let meta = Meta {
         height: creature.height,
-        length: (hi - lo).dot(roles.forward).abs() * scale,
+        length: (shi - slo).dot(roles.forward).abs() * scale,
+        width: (shi - slo).dot(roles.side).abs() * scale,
         walk_speed: speed(walk),
         run_speed: speed(run),
         sprint_speed: speed(sprint),

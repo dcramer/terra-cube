@@ -65,9 +65,13 @@ pub struct Body {
     /// The middle of the box's underside: where the feet are.
     pub pos: Vec3,
     pub vel: Vec3,
-    /// Half the box's width and depth.
+    /// Half the box's width and depth against the world, and its radius against other bodies.
     pub half: f32,
     pub height: f32,
+    /// For a body longer than it is wide: from its middle to the middle of its front end, over
+    /// the ground. Other bodies meet it as that line fattened by `half` (a capsule), so a wolf
+    /// is bumped at its nose and tail and not only its middle. Zero is a plain round body.
+    pub long: Vec2,
     pub grounded: bool,
     /// Waist deep in water: swimming.
     pub swimming: bool,
@@ -78,7 +82,7 @@ pub struct Body {
 
 impl Body {
     pub fn new(pos: Vec3, half: f32, height: f32) -> Self {
-        Self { pos, vel: Vec3::ZERO, half, height, grounded: false, swimming: false, jumping: false, since_ground: 1.0 }
+        Self { pos, vel: Vec3::ZERO, half, height, long: Vec2::ZERO, grounded: false, swimming: false, jumping: false, since_ground: 1.0 }
     }
 
     /// Speed over the ground, m/s.
@@ -213,40 +217,57 @@ impl Body {
 }
 
 /// Something a body cannot walk through that is not a body being moved: a creature standing
-/// still. A pillar at `pos` (its foot), `half` wide and `height` tall.
+/// still. A capsule stood at `pos` (its foot): see [`Body::long`].
 #[derive(Clone, Copy, Debug)]
 pub struct Pillar {
     pub pos: Vec3,
     pub half: f32,
     pub height: f32,
+    pub long: Vec2,
 }
 
-/// How far a pillar of `half` at `at` must move over the ground to stop overlapping `other`.
-fn overlap(at: Vec3, half: f32, height: f32, other: &Pillar) -> Vec2 {
-    if at.y >= other.pos.y + other.height || other.pos.y >= at.y + height {
+/// The closest points of two segments over the ground, each given by its middle and the
+/// vector to one end.
+fn closest(a: Vec2, la: Vec2, b: Vec2, lb: Vec2) -> (Vec2, Vec2) {
+    // Onto a segment: the point of it nearest `p`.
+    let onto = |mid: Vec2, l: Vec2, p: Vec2| if l == Vec2::ZERO { mid } else { mid + l * ((p - mid).dot(l) / l.length_squared()).clamp(-1.0, 1.0) };
+    // A few rounds of "nearest point on the other" settle on the closest pair; exact at once
+    // when either is a point, which is most meetings.
+    let (mut pa, mut pb) = (a, onto(b, lb, a));
+    for _ in 0..4 {
+        pa = onto(a, la, pb);
+        pb = onto(b, lb, pa);
+    }
+    (pa, pb)
+}
+
+/// How far the first capsule must move over the ground to stop overlapping the second.
+fn overlap(a: &Pillar, b: &Pillar) -> Vec2 {
+    if a.pos.y >= b.pos.y + b.height || b.pos.y >= a.pos.y + a.height {
         return Vec2::ZERO;
     }
-    let apart = Vec2::new(at.x - other.pos.x, at.z - other.pos.z);
-    let deep = half + other.half - apart.length();
-    if deep <= 0.0 { Vec2::ZERO } else { apart.try_normalize().unwrap_or(Vec2::X) * deep }
+    let flat = |p: Vec3| Vec2::new(p.x, p.z);
+    let (pa, pb) = closest(flat(a.pos), a.long, flat(b.pos), b.long);
+    let deep = a.half + b.half - pa.distance(pb);
+    if deep <= 0.0 { Vec2::ZERO } else { (pa - pb).try_normalize().unwrap_or(Vec2::X) * deep }
 }
 
 /// Pushes bodies out of each other and out of `fixed` pillars, over the ground. Two bodies
 /// share the push; a pillar gives none. The most in a tick is more than two runners close in
 /// one, so nothing gets through, and little enough that a body dropped onto another eases off.
-/// Bodies are treated as round here, which is what lets them slide past one another. The
-/// voxel world still wins: a push never puts a body in a wall or up a step.
+/// Bodies meet as capsules, which is what lets them slide past one another. The voxel world
+/// still wins: a push never puts a body in a wall or up a step.
 pub fn separate(world: &World, bodies: &mut [Body], fixed: &[Pillar]) {
     const MOST: f32 = 0.2;
-    let pillar = |b: &Body| Pillar { pos: b.pos, half: b.half, height: b.height };
+    let pillar = |b: &Body| Pillar { pos: b.pos, half: b.half, height: b.height, long: b.long };
     for i in 0..bodies.len() {
         for j in i + 1..bodies.len() {
-            let push = overlap(bodies[i].pos, bodies[i].half, bodies[i].height, &pillar(&bodies[j])).clamp_length_max(MOST) / 2.0;
+            let push = overlap(&pillar(&bodies[i]), &pillar(&bodies[j])).clamp_length_max(MOST) / 2.0;
             bodies[i].nudge(world, push);
             bodies[j].nudge(world, -push);
         }
         for other in fixed {
-            let push = overlap(bodies[i].pos, bodies[i].half, bodies[i].height, other).clamp_length_max(MOST);
+            let push = overlap(&pillar(&bodies[i]), other).clamp_length_max(MOST);
             bodies[i].nudge(world, push);
         }
     }
@@ -388,13 +409,21 @@ mod tests {
         assert!(gap > 0.45 && gap < 0.62, "gap {gap}");
         // Past a standing pillar a little off its line: it slides round and carries on.
         let mut one = [player()];
-        let post = [Pillar { pos: Vec3::new(3.0, 1.0, 0.45), half: 0.3, height: 1.0 }];
+        let post = [Pillar { pos: Vec3::new(3.0, 1.0, 0.45), half: 0.3, height: 1.0, long: Vec2::ZERO }];
         for _ in 0..TICKS * 3 {
             step(&mut one, &post, &[EAST]);
             let apart = Vec2::new(one[0].pos.x - 3.0, one[0].pos.z - 0.45).length();
             assert!(apart > 0.52, "inside the pillar: {apart}");
         }
         assert!(one[0].pos.x > 6.0 && one[0].pos.z < 0.0, "{:?}", one[0].pos);
+        // A long body lying across the way is met along its whole length, not just its middle:
+        // walking at a point a metre from its middle still stops at its flank.
+        let log = [Pillar { pos: Vec3::new(3.0, 1.0, 0.25), half: 0.3, height: 1.0, long: Vec2::new(0.0, 1.5) }];
+        let mut one = [Body::new(Vec3::new(0.25, 1.0, 1.25), 0.3, 1.75)];
+        for _ in 0..TICKS * 2 {
+            step(&mut one, &log, &[EAST]);
+        }
+        assert!(one[0].pos.x < 3.0 - 0.5, "walked through its end: {:?}", one[0].pos);
     }
 
     #[test]

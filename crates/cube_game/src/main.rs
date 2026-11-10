@@ -35,6 +35,8 @@ pub struct Args {
     pub every: f32,
     /// What a scripted run does (`player::script`).
     pub script: String,
+    /// Draw the shape each creature is bumped as.
+    pub bodies: bool,
     /// Print the controlled body four times a second.
     pub trace: bool,
     /// The creature to control instead of the player.
@@ -65,6 +67,7 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
                                         the route, as times and what changes then: fwd back left
                                         right stop · walk run sprint · jump hop · dive surface ·
                                         first third
+--bodies draws the shape each creature is bumped as (also a tick box in the panel).
 --trace prints the controlled body (position, speed, clip, camera) four times a second.
 In the window: Tab controls the picked creature, and lets go of it. Otherwise right-drag
 orbits, wheel zooms, WASD and QE move, F looks at the picked creature.
@@ -110,6 +113,7 @@ fn parse_args() -> Args {
             "--clips" => args.clips = list(it.next()),
             "--play" => args.play = true,
             "--trace" => args.trace = true,
+            "--bodies" => args.bodies = true,
             "--script" => args.script = it.next().unwrap_or_default(),
             "--strip" => args.strip = it.next().and_then(|v| v.parse().ok()).unwrap_or(8),
             "--every" => args.every = it.next().and_then(|v| v.parse().ok()).unwrap_or(0.1),

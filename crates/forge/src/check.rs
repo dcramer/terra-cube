@@ -71,6 +71,13 @@ fn posed(s: &Skin, sk: &Skeleton, pose: &Pose) -> Vec<Vec3> {
         .collect()
 }
 
+/// The skin's bounds in a pose, in the file's space: the body as it stands, where the rest
+/// pose of a T-posed rig would count its arms as width.
+pub fn bounds(glb: &Glb, sk: &Skeleton, pose: &Pose) -> Result<(Vec3, Vec3)> {
+    let s = skin(glb)?;
+    Ok(posed(&s, sk, pose).iter().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), p| (lo.min(*p), hi.max(*p))))
+}
+
 /// The 99th-percentile edge stretch of a clip's worst sampled frame, against the rest pose.
 fn stretch(s: &Skin, sk: &Skeleton, rest_len: &[f32], clip: &Clip) -> f32 {
     let step = (clip.frames.len() / 8).max(1);

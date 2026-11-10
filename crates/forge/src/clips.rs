@@ -259,7 +259,7 @@ fn recipe(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option
         "sprint" if two && had("run").is_none_or(|run| run.source == "made") => gait(sk, roles, &STRIDE_SPRINT, base, true, metres, gain),
         "walk" => stride(sk, roles),
         "run" => quicker("run", sk, roles, had("walk")?, 0.55, 1.3, 1.5, 0.05, 0.0),
-        "sprint" => quicker("sprint", sk, roles, had("run")?, 0.7, 0.94, 1.0, 0.0, if upright { 0.05 } else { 0.0 }),
+        "sprint" => quicker("sprint", sk, roles, had("run")?, 0.78, 1.0, 1.0, 0.0, if upright { 0.08 } else { 0.0 }),
         "jump" => jump(sk, roles, &stance, upright),
         "fall" => fall(sk, roles, &stance, upright),
         "swim" => swim(sk, roles, &stance, upright),
