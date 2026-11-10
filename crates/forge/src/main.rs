@@ -254,7 +254,7 @@ fn doctor() -> bool {
         }
     }
     if ok {
-        println!("ok: {}. Start with: make {}", lines.iter().map(|l| l.trim_start_matches("ok ")).collect::<Vec<_>>().join(" · "), "play");
+        println!("ok: {}. Start with: make play", lines.iter().map(|l| l.trim_start_matches("ok ")).collect::<Vec<_>>().join(" · "));
     }
     ok
 }
