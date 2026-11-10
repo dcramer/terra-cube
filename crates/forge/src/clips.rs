@@ -21,6 +21,9 @@ pub struct Clip {
     pub frames: Vec<Pose>,
     /// "tripo" or "made".
     pub source: &'static str,
+    /// For a gait made with planted feet: the ground speed it was built for, file units a
+    /// second. A gait without it is measured.
+    pub speed: Option<f32>,
 }
 
 impl Clip {
@@ -36,7 +39,7 @@ impl Clip {
                 p
             })
             .collect();
-        Clip { name: name.into(), looping, frames, source: "made" }
+        Clip { name: name.into(), looping, frames, source: "made", speed: None }
     }
 }
 
@@ -95,7 +98,7 @@ pub fn read(glb: &Glb, sk: &Skeleton) -> Result<Vec<Clip>> {
                 pose
             })
             .collect();
-        out.push(Clip { name: anim["name"].as_str().unwrap_or("").to_owned(), looping: true, frames, source: "tripo" });
+        out.push(Clip { name: anim["name"].as_str().unwrap_or("").to_owned(), looping: true, frames, source: "tripo", speed: None });
     }
     Ok(out)
 }
@@ -146,8 +149,8 @@ pub fn write(glb: &mut Glb, sk: &Skeleton, clips: &[Clip]) {
 /// Recipes are written from the rest pose. `stand` is how the creature really stands (the first
 /// frame of its idle, where Tripo gave one): a figure rigged in a T-pose rests with its arms
 /// out, so each recipe's turns are laid over `stand` instead.
-pub fn make(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option<&Pose>, upright: bool) -> Option<Clip> {
-    let mut clip = recipe(name, sk, roles, have, stand, upright)?;
+pub fn make(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option<&Pose>, upright: bool, metres: f32, gain: f32) -> Option<Clip> {
+    let mut clip = recipe(name, sk, roles, have, stand, upright, metres, gain)?;
     if let Some(stand) = stand.filter(|_| !matches!(name, "run" | "walk" | "sprint")) {
         let rest = sk.rest();
         for pose in &mut clip.frames {
@@ -236,18 +239,31 @@ pub fn close_loop(frames: &mut [Pose]) {
     }
 }
 
-fn recipe(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option<&Pose>, upright: bool) -> Option<Clip> {
+fn recipe(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option<&Pose>, upright: bool, metres: f32, gain: f32) -> Option<Clip> {
     let had = |name: &str| have.iter().find(|c| c.name == name);
     let stance = Stance::new(sk, stand);
+    // Four legs, two in front and two behind, or two legs under an upright body: gaits made
+    // with planted feet. Anything else gets the plain stride below.
+    let four = !upright && roles.legs.len() == 4 && roles.legs.iter().filter(|l| l.front).count() == 2;
+    let two = upright && roles.legs.len() == 2;
+    let rest = sk.rest();
+    let base = stand.unwrap_or(&rest);
     Some(match name {
         "idle" => idle(sk, roles),
+        "walk" if four => gait(sk, roles, &WALK, base, false, metres, gain),
+        "run" if four => gait(sk, roles, &TROT, base, false, metres, gain),
+        "sprint" if four => gait(sk, roles, &GALLOP, base, false, metres, gain),
+        "walk" if two => gait(sk, roles, &STRIDE_WALK, base, true, metres, gain),
+        "run" if two => gait(sk, roles, &STRIDE_RUN, base, true, metres, gain),
+        // A sprint is made the way its run was: from a recorded run, that run quickened.
+        "sprint" if two && had("run").is_none_or(|run| run.source == "made") => gait(sk, roles, &STRIDE_SPRINT, base, true, metres, gain),
         "walk" => stride(sk, roles),
         "run" => quicker("run", sk, roles, had("walk")?, 0.55, 1.3, 1.5, 0.05, 0.0),
-        "sprint" => quicker("sprint", sk, roles, had("run")?, 0.8, 0.94, 1.0, 0.0, if upright { 0.05 } else { 0.0 }),
+        "sprint" => quicker("sprint", sk, roles, had("run")?, 0.7, 0.94, 1.0, 0.0, if upright { 0.05 } else { 0.0 }),
         "jump" => jump(sk, roles, &stance, upright),
         "fall" => fall(sk, roles, &stance, upright),
         "swim" => swim(sk, roles, &stance, upright),
-        "attack" => attack(sk, roles),
+        "attack" => attack(sk, roles, &stance),
         "hurt" => hurt(sk, roles),
         "die" => die(sk, roles, upright),
         "eat" => eat(sk, roles),
@@ -376,7 +392,238 @@ fn quicker(name: &str, sk: &Skeleton, roles: &Roles, from: &Clip, time: f32, gai
             pose
         })
         .collect();
-    Clip { name: name.into(), looping: true, frames, source: "made" }
+    Clip { name: name.into(), looping: true, frames, source: "made", speed: None }
+}
+
+/// A four-legged gait, as the numbers that tell one from another.
+struct Gait {
+    name: &'static str,
+    /// The part of a cycle each foot is on the ground.
+    duty: f32,
+    /// When in the cycle each foot lands: fore left, fore right, hind left, hind right.
+    lands: [f32; 4],
+    /// Speed as a Froude number, v² / (g × leg length): animals of any size change gait at
+    /// about the same ones, so one number gives a rabbit and a bear each a speed that fits.
+    froude: f32,
+    /// A foot's travel on the ground, in leg lengths.
+    stride: f32,
+    /// How high a swinging foot lifts, in leg lengths.
+    lift: f32,
+    /// The trunk's rise and fall, in leg lengths, and how many times a cycle.
+    bob: f32,
+    bobs: f32,
+    /// The quickest a cycle may be, seconds: a small animal's legs would otherwise blur.
+    quickest: f32,
+    /// The trunk rocking nose-down and nose-up, and the back arching, radians: a gallop's.
+    rock: f32,
+    arch: f32,
+    /// For an upright figure: how far the trunk leans into it, how far the arms swing and how
+    /// bent the elbows are, radians.
+    lean: f32,
+    arms: f32,
+    elbow: f32,
+}
+
+const WALK: Gait = Gait { name: "walk", duty: 0.64, lands: [0.25, 0.75, 0.0, 0.5], froude: 0.22, stride: 0.75, lift: 0.14, bob: 0.012, bobs: 2.0, quickest: 0.5, rock: 0.0, arch: 0.0, lean: 0.0, arms: 0.0, elbow: 0.0 };
+const TROT: Gait = Gait { name: "run", duty: 0.46, lands: [0.0, 0.5, 0.5, 0.0], froude: 1.0, stride: 0.9, lift: 0.2, bob: 0.03, bobs: 2.0, quickest: 0.38, rock: 0.0, arch: 0.0, lean: 0.0, arms: 0.0, elbow: 0.0 };
+const GALLOP: Gait = Gait { name: "sprint", duty: 0.3, lands: [0.5, 0.6, 0.0, 0.1], froude: 3.2, stride: 1.05, lift: 0.26, bob: 0.06, bobs: 1.0, quickest: 0.32, rock: 0.06, arch: 0.05, lean: 0.0, arms: 0.0, elbow: 0.0 };
+
+// Two legs: left lands at 0, right half a cycle later (the first two of `lands`). A run and a
+// sprint leave the ground between steps (duty under a half).
+const STRIDE_WALK: Gait = Gait { name: "walk", duty: 0.62, lands: [0.0, 0.5, 0.0, 0.5], froude: 0.22, stride: 0.85, lift: 0.1, bob: 0.02, bobs: 2.0, quickest: 0.7, rock: 0.0, arch: 0.0, lean: 0.04, arms: 0.4, elbow: 0.25 };
+const STRIDE_RUN: Gait = Gait { name: "run", duty: 0.38, lands: [0.0, 0.5, 0.0, 0.5], froude: 1.0, stride: 0.95, lift: 0.28, bob: 0.045, bobs: 2.0, quickest: 0.55, rock: 0.0, arch: 0.0, lean: 0.14, arms: 0.7, elbow: 1.3 };
+const STRIDE_SPRINT: Gait = Gait { name: "sprint", duty: 0.3, lands: [0.0, 0.5, 0.0, 0.5], froude: 3.2, stride: 1.05, lift: 0.4, bob: 0.05, bobs: 2.0, quickest: 0.45, rock: 0.0, arch: 0.0, lean: 0.24, arms: 0.95, elbow: 1.5 };
+
+/// Sets a joint's local rotation so that it is turned by `delta`, a rotation in the file's
+/// space, from where the pose has it now.
+fn turn_now(sk: &Skeleton, pose: &mut Pose, joint: usize, delta: Quat) {
+    let world = sk.pose_world(pose);
+    let parent = sk.joints[joint].parent.map_or(sk.base, |p| world[p]).to_scale_rotation_translation().1;
+    pose.rotations[joint] = (parent.inverse() * delta * parent * pose.rotations[joint]).normalize();
+}
+
+/// Bends a leg at its second joint and swings it at its first so its tip is at `target`: the
+/// two-bone solve, with everything below the second joint carried rigid. Bends the way the
+/// leg already bends. Reaches as far as it can when the target is too far.
+fn reach(sk: &Skeleton, roles: &Roles, pose: &mut Pose, leg: &crate::rig::Leg, tip: usize, target: Vec3) {
+    let (hip, knee) = (leg.chain[0], leg.chain[1]);
+    let at = |pose: &Pose, j: usize| sk.pose_world(pose)[j].w_axis.truncate();
+    let (h, k, p) = (at(pose, hip), at(pose, knee), at(pose, tip));
+    let (a, b) = (k.distance(h), p.distance(k));
+    let d = target.distance(h).clamp((a - b).abs() + 1e-4, (a + b) * 0.995);
+    let now = (h - k).angle_between(p - k);
+    let want = ((a * a + b * b - d * d) / (2.0 * a * b)).clamp(-1.0, 1.0).acos();
+    let axis = (h - k).cross(p - k).try_normalize().unwrap_or(roles.side * if leg.front { -1.0 } else { 1.0 });
+    turn_now(sk, pose, knee, Quat::from_axis_angle(axis, want - now));
+    let p = at(pose, tip);
+    turn_now(sk, pose, hip, Quat::from_rotation_arc((p - h).normalize(), (target - h).normalize()));
+}
+
+/// Stops a recorded gait's feet skating. While a foot is down and going back it is held to
+/// one straight line along the ground at `pace` (file units a second), the leg bent to keep
+/// it there, eased in and out over two frames at each end so nothing pops. Everything else
+/// about the clip is left as it was. Tripo's presets are fitted to a body of other
+/// proportions, and on a short or bulky one the feet wander while they are meant to be still.
+pub fn planted(sk: &Skeleton, roles: &Roles, frames: &mut [Pose], pace: f32) {
+    let n = frames.len() - 1;
+    if n < 8 || pace <= 0.0 {
+        return;
+    }
+    let floor = roles.legs.iter().map(|l| sk.position(l.foot()).y).fold(f32::MAX, f32::min);
+    for leg in &roles.legs {
+        let at: Vec<Vec3> = frames[..n].iter().map(|p| sk.pose_world(p)[leg.foot()].w_axis.truncate()).collect();
+        let down: Vec<bool> = (0..n)
+            .map(|i| {
+                let back = -(at[(i + 1) % n] - at[i]).dot(roles.forward) * FPS;
+                at[i].y - floor < 0.05 * roles.height && back > 0.25 * pace
+            })
+            .collect();
+        if down.iter().all(|&d| d) || !down.iter().any(|&d| d) {
+            continue;
+        }
+        // Each run of frames with the foot down, starting from a frame where it is up.
+        let first_up = down.iter().position(|&d| !d).unwrap();
+        let mut i = 0;
+        while i < n {
+            let start = (first_up + i) % n;
+            if !down[start] {
+                i += 1;
+                continue;
+            }
+            let mut len = 0;
+            while len < n && down[(start + len) % n] {
+                len += 1;
+            }
+            let mid = at[(start + len / 2) % n];
+            for k in 0..len {
+                let f = (start + k) % n;
+                let line = mid - roles.forward * pace * (k as f32 - (len / 2) as f32) / FPS;
+                let held = Vec3::new(line.x, at[f].y, line.z);
+                let ease = ((k + 1) as f32 / 2.0).min((len - k) as f32 / 2.0).min(1.0);
+                reach(sk, roles, &mut frames[f], leg, leg.foot(), at[f].lerp(held, ease));
+            }
+            i += len;
+        }
+    }
+    frames[n] = frames[0].clone();
+}
+
+/// How fast planted feet move over the ground when a gait is played at `pace` (file units a
+/// second), as a part of that pace: 0 is feet that hold still, 1 is skating. Counts a foot
+/// only while it is down at both ends of a frame, so landing and leaving do not count.
+pub fn slide(sk: &Skeleton, roles: &Roles, frames: &[Pose], pace: f32) -> f32 {
+    let floor = roles.legs.iter().map(|l| sk.position(l.foot()).y).fold(f32::MAX, f32::min);
+    let worlds: Vec<_> = frames.iter().map(|p| sk.pose_world(p)).collect();
+    let (mut slid, mut n) = (0.0, 0);
+    for w in worlds.windows(2) {
+        for l in &roles.legs {
+            let foot = l.foot();
+            if w.iter().any(|m| m[foot].w_axis.y - floor > 0.01 * roles.height) {
+                continue;
+            }
+            let back = -(w[1][foot].w_axis.truncate() - w[0][foot].w_axis.truncate()).dot(roles.forward) * FPS;
+            slid += (back - pace).abs() / pace;
+            n += 1;
+        }
+    }
+    // Feet that are never down are not planted at all.
+    if n == 0 { 1.0 } else { slid / n as f32 }
+}
+
+/// A gait whose feet are put where they belong: each foot is carried back along the ground
+/// at the gait's speed while it is down and swung forward in an arc while it is up, and the
+/// leg is bent to reach it. The feet cannot slide, and the speed is known, not measured.
+/// `base` is the pose it is built on: how the creature stands.
+fn gait(sk: &Skeleton, roles: &Roles, g: &Gait, base: &Pose, upright: bool, metres: f32, gain: f32) -> Clip {
+    let floor = roles.legs.iter().map(|l| sk.position(l.foot()).y).fold(f32::MAX, f32::min);
+    // An upright figure is carried on its ankles with the foot kept flat; an animal on its toes.
+    let tip_of = |l: &crate::rig::Leg| if upright && l.chain.len() >= 4 { l.chain[2] } else { l.foot() };
+    // The leg that matters is the shortest: every foot has to reach its stride.
+    let leg = roles.legs.iter().map(|l| sk.position(l.chain[0]).y - floor).fold(f32::MAX, f32::min).max(1e-3);
+    let reach_of = |l: &crate::rig::Leg| sk.position(l.chain[0]).distance(sk.position(l.chain[1])) + sk.position(l.chain[1]).distance(sk.position(tip_of(l)));
+    // A leg that stands straight has nothing left to stride with, so the trunk sinks until
+    // the stride fits, up to a fifth of the leg; past that the stride is cut to what reaches.
+    let up_of = |l: &crate::rig::Leg| sk.position(l.chain[0]).y - sk.position(tip_of(l)).y;
+    let fits = |l: &crate::rig::Leg, half: f32| {
+        let most = reach_of(l) * 0.97;
+        up_of(l) - (most * most - half * half).max(0.0).sqrt()
+    };
+    let asked = g.stride * leg * gain;
+    // An upright figure sinks far less: bent knees read as a crouch on two legs.
+    let sink = roles.legs.iter().map(|l| fits(l, asked / 2.0)).fold(0.02 * leg, f32::max).min(if upright { 0.07 } else { 0.2 } * leg);
+    let longest = roles.legs.iter().map(|l| {
+        let (up, most) = (up_of(l) - sink, reach_of(l) * 0.97);
+        2.0 * (most * most - up * up).max(0.0).sqrt()
+    });
+    let stride = asked.min(longest.fold(f32::MAX, f32::min));
+    let speed = (g.froude * 9.81 * leg * metres).sqrt() / metres;
+    // Small animals step quicker: a pendulum's time goes as the root of its length.
+    let quickest = g.quickest * (leg * metres / 0.45).sqrt().clamp(0.45, 1.0);
+    let seconds = (stride / (g.duty * speed)).clamp(quickest, 3.0);
+    let n = (seconds * FPS).round().max(4.0) as usize;
+    let seconds = n as f32 / FPS;
+    let rest_world: Vec<Quat> = sk.pose_world(&sk.rest()).iter().map(|m| m.to_scale_rotation_translation().1).collect();
+    let base_root = base.root_t - sk.rest().root_t;
+    let frames = (0..=n)
+        .map(|i| {
+            let t = i as f32 / n as f32;
+            let a = t * TAU;
+            let mut pose = base.clone();
+            let pose = &mut pose;
+            // The trunk first; the legs are then bent from wherever it has put the hips.
+            let rock = g.rock * gain * gain * (a + 0.6).sin();
+            pose.root_t = base_root + sk.root_moved(Vec3::Y * (-sink + g.bob * leg * (g.bobs * a).cos()));
+            if g.rock != 0.0 {
+                turn_now(sk, pose, sk.root, pitch(roles, rock));
+            }
+            for &j in &roles.spine {
+                let share = 1.0 / roles.spine.len() as f32;
+                // An upright trunk leans in and turns against the legs; a gallop's arches.
+                let turn = pitch(roles, (g.arch * gain * gain * (a + 2.2).sin() + g.lean) * share) * yaw(if upright { 0.5 * g.arms * share * a.sin() * 0.3 } else { 0.0 });
+                turn_now(sk, pose, j, turn);
+            }
+            if let Some(&j) = roles.head.first() {
+                turn_now(sk, pose, j, pitch(roles, -rock * 0.8 - g.lean * 0.7 + 0.03 * (g.bobs * a + 0.5).sin()));
+            }
+            for (i, &j) in roles.tail.iter().enumerate() {
+                turn_now(sk, pose, j, yaw(0.1 * (a - i as f32 * 0.6).sin()) * pitch(roles, -rock * 0.5));
+            }
+            for arm in &roles.arms {
+                // Each arm goes forward with the leg across from it.
+                let lands = g.lands[if arm.left { 1 } else { 0 }];
+                let swing = -g.arms * gain * ((t - lands) * TAU).cos();
+                turn_now(sk, pose, arm.chain[1.min(arm.chain.len() - 1)], pitch(roles, swing));
+                if let Some(&fore) = arm.chain.get(2) {
+                    turn_now(sk, pose, fore, pitch(roles, -g.elbow));
+                }
+            }
+            for l in &roles.legs {
+                let side = if l.left { 0 } else { 1 };
+                let lands = g.lands[if upright || l.front { side } else { 2 + side }];
+                let phase = (t - lands).rem_euclid(1.0);
+                let (along, up) = if phase < g.duty {
+                    (0.5 - phase / g.duty, 0.0)
+                } else {
+                    let s = (phase - g.duty) / (1.0 - g.duty);
+                    (-0.5 + smooth(s), (s * PI).sin() * g.lift * leg * gain)
+                };
+                let tip = tip_of(l);
+                let rest = sk.position(tip);
+                let ground = if tip == l.foot() { floor.max(rest.y.min(floor + 0.02 * leg)) } else { rest.y };
+                reach(sk, roles, pose, l, tip, Vec3::new(rest.x, ground, rest.z) + roles.forward * along * stride + Vec3::Y * up);
+                if tip != l.foot() {
+                    // The foot as flat as it rests, toes and all, so it sits on the ground.
+                    let now = sk.pose_world(pose)[tip].to_scale_rotation_translation().1;
+                    turn_now(sk, pose, tip, rest_world[tip] * now.inverse());
+                    for &toe in l.chain.iter().skip_while(|&&j| j != tip).skip(1) {
+                        pose.rotations[toe] = sk.joints[toe].rest_r;
+                    }
+                }
+            }
+            pose.clone()
+        })
+        .collect();
+    Clip { name: g.name.into(), looping: true, frames, source: "made", speed: Some(stride / (g.duty * seconds)) }
 }
 
 /// Turns joints by rotations given as the creature stands, not as it rests. A figure rigged in
@@ -495,15 +742,34 @@ fn swim(sk: &Skeleton, roles: &Roles, st: &Stance, upright: bool) -> Clip {
 }
 
 /// A lunge: draw back with the head up, snap forward and down, recover.
-fn attack(sk: &Skeleton, roles: &Roles) -> Clip {
+fn attack(sk: &Skeleton, roles: &Roles, st: &Stance) -> Clip {
     Clip::made("attack", false, 0.8, sk, |t, pose| {
         let back = pulse(t, 0.0, 0.3, 0.3, 0.42);
         let strike = pulse(t, 0.3, 0.45, 0.55, 1.0);
         curl(sk, pose, &roles.head, |a| pitch(roles, a), -0.45 * back + 0.6 * strike);
         bow(sk, roles, pose, -0.2 * back + 0.3 * strike);
-        for chain in &roles.others {
-            // Arms and wings throw forward with the strike.
-            curl(sk, pose, &chain[..1], |a| pitch(roles, a), 0.3 * back - 0.9 * strike);
+        if roles.arms.is_empty() {
+            for chain in &roles.others {
+                // Wings and the like throw forward with the strike.
+                curl(sk, pose, &chain[..1], |a| pitch(roles, a), 0.3 * back - 0.9 * strike);
+            }
+        }
+        for arm in &roles.arms {
+            // A swung blow: the right arm drawn out and back, then across the front; the left
+            // arm and the trunk turn with it. Kept below the shoulder, where a bulky body's
+            // skin holds (Tripo's overhead chop tore the troll's at 94%).
+            let out = if arm.left { 1.0 } else { -1.0 };
+            let upper = arm.chain[1.min(arm.chain.len() - 1)];
+            let turn = if arm.left { pitch(roles, 0.25 * back - 0.5 * strike) } else { roll(roles, out * (0.8 * back + 0.35 * strike)) * pitch(roles, 0.5 * back - 1.25 * strike) };
+            st.turn(sk, pose, upper, turn);
+            if let Some(&fore) = arm.chain.get(2) {
+                st.turn(sk, pose, fore, pitch(roles, -0.5 * back - 0.25 * strike));
+            }
+        }
+        if !roles.arms.is_empty() {
+            for &j in &roles.spine {
+                st.turn(sk, pose, j, yaw((-0.3 * back + 0.4 * strike) / roles.spine.len() as f32));
+            }
         }
         curl(sk, pose, &roles.tail, |a| pitch(roles, a), -0.3 * strike);
         pose.root_t = sk.root_moved(roles.forward * roles.length * (-0.08 * back + 0.18 * strike) - Vec3::Y * roles.height * 0.03 * strike);

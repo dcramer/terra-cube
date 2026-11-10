@@ -63,6 +63,9 @@ pub struct Bars {
     pub max_foot_error: f32,
     /// Largest joint turn between a looping clip's last and first frame, radians.
     pub max_loop_gap: f32,
+    /// How fast a planted foot may move over the ground in a gait played at its measured
+    /// speed, as a part of that speed.
+    pub max_slide: f32,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -80,6 +83,10 @@ pub struct Creature {
     /// legs fold or tear (the stretch check says so).
     #[serde(default = "one", skip_serializing_if = "is_one")]
     pub gait_gain: f32,
+    /// Clips to make for this creature where its plan would take Tripo's preset: for a body
+    /// the preset tears (the stretch check says so).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub made: Vec<String>,
 }
 
 fn one() -> f32 {

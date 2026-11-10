@@ -140,8 +140,9 @@ fn trace(time: Res<Time>, args: Res<Args>, controlled: Query<(&Mover, &Creature,
 }
 
 /// Hands the controls to the controlled creature's body, turned to the way the camera faces.
-fn drive(controls: Res<Controls>, registry: Res<Registry>, cameras: Query<&Orbit>, mut controlled: Query<(&Controlled, &Creature, &mut Mover, &mut Visibility)>) {
-    let yaw = cameras.iter().next().map_or(0.0, |o| o.yaw);
+fn drive(controls: Res<Controls>, args: Res<Args>, registry: Res<Registry>, cameras: Query<&Orbit>, mut controlled: Query<(&Controlled, &Creature, &mut Mover, &mut Visibility)>) {
+    // A scripted route runs the way `--yaw` says, whatever the camera is doing.
+    let yaw = if args.scene.is_some() { args.yaw } else { cameras.iter().next().map_or(0.0, |o| o.yaw) };
     // The camera looks along -Z turned by its yaw; right is +X turned the same.
     let (sin, cos) = yaw.sin_cos();
     for (c, creature, mut m, mut visibility) in &mut controlled {
@@ -178,6 +179,14 @@ fn follow(
             if !c.first_person {
                 orbit.distance = (orbit.distance * (1.0 - scroll.delta.y * 0.1)).clamp(1.2, 30.0);
             }
+        }
+        if args.scene.is_some() && args.view == "side" {
+            // For filmstrips: level, square on to the route, close enough to read the feet.
+            let size = def.meta.height.max(def.meta.length);
+            let focus = at.translation + Vec3::Y * def.meta.height * 0.5;
+            transform.translation = focus + Quat::from_rotation_y(args.yaw + std::f32::consts::FRAC_PI_2) * Vec3::Z * size * 4.0 + Vec3::Y * size * 0.3;
+            transform.look_at(focus, Vec3::Y);
+            continue;
         }
         let back = Quat::from_euler(EulerRot::YXZ, orbit.yaw, -orbit.pitch, 0.0) * Vec3::Z;
         if c.first_person {

@@ -249,7 +249,7 @@ fn wander(time: Res<Time>, registry: Res<Registry>, mut movers: Query<(&mut Wand
         }
         w.heading += w.turn * dt;
         mover.intent.dir = Vec2::new(w.heading.sin(), w.heading.cos());
-        mover.intent.speed = if w.run { def.meta.run_speed } else { def.meta.walk_speed };
+        mover.intent.speed = crate::motion::speed(def, if w.run { crate::motion::Gait::Run } else { crate::motion::Gait::Walk });
         mover.gait = if w.run { crate::motion::Gait::Run } else { crate::motion::Gait::Walk };
     }
 }

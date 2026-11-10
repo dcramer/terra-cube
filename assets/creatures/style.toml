@@ -24,6 +24,7 @@ max_joints = 80
 max_stretch = 0.6
 max_foot_error = 0.08
 max_loop_gap = 0.09
+max_slide = 0.25
 
 # Upright two-legged figures: the player and humanoid monsters. Tripo rigs these on one named
 # skeleton (so gear and clips are shared) and has preset clips for them.
@@ -46,13 +47,11 @@ attack = "slash"
 [plans.biped.trim]
 attack = [0.9, 3.3, 2.0]
 
-# Four-legged animals and monsters. Tripo has only a walk for these; the rest are made (clips.rs).
+# Four-legged animals and monsters. Every clip is made (clips.rs).
 [plans.quadruped]
 pose = "standing still on all four legs in a neutral pose, seen from the side and slightly in front, all four legs straight and clearly separated, tail away from the legs, mouth closed"
 rig = "other"
 clips = ["idle", "walk", "run", "sprint", "jump", "fall", "swim", "attack", "hurt", "die", "eat"]
-[plans.quadruped.presets]
-walk = "walk"
-# Tripo's animal walk is a slow amble (2.6 s a cycle): play it at 1.8 times the speed.
-[plans.quadruped.trim]
-walk = [0.0, 99.0, 1.8]
+# No presets: Tripo's one animal clip is a walk whose feet neither reach the ground nor hold
+# still on it (measured: the planted foot moving at 90% to 180% of the body's speed). Walk,
+# trot and gallop are made with planted feet instead (clips.rs `gait`).

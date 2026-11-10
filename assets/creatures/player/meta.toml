@@ -1,9 +1,9 @@
 # Measured by `cargo forge finish`; do not edit.
 height = 1.75
 length = 0.4006766
-walk_speed = 0.89643085
-run_speed = 2.7277162
-sprint_speed = 3.2826717
+walk_speed = 1.1909066
+run_speed = 3.2174332
+sprint_speed = 4.289235
 triangles = 9403
 joints = 65
 
@@ -43,7 +43,7 @@ looping = true
 source = "tripo"
 
 [clips.sprint]
-seconds = 1.0
+seconds = 0.9
 looping = true
 source = "made"
 
@@ -53,11 +53,13 @@ looping = true
 source = "made"
 
 [clips.walk]
-seconds = 2.3333333
+seconds = 0.7
 looping = true
-source = "tripo"
+source = "made"
 
 [bones]
+foot0 = "mixamorig:LeftToe_End"
+foot1 = "mixamorig:RightToe_End"
 head = "mixamorig:HeadTop_End"
 neck = "mixamorig:Neck"
 root = "mixamorig:Hips"

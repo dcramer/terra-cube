@@ -30,6 +30,9 @@ pub struct Args {
     pub play: bool,
     /// The way a scene's play camera faces, radians: the way the set route runs.
     pub yaw: f32,
+    /// A scene as a strip of this many pictures, `every` seconds apart, from `after`.
+    pub strip: usize,
+    pub every: f32,
     /// Print the controlled body four times a second.
     pub trace: bool,
     /// The creature to control instead of the player.
@@ -52,6 +55,10 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
                                         no window: a set route (walk, run, jump, sprint, jump),
                                         pictured from the camera at SECONDS. It runs toward the
                                         hills; --yaw 2.16 runs it into the pond instead
+        … --strip 8 [--every 0.1] [--view side]
+                                        the same as a strip of pictures, SECONDS then every 0.1 s
+                                        after: one image that shows a movement. Side view is level
+                                        and square on, for reading feet
 --trace prints the controlled body (position, speed, clip, camera) four times a second.
 In the window: Tab controls the picked creature, and lets go of it. Otherwise right-drag
 orbits, wheel zooms, WASD and QE move, F looks at the picked creature.
@@ -76,7 +83,7 @@ fn creature_ids() -> Vec<String> {
 }
 
 fn parse_args() -> Args {
-    let mut args = Args { view: "quarter".into(), cols: 6, yaw: -2.2, ..default() };
+    let mut args = Args { view: "quarter".into(), cols: 6, yaw: -2.2, every: 0.1, ..default() };
     let mut it = std::env::args().skip(1);
     let list = |v: Option<String>| v.map(|s| s.split(',').map(str::to_owned).collect::<Vec<_>>()).unwrap_or_default();
     while let Some(a) = it.next() {
@@ -97,6 +104,8 @@ fn parse_args() -> Args {
             "--clips" => args.clips = list(it.next()),
             "--play" => args.play = true,
             "--trace" => args.trace = true,
+            "--strip" => args.strip = it.next().and_then(|v| v.parse().ok()).unwrap_or(8),
+            "--every" => args.every = it.next().and_then(|v| v.parse().ok()).unwrap_or(0.1),
             "--yaw" => args.yaw = it.next().and_then(|v| v.parse().ok()).unwrap_or(-2.2),
             "--as" => {
                 args.play = true;

@@ -36,6 +36,8 @@ struct Stage {
     path: String,
     target: Handle<Image>,
     legend: String,
+    taken: usize,
+    frames: Vec<image::RgbImage>,
 }
 
 fn rows(id: &str, args: &Args) -> Vec<String> {
@@ -130,6 +132,18 @@ fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, ti
     }
     stage.settled += 1;
     *waited += time.delta_secs();
+    if args.strip > 0 {
+        // A strip: a picture every `every` seconds; `gather` saves them as one when all are in.
+        if stage.settled >= 40 && *waited >= args.after + stage.taken as f32 * args.every && stage.taken < args.strip {
+            stage.taken += 1;
+            commands.spawn(Screenshot::image(stage.target.clone())).observe(gather);
+        }
+        if stage.settled > 4000 {
+            eprintln!("the strip never finished");
+            exit.write(AppExit::error());
+        }
+        return;
+    }
     if stage.settled >= 40 && *waited >= args.after && !stage.asked {
         stage.settled = 40;
         stage.asked = true;
@@ -147,6 +161,28 @@ fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, ti
         eprintln!("the screenshot never arrived");
         exit.write(AppExit::error());
     }
+}
+
+/// One picture of a strip arriving. When the last is in they are set side by side and saved.
+fn gather(shot: On<bevy::render::view::screenshot::ScreenshotCaptured>, args: Res<Args>, mut stage: ResMut<Stage>, mut exit: MessageWriter<AppExit>) {
+    let Ok(picture) = shot.image.clone().try_into_dynamic() else { return };
+    stage.frames.push(picture.to_rgb8());
+    if stage.frames.len() < args.strip {
+        return;
+    }
+    let (w, h) = stage.frames[0].dimensions();
+    let mut strip = image::RgbImage::new(w * args.strip as u32, h);
+    for (i, frame) in stage.frames.iter().enumerate() {
+        image::imageops::replace(&mut strip, frame, (i as u32 * w) as i64, 0);
+    }
+    if let Some(dir) = std::path::Path::new(&stage.path).parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    match strip.save(&stage.path) {
+        Ok(()) => println!("shot {} {} strip={} every={}s from={}s", stage.path, stage.legend, args.strip, args.every, args.after),
+        Err(e) => eprintln!("saving {}: {e}", stage.path),
+    }
+    exit.write(AppExit::Success);
 }
 
 /// `--scene FILE`: the test world with the `--spawn` creatures (`all` for one of each) standing
@@ -178,7 +214,8 @@ fn scene(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terra
         commands.spawn((creature, creatures::spot(n, &terrain), Visibility::default()));
         stage.expected += 1;
     }
-    stage.target = images.add(Image::new_target_texture(1600, 900, TextureFormat::Rgba8UnormSrgb, None));
+    let (w, h) = if args.strip > 0 { (1920 / args.strip.clamp(4, 12) as u32, 300) } else { (1600, 900) };
+    stage.target = images.add(Image::new_target_texture(w, h, TextureFormat::Rgba8UnormSrgb, None));
     let focus = Vec3::new(0.0, terrain.0.ground_height(0.0, 0.0) + 0.8, 0.0);
     commands.spawn((
         Camera3d::default(),

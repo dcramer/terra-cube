@@ -51,14 +51,15 @@ pub fn half_width(def: &Def) -> f32 {
     (def.meta.length.max(def.meta.height * 0.35) * 0.45).clamp(0.2, 0.6)
 }
 
-/// The speeds a gait moves at. The clips are measured (`meta.toml`) and mostly slower than
-/// play wants, so each is allowed to play somewhat fast; `show` keeps the feet matched.
+/// The speed a gait moves at: the speed its clip was built or measured for (`meta.toml`), so
+/// the clip plays at its own rate and the feet hold. A faster creature wants a faster clip,
+/// made in forge, not a number changed here.
 pub fn speed(def: &Def, gait: Gait) -> f32 {
     let m = &def.meta;
     match gait {
-        Gait::Walk => m.walk_speed.max(0.2) * 1.6,
-        Gait::Sprint if m.sprint_speed > 0.0 => m.sprint_speed * 1.6,
-        _ => m.run_speed.max(0.4) * 1.3,
+        Gait::Walk => m.walk_speed.max(0.1),
+        Gait::Sprint if m.sprint_speed > 0.0 => m.sprint_speed,
+        _ => m.run_speed.max(0.2),
     }
 }
 
