@@ -254,7 +254,7 @@ fn doctor() -> bool {
         }
     }
     if ok {
-        println!("ok: {}. Start with: make {}", lines.iter().map(|l| l.trim_start_matches("ok ")).collect::<Vec<_>>().join(" · "), if wsl { "windows" } else { "run" });
+        println!("ok: {}. Start with: make {}", lines.iter().map(|l| l.trim_start_matches("ok ")).collect::<Vec<_>>().join(" · "), "play");
     }
     ok
 }

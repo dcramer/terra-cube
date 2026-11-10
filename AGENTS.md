@@ -24,7 +24,7 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 
 ## Commands
 
-`make` alone checks the machine is set up; `make help` lists the everyday ones (`make setup`, `make run`, `make play`, `make windows` from WSL, `make sheet ID=wolf`, `make check`). Each is one line over these; add a target when a new command becomes everyday.
+`make` alone checks the machine is set up; `make help` lists the everyday ones (`make setup`, `make run`, `make play` (both open a Windows build when run in WSL), `make sheet ID=wolf`, `make check`). Each is one line over these; add a target when a new command becomes everyday.
 
 ```bash
 cargo forge doctor                 # is this machine set up: node, Tripo login, display, models
@@ -51,7 +51,7 @@ A machine with no screen needs `DISPLAY=:1` (an Xvfb) for `sheet` and `sandbox`;
 - **Numbers first, then one picture.** `cargo forge check` judges a model before anyone looks. Then look at one contact sheet (`cargo forge sheet`), not a run of screenshots. If you catch a defect by eye that the checks missed, add a check for it. Movement is judged the same way: forge's `slide` number, then one `--strip`.
 - **Credits are real money.** `forge.lock` makes a build spend once. Look at the concept (`cargo forge build ID --to concept`, then `cargo forge concepts`) before paying for a model. Never delete a lock step to retry without a reason you can state.
 - **Bones have roles, not names.** Tripo's bone names are unreliable; clips are written against roles read from the skeleton's shape (`crates/forge/src/rig.rs`). Do not match on bone names for animals.
-- **Runs on Linux, Windows and macOS.** Build paths with `Path::join`, never a typed `/` or a home folder; no shell-outs beyond `node` and `cargo`; anything one system needs sits behind `cfg!` with the reason. `make check` type-checks for Windows. In WSL the game is built as a Windows program and opened there (`make windows`), so it must start from any folder: it finds `assets/` itself.
+- **Runs on Linux, Windows and macOS.** Build paths with `Path::join`, never a typed `/` or a home folder; no shell-outs beyond `node` and `cargo`; anything one system needs sits behind `cfg!` with the reason. `make check` type-checks for Windows. In WSL the game is built as a Windows program and opened there (`make play` does it), so it must start from any folder: it finds `assets/` itself.
 - **The simulation must not need a window.** Game rules go in crates with no rendering (`cube_voxel`, `cube_sim`), tested headless. `cube_game` only draws and takes input.
 - **Secrets:** `.env` (the Tripo login) lives in the main checkout, ignored by git. Never print it or commit it.
 - **Shaders** are for the environment only (terrain, water, sky, weather). Creatures use stock materials.

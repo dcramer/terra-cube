@@ -5,6 +5,8 @@
 SPAWN ?= all
 ARGS ?= --play --spawn $(SPAWN)
 WINDOWS := x86_64-pc-windows-gnu
+# In WSL the game is built for Windows and opened there: the real GPU, a native window.
+WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
 .PHONY: help setup run play windows list scene sheet status creature finish test lint cross check
@@ -16,12 +18,20 @@ setup: ## (plain `make`) check this machine: node, Tripo login, display, models
 	cargo forge doctor
 
 run: ## the game window, one of each creature (SPAWN=wolf,player for some)
+ifeq ($(WSL),1)
+	@$(MAKE) --no-print-directory windows ARGS="--spawn $(SPAWN)"
+else
 	cargo sandbox --spawn $(SPAWN)
+endif
 
 play: ## the game window, as the player: WASD, Shift sprints, Ctrl walks, Space jumps, V first person, Tab frees the mouse
+ifeq ($(WSL),1)
+	@$(MAKE) --no-print-directory windows ARGS="--play --spawn $(SPAWN)"
+else
 	cargo sandbox --play --spawn $(SPAWN)
+endif
 
-windows: ## from WSL: build for Windows and open the game there, as the player (ARGS="--spawn all" for the plain sandbox)
+windows: ## build for Windows and, in WSL, open it there; `make play` and `make run` do this themselves in WSL
 	@command -v x86_64-w64-mingw32-gcc >/dev/null || { echo "needs the Windows linker: sudo apt install mingw-w64"; exit 2; }
 	CARGO_PROFILE_RELEASE_DEBUG=false CARGO_PROFILE_RELEASE_STRIP=true cargo build --release --package cube_game --target $(WINDOWS)
 	@if grep -qi microsoft /proc/version 2>/dev/null; then target/$(WINDOWS)/release/cube_game.exe $(ARGS); \

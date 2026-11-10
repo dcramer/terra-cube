@@ -36,7 +36,7 @@ Both `forge` and `sandbox` build in release: Bevy unoptimised is too slow to jud
 
 ## Windows, from WSL
 
-`make windows` builds the game as a Windows program inside WSL and starts it as the player (`ARGS="--spawn all"` for the plain sandbox), so it opens as an ordinary Windows window on the real GPU (DirectX 12 or Vulkan). The code, the agent and every other command stay in WSL. `SPAWN=wolf,player` picks the creatures, as with `make run`.
+In WSL, `make play` and `make run` build the game as a Windows program and start it there (`make windows ARGS="…"` does the same with any arguments), so it opens as an ordinary Windows window on the real GPU (DirectX 12 or Vulkan). The code, the agent and every other command stay in WSL. `SPAWN=wolf,player` picks the creatures, as with `make run`.
 
 - **Once:** `sudo apt install mingw-w64` for the Windows linker. The Rust half (`x86_64-pc-windows-gnu`) comes with the pinned toolchain. `make setup` says if the linker is missing.
 - **Why not run the Linux build through WSLg:** `make run` does open a window that way, but WSL reaches the GPU through a Vulkan-on-DirectX layer, which is slower than the native path and a known source of trouble for wgpu. Try it if you like; `make windows` is the supported way.
