@@ -1,0 +1,5 @@
+name = "Troll"
+kind = "monster"
+plan = "biped"
+subject = "a huge mossy stone troll with a heavy rounded body, long thick arms, small head with tusks"
+height = 2.6

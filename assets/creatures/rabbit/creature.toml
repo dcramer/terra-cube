@@ -1,0 +1,5 @@
+name = "Rabbit"
+kind = "wildlife"
+plan = "quadruped"
+subject = "a small brown rabbit with long upright ears, standing on all four feet"
+height = 0.3

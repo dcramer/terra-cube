@@ -1,0 +1,140 @@
+//! The files forge reads and writes for a creature, all under `assets/creatures/`:
+//! `style.toml` (shared: the art style and each body plan), `<id>/creature.toml` (written by
+//! hand: what the creature is), `<id>/forge.lock` (what has been paid for at Tripo) and
+//! `<id>/meta.toml` (measured from the finished model; the game reads it).
+
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+pub const ROOT: &str = "assets/creatures";
+
+#[derive(Deserialize)]
+pub struct Style {
+    /// Appended to every concept prompt.
+    pub style: String,
+    pub tripo: TripoOptions,
+    pub plans: BTreeMap<String, Plan>,
+    pub checks: Bars,
+}
+
+#[derive(Deserialize)]
+pub struct TripoOptions {
+    pub faces: u32,
+    pub texture_size: u32,
+    pub image_model: String,
+    /// Extra arguments for `tripo.ts model`.
+    pub model_args: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct Plan {
+    /// How the concept image poses the creature, so it rigs.
+    pub pose: String,
+    /// `humanoid` or `other`, as `tripo.ts rig --type`.
+    pub rig: String,
+    #[serde(default)]
+    pub skeleton: Option<String>,
+    /// Our clip name → Tripo's preset for this rig.
+    #[serde(default)]
+    pub presets: BTreeMap<String, String>,
+    /// Every clip a creature of this plan must have; ones without a preset are made.
+    pub clips: Vec<String>,
+    /// Stands upright (falls backward, not onto its side).
+    #[serde(default)]
+    pub upright: bool,
+}
+
+/// The bars `forge check` holds a model to.
+#[derive(Deserialize)]
+pub struct Bars {
+    pub max_triangles: usize,
+    pub max_joints: usize,
+    /// Worst allowed 99th-percentile edge stretch over every clip, as a fraction.
+    pub max_stretch: f32,
+    /// How far a foot may sink below or the lowest foot float above the floor, of height.
+    pub max_foot_error: f32,
+    /// Largest joint turn between a looping clip's last and first frame, radians.
+    pub max_loop_gap: f32,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct Creature {
+    pub name: String,
+    pub kind: String,
+    pub plan: String,
+    /// What it is, without style words.
+    pub subject: String,
+    /// Metres to the top of the rest pose.
+    pub height: f32,
+    #[serde(default = "auto", skip_serializing_if = "is_auto")]
+    pub facing: String,
+}
+
+fn auto() -> String {
+    "auto".into()
+}
+fn is_auto(s: &String) -> bool {
+    s == "auto"
+}
+
+#[derive(Deserialize, Serialize, Default)]
+pub struct Lock {
+    #[serde(default)]
+    pub project: String,
+    /// Steps done at Tripo, in order: concept, model, rig, export.
+    #[serde(default)]
+    pub steps: Vec<String>,
+    #[serde(default)]
+    pub credits: BTreeMap<String, f64>,
+}
+
+#[derive(Deserialize, Serialize, Default)]
+pub struct Meta {
+    pub height: f32,
+    pub length: f32,
+    pub walk_speed: f32,
+    pub run_speed: f32,
+    pub triangles: usize,
+    pub joints: usize,
+    pub clips: BTreeMap<String, ClipMeta>,
+    /// Bones by role, for attaching gear and for the game's own aiming later.
+    pub bones: BTreeMap<String, String>,
+}
+
+#[derive(Deserialize, Serialize, Default)]
+pub struct ClipMeta {
+    pub seconds: f32,
+    pub looping: bool,
+    pub source: String,
+}
+
+pub fn dir(id: &str) -> PathBuf {
+    Path::new(ROOT).join(id)
+}
+/// Scratch for a creature: Tripo's downloads. Ignored by git; rebuilt from the project.
+pub fn work(id: &str) -> PathBuf {
+    Path::new(".work").join(id)
+}
+
+pub fn load<T: for<'a> Deserialize<'a>>(path: &Path) -> Result<T> {
+    let text = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))
+}
+
+pub fn save<T: Serialize>(path: &Path, value: &T, header: &str) -> Result<()> {
+    std::fs::write(path, format!("{header}{}", toml::to_string(value)?)).with_context(|| format!("writing {}", path.display()))
+}
+
+pub fn ids() -> Vec<String> {
+    let mut out: Vec<String> = std::fs::read_dir(ROOT)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.path().join("creature.toml").exists())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    out.sort();
+    out
+}

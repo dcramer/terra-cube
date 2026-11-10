@@ -1,0 +1,5 @@
+name = "Boar beast"
+kind = "monster"
+plan = "quadruped"
+subject = "a monstrous corrupted boar with large curved tusks, a ridge of dark spines down its back, glowing purple eyes"
+height = 1.3

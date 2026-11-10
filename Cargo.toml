@@ -1,0 +1,33 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+publish = false
+
+[workspace.dependencies]
+bevy = { version = "0.20", features = ["jpeg"] }
+bevy_egui = "0.43"
+glam = "0.33"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+anyhow = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
+# Dependencies optimised even in dev builds: Bevy unoptimised is unusably slow.
+[profile.dev]
+opt-level = 1
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+debug = "line-tables-only"
+
+# Bevy systems take their inputs as arguments and queries as tuples; these two lints only
+# fight that.
+[workspace.lints.clippy]
+too_many_arguments = "allow"
+type_complexity = "allow"

@@ -1,0 +1,9 @@
+[alias]
+# The asset pipeline: `cargo forge status`, `cargo forge build wolf` (docs/pipeline.md).
+forge = "run --quiet --release --package forge --"
+# The sandbox level: `cargo sandbox`, `cargo sandbox --shot wolf` (docs/sandbox.md).
+sandbox = "run --release --package cube_game --"
+
+[env]
+# Every binary loads from the one assets/ folder at the root.
+BEVY_ASSET_ROOT = { value = ".", relative = true }

@@ -1,0 +1,50 @@
+# The house style and the body plans, read by forge for every creature (docs/art-guide.md
+# explains the rules; this file is how they are enforced). A concept prompt is
+# "<creature subject>, <plan pose>, <style>".
+
+style = """
+stylized low-poly game creature, small bulky cartoony proportions with a slightly oversized head, \
+chunky faceted planar forms, bold readable silhouette, simple large shapes with no small fiddly parts, \
+hand-painted flat colour in a few saturated hues with one accent colour, soft stepped light-to-dark shading, \
+no noise, no grain, no photorealism, no fur strands, no pure black, no pure white, \
+single character, full body in frame, nothing held and nothing loose, \
+plain light grey background, even studio light, no ground shadow"""
+
+[tripo]
+# Triangles asked of Tripo. Creatures share the screen with a voxel world; 8,000 holds a silhouette.
+faces = 8000
+texture_size = 1024
+image_model = "nano-banana-2"
+# 45 credits a model as measured 2026-11-09 (standard geometry and texture, colour only).
+model_args = ["--geometry", "standard", "--texture-quality", "standard", "--no-pbr", "--smart-poly"]
+
+[checks]
+max_triangles = 12000
+max_joints = 80
+max_stretch = 0.6
+max_foot_error = 0.08
+max_loop_gap = 0.09
+
+# Upright two-legged figures: the player and humanoid monsters. Tripo rigs these on one named
+# skeleton (so gear and clips are shared) and has preset clips for them.
+[plans.biped]
+pose = "standing upright facing the camera in a T-pose, arms straight out to the sides, legs slightly apart, hands open and empty, front view"
+rig = "humanoid"
+skeleton = "mixamo"
+upright = true
+clips = ["idle", "walk", "run", "attack", "hurt", "die", "jump"]
+[plans.biped.presets]
+idle = "idle"
+walk = "walk"
+run = "run"
+attack = "slash"
+hurt = "hurt"
+jump = "jump"
+
+# Four-legged animals and monsters. Tripo has only a walk for these; the rest are made (clips.rs).
+[plans.quadruped]
+pose = "standing still on all four legs in a neutral pose, seen from the side and slightly in front, all four legs straight and clearly separated, tail away from the legs, mouth closed"
+rig = "other"
+clips = ["idle", "walk", "run", "attack", "hurt", "die", "eat"]
+[plans.quadruped.presets]
+walk = "walk"

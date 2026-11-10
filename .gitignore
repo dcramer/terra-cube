@@ -1,0 +1,9 @@
+target/
+node_modules/
+*.log
+# Secrets (Tripo login). Lives in the main checkout; worktrees read it from there.
+.env
+# Pipeline scratch: downloads, intermediate GLBs, contact sheets. Rebuildable.
+.work/
+shots/
+.claude/worktrees/

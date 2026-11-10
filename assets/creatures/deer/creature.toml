@@ -1,0 +1,5 @@
+name = "Deer"
+kind = "wildlife"
+plan = "quadruped"
+subject = "a red deer stag with antlers"
+height = 1.5
