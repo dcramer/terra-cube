@@ -31,8 +31,9 @@ fn hash(p: IVec3) -> f32 {
     (h & 0xFFFF) as f32 / 65535.0
 }
 
-/// The mesh of one chunk, in metres, positioned in world space.
-pub fn mesh_chunk(world: &World, chunk: IVec3) -> MeshData {
+/// The mesh of one chunk, in metres, positioned in world space: its solid blocks, or with
+/// `liquid` its water, which is drawn apart because it is seen through.
+pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
     let mut m = MeshData::default();
     let Some(data) = world.chunks.get(&chunk) else { return m };
     let origin = chunk * CHUNK;
@@ -41,7 +42,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3) -> MeshData {
             for x in 0..CHUNK {
                 let local = IVec3::new(x, y, z);
                 let block = data.get(local);
-                if block == Block::Air {
+                if block == Block::Air || (block == Block::Water) != liquid {
                     continue;
                 }
                 let cell = origin + local;
@@ -66,7 +67,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3) -> MeshData {
                         let k = ao[i] * tint;
                         m.positions.push((corner.as_vec3() * CELL).to_array());
                         m.normals.push(n.as_vec3().to_array());
-                        m.colors.push([base[0] * k, base[1] * k, base[2] * k, if block == Block::Water { 0.75 } else { 1.0 }]);
+                        m.colors.push([base[0] * k, base[1] * k, base[2] * k, if block == Block::Water { 0.45 } else { 1.0 }]);
                     }
                     // Split the quad along the diagonal that keeps the AO gradient smooth.
                     if ao[0] + ao[2] > ao[1] + ao[3] {

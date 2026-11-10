@@ -52,6 +52,8 @@ pub struct Intent {
     pub jump: bool,
     /// The jump is still being asked for: it rises to its full height.
     pub hold: bool,
+    /// In water: swim down instead of floating.
+    pub dive: bool,
 }
 
 /// How far up a body the water must come before it swims, and where it then floats: just
@@ -132,7 +134,9 @@ impl Body {
         let mut jumped = false;
         if let Some(surface) = surface {
             let chest = self.pos.y + self.height * WAIST;
-            let rise = ((surface - chest) * 6.0).clamp(-2.0, 2.0) + if intent.jump { 1.5 } else { 0.0 };
+            // Floats to the surface unless swimming down; the jump key swims up faster.
+            let float = ((surface - chest) * 6.0).clamp(-2.0, 2.0);
+            let rise = if intent.dive { -1.8 } else { float + if intent.jump || intent.hold { 1.5 } else { 0.0 } };
             self.vel.y += (rise - self.vel.y).clamp(-20.0 * DT, 20.0 * DT);
         } else {
             if intent.jump && self.since_ground <= tuning.coyote && self.vel.y <= 0.0 {
@@ -286,7 +290,7 @@ mod tests {
         }
     }
 
-    const EAST: Intent = Intent { dir: Vec2::new(1.0, 0.0), speed: 3.5, jump: false, hold: false };
+    const EAST: Intent = Intent { dir: Vec2::new(1.0, 0.0), speed: 3.5, jump: false, hold: false, dive: false };
 
     #[test]
     fn stands_and_walks_at_the_asked_speed() {
@@ -408,6 +412,11 @@ mod tests {
         run(&mut b, &w, 6.0, Intent::default());
         let waist = b.pos.y + 1.75 * WAIST;
         assert!(b.swimming && (waist - 4.5).abs() < 0.15, "waist at {waist}");
+        // Dives to the bottom while asked, and comes back up when not.
+        run(&mut b, &w, 3.0, Intent { dive: true, ..Intent::default() });
+        assert!(b.swimming && b.grounded && b.pos.y == 0.5, "{b:?}");
+        run(&mut b, &w, 5.0, Intent::default());
+        assert!((b.pos.y + 1.75 * WAIST - 4.5).abs() < 0.15, "{b:?}");
     }
 
     #[test]

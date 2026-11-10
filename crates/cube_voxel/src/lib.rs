@@ -164,7 +164,7 @@ mod tests {
     fn a_lone_block_meshes_to_six_faces() {
         let mut w = World::default();
         w.set(IVec3::new(3, 3, 3), Block::Stone);
-        let m = mesh::mesh_chunk(&w, IVec3::ZERO);
+        let m = mesh::mesh_chunk(&w, IVec3::ZERO, false);
         assert_eq!(m.positions.len(), 24);
         assert_eq!(m.indices.len(), 36);
     }

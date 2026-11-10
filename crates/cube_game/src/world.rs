@@ -29,17 +29,21 @@ pub fn spawn_lights(commands: &mut Commands, shadows: bool) {
 fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
     let voxels = terrain::generate(7, 3);
     let material = materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.95, reflectance: 0.2, ..default() });
+    // Water is its own mesh and material: it is blended over what is under it.
+    let water = materials.add(StandardMaterial { base_color: Color::WHITE, alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.25, reflectance: 0.5, ..default() });
     for &chunk in voxels.chunks.keys() {
-        let data = mesh_chunk(&voxels, chunk);
-        if data.indices.is_empty() {
-            continue;
+        for (liquid, material) in [(false, &material), (true, &water)] {
+            let data = mesh_chunk(&voxels, chunk, liquid);
+            if data.indices.is_empty() {
+                continue;
+            }
+            let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
+                .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
+                .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
+                .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, data.colors)
+                .with_inserted_indices(Indices::U32(data.indices));
+            commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material.clone())));
         }
-        let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, data.colors)
-            .with_inserted_indices(Indices::U32(data.indices));
-        commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material.clone())));
     }
     commands.insert_resource(Terrain(voxels));
     spawn_lights(&mut commands, true);

@@ -31,6 +31,8 @@ pub struct Controls {
     pub dir: Vec2,
     pub gait: Gait,
     pub jump: bool,
+    /// Swim down.
+    pub dive: bool,
 }
 
 /// On the creature being controlled.
@@ -93,6 +95,7 @@ fn keys(keys: Res<ButtonInput<KeyCode>>, args: Res<Args>, mut controls: ResMut<C
         Gait::Run
     };
     controls.jump = keys.pressed(KeyCode::Space);
+    controls.dive = keys.pressed(KeyCode::ControlLeft);
     if keys.just_pressed(KeyCode::KeyV) {
         for mut c in &mut controlled {
             c.first_person = !c.first_person;
@@ -105,7 +108,7 @@ pub const ROUTE: &str = "0.5 fwd walk; 2 run; 3 jump; 5 sprint; 6 jump";
 
 /// With no window there are no keys: `--script` stands in for them. It is steps split by `;`,
 /// each a time in seconds and what changes then: `fwd back left right stop` (direction),
-/// `walk run sprint` (gait), `jump` (held, a full jump), `hop` (tapped), `first third` (view).
+/// `walk run sprint` (gait), `jump` (held, a full jump), `hop` (tapped), `dive surface` (in water), `first third` (view).
 fn script(time: Res<Time>, args: Res<Args>, mut controls: ResMut<Controls>, mut controlled: Query<&mut Controlled>, mut clock: Local<(f32, f32)>) {
     if args.scene.is_none() || !args.play || controlled.is_empty() {
         return;
@@ -130,6 +133,8 @@ fn script(time: Res<Time>, args: Res<Args>, mut controls: ResMut<Controls>, mut 
                 "run" => controls.gait = Gait::Run,
                 "sprint" => controls.gait = Gait::Sprint,
                 "jump" => clock.1 = now + 0.4,
+                "dive" => controls.dive = true,
+                "surface" => controls.dive = false,
                 "hop" => clock.1 = now + 0.04,
                 "first" | "third" => controlled.iter_mut().for_each(|mut c| c.first_person = word == "first"),
                 other => warn!("--script: no such step `{other}`"),
@@ -172,6 +177,7 @@ fn drive(controls: Res<Controls>, args: Res<Args>, registry: Res<Registry>, came
             m.want_jump = 0.12;
         }
         m.hold_jump = controls.jump;
+        m.intent.dive = controls.dive;
         m.gait = controls.gait;
         m.turn_to = c.first_person.then_some(yaw + std::f32::consts::PI);
         let want = if c.first_person { Visibility::Hidden } else { Visibility::Inherited };

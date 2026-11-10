@@ -46,7 +46,7 @@ pub struct Args {
 const HELP: &str = "\
 cargo sandbox                           the window, with the spawn panel
 cargo sandbox --play [--as wolf]        start as the player, or as any creature: WASD runs, Shift
-                                        sprints, Ctrl walks, Space jumps, the mouse looks, the
+                                        sprints, Ctrl walks (in water: dives), Space jumps, the mouse looks, the
                                         wheel zooms, V is first person, Tab gives the mouse back
 cargo sandbox --spawn wolf,player       start with these in the world (`all` for one of each)
 cargo sandbox --list                    the creatures that can be spawned
@@ -63,7 +63,8 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
                                         and square on, for reading feet
         … --script '1 jump; 2 fwd run; 4 stop'
                                         the route, as times and what changes then: fwd back left
-                                        right stop · walk run sprint · jump hop · first third
+                                        right stop · walk run sprint · jump hop · dive surface ·
+                                        first third
 --trace prints the controlled body (position, speed, clip, camera) four times a second.
 In the window: Tab controls the picked creature, and lets go of it. Otherwise right-drag
 orbits, wheel zooms, WASD and QE move, F looks at the picked creature.
