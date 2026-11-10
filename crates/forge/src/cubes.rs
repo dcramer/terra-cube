@@ -10,9 +10,10 @@
 //! texture there has, moves with its part's bone and never bends, like a jointed toy.
 //!
 //! A face needs help: a head of true size is four cubes wide, and eyes are smaller than a
-//! cube, so they vanish. The head is made bigger first (`--head`, 1.4 times: a toy's
-//! proportions), and the two cubes on its surface where the texture is darkest against its
-//! surroundings, one each side, are made eyes.
+//! cube, so they vanish. The head can be made bigger first (`--head 1.4`: a toy's
+//! proportions). A person's face is then made flat and one colour, with single cubes for
+//! features: two eyes, a nose one cube proud, a mouth. An
+//! animal keeps its muzzle and has its eyes darkened.
 
 use crate::glb::Glb;
 use crate::rig::{Facing, Leg, Roles, Skeleton};
@@ -328,20 +329,81 @@ fn cubes(glb: &Glb, sk: &Skeleton, roles: &Roles, world: &[Mat4], size: f32, hea
     }
 
     // Eyes: on the front of the head (a finished model faces +Z), the pair of cubes mirrored
-    // across its middle, at least a cube apart, with the most black in them. Each becomes
-    // one dark cube.
+    // across its middle, at least a cube apart, with the most black in them.
     let front: Vec<IVec3> = eyes.keys().filter(|at| !(1..4).any(|ahead| eyes.contains_key(&(**at + IVec3::Z * ahead)))).copied().collect();
     let mirrored = |at: &IVec3| IVec3::new(-1 - at.x, at.y, at.z);
-    let pair = front
+    let found = front
         .iter()
         .filter(|at| at.x >= 1 && front.contains(&mirrored(at)))
         .map(|at| (*at, eyes[at].min(eyes[&mirrored(at)])))
         .filter(|(_, dark)| *dark > 0.04)
-        .max_by(|a, b| a.1.total_cmp(&b.1).then(a.0.to_array().cmp(&b.0.to_array())));
-    if let Some((at, _)) = pair {
-        for eye in [at, mirrored(&at)] {
+        .max_by(|a, b| a.1.total_cmp(&b.1).then(a.0.to_array().cmp(&b.0.to_array())))
+        .map(|(at, _)| at);
+    let Some(head) = head else { return Ok(out) };
+    let driver = parts[head].driver;
+    if roles.arms.is_empty() {
+        // An animal keeps the face it has, muzzle and all, with its eyes darkened.
+        for eye in found.iter().flat_map(|at| [*at, mirrored(at)]) {
             out.get_mut(&eye).unwrap().colour = Vec3::splat(0.012);
         }
+        return Ok(out);
+    }
+
+    // A person's face is made flat, as games that draw people in cubes make it: at this size
+    // a modelled brow and cheek only hide the eyes. The skin on the front of the head is
+    // brought to one plane and one colour, and the features are single cubes on it: two eyes,
+    // a nose that stands one cube proud, a mouth.
+    let lowest = front.iter().map(|c| c.y).min().unwrap_or(0);
+    let highest = front.iter().map(|c| c.y).max().unwrap_or(0);
+    let bucket = |c: Vec3| (c.powf(1.0 / 2.2) * 5.0).round().as_ivec3();
+    let mut counts: HashMap<IVec3, (Vec3, f32)> = HashMap::new();
+    // Skin is what the bottom third of the head's front mostly is: hair can be the top half.
+    for at in front.iter().filter(|c| c.y <= lowest + (highest - lowest) / 3) {
+        let entry = counts.entry(bucket(out[at].colour)).or_default();
+        *entry = (entry.0 + out[at].colour, entry.1 + 1.0);
+    }
+    let Some(skin) = counts.into_iter().max_by(|a, b| a.1.1.total_cmp(&b.1.1).then(a.0.to_array().cmp(&b.0.to_array()))).map(|(_, (sum, n))| sum / n) else { return Ok(out) };
+    let skinned: Vec<IVec3> = front.iter().filter(|at| out[*at].colour.distance(skin) < 0.12).copied().collect();
+    if skinned.len() < 6 {
+        return Ok(out);
+    }
+    // The face is a box on the front of the head: as wide as the skin showing, from the chin
+    // up to the highest row that is nearly half skin (above that is fringe and is left alone).
+    let (left, right) = (skinned.iter().map(|c| c.x).min().unwrap(), skinned.iter().map(|c| c.x).max().unwrap());
+    let bottom = skinned.iter().map(|c| c.y).min().unwrap();
+    let across = |y: i32| skinned.iter().filter(|c| c.y == y).count() as i32;
+    let widest = (bottom..=highest).map(across).max().unwrap_or(0);
+    let brow = (bottom..=highest).rev().find(|&y| across(y) * 10 >= widest * 4).unwrap_or(bottom);
+    let mut depths: Vec<i32> = skinned.iter().map(|c| c.z).collect();
+    depths.sort();
+    let plane = depths[depths.len() / 2];
+    // Everything on the front of the head inside the box is brought to one plane and one
+    // colour: what stands proud goes, what falls short is filled.
+    for at in front.iter().filter(|c| (left..=right).contains(&c.x) && (bottom..=brow).contains(&c.y)) {
+        for z in plane + 1..=at.z {
+            out.remove(&IVec3::new(at.x, at.y, z));
+        }
+        for z in at.z.min(plane)..=plane {
+            out.insert(IVec3::new(at.x, at.y, z), Cube { colour: skin, part: head, bone: driver });
+        }
+    }
+    let mut feature = |x: i32, y: i32, z: i32, colour: Vec3| {
+        if (left..=right).contains(&x) && (bottom..=brow).contains(&y) {
+            out.insert(IVec3::new(x, y, z), Cube { colour, part: head, bone: driver });
+        }
+    };
+    // Features are placed, not found: eyes on the top row either side of the middle, the nose
+    // under them one cube proud, the mouth lower. A face an odd number of cubes wide has a
+    // middle cube, so its nose and mouth are one cube; an even one's are two.
+    let wide = right - left + 1;
+    let middle: Vec<i32> = if wide % 2 == 1 { vec![left + wide / 2] } else { vec![left + wide / 2 - 1, left + wide / 2] };
+    let out_by = if wide >= 5 { 2 } else { 1 };
+    for x in [middle[0] - out_by, middle[middle.len() - 1] + out_by] {
+        feature(x, brow, plane, Vec3::splat(0.012));
+    }
+    for &x in &middle {
+        feature(x, brow - 1, plane + 1, skin * 0.82);
+        feature(x, (brow - 3).max(bottom), plane, Vec3::new(0.30, 0.07, 0.06));
     }
     Ok(out)
 }

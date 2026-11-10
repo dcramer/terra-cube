@@ -32,10 +32,10 @@ cargo forge build ID… [--to STEP]       do what is missing: concept, model, ri
 cargo forge finish ID…|--all            the local half again (after changing clips or style)
 cargo forge check ID…|--all             the checks alone
 cargo forge sheet ID [--view side]      render shots/ID.png, every clip at six moments
-cargo forge cubes ID [--size 0.05] [--head 1.4]
+cargo forge cubes ID [--size 0.05] [--head 1.0]
                                         a trial: ID-cubes, that model rebuilt from little cubes each
-                                        fixed to one bone, with the same skeleton and clips; its
-                                        head that much bigger, so a face fits
+                                        fixed to one of a dozen parts, with the same skeleton and
+                                        clips; --head 1.4 makes its head that much bigger
 cargo forge inspect FILE.glb|ID         the skeleton's roles
 cargo forge doctor                      is this machine set up: node, Tripo login, display, models
 kinds: player monster wildlife · plans: see assets/creatures/style.toml";
@@ -107,7 +107,7 @@ fn run() -> Result<bool> {
         "doctor" => ok = doctor(),
         "cubes" => {
             let size: f32 = option(&mut args, "--size").map_or(Ok(0.05), |s| s.parse())?;
-            let head: f32 = option(&mut args, "--head").map_or(Ok(1.4), |s| s.parse())?;
+            let head: f32 = option(&mut args, "--head").map_or(Ok(1.0), |s| s.parse())?;
             for id in targets(&args) {
                 println!("{}", cubes::run(&id, size, head)?);
             }
