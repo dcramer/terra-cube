@@ -56,16 +56,20 @@ Built 2026-11-10. The rules are `cube_sim::body`; the game only feeds it keys an
 - **Third person, camera-relative.** The models are the point of the game, so the player sees theirs. WASD is relative to the camera, the character turns to face where it goes, and ground between camera and character pulls the camera in (a ray through the voxels).
 - **Every moving creature has the same body.** The keys drive one; a wander drives the rest; the player is not special. So an animal steps, falls and swims by the same rules, and any creature can be controlled (`--as wolf`).
 - **Creatures do not pass through each other.** Each tick, before bodies step, overlapping ones are pushed apart over the ground as if round (`body::separate`): two movers share the push, one standing still gives none. Round, so they slide past instead of locking corners. The voxel world wins over a push.
-- **The gait is asked for; the clip's rate follows the speed.** Walk, run or sprint is the driver's choice (Ctrl, nothing, Shift), played at ground speed ÷ the clip's measured speed so feet do not slide. Tripo's clips are slow, so each gait is allowed 1.6×, 1.3× and 1.6× its clip: 1.4, 3.5 and 5.3 m/s for the player. Faster wants better clips, not more rate.
-- **In the air and in water the body picks the clip:** `jump` on the way up from a jump, `fall` otherwise, `swim` when the water is over its middle, where it then floats. All three are made by forge ([pipeline.md](pipeline.md)).
+- **The gait is asked for, and moves at its clip's speed.** Walk, run or sprint is the driver's choice (Ctrl, nothing, Shift) and the body moves at the speed forge built or measured that clip for, so feet hold: 1.2, 3.2 and 4.3 m/s for the player. While speeding up or slowing the clip's rate follows the body's speed.
+- **In the air and in water the body picks the clip:** `jump` on the way up from a jump, `fall` otherwise, `land` after a drop of more than about a cell if it is not running on, `swim` when the water is over its middle. All are made by forge ([pipeline.md](pipeline.md)).
+- **Feel, in numbers** (`Tuning`): a run is reached in under a fifth of a second (18 m/s²) and stopped in an eighth (26); gravity 22 m/s²; a held jump clears two cells (1.08 m) and a tapped one is a hop of a third of that; a jump pressed up to 0.12 s before landing still happens, and up to 0.1 s after walking off an edge; falls are capped at 25 m/s so a tick never crosses a cell. The model leans a few degrees into turns and into speeding up.
+- **Water:** a body floats with the surface at its middle, swims up with the jump key and down with Ctrl. Water is drawn as its own see-through mesh.
 - **First person is the same camera at the eyes** with the model hidden and turned to face where the camera looks (V). Third person stays the default.
-- **Numbers:** gravity 22 m/s², jump 6.9 m/s (clears two cells, 1.08 m), fall capped at 25 m/s so a tick never crosses a whole cell. All in `Tuning`.
-- **Not yet:** a landing, feet placed on steps by IK, turning in place, arms or body visible in first person, diving under water (it only floats), animals' gaits (their run and sprint are their one walk made quicker; a gallop is its own job).
+- **Feet are not placed on steps.** A body eases over a half-metre step in about a fifth of a second and its feet do not seek the riser. Other block games do the same; leg IK against voxels in the game is real work for little gain while every hill is a staircase. Shaped blocks (slopes) change that sum, so it is decided again then.
+- **Not yet:** arms or body visible in first person, a camera and tint for under water, turning on the spot (the model only turns as it moves, or with the camera in first person).
 
 ## The sandbox and agent tooling
 
 - `cargo sandbox` is the debug level: spawn any creature, play any clip, scrub, wander, show skeletons.
 - `cargo sandbox --shot ID` draws offscreen to a PNG with no window, so an agent on a server can look. A sheet is one image: rows are clips, columns are moments.
+- `--scene FILE --play --script '…' --strip 10` runs a scripted route with no window and saves it as a strip of pictures: how movement is judged without a screen. `--trace` prints the body.
+- The real window runs on a machine with no GPU screen through the software Vulkan driver, and `tools/drive/drive.py` presses keys and moves the mouse in it. That is how the keyboard, mouse look and cursor lock were tested ([development.md](development.md)).
 - Wanted next: a remote port (Bevy Remote Protocol) so an agent can drive a running sandbox, and fixed-seed simulation tests.
 
 ## Order of work
@@ -82,4 +86,4 @@ Built 2026-11-10. The rules are `cube_sim::body`; the game only feeds it keys an
 
 - **Binary assets in git.** Models are 0.5 to 1 MB each today. At some dozens of creatures this wants git-lfs or an asset store rebuilt from `forge.lock` (the Tripo projects are the source).
 - **Biped style drift.** T-pose concept images come out smoother and less faceted than the animals. See [art-guide.md](art-guide.md).
-- **Where the developer plays.** This machine has no screen; the sandbox window has only been run offscreen here.
+- **Where the developer plays.** This machine has no screen. The window runs here on a software renderer and is driven by script; it has not been run on Windows through `make windows`.

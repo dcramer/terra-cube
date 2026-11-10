@@ -5,7 +5,7 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 ## Where things stand
 
 - **Works:** the creature pipeline (`cargo forge`): one line of text to an animated model the game loads, checked by numbers and by one picture. The sandbox (`cargo sandbox`) spawns them in a small voxel world, and `--play` walks the player (or any creature) about it with a follow camera.
-- **Baseline only:** the voxel world is one fixed test terrain with a simple mesher. The simulation is movement alone. No saving, no block editing, no networking yet.
+- **Baseline only:** the voxel world is one fixed test terrain with a simple mesher. The simulation is movement alone (walking, jumping, swimming, creatures bumping). No saving, no block editing, no networking yet.
 - **Next:** [docs/engine.md](docs/engine.md#order-of-work).
 
 ## Layout
@@ -35,7 +35,7 @@ cargo forge finish --all           # the free local half again, after changing c
 cargo forge sheet wolf             # shots/wolf.png: every clip at six moments, one image
 cargo sandbox --spawn all          # the interactive sandbox (needs a real screen)
 cargo sandbox --play               # the same, controlling the player (make play)
-cargo sandbox --scene shots/play.png --play --after 6   # no window: the player on a set run, pictured; prints its position each second
+cargo sandbox --scene shots/run.png --play --script '0.5 fwd run; 2 jump' --strip 10 --after 1.5 --view side   # no window: a scripted run as a strip of pictures
 cargo sandbox --scene shots/scene.png --spawn all   # a picture of the world with creatures, offscreen
 cargo test --workspace             # must pass before a commit
 cargo clippy --workspace -- -D warnings
@@ -48,7 +48,7 @@ A machine with no screen needs `DISPLAY=:1` (an Xvfb) for `sheet` and `sandbox`;
 - **Bevy 0.20, pinned.** Its API changes every release and your memory of it is probably older. Before writing engine code, read the matching example in `~/.cargo/registry/src/*/bevy-0.20.0/examples/` rather than guessing; grep the source for a signature. Same for `bevy_egui` 0.43.
 - **Repeatable work is code.** If you did something by hand twice (a Tripo call, a GLB fix, a render), it becomes a forge command or a step of one. Never hand-edit a generated file (`model.glb`, `meta.toml`); change the code or `style.toml` and run `cargo forge finish`.
 - **Tools answer in a few lines.** A command prints a verdict and numbers, `ok` or `FAIL name value (bar)`, and names a file for details. Passing checks stay quiet. Keep new tools that way: output is read by an agent on every later turn.
-- **Numbers first, then one picture.** `cargo forge check` judges a model before anyone looks. Then look at one contact sheet (`cargo forge sheet`), not a run of screenshots. If you catch a defect by eye that the checks missed, add a check for it.
+- **Numbers first, then one picture.** `cargo forge check` judges a model before anyone looks. Then look at one contact sheet (`cargo forge sheet`), not a run of screenshots. If you catch a defect by eye that the checks missed, add a check for it. Movement is judged the same way: forge's `slide` number, then one `--strip`.
 - **Credits are real money.** `forge.lock` makes a build spend once. Look at the concept (`cargo forge build ID --to concept`, then `cargo forge concepts`) before paying for a model. Never delete a lock step to retry without a reason you can state.
 - **Bones have roles, not names.** Tripo's bone names are unreliable; clips are written against roles read from the skeleton's shape (`crates/forge/src/rig.rs`). Do not match on bone names for animals.
 - **Runs on Linux, Windows and macOS.** Build paths with `Path::join`, never a typed `/` or a home folder; no shell-outs beyond `node` and `cargo`; anything one system needs sits behind `cfg!` with the reason. `make check` type-checks for Windows. In WSL the game is built as a Windows program and opened there (`make windows`), so it must start from any folder: it finds `assets/` itself.

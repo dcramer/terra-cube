@@ -347,7 +347,7 @@ mod tests {
     fn a_jump_clears_two_cells_and_lands() {
         let (w, mut b) = (floor(), player());
         run(&mut b, &w, 0.2, Intent::default());
-        let mut rise = |b: &mut Body, hold: bool| {
+        let rise = |b: &mut Body, hold: bool| {
             b.step(&w, Intent { jump: true, ..Intent::default() }, &Tuning::default());
             let mut top = 0.0f32;
             for _ in 0..TICKS {
@@ -426,7 +426,7 @@ mod tests {
         for tick in 0..TICKS * 60 {
             // A wandering heading that turns over the minute, jumping now and then.
             let a = tick as f32 * 0.004;
-            let intent = Intent { dir: Vec2::new(a.cos(), (a * 1.7).sin()), speed: 5.0, jump: tick % 90 == 0, hold: tick % 180 < 90 };
+            let intent = Intent { dir: Vec2::new(a.cos(), (a * 1.7).sin()), speed: 5.0, jump: tick % 90 == 0, hold: tick % 180 < 90, dive: false };
             b.step(&w, intent, &Tuning::default());
             assert!(!b.blocked(&w, b.pos), "inside the ground at tick {tick}: {b:?}");
             assert!(b.pos.y > 0.0, "fell out of the world at tick {tick}");

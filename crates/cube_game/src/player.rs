@@ -54,11 +54,15 @@ fn start(
     controlled: Query<Entity, With<Controlled>>,
     mut cameras: Query<&mut Orbit>,
     mut begun: Local<bool>,
+    // The creature last let go of, and what was picked in the panel at the time.
+    mut last: Local<Option<(Entity, Option<Entity>)>>,
 ) {
     let toggle = keys.just_pressed(KeyCode::Tab);
+    let picked_now = selected.as_ref().and_then(|s| s.0);
     let begin = args.play && !*begun && !creatures.is_empty();
     if toggle && let Some(entity) = controlled.iter().next() {
         commands.entity(entity).remove::<Controlled>().insert(Visibility::Inherited);
+        *last = Some((entity, picked_now));
         return;
     }
     if !(toggle || begin) {
@@ -68,7 +72,9 @@ fn start(
     let picked = selected.and_then(|s| s.0).and_then(|e| creatures.get(e).ok());
     let wanted = args.play_as.as_deref().unwrap_or("player");
     let named = creatures.iter().find(|(_, c, _)| registry.0[c.def].id == wanted);
-    let Some((entity, creature, at)) = (if begin { named.or(picked) } else { picked.or(named) }).or_else(|| creatures.iter().next()) else { return };
+    // Tab goes back to the creature it let go of, unless another has been picked since.
+    let again = last.and_then(|(entity, picked_then)| (picked_then == picked_now).then(|| creatures.get(entity).ok()).flatten());
+    let Some((entity, creature, at)) = (if begin { named.or(picked) } else { again.or(picked).or(named) }).or_else(|| creatures.iter().next()) else { return };
     let def = &registry.0[creature.def];
     commands.entity(entity).remove::<Wander>().insert(Controlled { first_person: args.view == "first" });
     for mut orbit in &mut cameras {
