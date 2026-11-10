@@ -1,8 +1,13 @@
 //! Voxel world data and meshing. No engine types: the game crate turns [`MeshData`] into a
 //! render mesh, and the simulation will read and write [`World`] without a renderer.
 //!
-//! Map: `Block` (what a cell is) → `Chunk` (32³ cells) → `World` (chunks by position) →
-//! `mesh::mesh_chunk` (visible faces with baked AO). Worlds are made in `cube_sim::terrain`.
+//! Map: `Block` (what a cell is) → `Chunk` (32³ cells) → `World` (chunks by position, and
+//! the cells that have been broken into bits) → `mesh::mesh_chunk` (visible faces with baked
+//! AO). Worlds are made in `cube_sim::terrain`.
+//!
+//! Two sizes. A cell is [`CELL`] across and almost all of the world is whole cells. Any cell
+//! can be broken into [`SPLIT`]³ bits, each [`BIT`] across, when something smaller than a
+//! cell happens to it: a hole dug in it, a thing built on it. Only broken cells cost more.
 
 pub mod mesh;
 
@@ -15,6 +20,18 @@ pub const CHUNK: i32 = 32;
 /// slopes and a tree's crown as round. Everything that means a distance is written in metres
 /// and turned to cells with this (see [`cells`]), so it can change again.
 pub const CELL: f32 = 0.25;
+
+/// How many bits a cell breaks into along each edge, and a bit's edge in metres: 5 cm, the
+/// smallest thing in the world.
+pub const SPLIT: i32 = 5;
+pub const BIT: f32 = CELL / SPLIT as f32;
+/// Where the `n`th bit face is, metres. Exact wherever it is also a cell's face, which
+/// `n as f32 * BIT` is not: 0.05 has no exact binary form.
+pub fn bit_face(n: i32) -> f32 {
+    n as f32 * CELL / SPLIT as f32
+}
+/// The bits of one broken cell, x then z then y.
+pub type Bits = [Block; (SPLIT * SPLIT * SPLIT) as usize];
 
 /// A length in metres as a whole number of cells, to the nearest.
 pub fn cells(metres: f32) -> i32 {
@@ -39,20 +56,22 @@ pub enum Block {
     Leaves,
     /// A conifer's foliage.
     Needles,
+    /// A cell broken into bits: what is in it is in [`World::bits`].
+    Broken,
 }
 
 impl Block {
     pub fn solid(self) -> bool {
         !matches!(self, Block::Air | Block::Water)
     }
-    /// Hides the faces of neighbours behind it.
+    /// Hides the faces of neighbours behind it. A broken cell may have gaps, so it does not.
     pub fn opaque(self) -> bool {
-        self.solid()
+        self.solid() && self != Block::Broken
     }
     /// Linear RGB of the block's top and of its sides.
     pub fn colors(self) -> ([f32; 3], [f32; 3]) {
         match self {
-            Block::Air => ([0.0; 3], [0.0; 3]),
+            Block::Air | Block::Broken => ([0.0; 3], [0.0; 3]),
             Block::Grass => ([0.21, 0.42, 0.10], [0.15, 0.30, 0.08]),
             Block::Dirt => ([0.27, 0.17, 0.09], [0.25, 0.16, 0.085]),
             Block::Stone => ([0.30, 0.30, 0.31], [0.26, 0.26, 0.275]),
@@ -99,6 +118,8 @@ impl Chunk {
 #[derive(Default)]
 pub struct World {
     pub chunks: HashMap<IVec3, Chunk>,
+    /// The cells that are [`Block::Broken`], by cell position, and what each bit is.
+    pub bits: HashMap<IVec3, Box<Bits>>,
 }
 
 impl World {
@@ -109,9 +130,81 @@ impl World {
         let (c, l) = Self::split(cell);
         self.chunks.get(&c).map_or(Block::Air, |ch| ch.get(l))
     }
+    /// Makes a cell one whole block (never [`Block::Broken`]: use [`World::set_bit`]).
     pub fn set(&mut self, cell: IVec3, b: Block) {
         let (c, l) = Self::split(cell);
-        self.chunks.entry(c).or_default().set(l, b);
+        let chunk = self.chunks.entry(c).or_default();
+        if chunk.get(l) == Block::Broken {
+            self.bits.remove(&cell);
+        }
+        chunk.set(l, b);
+    }
+
+    fn bit_index(bit: IVec3) -> (IVec3, usize) {
+        let l = bit.rem_euclid(IVec3::splat(SPLIT));
+        (bit.div_euclid(IVec3::splat(SPLIT)), (l.x + l.z * SPLIT + l.y * SPLIT * SPLIT) as usize)
+    }
+
+    /// What is at a bit position (cell position × [`SPLIT`], plus the bit within the cell).
+    pub fn bit(&self, bit: IVec3) -> Block {
+        let (cell, i) = Self::bit_index(bit);
+        match self.get(cell) {
+            Block::Broken => self.bits.get(&cell).map_or(Block::Air, |b| b[i]),
+            whole => whole,
+        }
+    }
+
+    /// Sets one bit. The cell it is in breaks if it was whole, and is made whole again if
+    /// that leaves every bit of it the same.
+    pub fn set_bit(&mut self, bit: IVec3, b: Block) {
+        let (cell, i) = Self::bit_index(bit);
+        let was = self.get(cell);
+        if was == b {
+            return;
+        }
+        if was != Block::Broken {
+            self.set(cell, Block::Broken);
+            self.bits.insert(cell, Box::new([was; (SPLIT * SPLIT * SPLIT) as usize]));
+        }
+        let bits = self.bits.get_mut(&cell).expect("a broken cell has its bits");
+        bits[i] = b;
+        if bits.iter().all(|&other| other == b) {
+            self.set(cell, b);
+        }
+    }
+
+    /// Makes everything within `radius` metres of a point `b`, to the bit: digging with air,
+    /// building with anything else. Cells wholly inside are set whole; only the ones the
+    /// surface cuts through break.
+    pub fn ball(&mut self, middle: Vec3, radius: f32, b: Block) {
+        let (lo, hi) = (((middle - radius) / CELL).floor().as_ivec3(), ((middle + radius) / CELL).floor().as_ivec3());
+        for y in lo.y..=hi.y {
+            for z in lo.z..=hi.z {
+                for x in lo.x..=hi.x {
+                    let cell = IVec3::new(x, y, z);
+                    // The cell's nearest and furthest points from the middle.
+                    let (near, far) = ((middle - (cell.as_vec3() + 0.5) * CELL).abs() - CELL / 2.0, (middle - (cell.as_vec3() + 0.5) * CELL).abs() + CELL / 2.0);
+                    if near.max(Vec3::ZERO).length() >= radius {
+                        continue;
+                    }
+                    if far.length() <= radius {
+                        self.set(cell, b);
+                        continue;
+                    }
+                    for i in 0..SPLIT * SPLIT * SPLIT {
+                        let bit = cell * SPLIT + IVec3::new(i % SPLIT, i / (SPLIT * SPLIT), i / SPLIT % SPLIT);
+                        if ((bit.as_vec3() + 0.5) * BIT).distance(middle) < radius {
+                            self.set_bit(bit, b);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Whether a point in metres is inside something solid, to the bit.
+    pub fn solid_at(&self, point: Vec3) -> bool {
+        self.bit((point / BIT).floor().as_ivec3()).solid()
     }
     /// Sets a column of cells from `from` up to, not including, `to`, each to what `block`
     /// gives for its height. Much quicker than a `set` a cell: the chunk is found once.
@@ -156,8 +249,20 @@ impl World {
         }
         let mut at = 0.0;
         while at <= reach {
-            if self.get(cell).solid() {
-                return Some(at);
+            match self.get(cell) {
+                // Through a broken cell in steps of half a bit, to the first solid bit.
+                Block::Broken => {
+                    let leaves = next.x.min(next.y).min(next.z).min(reach);
+                    let mut t = at;
+                    while t < leaves {
+                        if self.solid_at(from + dir * (t + 1e-4)) {
+                            return Some(t);
+                        }
+                        t += BIT / 2.0;
+                    }
+                }
+                block if block.solid() => return Some(at),
+                _ => {}
             }
             let axis = if next.x <= next.y && next.x <= next.z { 0 } else if next.y <= next.z { 1 } else { 2 };
             at = next[axis];
@@ -203,6 +308,42 @@ mod tests {
         let slant = w.raycast(Vec3::new(0.25, 4.0, 0.25), Vec3::new(3.0, -2.75, 0.0), 10.0).unwrap();
         // It meets the face at x = 3.0, eleven twelfths of the way along (3, -2.75).
         assert!((slant - 3.0f32.hypot(2.75) * 11.0 / 12.0).abs() < 1e-3, "{slant}");
+    }
+
+    #[test]
+    fn a_cell_breaks_into_bits_and_mends() {
+        let mut w = World::default();
+        let cell = IVec3::new(3, 2, -1);
+        w.set(cell, Block::Stone);
+        let corner = cell * SPLIT;
+        // One bit dug out: the cell is broken, the rest of it still stone.
+        w.set_bit(corner, Block::Air);
+        assert_eq!((w.get(cell), w.bit(corner), w.bit(corner + IVec3::X)), (Block::Broken, Block::Air, Block::Stone));
+        assert!(w.get(cell).solid() && !w.get(cell).opaque());
+        // A whole cell is 6 faces. Broken, each side is 25 little ones; the corner bit's three
+        // are gone and the three it uncovered inside are drawn.
+        let faces = |w: &World| mesh::mesh_chunk(w, World::split(cell).0, false).indices.len() / 6;
+        assert_eq!(faces(&w), 6 * 25 - 3 + 3);
+        // Put back, it is one cell again and nothing is kept for it.
+        w.set_bit(corner, Block::Stone);
+        assert_eq!((w.get(cell), w.bits.len(), faces(&w)), (Block::Stone, 0, 6));
+        // A ray into a dug cell stops at the stone behind the hole, not at the cell's face.
+        w.set_bit(corner, Block::Air);
+        let from = (corner.as_vec3() + Vec3::new(-10.0, 0.5, 0.5)) * BIT;
+        let hit = w.raycast(from, Vec3::X, 5.0).unwrap();
+        assert!((hit - 11.0 * BIT).abs() < BIT * 0.6, "{hit}");
+    }
+
+    #[test]
+    fn a_ball_dug_out_breaks_only_the_cells_its_surface_cuts() {
+        let mut w = World::default();
+        w.fill(Vec3::splat(-2.0), Vec3::splat(2.0), Block::Stone);
+        w.ball(Vec3::ZERO, 0.6, Block::Air);
+        assert_eq!(w.get(IVec3::ZERO), Block::Air);
+        assert!(!w.solid_at(Vec3::new(0.55, 0.0, 0.0)) && w.solid_at(Vec3::new(0.65, 0.0, 0.0)));
+        // A ball 1.2 m across is about 58 cells; the shell that broke is fewer than twice that.
+        assert!(w.bits.len() > 30 && w.bits.len() < 110, "{}", w.bits.len());
+        assert!(w.bits.iter().all(|(cell, _)| w.get(*cell) == Block::Broken));
     }
 
     #[test]

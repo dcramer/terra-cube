@@ -20,7 +20,7 @@ pub struct PlayPlugin;
 
 impl Plugin for PlayPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Controls>().add_systems(Update, (start, keys, script, drive, follow, cursor, trace).chain());
+        app.init_resource::<Controls>().add_systems(Update, (start, keys, script, drive, follow, edit, cursor, trace).chain());
     }
 }
 
@@ -33,6 +33,9 @@ pub struct Controls {
     pub jump: bool,
     /// Swim down.
     pub dive: bool,
+    /// Dig a hole where it looks, or build a lump there: once, then cleared.
+    pub dig: bool,
+    pub put: bool,
 }
 
 /// On the creature being controlled.
@@ -87,7 +90,7 @@ fn start(
     }
 }
 
-fn keys(keys: Res<ButtonInput<KeyCode>>, args: Res<Args>, mut controls: ResMut<Controls>, mut controlled: Query<&mut Controlled>) {
+fn keys(keys: Res<ButtonInput<KeyCode>>, buttons: Res<ButtonInput<MouseButton>>, args: Res<Args>, mut controls: ResMut<Controls>, mut controlled: Query<&mut Controlled>) {
     if args.scene.is_some() {
         return;
     }
@@ -102,6 +105,8 @@ fn keys(keys: Res<ButtonInput<KeyCode>>, args: Res<Args>, mut controls: ResMut<C
     };
     controls.jump = keys.pressed(KeyCode::Space);
     controls.dive = keys.pressed(KeyCode::ControlLeft);
+    controls.dig |= buttons.just_pressed(MouseButton::Left) && !controlled.is_empty();
+    controls.put |= buttons.just_pressed(MouseButton::Right) && !controlled.is_empty();
     if keys.just_pressed(KeyCode::KeyV) {
         for mut c in &mut controlled {
             c.first_person = !c.first_person;
@@ -114,7 +119,7 @@ pub const ROUTE: &str = "0.5 fwd walk; 2 run; 3 jump; 5 sprint; 6 jump";
 
 /// With no window there are no keys: `--script` stands in for them. It is steps split by `;`,
 /// each a time in seconds and what changes then: `fwd back left right stop` (direction),
-/// `walk run sprint` (gait), `jump` (held, a full jump), `hop` (tapped), `dive surface` (in water), `first third` (view).
+/// `walk run sprint` (gait), `jump` (held, a full jump), `hop` (tapped), `dive surface` (in water), `dig put` (a hole or a lump where it looks), `first third` (view).
 fn script(time: Res<Time>, args: Res<Args>, mut controls: ResMut<Controls>, mut controlled: Query<&mut Controlled>, mut clock: Local<(f32, f32)>) {
     if args.scene.is_none() || !args.play || controlled.is_empty() {
         return;
@@ -140,6 +145,8 @@ fn script(time: Res<Time>, args: Res<Args>, mut controls: ResMut<Controls>, mut 
                 "sprint" => controls.gait = Gait::Sprint,
                 "jump" => clock.1 = now + 0.4,
                 "dive" => controls.dive = true,
+                "dig" => controls.dig = true,
+                "put" => controls.put = true,
                 "surface" => controls.dive = false,
                 "hop" => clock.1 = now + 0.04,
                 "first" | "third" => controlled.iter_mut().for_each(|mut c| c.first_person = word == "first"),
@@ -236,6 +243,31 @@ fn follow(
         let clear = terrain.0.raycast(orbit.focus, back, orbit.distance + 0.3).map_or(orbit.distance, |hit| (hit - 0.3).max(0.4));
         transform.translation = orbit.focus + back * clear.min(orbit.distance);
         transform.look_at(orbit.focus, Vec3::Y);
+    }
+}
+
+/// How far the controlled creature reaches to dig or build, and how big a hole and a lump are,
+/// metres. Both are cut to the bit: a hole is a rounded bowl, not a missing cell.
+const REACH: f32 = 8.0;
+const HOLE: f32 = 0.4;
+const LUMP: f32 = 0.18;
+
+/// Digs or builds where the controlled creature looks: along the camera's line, from its eyes.
+fn edit(mut controls: ResMut<Controls>, live: Res<Live>, terrain: Option<ResMut<Terrain>>, mut dirty: ResMut<crate::world::Dirty>, controlled: Query<(&Mover, &Transform), With<Controlled>>, cameras: Query<&Transform, With<Orbit>>) {
+    let (dig, put) = (std::mem::take(&mut controls.dig), std::mem::take(&mut controls.put));
+    let (Some(mut terrain), Ok((mover, at)), Some(camera)) = (terrain, controlled.single(), cameras.iter().next()) else { return };
+    if !(dig || put) {
+        return;
+    }
+    let Some(kind) = live.kind(mover) else { return };
+    let (eyes, along) = (at.translation + Vec3::Y * kind.height * 0.92, *camera.forward());
+    let Some(far) = terrain.0.raycast(eyes, along, REACH) else { return };
+    let hit = eyes + along * far;
+    if dig {
+        terrain.ball(&mut dirty, hit + along * HOLE * 0.3, HOLE, cube_voxel::Block::Air);
+    } else if far > 1.0 {
+        // Not on top of itself: a lump it stood inside would hold it fast.
+        terrain.ball(&mut dirty, hit - along * LUMP * 0.3, LUMP, cube_voxel::Block::Stone);
     }
 }
 

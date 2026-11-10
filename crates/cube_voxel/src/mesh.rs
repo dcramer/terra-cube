@@ -2,7 +2,7 @@
 //! and a little per-cell colour variation so flat ground does not read as one tile.
 //! Not greedy yet: see docs/engine.md for the order of meshing work.
 
-use crate::{Block, CELL, CHUNK, Chunk, World};
+use crate::{Block, CELL, CHUNK, Chunk, SPLIT, World};
 use glam::IVec3;
 
 #[derive(Default)]
@@ -81,6 +81,10 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                     continue;
                 }
                 let cell = origin + local;
+                if block == Block::Broken {
+                    bits(world, cell, &mut m);
+                    continue;
+                }
                 let (top, side) = block.colors();
                 let mut tint = 0.9 + 0.2 * hash(cell);
                 let mut warm = 0.0;
@@ -130,4 +134,45 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
         }
     }
     m
+}
+
+/// The faces of one broken cell: each solid bit as a little cube, by the same rules as a
+/// cell. Slower a face than whole cells (every neighbour is looked up in the world), which is
+/// fine while broken cells are few.
+fn bits(world: &World, cell: IVec3, m: &mut MeshData) {
+    let Some(data) = world.bits.get(&cell) else { return };
+    for (i, &block) in data.iter().enumerate() {
+        if !block.solid() {
+            continue;
+        }
+        let i = i as i32;
+        let bit = cell * SPLIT + IVec3::new(i % SPLIT, i / (SPLIT * SPLIT), i / SPLIT % SPLIT);
+        let (top, side) = block.colors();
+        let tint = 0.9 + 0.2 * hash(bit);
+        for (n, u, v) in FACES {
+            if world.bit(bit + n).solid() {
+                continue;
+            }
+            let base = if n == IVec3::Y { top } else { side };
+            let start = m.positions.len() as u32;
+            let mut ao = [0.0f32; 4];
+            for (i, (su, sv)) in [(0, 0), (1, 0), (1, 1), (0, 1)].into_iter().enumerate() {
+                let corner = bit + n.max(IVec3::ZERO) + u * su + v * sv;
+                let (du, dv) = (u * (su * 2 - 1), v * (sv * 2 - 1));
+                let occ = |d: IVec3| world.bit(bit + n + d).solid() as i32;
+                let (a, b, c) = (occ(du), occ(dv), occ(du + dv));
+                let level = if a + b == 2 { 0 } else { 3 - (a + b + c) };
+                ao[i] = 0.45 + 0.55 * level as f32 / 3.0;
+                let k = ao[i] * tint;
+                m.positions.push((corner.as_vec3() * CELL / SPLIT as f32).to_array());
+                m.normals.push(n.as_vec3().to_array());
+                m.colors.push([base[0] * k, base[1] * k, base[2] * k, 1.0]);
+            }
+            if ao[0] + ao[2] > ao[1] + ao[3] {
+                m.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
+            } else {
+                m.indices.extend([start + 1, start + 2, start + 3, start + 1, start + 3, start]);
+            }
+        }
+    }
 }

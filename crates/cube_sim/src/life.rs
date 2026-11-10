@@ -296,9 +296,17 @@ impl Sim {
     }
 
     /// Puts a creature in the world with its feet at `pos`.
-    pub fn add(&mut self, kind: usize, pos: Vec3, facing: f32, driver: Driver) -> u32 {
+    pub fn add(&mut self, world: &World, kind: usize, pos: Vec3, facing: f32, driver: Driver) -> u32 {
         let k = &self.kinds[kind];
-        let body = Body::new(pos, k.shape().0, k.height.max(0.3));
+        let mut body = Body::new(pos, k.shape().0, k.height.max(0.3));
+        // Put down astride a step, it stands on the higher part, not in it.
+        for _ in 0..20 {
+            if !body.blocked(world, body.pos) {
+                break;
+            }
+            body.pos.y += cube_voxel::BIT;
+        }
+        let pos = body.pos;
         let id = self.next;
         self.next += 1;
         let mind = Mind::new(Vec2::new(pos.x, pos.z), &mut self.rng);
@@ -443,7 +451,7 @@ impl Sim {
                         continue;
                     }
                     let facing = self.rng.between(0.0, std::f32::consts::TAU);
-                    let id = self.add(kind, pos, facing, Driver::Mind);
+                    let id = self.add(world, kind, pos, facing, Driver::Mind);
                     // A group shares the place it keeps to.
                     self.agents.get_mut(&id).unwrap().mind.home = middle;
                     members += 1;
@@ -493,8 +501,8 @@ mod tests {
     #[test]
     fn a_rabbit_runs_from_a_wolf_and_the_wolf_catches_it() {
         let (world, mut sim) = stage();
-        let rabbit = sim.add(0, at(0.0, 0.0), 0.0, Driver::Mind);
-        let wolf = sim.add(1, at(7.0, 0.0), 0.0, Driver::Mind);
+        let rabbit = sim.add(&world, 0, at(0.0, 0.0), 0.0, Driver::Mind);
+        let wolf = sim.add(&world, 1, at(7.0, 0.0), 0.0, Driver::Mind);
         run(&mut sim, &world, 2.0);
         let (r, w) = (&sim.agents[&rabbit], &sim.agents[&wolf]);
         assert!(r.mind.state == State::Flee && r.body.pos.x < -0.5, "the rabbit did not run: {:?} at {}", r.mind.state, r.body.pos);
@@ -509,8 +517,8 @@ mod tests {
     #[test]
     fn a_goblin_goes_for_a_person_and_knocks_them_back() {
         let (world, mut sim) = stage();
-        let person = sim.add(4, at(0.0, 0.0), 0.0, Driver::Outside);
-        let goblin = sim.add(3, at(0.0, 10.0), 0.0, Driver::Mind);
+        let person = sim.add(&world, 4, at(0.0, 0.0), 0.0, Driver::Outside);
+        let goblin = sim.add(&world, 3, at(0.0, 10.0), 0.0, Driver::Mind);
         run(&mut sim, &world, 8.0);
         let (p, g) = (&sim.agents[&person], &sim.agents[&goblin]);
         assert!(p.log.struck >= 1, "never hit: goblin {:?} at {}", g.mind.state, g.body.pos);
@@ -521,8 +529,8 @@ mod tests {
     #[test]
     fn a_bear_leaves_a_person_alone_until_they_come_close() {
         let (world, mut sim) = stage();
-        let person = sim.add(4, at(0.0, 0.0), 0.0, Driver::Outside);
-        let bear = sim.add(2, at(12.0, 0.0), 0.0, Driver::Mind);
+        let person = sim.add(&world, 4, at(0.0, 0.0), 0.0, Driver::Outside);
+        let bear = sim.add(&world, 2, at(12.0, 0.0), 0.0, Driver::Mind);
         sim.agents.get_mut(&bear).unwrap().mind.left = 100.0;
         run(&mut sim, &world, 6.0);
         assert_eq!(sim.agents[&person].log.struck, 0);

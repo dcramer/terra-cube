@@ -81,10 +81,11 @@ fn populate(mut commands: Commands, args: Res<crate::Args>, registry: Res<Regist
 }
 
 /// A creature with no agent gets one where it stands; an agent whose creature is gone goes.
-fn enrol(mut commands: Commands, registry: Res<Registry>, mut live: ResMut<Live>, new: Query<(Entity, &Creature, &Transform), Without<Mover>>, movers: Query<&Mover>) {
+fn enrol(mut commands: Commands, registry: Res<Registry>, terrain: Option<Res<Terrain>>, mut live: ResMut<Live>, new: Query<(Entity, &Creature, &Transform), Without<Mover>>, movers: Query<&Mover>) {
+    let Some(terrain) = terrain else { return };
     for (entity, creature, at) in &new {
         let Some(kind) = live.0.kind(&registry.0[creature.def].id) else { continue };
-        let id = live.0.add(kind, at.translation, at.rotation.to_euler(EulerRot::YXZ).0, Driver::Stand);
+        let id = live.0.add(&terrain.0, kind, at.translation, at.rotation.to_euler(EulerRot::YXZ).0, Driver::Stand);
         commands.entity(entity).insert(Mover::new(id));
     }
     if live.0.agents.len() != movers.iter().count() + new.iter().count() {

@@ -55,12 +55,16 @@ pub struct Args {
     pub dist: Option<f32>,
     pub pitch: Option<f32>,
     pub yaw_given: bool,
+    /// Balls dug out of the ground (or, with a block's name, built on it) before the world
+    /// is first drawn: metres east, south and across.
+    pub dug: Vec<(f32, f32, f32, bool)>,
 }
 
 const HELP: &str = "\
 cargo sandbox                           the window, with the spawn panel
 cargo sandbox --play [--as wolf]        start as the player, or as any creature: WASD runs, Shift
-                                        sprints, Ctrl walks (in water: dives), Space jumps, the mouse looks, the
+                                        sprints, Ctrl walks (in water: dives), Space jumps, the mouse looks, left click
+                                        digs and right click builds where it looks, the
                                         wheel zooms, V is first person, Tab gives the mouse back
 cargo sandbox --play --wild             the same in the living world: every creature where it lives,
                                         grazing, roaming, fleeing and hunting by its own mind
@@ -80,11 +84,13 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
         … --script '1 jump; 2 fwd run; 4 stop'
                                         the route, as times and what changes then: fwd back left
                                         right stop · walk run sprint · jump hop · dive surface ·
-                                        first third
+                                        dig put · first third
         … --wild --at 47,28 [--dist 12] [--pitch 0.3] [--yaw 1.0] [--view high]
                                         a scene somewhere else: metres east and south of the start
                                         (`cargo world who` says where creatures live), the camera
                                         that far off and that high; `--view high` is from the air
+--dig X,Z,ACROSS and --build X,Z,ACROSS cut a round hole in the ground there, or raise a round
+stone on it, to the 5 cm bit, before the first frame: for looking at what broken cells cost.
 --seed N makes another island. cargo world (survey, run, map, who) judges one with no window.
 --bodies draws the shape each creature is bumped as (also a tick box in the panel).
 --trace prints the controlled body (position, speed, clip, camera) four times a second.
@@ -141,6 +147,13 @@ fn parse_args() -> Args {
                 args.yaw_given = true;
             }
             "--wild" => args.wild = true,
+            "--dig" | "--build" => {
+                let v: Vec<f32> = it.next().unwrap_or_default().split(',').filter_map(|v| v.parse().ok()).collect();
+                if v.len() != 3 {
+                    fail("--dig and --build want metres east, south and across: --dig 3,4,1.2");
+                }
+                args.dug.push((v[0], v[1], v[2], a == "--build"));
+            }
             "--seed" => args.seed = it.next().and_then(|v| v.parse().ok()).unwrap_or(cube_sim::terrain::SEED),
             "--dist" => args.dist = it.next().and_then(|v| v.parse().ok()),
             "--pitch" => args.pitch = it.next().and_then(|v| v.parse().ok()),

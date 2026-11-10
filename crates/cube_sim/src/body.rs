@@ -6,7 +6,7 @@
 //! back against the cell face it crossed. No physics engine: this is all a block world needs.
 
 use crate::DT;
-use cube_voxel::{Block, CELL, World};
+use cube_voxel::{BIT, Block, CELL, SPLIT, World, bit_face};
 use glam::{IVec3, Vec2, Vec3};
 
 /// How bodies move. One set for everything; a creature differs by the speed it asks for.
@@ -60,6 +60,11 @@ pub struct Intent {
 /// over the middle, so a figure lying forward to swim has its back out of the water.
 const WAIST: f32 = 0.52;
 
+/// Which bit level a height is in: the one at or under it, counted from the world's floor.
+fn level(y: f32) -> i32 {
+    (y / BIT + 1e-3).floor() as i32
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Body {
     /// The middle of the box's underside: where the feet are.
@@ -90,14 +95,28 @@ impl Body {
         Vec2::new(self.vel.x, self.vel.z).length()
     }
 
-    /// Whether the box, with its feet at `pos`, is in a solid cell.
+    /// Whether the box, with its feet at `pos`, is in anything solid: a whole cell, or a
+    /// solid bit of a broken one.
     pub fn blocked(&self, world: &World, pos: Vec3) -> bool {
         const SKIN: f32 = 1e-4;
-        let cell = |v: f32| (v / CELL).floor() as i32;
-        let (x0, x1) = (cell(pos.x - self.half + SKIN), cell(pos.x + self.half - SKIN));
-        let (y0, y1) = (cell(pos.y + SKIN), cell(pos.y + self.height - SKIN));
-        let (z0, z1) = (cell(pos.z - self.half + SKIN), cell(pos.z + self.half - SKIN));
-        (y0..=y1).any(|y| (z0..=z1).any(|z| (x0..=x1).any(|x| world.get(IVec3::new(x, y, z)).solid())))
+        let (lo, hi) = (pos + Vec3::new(-self.half + SKIN, SKIN, -self.half + SKIN), pos + Vec3::new(self.half - SKIN, self.height - SKIN, self.half - SKIN));
+        let (c0, c1) = ((lo / CELL).floor().as_ivec3(), (hi / CELL).floor().as_ivec3());
+        let (b0, b1) = ((lo / BIT).floor().as_ivec3(), (hi / BIT).floor().as_ivec3());
+        (c0.y..=c1.y).any(|y| {
+            (c0.z..=c1.z).any(|z| {
+                (c0.x..=c1.x).any(|x| {
+                    let cell = IVec3::new(x, y, z);
+                    match world.get(cell) {
+                        // Only the bits of it the box reaches.
+                        Block::Broken => {
+                            let (from, to) = (b0.max(cell * SPLIT), b1.min(cell * SPLIT + SPLIT - 1));
+                            (from.y..=to.y).any(|y| (from.z..=to.z).any(|z| (from.x..=to.x).any(|x| world.bit(IVec3::new(x, y, z)).solid())))
+                        }
+                        block => block.solid(),
+                    }
+                })
+            })
+        })
     }
 
     /// The water's surface over the waist, in metres, when the waist is under water.
@@ -165,18 +184,18 @@ impl Body {
         if self.blocked(world, to) {
             if self.vel.y <= 0.0 {
                 // Onto the floor it met: a fast fall can end more than a cell into it.
-                let mut top = ((to.y / CELL).floor() + 1.0) * CELL;
-                while top < self.pos.y && self.blocked(world, self.pos.with_y(top)) {
-                    top += CELL;
+                let mut top = level(to.y) + 1;
+                while bit_face(top) < self.pos.y && self.blocked(world, self.pos.with_y(bit_face(top))) {
+                    top += 1;
                 }
-                self.pos.y = top.min(self.pos.y);
+                self.pos.y = bit_face(top).min(self.pos.y);
                 self.grounded = true;
             } else {
-                let mut under = ((to.y + self.height) / CELL).floor() * CELL - self.height;
-                while under > self.pos.y && self.blocked(world, self.pos.with_y(under)) {
-                    under -= CELL;
+                let mut under = level(to.y + self.height);
+                while bit_face(under) - self.height > self.pos.y && self.blocked(world, self.pos.with_y(bit_face(under) - self.height)) {
+                    under -= 1;
                 }
-                self.pos.y = under.max(self.pos.y);
+                self.pos.y = (bit_face(under) - self.height).max(self.pos.y);
             }
             self.vel.y = 0.0;
         } else {
@@ -185,8 +204,9 @@ impl Body {
 
         // Walking off a ledge no higher than a step keeps the feet down instead of a short fall.
         if was_grounded && !self.grounded && !jumped && !self.swimming && self.pos.y <= start_y {
-            let mut floor = ((start_y / CELL).round() - 1.0) * CELL;
-            while floor >= start_y - tuning.step {
+            let mut n = (start_y / BIT).round() as i32 - 1;
+            while bit_face(n) >= start_y - tuning.step - 1e-3 {
+                let floor = bit_face(n);
                 if self.blocked(world, self.pos.with_y(floor)) {
                     break;
                 }
@@ -196,7 +216,7 @@ impl Body {
                     self.grounded = true;
                     break;
                 }
-                floor -= CELL;
+                n -= 1;
             }
         }
     }
@@ -214,36 +234,51 @@ impl Body {
             return;
         }
         if may_step {
-            // The lowest cell top above the feet that clears the ledge, if it is within a step.
-            let mut up = ((self.pos.y / CELL + 1e-3).floor() + 1.0) * CELL;
-            while up - self.pos.y <= tuning.step && !self.blocked(world, self.pos.with_y(up)) {
-                if !self.blocked(world, to.with_y(up)) {
-                    self.pos = to.with_y(up);
+            // The lowest level above the feet that clears the ledge, if it is within a step.
+            // Levels are a bit apart: a ledge may be a broken cell.
+            let mut n = level(self.pos.y) + 1;
+            while bit_face(n) - self.pos.y <= tuning.step {
+                if !self.blocked(world, self.pos.with_y(bit_face(n))) && !self.blocked(world, to.with_y(bit_face(n))) {
+                    self.pos = to.with_y(bit_face(n));
                     return;
                 }
-                up += CELL;
+                n += 1;
             }
         }
         if self.swimming {
             // Out of the water: a swimmer against a bank climbs onto it, if the bank's top is
             // no more than half a metre over its waist. Without this a steep-sided river is a trap.
             let waist = self.pos.y + self.height * WAIST;
-            let mut up = ((self.pos.y / CELL + 1e-3).floor() + 1.0) * CELL;
-            while up <= waist + 0.5 + 1e-3 {
+            let mut n = level(self.pos.y) + 1;
+            while bit_face(n) <= waist + 0.5 + 1e-3 {
+                let up = bit_face(n);
                 if !self.blocked(world, self.pos.with_y(up)) && !self.blocked(world, to.with_y(up)) {
                     self.pos = to.with_y(up);
                     self.vel.y = 0.0;
                     return;
                 }
-                up += CELL;
+                n += 1;
             }
         }
-        // The face of the cell the leading edge went into.
+        // Back to the face it went into: the nearest bit face behind its leading edge that
+        // leaves it clear, and never past where it started.
         let edge = to[axis] + self.half * by.signum();
-        let face = if by > 0.0 { (edge / CELL).floor() * CELL } else { ((edge / CELL).floor() + 1.0) * CELL };
-        let stopped = face - self.half * by.signum();
-        // Never past where it started: a box already against the wall stays put.
-        self.pos[axis] = if by > 0.0 { stopped.max(self.pos[axis].min(stopped)) } else { stopped.min(self.pos[axis].max(stopped)) };
+        let mut face = (edge / BIT).floor() as i32 + (by < 0.0) as i32;
+        let start = self.pos[axis];
+        loop {
+            let stopped = bit_face(face) - self.half * by.signum();
+            let back = if by > 0.0 { stopped <= start } else { stopped >= start };
+            if back {
+                break;
+            }
+            let mut at = self.pos;
+            at[axis] = stopped;
+            if !self.blocked(world, at) {
+                self.pos[axis] = stopped;
+                break;
+            }
+            face -= by.signum() as i32;
+        }
         self.vel[axis] = 0.0;
     }
 }
@@ -479,6 +514,44 @@ mod tests {
         assert!(b.swimming, "{b:?}");
         run(&mut b, &w, 6.0, EAST);
         assert!(!b.swimming && b.grounded && b.pos.y == 3.0 && b.pos.x > 4.5, "{b:?}");
+    }
+
+    #[test]
+    fn a_body_put_down_astride_a_step_walks_off_it() {
+        // Its feet at the lower level, one side of it inside the higher: as a spawn may be.
+        let mut w = floor();
+        block(&mut w, 0.5, 4.0, 1.25);
+        let mut b = player();
+        assert!(b.blocked(&w, b.pos));
+        run(&mut b, &w, 1.0, EAST);
+        assert!(b.pos.x > 2.0 && b.pos.y == 1.25 && !b.blocked(&w, b.pos), "{b:?}");
+    }
+
+    #[test]
+    fn walks_over_bits_and_into_a_hole_dug_to_the_bit() {
+        let mut w = floor();
+        // Rubble: a 5 cm lip, then a 20 cm kerb made of bits, each walked over like a step.
+        w.fill(Vec3::new(1.0, 1.0, -2.0), Vec3::new(1.25, 1.25, 2.0), Block::Stone);
+        w.ball(Vec3::new(1.125, 1.3, 0.25), 0.22, Block::Air);
+        let mut b = player();
+        run(&mut b, &w, 0.2, Intent::default());
+        let mut top = 1.0f32;
+        for _ in 0..TICKS {
+            b.step(&w, EAST, &Tuning::default());
+            assert!(b.grounded && !b.blocked(&w, b.pos), "{b:?}");
+            top = top.max(b.pos.y);
+        }
+        assert!(b.pos.x > 2.5 && top > 1.0 && top <= 1.25 && b.pos.y == 1.0, "top {top}, {b:?}");
+        // A bowl dug in the floor ahead: it walks down into it to the bit, and out again.
+        w.fill(Vec3::new(-20.0, 0.0, -20.0), Vec3::new(20.0, 0.5, 20.0), Block::Stone);
+        w.ball(Vec3::new(5.0, 1.15, 0.25), 0.6, Block::Air);
+        let mut low = 1.0f32;
+        for _ in 0..TICKS {
+            b.step(&w, EAST, &Tuning::default());
+            assert!(!b.blocked(&w, b.pos), "{b:?}");
+            low = low.min(b.pos.y);
+        }
+        assert!(low < 0.8 && low > 0.5 && b.pos.x > 6.0 && b.pos.y == 1.0, "low {low}, {b:?}");
     }
 
     #[test]

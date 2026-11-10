@@ -3,7 +3,8 @@
 
 use bevy::{asset::RenderAssetUsages, light::CascadeShadowConfigBuilder, mesh::Indices, prelude::*, render::render_resource::PrimitiveTopology};
 use cube_sim::terrain::{self, Land, SEA};
-use cube_voxel::{CELL, World as Voxels, mesh::mesh_chunk};
+use cube_voxel::{Block, CELL, CHUNK, World as Voxels, mesh::mesh_chunk};
+use std::collections::HashSet;
 
 pub struct WorldPlugin;
 
@@ -11,7 +12,37 @@ pub struct WorldPlugin;
 #[derive(Resource)]
 pub struct Terrain(pub Voxels, pub Land);
 
+/// The chunks whose cells have changed since they were last meshed.
+#[derive(Resource, Default)]
+pub struct Dirty(pub HashSet<IVec3>);
+
+/// On a chunk's mesh: which chunk it draws.
+#[derive(Component)]
+struct ChunkMesh(IVec3);
+
+/// The two materials every chunk is drawn with.
+#[derive(Resource)]
+struct Look {
+    solid: Handle<StandardMaterial>,
+    water: Handle<StandardMaterial>,
+}
+
 impl Terrain {
+    /// Digs (with air) or builds a ball in the world, to the bit, and marks what to redraw.
+    pub fn ball(&mut self, dirty: &mut Dirty, middle: Vec3, radius: f32, block: Block) {
+        self.0.ball(middle, radius, block);
+        // Every chunk the ball reaches, and a cell beyond: a neighbour's faces change too.
+        let reach = Vec3::splat(radius + CELL);
+        let (lo, hi) = (((middle - reach) / CELL).floor().as_ivec3().div_euclid(IVec3::splat(CHUNK)), ((middle + reach) / CELL).floor().as_ivec3().div_euclid(IVec3::splat(CHUNK)));
+        for y in lo.y..=hi.y {
+            for z in lo.z..=hi.z {
+                for x in lo.x..=hi.x {
+                    dirty.0.insert(IVec3::new(x, y, z));
+                }
+            }
+        }
+    }
+
     /// The ground's height at a point, metres: the land itself, not a tree over it.
     pub fn ground(&self, x: f32, z: f32) -> f32 {
         self.1.height((x / CELL).floor() as i32, (z / CELL).floor() as i32) as f32 * CELL
@@ -27,7 +58,7 @@ pub const SKY: Color = Color::srgb(0.53, 0.72, 0.90);
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ClearColor(SKY)).add_systems(Startup, setup);
+        app.insert_resource(ClearColor(SKY)).init_resource::<Dirty>().add_systems(Startup, setup).add_systems(Update, remesh);
     }
 }
 
@@ -45,20 +76,18 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     let material = materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.95, reflectance: 0.2, ..default() });
     // Water is its own mesh and material: it is blended over what is under it.
     let water = materials.add(StandardMaterial { base_color: Color::WHITE, alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.25, reflectance: 0.5, ..default() });
-    for &chunk in voxels.chunks.keys() {
-        for (liquid, material) in [(false, &material), (true, &water)] {
-            let data = mesh_chunk(&voxels, chunk, liquid);
-            if data.indices.is_empty() {
-                continue;
-            }
-            let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
-                .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
-                .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
-                .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, data.colors)
-                .with_inserted_indices(Indices::U32(data.indices));
-            commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material.clone())));
-        }
+    let mut voxels = voxels;
+    for &(x, z, across, build) in &args.dug {
+        let ground = land.height((x / CELL).floor() as i32, (z / CELL).floor() as i32) as f32 * CELL;
+        // A hole is a bowl with its rim at the ground; a stone sits two thirds out of it.
+        let (lift, block) = if build { (across / 6.0, Block::Stone) } else { (across * 0.1, Block::Air) };
+        voxels.ball(Vec3::new(x, ground + lift, z), across / 2.0, block);
     }
+    let look = Look { solid: material, water };
+    for &chunk in voxels.chunks.keys() {
+        draw_chunk(&mut commands, &mut meshes, &look, &voxels, chunk);
+    }
+    commands.insert_resource(look);
     // The sea beyond the world's edge: four sheets round it at the water's level, out past the fog.
     let (edge, far, level) = (land.span as f32 * CELL, 1500.0, SEA as f32 * CELL - 0.01);
     let [r, g, b] = cube_voxel::Block::Water.colors().0;
@@ -68,4 +97,36 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     }
     commands.insert_resource(Terrain(voxels, land));
     spawn_lights(&mut commands, true);
+}
+
+/// Meshes one chunk and spawns what it draws: its solid cells, and its water.
+fn draw_chunk(commands: &mut Commands, meshes: &mut Assets<Mesh>, look: &Look, voxels: &Voxels, chunk: IVec3) {
+    for (liquid, material) in [(false, &look.solid), (true, &look.water)] {
+        let data = mesh_chunk(voxels, chunk, liquid);
+        if data.indices.is_empty() {
+            continue;
+        }
+        let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, data.colors)
+            .with_inserted_indices(Indices::U32(data.indices));
+        commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material.clone()), ChunkMesh(chunk)));
+    }
+}
+
+/// Draws again the chunks that changed, the frame they changed.
+fn remesh(mut commands: Commands, mut dirty: ResMut<Dirty>, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, mut meshes: ResMut<Assets<Mesh>>, drawn: Query<(Entity, &ChunkMesh)>) {
+    let (Some(terrain), Some(look)) = (terrain, look) else { return };
+    if dirty.0.is_empty() {
+        return;
+    }
+    for (entity, chunk) in &drawn {
+        if dirty.0.contains(&chunk.0) {
+            commands.entity(entity).despawn();
+        }
+    }
+    for chunk in dirty.0.drain() {
+        draw_chunk(&mut commands, &mut meshes, &look, &terrain.0, chunk);
+    }
 }

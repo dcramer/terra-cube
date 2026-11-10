@@ -5,17 +5,17 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 ## Where things stand
 
 - **Works:** the creature pipeline (`cargo forge`): one line of text to an animated model the game loads, checked by numbers and by one picture. The world (`make play`): an island made from a seed, with eight kinds of creature living in it by their own minds (grazing, roaming, fleeing, hunting), walked as the player. `cargo world` judges both land and life with no window. The sandbox (`make run`) poses any creature.
-- **Baseline only:** blocks are plain cubes with a simple mesher. Nothing dies, nothing is built or dug, nothing is saved, no networking.
+- **Baseline only:** blocks are plain cubes (0.25 m, each able to break into 5 cm bits) with a simple mesher. Digging and building are a first cut: a click cuts or raises a ball. Nothing dies, nothing is saved, no networking.
 - **Next:** [docs/engine.md](docs/engine.md#order-of-work).
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `crates/cube_voxel` | Voxel data and chunk meshing. No engine types, so the simulation can use it headless. |
+| `crates/cube_voxel` | Voxel data (cells, and the bits a cell breaks into) and chunk meshing. No engine types, so the simulation can use it headless. |
 | `crates/cube_sim` | The simulation, at a fixed 60 ticks a second, no engine types: the world from a seed (`terrain`), bodies moving through voxels (`body`), every creature and its mind (`life`, `mind`). |
 | `crates/cube_game` | The Bevy app: draws what the simulation holds, takes the player's keys. Also the sandbox panel, contact sheets, scene pictures. |
-| `crates/world` | `cargo world`: the land and its creatures judged headless (`survey`, `run`, `map`, `who`). |
+| `crates/world` | `cargo world`: the land and its creatures judged headless (`survey`, `run`, `map`, `who`, `dig`). |
 | `crates/forge` | The creature pipeline CLI. Each file's header says what it holds; `main.rs` has the map. |
 | `tools/tripo` | Tripo Studio CLI (TypeScript, Node ≥ 22.18, no dependencies). Forge drives it; see its README before calling it by hand. |
 | `assets/creatures/style.toml` | The art style and body plans, as forge sends them. Change the look here, not per creature. |

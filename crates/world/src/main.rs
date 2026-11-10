@@ -20,6 +20,9 @@ cargo world run [--seconds 120] [--seed N]        the creatures living in it for
 cargo world who [--seed N]                        where each group of creatures starts: kind, how
                                                   many, metres east and south of the start, biome
                                                   (for `cargo sandbox --wild --scene F --at X,Z`)
+cargo world dig [--holes 120]                     HOLES (120) holes and stones cut to the 5 cm bit all
+                                                  over the land: what broken cells cost, and whether
+                                                  creatures still live among them
 cargo world map FILE [--seconds 60] [--seed N]    a picture from above, with where each creature
                                                   went (dots: white person, yellow timid, red
                                                   hunter and hostile, orange wary)
@@ -74,7 +77,7 @@ fn living(args: &Args) -> (World, Land, Sim) {
     let mut sim = Sim::new(kinds(), args.seed as u64);
     sim.populate(&world, &land);
     if let Some(person) = sim.kinds.iter().position(|k| k.temper == Temper::Person) {
-        sim.add(person, Vec3::new(0.25, land.height(0, 0) as f32 * CELL, 0.25), 0.0, Driver::Mind);
+        sim.add(&world, person, Vec3::new(0.25, land.height(0, 0) as f32 * CELL, 0.25), 0.0, Driver::Mind);
     }
     (world, land, sim)
 }
@@ -241,6 +244,57 @@ fn map_command(args: &Args) -> ! {
     std::process::exit(0);
 }
 
+/// Holes dug all over the land, to the bit, and what they cost: the cells that broke, the
+/// memory for them, the faces added, how long a chunk takes to draw again, and whether the
+/// creatures still live without ending up in the ground.
+fn dig_command(args: &Args) -> ! {
+    let (mut world, land, mut sim) = living(args);
+    let faces = |world: &World, chunk: IVec3| [false, true].map(|liquid| cube_voxel::mesh::mesh_chunk(world, chunk, liquid).indices.len() / 6).iter().sum::<usize>();
+    let before: usize = world.chunks.keys().map(|&c| faces(&world, c)).sum();
+    let holes = args.seconds as usize;
+    let mut rng = cube_sim::rng::Rng::new(args.seed as u64 + 99);
+    let (mut dug, mut touched) = (0, std::collections::HashSet::new());
+    let started = std::time::Instant::now();
+    while dug < holes {
+        let (x, z) = (rng.below(land.span as usize * 2) as i32 - land.span, rng.below(land.span as usize * 2) as i32 - land.span);
+        if land.biome(x, z) == Biome::Water {
+            continue;
+        }
+        let across = rng.between(0.3, 1.6);
+        let middle = Vec3::new(x as f32, land.height(x, z) as f32, z as f32) * CELL;
+        // Every fourth is a stone built up instead, unless that would bury a creature.
+        let clear = sim.agents.values().all(|a| a.body.pos.distance(middle) > across + 1.0);
+        world.ball(middle, across / 2.0, if dug % 4 == 3 && clear { Block::Stone } else { Block::Air });
+        touched.insert((middle / CELL).floor().as_ivec3().div_euclid(IVec3::splat(cube_voxel::CHUNK)));
+        dug += 1;
+    }
+    let digging = started.elapsed().as_secs_f32() * 1000.0 / holes as f32;
+    let started = std::time::Instant::now();
+    let redrawn: usize = touched.iter().map(|&c| faces(&world, c)).sum();
+    let remesh = started.elapsed().as_secs_f32() * 1000.0 / touched.len().max(1) as f32;
+    let after: usize = world.chunks.keys().map(|&c| faces(&world, c)).sum();
+    for _ in 0..120 * TICKS {
+        sim.step(&world);
+    }
+    let (inside, fell): (u32, u32) = sim.agents.values().fold((0, 0), |(i, f), a| (i + a.log.inside, f + a.log.fell));
+    let stuck = sim.agents.values().map(|a| a.log.stuck).sum::<f32>() / (sim.agents.len() as f32 * 120.0);
+    println!(
+        "dug {holes} holes and stones 0.3 to 1.6 m across: {} cells broke ({:.1} a hole, {:.1} MB) · faces {:.2}M to {:.2}M · {digging:.2} ms a hole, {remesh:.1} ms to draw a changed chunk again ({} faces)",
+        world.bits.len(),
+        world.bits.len() as f32 / holes as f32,
+        world.bits.len() as f32 * 141.0 / 1e6,
+        before as f32 / 1e6,
+        after as f32 / 1e6,
+        redrawn / touched.len().max(1)
+    );
+    let mut checks = Checks(Vec::new());
+    checks.bar("inside-ground", inside as f32, inside == 0, "0 ticks, over two minutes of the creatures living among them");
+    checks.bar("fell-out", fell as f32, fell == 0, "0 times");
+    checks.bar("stuck", stuck, stuck <= 0.08, "at most 0.08 of the time");
+    checks.bar("remesh", remesh, remesh <= 8.0, "at most 8 ms a chunk, half a frame");
+    checks.finish()
+}
+
 fn main() {
     let mut it = std::env::args().skip(1);
     let command = it.next().unwrap_or_default();
@@ -250,7 +304,7 @@ fn main() {
         match a.as_str() {
             "--seed" => args.seed = number("--seed") as u32,
             "--radius" => args.radius = number("--radius") as i32,
-            "--seconds" => args.seconds = number("--seconds"),
+            "--seconds" | "--holes" => args.seconds = number(&a),
             other if !other.starts_with('-') && args.file.is_none() => args.file = Some(other.into()),
             other => fail(&format!("unknown argument {other}\n{HELP}")),
         }
@@ -259,6 +313,7 @@ fn main() {
         "survey" => survey_command(&args),
         "run" => run_command(&args),
         "map" => map_command(&args),
+        "dig" => dig_command(&args),
         "who" => {
             let (_, land, sim) = living(&args);
             let mut groups: std::collections::BTreeMap<(usize, i32, i32), usize> = Default::default();
