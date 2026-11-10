@@ -53,7 +53,7 @@ A machine with no screen needs `DISPLAY=:1` (an Xvfb) for `sheet` and `sandbox`;
 - **Secrets:** `.env` (the Tripo login) lives in the main checkout, ignored by git. Never print it or commit it.
 - **Shaders** are for the environment only (terrain, water, sky, weather). Creatures use stock materials.
 - **Commits:** small, one change each, tests and clippy passing. Models and textures are committed for now (a few hundred KB each); see the open question in engine.md before adding anything over 5 MB.
-- **Stay current with main.** Before starting work, `git fetch origin` and rebase your branch onto `origin/main`; do it again before pushing. After a push to main, fast-forward the main checkout (`git pull --ff-only` there) so worktrees cut from it are not stale.
+- **Push every commit to main, without asking.** After a commit: `git fetch origin`, rebase onto `origin/main` if it moved, `git push origin HEAD:main`, then fast-forward the main checkout (`git pull --ff-only` there) so worktrees cut from it are not stale. Fetch and rebase before starting work too. Never force-push main.
 - **Docs:** when a design choice is made, write it in `docs/engine.md` or `docs/pipeline.md` under the heading it belongs to, with the reason. Research goes in `docs/research/YYYY-MM-DD-topic.md` with sources. Do not write plans or status files.
 
 ## Adding things
