@@ -90,6 +90,8 @@ In the sandbox (`cargo sandbox --spawn ID`) the panel plays clips, scrubs a held
 
 ## Known limits
 
+- **The troll fails one check**: its attack stretches 94% against a bar of 80%. The overhead chop lifts both arms far from where a bulky body's weights hold; it looks acceptable on the sheet. Left failing rather than raising the bar. Its first build failed all seven (arms fused to the body, 177% in the attack) because the concept was not in a T-pose; a slimmer subject line fixed the rest. That is the case for looking at concepts first.
+
 - Animals are slow: Tripo's walk is an amble, and `run` is that walk quicker and wider, not a gallop (the wolf runs at 1.6 m/s). The game can play clips faster; a real gallop recipe is the fix.
 - `die` leaves legs stiff.
 - Walk speed is measured from the feet of the in-place clip; if it reads wrong the creature slides when wandering.

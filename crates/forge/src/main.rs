@@ -72,7 +72,7 @@ fn status(style: &Style) -> Result<()> {
         let c: Creature = spec::load(&spec::dir(&id).join("creature.toml"))?;
         let lock_path = spec::dir(&id).join("forge.lock");
         let lock: Lock = if lock_path.exists() { spec::load(&lock_path)? } else { Lock::default() };
-        let credits: f64 = lock.credits.values().sum();
+        let credits: f64 = lock.credits.values().sum::<f64>().abs();
         total += credits;
         let meta_path = spec::dir(&id).join("meta.toml");
         let model = if meta_path.exists() {
