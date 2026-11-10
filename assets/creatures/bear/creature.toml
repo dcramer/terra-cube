@@ -3,3 +3,4 @@ kind = "wildlife"
 plan = "quadruped"
 subject = "a large brown bear"
 height = 1.3
+gait_gain = 0.6

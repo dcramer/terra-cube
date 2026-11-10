@@ -37,17 +37,9 @@ fn gizmos_on_top(mut store: ResMut<GizmoConfigStore>) {
     store.config_mut::<DefaultGizmoConfigGroup>().0.depth_bias = -1.0;
 }
 
-/// Where the n-th spawned creature stands: a spiral out from the middle of the flat ground.
-fn spot(n: usize, terrain: &Terrain) -> Transform {
-    let angle = n as f32 * 2.4;
-    let radius = 1.5 + 1.1 * (n as f32).sqrt() * 1.6;
-    let (x, z) = (radius * angle.cos(), radius * angle.sin());
-    Transform::from_xyz(x, terrain.0.ground_height(x, z), z).with_rotation(Quat::from_rotation_y(0.6))
-}
-
 fn spawn_from_args(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terrain: Res<Terrain>, mut debug: ResMut<Debug>, mut selected: ResMut<Selected>) {
     for id in &args.spawn {
-        match creatures::spawn(&mut commands, &registry, id, spot(debug.spawned, &terrain)) {
+        match creatures::spawn(&mut commands, &registry, id, creatures::spot(debug.spawned, &terrain)) {
             Some(e) => {
                 selected.0 = Some(e);
                 debug.spawned += 1;
@@ -79,7 +71,7 @@ fn panel(
             ui.horizontal_wrapped(|ui| {
                 for def in defs {
                     if ui.button(&def.spec.name).on_hover_text(format!("{} · {} tris · {} joints", def.spec.plan, def.meta.triangles, def.meta.joints)).clicked() {
-                        selected.0 = creatures::spawn(&mut commands, &registry, &def.id, spot(debug.spawned, &terrain));
+                        selected.0 = creatures::spawn(&mut commands, &registry, &def.id, creatures::spot(debug.spawned, &terrain));
                         debug.spawned += 1;
                     }
                 }
@@ -88,7 +80,7 @@ fn panel(
         ui.horizontal(|ui| {
             if ui.button("One of each").clicked() {
                 for def in &registry.0 {
-                    selected.0 = creatures::spawn(&mut commands, &registry, &def.id, spot(debug.spawned, &terrain));
+                    selected.0 = creatures::spawn(&mut commands, &registry, &def.id, creatures::spot(debug.spawned, &terrain));
                     debug.spawned += 1;
                 }
             }

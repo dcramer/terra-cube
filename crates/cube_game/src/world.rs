@@ -17,10 +17,10 @@ impl Plugin for WorldPlugin {
     }
 }
 
-pub fn spawn_lights(commands: &mut Commands) {
-    commands.insert_resource(GlobalAmbientLight { color: Color::srgb(0.75, 0.85, 1.0), brightness: 250.0, ..default() });
+pub fn spawn_lights(commands: &mut Commands, shadows: bool) {
+    commands.insert_resource(GlobalAmbientLight { color: Color::srgb(0.75, 0.85, 1.0), brightness: 110.0, ..default() });
     commands.spawn((
-        DirectionalLight { illuminance: 7_000.0, shadow_maps_enabled: true, color: Color::srgb(1.0, 0.96, 0.88), ..default() },
+        DirectionalLight { illuminance: 3_800.0, shadow_maps_enabled: shadows, color: Color::srgb(1.0, 0.96, 0.88), ..default() },
         Transform::from_rotation(Quat::from_euler(EulerRot::YXZ, 0.7, -0.9, 0.0)),
         CascadeShadowConfigBuilder { first_cascade_far_bound: 12.0, maximum_distance: 120.0, ..default() }.build(),
     ));
@@ -42,5 +42,5 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
         commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material.clone())));
     }
     commands.insert_resource(Terrain(voxels));
-    spawn_lights(&mut commands);
+    spawn_lights(&mut commands, true);
 }

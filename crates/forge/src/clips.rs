@@ -142,7 +142,101 @@ pub fn write(glb: &mut Glb, sk: &Skeleton, clips: &[Clip]) {
 }
 
 /// Makes the named clip, from `walk` where it is a variation on it. None for an unknown name.
-pub fn make(name: &str, sk: &Skeleton, roles: &Roles, walk: Option<&Clip>, upright: bool) -> Option<Clip> {
+///
+/// Recipes are written from the rest pose. `stand` is how the creature really stands (the first
+/// frame of its idle, where Tripo gave one): a figure rigged in a T-pose rests with its arms
+/// out, so each recipe's turns are laid over `stand` instead.
+pub fn make(name: &str, sk: &Skeleton, roles: &Roles, walk: Option<&Clip>, stand: Option<&Pose>, upright: bool) -> Option<Clip> {
+    let mut clip = recipe(name, sk, roles, walk, upright)?;
+    if let Some(stand) = stand.filter(|_| name != "run" && name != "walk") {
+        let rest = sk.rest();
+        for pose in &mut clip.frames {
+            for j in 0..sk.joints.len() {
+                pose.rotations[j] = (stand.rotations[j] * rest.rotations[j].inverse() * pose.rotations[j]).normalize();
+            }
+            pose.root_t = stand.root_t + (pose.root_t - rest.root_t);
+        }
+    }
+    if name == "die" {
+        // Turning about the root joint leaves the body in the air or in the ground; settle it
+        // so its lowest joint comes to rest a little above the floor it stood on.
+        let n = clip.frames.len() - 1;
+        for (i, pose) in clip.frames.iter_mut().enumerate() {
+            let fall = die_fall(i as f32 / n as f32);
+            let lowest = sk.pose_world(pose).iter().map(|m| m.w_axis.y).fold(f32::MAX, f32::min);
+            let rest_on = roles.floor + 0.07 * roles.height * fall;
+            pose.root_t += sk.base.inverse().transform_vector3(Vec3::Y * (rest_on - lowest) * ramp(fall, 0.0, 0.5));
+        }
+    }
+    Some(clip)
+}
+
+fn die_fall(t: f32) -> f32 {
+    ramp(t, 0.08, 0.6).powf(1.6)
+}
+
+/// A cut of a clip, from `from` to `to` seconds, played `speed` times as fast.
+pub fn trimmed(clip: &Clip, from: f32, to: f32, speed: f32) -> Vec<Pose> {
+    let last = (clip.frames.len() - 1) as f32;
+    let (a, b) = ((from * FPS).min(last), (to * FPS).min(last));
+    let n = (((b - a) / speed).round() as usize).max(1);
+    (0..=n)
+        .map(|i| {
+            let at = a + (b - a) * i as f32 / n as f32;
+            let (lo, f) = (at.floor() as usize, at.fract());
+            let hi = (lo + 1).min(clip.frames.len() - 1);
+            let mut pose = clip.frames[lo].clone();
+            for j in 0..pose.rotations.len() {
+                pose.rotations[j] = clip.frames[lo].rotations[j].slerp(clip.frames[hi].rotations[j], f);
+            }
+            pose.root_t = clip.frames[lo].root_t.lerp(clip.frames[hi].root_t, f);
+            pose
+        })
+        .collect()
+}
+
+/// Scales how far every joint turns from rest. Tripo's one animal walk is fitted to a
+/// long-legged body; on a bulky short-legged one (the bear) it over-reaches and folds the legs.
+pub fn gained(sk: &Skeleton, frames: &mut [Pose], gain: f32) {
+    let rest = sk.rest();
+    for pose in frames {
+        for j in 0..sk.joints.len() {
+            let (axis, angle) = (rest.rotations[j].inverse() * pose.rotations[j]).to_axis_angle();
+            let angle = if angle > PI { angle - TAU } else { angle };
+            pose.rotations[j] = (rest.rotations[j] * Quat::from_axis_angle(axis, angle * gain)).normalize();
+        }
+    }
+}
+
+/// Lifts the body on any frame where a foot would be under the floor it stands on at rest.
+/// Never lowers it: a run may leave the ground.
+pub fn grounded(sk: &Skeleton, roles: &Roles, frames: &mut [Pose]) {
+    let floor = roles.legs.iter().map(|l| sk.position(l.foot()).y).fold(f32::MAX, f32::min);
+    for pose in frames {
+        let w = sk.pose_world(pose);
+        let lowest = roles.legs.iter().map(|l| w[l.foot()].w_axis.y).fold(f32::MAX, f32::min);
+        if lowest < floor {
+            pose.root_t += sk.base.inverse().transform_vector3(Vec3::Y * (floor - lowest));
+        }
+    }
+}
+
+/// Makes a clip that should loop end where it began, by easing its last fifth into its first
+/// frame. Tripo's run does not close (19° on the biped).
+pub fn close_loop(frames: &mut [Pose]) {
+    let first = frames[0].clone();
+    let n = frames.len();
+    let from = n - (n / 5).max(2);
+    for (i, pose) in frames.iter_mut().enumerate().skip(from) {
+        let k = smooth((i - from + 1) as f32 / (n - from) as f32);
+        for (r, f) in pose.rotations.iter_mut().zip(&first.rotations) {
+            *r = r.slerp(*f, k);
+        }
+        pose.root_t = pose.root_t.lerp(first.root_t, k);
+    }
+}
+
+fn recipe(name: &str, sk: &Skeleton, roles: &Roles, walk: Option<&Clip>, upright: bool) -> Option<Clip> {
     Some(match name {
         "idle" => idle(sk, roles),
         "walk" => stride(sk, roles),
@@ -178,8 +272,10 @@ fn pulse(t: f32, a: f32, b: f32, c: f32, d: f32) -> f32 {
     ramp(t, a, b) * (1.0 - ramp(t, c, d))
 }
 
-/// Spreads a turn evenly down a chain.
+/// Spreads a turn evenly down a chain. A chain of one bone takes half the turn: all of it on
+/// one joint tears the skin around it (the bear's one-bone head, 74% stretch).
 fn curl(sk: &Skeleton, pose: &mut Pose, chain: &[usize], delta: impl Fn(f32) -> Quat, total: f32) {
+    let total = if chain.len() == 1 { total * 0.5 } else { total };
     for &j in chain {
         pose.rotations[j] = sk.turned(j, delta(total / chain.len() as f32));
     }
@@ -301,11 +397,11 @@ fn hurt(sk: &Skeleton, roles: &Roles) -> Clip {
     })
 }
 
-/// Falls and lies still: an animal onto its side, an upright figure onto its back. The body is
-/// lowered each frame so its lowest joint stays near the ground it stood on.
+/// Falls and lies still: an animal onto its side, an upright figure onto its back. `make`
+/// settles the body on the floor afterwards.
 fn die(sk: &Skeleton, roles: &Roles, upright: bool) -> Clip {
     Clip::made("die", false, 1.4, sk, |t, pose| {
-        let fall = ramp(t, 0.08, 0.6).powf(1.6);
+        let fall = die_fall(t);
         let limp = ramp(t, 0.3, 0.9);
         let turn = if upright { pitch(roles, -1.5 * fall) } else { roll(roles, 1.5 * fall) };
         pose.rotations[sk.root] = sk.turned(sk.root, turn);
@@ -315,11 +411,6 @@ fn die(sk: &Skeleton, roles: &Roles, upright: bool) -> Clip {
             let tuck = if upright { 0.0 } else { if leg.front { 0.25 } else { -0.25 } };
             pose.rotations[leg.chain[0]] = sk.turned(leg.chain[0], pitch(roles, tuck * limp));
         }
-        // Turning about the root joint leaves the body in the air or in the ground; settle it
-        // so the lowest joint rests half a limb's thickness above the floor.
-        let lowest = sk.pose_world(pose).iter().map(|m| m.w_axis.y).fold(f32::MAX, f32::min);
-        let rest_on = roles.floor + 0.07 * roles.height * fall;
-        pose.root_t = sk.root_moved(Vec3::Y * (rest_on - lowest));
     })
 }
 

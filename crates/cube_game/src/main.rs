@@ -3,6 +3,7 @@
 //!   cargo sandbox                     interactive, with the spawn panel
 //!   cargo sandbox --spawn wolf,player start with these spawned
 //!   cargo sandbox --shot wolf         write shots/wolf.png, a contact sheet of every clip, and exit
+//!   cargo sandbox --scene out.png --spawn all   a picture of the world with creatures in it, and exit
 //!
 //! Map: `world` (terrain from cube_voxel) · `creatures` (registry, spawning, clips, wander) ·
 //! `ui` (the egui panel, skeleton overlay) · `camera` (orbit) · `shot` (contact sheets).
@@ -20,6 +21,7 @@ use bevy::prelude::*;
 pub struct Args {
     pub spawn: Vec<String>,
     pub shot: Option<String>,
+    pub scene: Option<String>,
     pub view: String,
     pub cols: usize,
     pub clips: Vec<String>,
@@ -33,6 +35,7 @@ fn parse_args() -> Args {
         match a.as_str() {
             "--spawn" => args.spawn = list(it.next()),
             "--shot" => args.shot = it.next(),
+            "--scene" => args.scene = it.next(),
             "--view" => args.view = it.next().unwrap_or_default(),
             "--cols" => args.cols = it.next().and_then(|v| v.parse().ok()).unwrap_or(6),
             "--clips" => args.clips = list(it.next()),
@@ -47,7 +50,8 @@ fn parse_args() -> Args {
 
 fn main() {
     let args = parse_args();
-    let shot = args.shot.is_some();
+    let scene = args.scene.is_some();
+    let shot = args.shot.is_some() || scene;
     let mut app = App::new();
     // A shot draws to an image, with no window: it works on a machine with no screen (winit
     // still wants a display to exist, so a server runs Xvfb; docs/development.md).
@@ -58,7 +62,9 @@ fn main() {
     }))
     .insert_resource(args)
     .add_plugins(creatures::CreaturesPlugin);
-    if shot {
+    if scene {
+        app.add_plugins((world::WorldPlugin, shot::ScenePlugin));
+    } else if shot {
         app.add_plugins(shot::ShotPlugin);
     } else {
         app.add_plugins((world::WorldPlugin, camera::CameraPlugin, ui::UiPlugin));

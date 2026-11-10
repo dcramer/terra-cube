@@ -259,3 +259,12 @@ fn wander(
         }
     }
 }
+
+/// Where the n-th spawned creature stands: a spiral out from the middle of the flat ground.
+pub fn spot(n: usize, terrain: &Terrain) -> Transform {
+    let angle = n as f32 * 2.4;
+    let radius = 1.5 + 1.1 * (n as f32).sqrt() * 1.6;
+    let (x, z) = (radius * angle.cos(), radius * angle.sin());
+    Transform::from_xyz(x, terrain.0.ground_height(x, z), z).with_rotation(Quat::from_rotation_y(0.6))
+}
+

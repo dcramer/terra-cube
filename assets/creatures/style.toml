@@ -32,14 +32,19 @@ pose = "standing upright facing the camera in a T-pose, arms straight out to the
 rig = "humanoid"
 skeleton = "mixamo"
 upright = true
+# The rest pose is a T-pose, so arms at the sides already read as stretch at the armpits.
+max_stretch = 0.8
 clips = ["idle", "walk", "run", "attack", "hurt", "die", "jump"]
+# Tripo's `hurt` is a figure sat wounded on the ground for 14 s, not a flinch: ours is made.
 [plans.biped.presets]
 idle = "idle"
 walk = "walk"
 run = "run"
 attack = "slash"
-hurt = "hurt"
 jump = "jump"
+# `slash` is a slow two-handed overhead chop inside 6.6 s: keep the wind-up and blow, at double speed.
+[plans.biped.trim]
+attack = [0.9, 3.3, 2.0]
 
 # Four-legged animals and monsters. Tripo has only a walk for these; the rest are made (clips.rs).
 [plans.quadruped]
@@ -48,3 +53,6 @@ rig = "other"
 clips = ["idle", "walk", "run", "attack", "hurt", "die", "eat"]
 [plans.quadruped.presets]
 walk = "walk"
+# Tripo's animal walk is a slow amble (2.6 s a cycle): play it at 1.8 times the speed.
+[plans.quadruped.trim]
+walk = [0.0, 99.0, 1.8]

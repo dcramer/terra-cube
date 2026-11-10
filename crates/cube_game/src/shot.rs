@@ -56,7 +56,8 @@ fn sheet_size(id: &str, args: &Args) -> (u32, u32) {
 }
 
 fn setup(mut commands: Commands) {
-    world::spawn_lights(&mut commands);
+    // No shadows: on a sheet one row's would fall across the next.
+    world::spawn_lights(&mut commands, false);
 }
 
 fn layout(
@@ -128,13 +129,15 @@ fn capture(mut commands: Commands, mut stage: ResMut<Stage>, rigs: Query<&Rig>, 
         return;
     }
     stage.settled += 1;
-    if stage.settled == 20 && !stage.asked {
+    if stage.settled == 40 && !stage.asked {
         stage.asked = true;
-        let _ = std::fs::create_dir_all("shots");
+        if let Some(dir) = std::path::Path::new(&stage.path).parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
         let _ = std::fs::remove_file(&stage.path);
         commands.spawn(Screenshot::image(stage.target.clone())).observe(save_to_disk(stage.path.clone()));
     }
-    if stage.asked && std::path::Path::new(&stage.path).exists() && stage.settled > 30 {
+    if stage.asked && std::path::Path::new(&stage.path).exists() && stage.settled > 50 {
         println!("shot {} {}", stage.path, stage.legend);
         exit.write(AppExit::Success);
     }
@@ -142,4 +145,45 @@ fn capture(mut commands: Commands, mut stage: ResMut<Stage>, rigs: Query<&Rig>, 
         eprintln!("the screenshot never arrived");
         exit.write(AppExit::error());
     }
+}
+
+/// `--scene FILE`: the test world with the `--spawn` creatures (`all` for one of each) standing
+/// in it, every other one walking, drawn offscreen to one picture. How an agent sees the world.
+pub struct ScenePlugin;
+
+impl Plugin for ScenePlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<Stage>().add_systems(Update, (scene, capture).chain());
+    }
+}
+
+fn scene(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terrain: Option<Res<world::Terrain>>, mut stage: ResMut<Stage>, mut images: ResMut<Assets<Image>>) {
+    let Some(terrain) = terrain else { return };
+    if stage.laid_out {
+        return;
+    }
+    stage.laid_out = true;
+    let ids: Vec<String> = if args.spawn.iter().any(|s| s == "all") { registry.0.iter().map(|d| d.id.clone()).collect() } else { args.spawn.clone() };
+    for (n, id) in ids.iter().enumerate() {
+        let Some(def) = registry.index(id) else {
+            eprintln!("no creature `{id}`");
+            continue;
+        };
+        let mut creature = Creature::new(def);
+        if n % 2 == 1 {
+            creature.clip_name = Some("walk".into());
+        }
+        commands.spawn((creature, creatures::spot(n, &terrain), Visibility::default()));
+        stage.expected += 1;
+    }
+    stage.target = images.add(Image::new_target_texture(1600, 900, TextureFormat::Rgba8UnormSrgb, None));
+    let focus = Vec3::new(0.0, terrain.0.ground_height(0.0, 0.0) + 0.8, 0.0);
+    commands.spawn((
+        Camera3d::default(),
+        RenderTarget::Image(stage.target.clone().into()),
+        Transform::from_translation(focus + Vec3::new(4.5, 2.6, 7.0) * (1.0 + ids.len() as f32 * 0.07)).looking_at(focus, Vec3::Y),
+        DistanceFog { color: world::SKY, falloff: FogFalloff::Linear { start: 60.0, end: 160.0 }, ..default() },
+    ));
+    stage.path = args.scene.clone().unwrap();
+    stage.legend = format!("creatures={}", ids.join(","));
 }

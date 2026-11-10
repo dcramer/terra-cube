@@ -40,6 +40,8 @@ A plan (`[plans.*]` in `style.toml`) says how the concept is posed, how Tripo ri
 | `biped` | humanoid, Mixamo names | idle, walk, run, attack (slash), hurt, jump | die |
 | `quadruped` | as Tripo reads it | walk | idle, run, attack, hurt, die, eat |
 
+A plan can also cut a preset that runs long (`trim`: clip → from, to, speed). The biped's `attack` is 2.4 s of Tripo's 6.6 s overhead chop at double speed; the animals' walk plays at 1.8×. Tripo's biped `hurt` is a figure sat wounded for 14 s, so ours is made.
+
 Tripo has no other presets for animals (one walk or march per rig type, none for birds), which is why the rest are made.
 
 ## Roles and made clips
@@ -54,6 +56,13 @@ Tripo's bone names cannot be trusted (`bone_7` beside `tripo::0_Right_Limb_0`; a
 `cargo forge inspect ID` prints the roles. Look at it first when a creature moves wrongly.
 
 Clip recipes (`clips.rs`) are written against roles, so each serves every plan: `idle` (breathing, a look about, tail sway), `run` (the walk quicker and wider with the trunk pumping), `attack` (a lunge), `hurt` (a flinch), `die` (falls and is settled on the floor each frame), `eat` (neck and head down, nibbling), and `walk` as a fallback for a rig with no preset. They are plain and readable on purpose; they are the place to add craft.
+
+What finish does to every clip, so no creature needs hand fixes:
+
+- A made clip is laid over how the creature **stands** (the first frame of Tripo's idle), not its rest pose, so a biped does not snap to a T-pose.
+- A looping preset is **closed**: its last fifth eases into its first frame (Tripo's biped run was 19° open).
+- Walk and run are **grounded**: the body is lifted on any frame where a foot would be under the floor.
+- `gait_gain` in `creature.toml` scales how far Tripo's walk swings the limbs. The bear needs 0.6: the preset is fitted to long legs and folded its short ones (73% stretch, feet 9% under the floor, both caught by the checks).
 
 ## Checks
 
@@ -75,11 +84,14 @@ The bars are first guesses calibrated on eight creatures. Terra measured a hand-
 
 `cargo forge sheet ID` renders `shots/ID.png` offscreen: a row a clip, six moments each, a slab under each row to read feet against. `--view side` or `front` turns the creature; `--clips walk,run` limits the rows. One sheet is about 1,500 tokens. Ask of it: does each row read as its name, do feet stay on the slab, does anything tear or fold.
 
+`cargo sandbox --scene shots/scene.png --spawn all` draws the test world with one of each creature in it, offscreen.
+
 In the sandbox (`cargo sandbox --spawn ID`) the panel plays clips, scrubs a held frame, sets speed, sends the creature wandering at its measured walk or run speed (so sliding feet show), and draws skeletons.
 
 ## Known limits
 
-- `run` for animals is a faster walk, not a gallop. `die` leaves legs stiff. Both are recipes to improve, not pipeline problems.
+- Animals are slow: Tripo's walk is an amble, and `run` is that walk quicker and wider, not a gallop (the wolf runs at 1.6 m/s). The game can play clips faster; a real gallop recipe is the fix.
+- `die` leaves legs stiff.
 - Walk speed is measured from the feet of the in-place clip; if it reads wrong the creature slides when wandering.
 - A biped's `die` and an animal's whole set have only been judged on sheets, not in play.
 - The Tripo CLI drives the web app's private backend with a browser cookie that lasts about 30 days ([tools/tripo/README.md](../tools/tripo/README.md)). When builds fail with a login error, the cookie in `.env` needs replacing.

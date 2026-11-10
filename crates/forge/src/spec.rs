@@ -44,6 +44,12 @@ pub struct Plan {
     /// Stands upright (falls backward, not onto its side).
     #[serde(default)]
     pub upright: bool,
+    /// A cut of a preset that runs long: clip → [from seconds, to seconds, speed].
+    #[serde(default)]
+    pub trim: BTreeMap<String, [f32; 3]>,
+    /// This plan's own stretch bar, where its rest pose is far from how it stands (a T-pose).
+    #[serde(default)]
+    pub max_stretch: Option<f32>,
 }
 
 /// The bars `forge check` holds a model to.
@@ -70,6 +76,17 @@ pub struct Creature {
     pub height: f32,
     #[serde(default = "auto", skip_serializing_if = "is_auto")]
     pub facing: String,
+    /// Scales how far Tripo's walk and run swing the limbs; under 1 for a bulky body whose
+    /// legs fold or tear (the stretch check says so).
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub gait_gain: f32,
+}
+
+fn one() -> f32 {
+    1.0
+}
+fn is_one(v: &f32) -> bool {
+    *v == 1.0
 }
 
 fn auto() -> String {

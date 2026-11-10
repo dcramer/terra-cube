@@ -17,6 +17,7 @@ The first build compiles Bevy: several minutes. After that a change to the game 
 | `cargo forge …` | The creature pipeline; `cargo forge help` lists it ([pipeline.md](pipeline.md)) |
 | `cargo sandbox` | The sandbox window. `--spawn a,b` starts with creatures in it |
 | `cargo sandbox --shot ID` | A contact sheet to `shots/ID.png`, no window. `--view quarter\|side\|front`, `--cols N`, `--clips a,b` |
+| `cargo sandbox --scene FILE --spawn all` | A picture of the test world with creatures in it, no window |
 | `cargo test --workspace` | Unit tests: voxel world and meshing, skeleton roles and turns |
 | `cargo clippy --workspace -- -D warnings` | Lints |
 | `node --test tools/tripo/` | The Tripo CLI's own tests, against a fake Studio |

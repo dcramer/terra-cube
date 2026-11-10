@@ -88,7 +88,7 @@ fn stretch(s: &Skin, sk: &Skeleton, rest_len: &[f32], clip: &Clip) -> f32 {
     worst
 }
 
-pub fn check(done: &Finished, required: &[String], bars: &Bars) -> Result<Vec<Line>> {
+pub fn check(done: &Finished, required: &[String], bars: &Bars, max_stretch: f32) -> Result<Vec<Line>> {
     let (sk, roles, meta) = (&done.skeleton, &done.roles, &done.meta);
     let mut out = Vec::new();
     out.push(line(meta.triangles <= bars.max_triangles, "triangles", meta.triangles.to_string(), format!("≤ {}", bars.max_triangles)));
@@ -113,7 +113,7 @@ pub fn check(done: &Finished, required: &[String], bars: &Bars) -> Result<Vec<Li
         let mut notes = Vec::new();
         let mut ok = true;
         let st = stretch(&s, sk, &rest_len, clip);
-        ok &= st <= bars.max_stretch;
+        ok &= st <= max_stretch;
         notes.push(format!("stretch {:.0}%", st * 100.0));
         if clip.looping {
             let (a, b) = (&clip.frames[0], clip.frames.last().unwrap());
@@ -122,20 +122,23 @@ pub fn check(done: &Finished, required: &[String], bars: &Bars) -> Result<Vec<Li
             notes.push(format!("loop gap {:.1}°", gap.to_degrees()));
         }
         if !roles.legs.is_empty() && matches!(clip.name.as_str(), "idle" | "walk" | "run" | "eat") {
-            // The lowest foot should stay on the floor it stands on at rest.
+            // The lowest foot should stay on the floor it stands on at rest. A run may leave
+            // the ground, so there only sinking counts.
+            let run = clip.name == "run";
             let err = clip
                 .frames
                 .iter()
                 .map(|p| {
                     let w = sk.pose_world(p);
-                    (roles.legs.iter().map(|l| w[l.foot()].w_axis.y).fold(f32::MAX, f32::min) - floor).abs()
+                    let off = roles.legs.iter().map(|l| w[l.foot()].w_axis.y).fold(f32::MAX, f32::min) - floor;
+                    if run { (-off).max(0.0) } else { off.abs() }
                 })
                 .fold(0.0, f32::max)
                 / roles.height;
             ok &= err <= bars.max_foot_error;
             notes.push(format!("feet off floor {:.1}%", err * 100.0));
         }
-        out.push(line(ok, &format!("clip {}", clip.name), format!("{:.2}s {} · {}", clip.seconds(), clip.source, notes.join(" · ")), format!("stretch ≤ {:.0}%, gap ≤ {:.0}°, feet ≤ {:.0}%", bars.max_stretch * 100.0, bars.max_loop_gap.to_degrees(), bars.max_foot_error * 100.0)));
+        out.push(line(ok, &format!("clip {}", clip.name), format!("{:.2}s {} · {}", clip.seconds(), clip.source, notes.join(" · ")), format!("stretch ≤ {:.0}%, gap ≤ {:.0}°, feet ≤ {:.0}%", max_stretch * 100.0, bars.max_loop_gap.to_degrees(), bars.max_foot_error * 100.0)));
     }
     Ok(out)
 }

@@ -74,14 +74,29 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan) -> Result<Finishe
         let found = preset.and_then(|p| theirs.iter().position(|c| c.name.rsplit(':').next() == Some(p.as_str())));
         let clip = match found {
             Some(i) => {
-                let c = &theirs[i];
-                Clip { name: name.clone(), looping: !matches!(name.as_str(), "attack" | "hurt" | "die" | "jump"), frames: c.frames.clone(), source: "tripo" }
+                let looping = !matches!(name.as_str(), "attack" | "hurt" | "die" | "jump");
+                let mut frames = match plan.trim.get(name) {
+                    Some(&[from, to, speed]) => clips::trimmed(&theirs[i], from, to, speed),
+                    None => theirs[i].frames.clone(),
+                };
+                if matches!(name.as_str(), "walk" | "run") && creature.gait_gain != 1.0 {
+                    clips::gained(&skeleton, &mut frames, creature.gait_gain);
+                }
+                if looping {
+                    clips::close_loop(&mut frames);
+                }
+                Clip { name: name.clone(), looping, frames, source: "tripo" }
             }
             None => {
                 let walk = out.iter().find(|c| c.name == "walk");
-                clips::make(name, &skeleton, &roles, walk, plan.upright).with_context(|| format!("no preset and no recipe for the clip `{name}` (clips.rs `make`)"))?
+                let stand = out.iter().find(|c| c.name == "idle" && c.source == "tripo").map(|c| &c.frames[0]);
+                clips::make(name, &skeleton, &roles, walk, stand, plan.upright).with_context(|| format!("no preset and no recipe for the clip `{name}` (clips.rs `make`)"))?
             }
         };
+        let mut clip = clip;
+        if matches!(name.as_str(), "walk" | "run") && !roles.legs.is_empty() {
+            clips::grounded(&skeleton, &roles, &mut clip.frames);
+        }
         out.push(clip);
     }
 
