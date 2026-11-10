@@ -102,16 +102,39 @@ The bars are first guesses calibrated on eight creatures. Terra measured a hand-
 
 In the sandbox (`cargo sandbox --spawn ID`) the panel plays clips, scrubs a held frame, sets speed, sends the creature wandering at its measured walk or run speed (so sliding feet show), and draws skeletons.
 
-## Cubes, a trial
+## Cubes
 
-`cargo forge cubes ID` makes `assets/creatures/ID-cubes/`: the finished model rebuilt from 5 cm cubes, the size of a bit of the world, with the same skeleton and clips. It is there to answer whether creatures made of the world's own cubes read well; nothing uses it yet, and its output is not committed (run it, then `cargo forge sheet ID-cubes` or `cargo sandbox --spawn ID-cubes`).
+`cargo forge cubes ID` rebuilds a finished model from 5 cm cubes, the size of a bit of the world, as `assets/creatures/ID-cubes/` with the same skeleton and clips. It is still a trial: the game uses the smooth models, and the output is not committed. This section is the routine for getting a good one, written after getting several bad ones. Why it is built this way: [research/2026-11-10-cube-characters.md](research/2026-11-10-cube-characters.md).
 
-- **A dozen parts, not every bone.** Games that draw characters in cubes build them from a few clean rigid pieces ([research](research/2026-11-10-cube-characters.md)); cutting ours bone by bone (46 of the player's 65) left ragged seams and fused the legs into one mass, at any cube size. So the figure is cut into hips, chest, head and each limb in up to three pieces, read from the skeleton's roles: 15 parts for the player. Fingers, toes, ears and collar bones go with what they hang from.
+### The routine
+
+1. **Is it worth converting?** A figure wants to be at least 10 cubes tall (half a metre) with limbs two cubes thick (10 cm). The rabbit is neither. Smaller things are drawn for the grid by hand or left smooth; no setting rescues them.
+2. **Write the subject for cubes** before any credits are spent, if the creature is new or being rebuilt. In the subject or the plan's pose: thick straight arms and legs; legs set apart with a clear gap; mitten hands, no separate fingers; big plain areas of one colour; no fine detail (straps, laces, fur tufts, thin horns); hair as one solid mass that leaves the face clear; nothing hanging over the top of the legs. Look at the concept (2 credits) for exactly those things before paying for a model (65).
+3. **Run it:** `cargo forge cubes ID`. One line, `ok` or the failing checks; `FORGE_VERBOSE=1` shows every number. It exits 1 on a failed check.
+4. **Fix by the table below, not by eye.** Change the code or the source, run again.
+5. **Then look once:** `cargo sandbox --scene shots/ID.png --spawn ID-cubes --dist 4 --yaw 0.8` (a lone creature is framed, stood on the ground, at about the distance it is seen in play), and `cargo forge sheet ID-cubes` for the clips. Judge it at that distance: a close-up makes any cube figure look crude.
+6. **A defect seen that no check caught becomes a check** in `judge` (cubes.rs) with a bar in `style.toml` `[cubes]`, before it is fixed.
+
+| FAIL | It means | Do |
+|---|---|---|
+| `tall` | Too small to be made of 5 cm cubes | Leave it smooth, or draw it for the grid |
+| `triangles` | Too many faces: a big body | Bigger cubes for it (`--size 0.1`), until flat faces are merged |
+| `legs-apart` | Two legs touch somewhere | The source stands with its legs together or crossed: ask for legs apart; check the idle's first frame |
+| `limbs` | An arm or leg is one cube thick | Ask for thicker limbs; a deer's shins cannot be saved by settings |
+| `loose` | Fingers, wisps of hair, crumbs of cloth | Ask for mitten hands and solid hair; it is the source's fine detail |
+| `speckle` | One-cube spots of colour | The texture is busy: ask for plain colour areas |
+| `face` | No room for eyes, nose and mouth | A bigger head (`--head 1.4`), or hair that leaves the face clear |
+
+Where the eight stand, 2026-11-10: player and wolf pass. Goblin fails `loose` and `speckle` (ragged cloth, busy skin). Deer fails `limbs`. Bear, boar and troll fail `triangles`. Rabbit fails nearly everything, being 8 cubes tall.
+
+### How it is cut
+
+- **A dozen parts, not every bone.** Games that draw characters in cubes build them from a few clean rigid pieces; cutting ours bone by bone (46 of the player's 65) left ragged seams and fused the legs into one mass, at any cube size. So the figure is cut into hips, chest, head and each limb in up to three pieces, read from the skeleton's roles: 15 parts for the player. Fingers, toes, ears and collar bones go with what they hang from.
 - **Each part is cut on its own.** The model is stood as in its idle; a part within 25° of an axis is straightened onto it (a leg that leans stands straight, a wolf's sloping neck is left); its surface is sampled into the 5 cm grid and its inside filled. Then each pair of legs is moved apart a cube at a time until there is a column of air between them. A cell two parts both fill goes to the one nearer the root. A cube is fixed to its part's bone and never bends.
-- **Faces are flat and placed.** A head of true size is four cubes wide and an eye is smaller than a cube, so a face copied from the model is a smear. For a creature with arms the front of the head is made one plane of one skin colour (the commonest colour on the bottom third of the head's front; hair can be the top half), from the chin up to the highest row that is nearly half skin. On it go single cubes: two eyes on the top row either side of the middle, a nose under them standing one cube proud, a mouth lower. A face an odd number of cubes wide gets a one-cube nose and mouth, an even one two. An animal keeps its muzzle and has its eyes darkened where the texture is near black. `--head 1.4` makes the head bigger first, a toy's proportions; the default is true size.
+- **Each part is tidied**, as someone drawing in cubes would: a cube holding on by one face or none is taken off, twice over; a cube whose colour no neighbour shares takes the colour most of them have.
 - **A cube takes the colour most of the texture under it has**, not the average, which is a colour the model has nowhere.
-- What it showed, 2026-11-10: the player (1,600 cubes in parts) reads clearly and moves well with its clips, its legs two legs in every clip. What is still rough is the source: thin arms and spread fingers make noisy hands, and the tunic's hem hides the top of the legs. Those want a model drawn for cubes (thick limbs, mitten hands), which is a change to the style prompt and a paid rebuild. The wolf (871 cubes) reads clearly. The rabbit is 83 cubes and reads as a rabbit only by its ears and colour. The troll is 8,110 cubes and 23,000 triangles, over the bar: big bodies want their inside faces culled across bones, or bigger cubes.
-- If this becomes the look: faces painted or modelled at the cube scale by hand or by a second pass, creatures under half a metre designed for it rather than converted, and the conversion made a step of `finish`.
+- **Faces are flat and placed.** A head of true size is four cubes wide and an eye is smaller than a cube, so a face copied from the model is a smear. For a creature with arms the front of the head is made one plane of one skin colour (the commonest on the bottom third of the head's front; hair can be the top half), from the chin up to the highest row that is nearly half skin. On it go single cubes: two eyes on the top row either side of the middle, a nose under them one cube proud, a mouth lower. An animal keeps its muzzle and has its eyes darkened where the texture is near black.
+- **Not done:** flat faces are not merged (so big bodies fail `triangles`), parts pass through each other at joints and gaps open there, and nothing checks the figure in motion.
 
 ## Known limits
 

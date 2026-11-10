@@ -108,8 +108,17 @@ fn run() -> Result<bool> {
         "cubes" => {
             let size: f32 = option(&mut args, "--size").map_or(Ok(0.05), |s| s.parse())?;
             let head: f32 = option(&mut args, "--head").map_or(Ok(1.0), |s| s.parse())?;
+            let style = style()?;
             for id in targets(&args) {
-                println!("{}", cubes::run(&id, size, head)?);
+                let (summary, lines) = cubes::run(&id, size, head, &style)?;
+                println!("{summary}");
+                let failed = lines.iter().any(|l| !l.0);
+                for (passed, text) in &lines {
+                    if !passed || (failed && std::env::var_os("FORGE_VERBOSE").is_some()) || std::env::var_os("FORGE_VERBOSE").is_some() {
+                        println!("  {text}");
+                    }
+                }
+                ok &= !failed;
             }
         }
         "new" => {

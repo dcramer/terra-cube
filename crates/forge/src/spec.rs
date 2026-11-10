@@ -17,6 +17,27 @@ pub struct Style {
     pub tripo: TripoOptions,
     pub plans: BTreeMap<String, Plan>,
     pub checks: Bars,
+    #[serde(default)]
+    pub cubes: CubeBars,
+}
+
+/// The bars `forge cubes` holds a figure of cubes to.
+#[derive(Deserialize)]
+pub struct CubeBars {
+    /// Shortest figure worth converting, in cubes.
+    pub min_tall: i32,
+    /// Thinnest a limb may be across, in cubes.
+    pub min_limb: i32,
+    /// Most cubes that may hang on by one face or none, as a part of all.
+    pub max_loose: f32,
+    /// Most surface cubes that may share their colour with no neighbour, as a part of all.
+    pub max_speckle: f32,
+}
+
+impl Default for CubeBars {
+    fn default() -> Self {
+        Self { min_tall: 10, min_limb: 2, max_loose: 0.03, max_speckle: 0.06 }
+    }
 }
 
 #[derive(Deserialize)]
