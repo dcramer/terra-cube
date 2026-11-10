@@ -5,6 +5,7 @@ use crate::{
     Args,
     camera::Orbit,
     creatures::{self, Creature, Registry, Wander},
+    motion::Wild,
     world::Terrain,
 };
 use bevy::{mesh::skinning::SkinnedMesh, prelude::*};
@@ -43,7 +44,7 @@ fn spawn_from_args(mut commands: Commands, args: Res<Args>, registry: Res<Regist
     let Some(terrain) = terrain.filter(|_| !*done) else { return };
     *done = true;
     for id in &args.spawn {
-        match creatures::spawn(&mut commands, &registry, id, creatures::spot(debug.spawned, &terrain)) {
+        match creatures::spawn(&mut commands, &registry, id, creatures::spot(debug.spawned, &terrain, args.at)) {
             Some(e) => {
                 selected.0 = Some(e);
                 debug.spawned += 1;
@@ -56,11 +57,12 @@ fn spawn_from_args(mut commands: Commands, args: Res<Args>, registry: Res<Regist
 fn panel(
     mut contexts: EguiContexts,
     mut commands: Commands,
+    args: Res<Args>,
     registry: Res<Registry>,
     terrain: Res<Terrain>,
     mut selected: ResMut<Selected>,
     mut debug: ResMut<Debug>,
-    mut creatures: Query<(Entity, &mut Creature, Option<&mut Wander>, &Transform)>,
+    mut creatures: Query<(Entity, &mut Creature, Option<&mut Wander>, &Transform, Has<Wild>)>,
     mut orbit: Query<&mut Orbit>,
     mut show_bodies: ResMut<crate::motion::ShowBodies>,
 ) -> Result {
@@ -76,7 +78,7 @@ fn panel(
             ui.horizontal_wrapped(|ui| {
                 for def in defs {
                     if ui.button(&def.spec.name).on_hover_text(format!("{} · {} tris · {} joints", def.spec.plan, def.meta.triangles, def.meta.joints)).clicked() {
-                        selected.0 = creatures::spawn(&mut commands, &registry, &def.id, creatures::spot(debug.spawned, &terrain));
+                        selected.0 = creatures::spawn(&mut commands, &registry, &def.id, creatures::spot(debug.spawned, &terrain, args.at));
                         debug.spawned += 1;
                     }
                 }
@@ -85,7 +87,7 @@ fn panel(
         ui.horizontal(|ui| {
             if ui.button("One of each").clicked() {
                 for def in &registry.0 {
-                    selected.0 = creatures::spawn(&mut commands, &registry, &def.id, creatures::spot(debug.spawned, &terrain));
+                    selected.0 = creatures::spawn(&mut commands, &registry, &def.id, creatures::spot(debug.spawned, &terrain, args.at));
                     debug.spawned += 1;
                 }
             }
@@ -112,7 +114,7 @@ fn panel(
         });
         ui.separator();
 
-        let Some((entity, mut creature, wander, transform)) = selected.0.and_then(|e| creatures.get_mut(e).ok()) else {
+        let Some((entity, mut creature, wander, transform, wild)) = selected.0.and_then(|e| creatures.get_mut(e).ok()) else {
             ui.label("Spawn a creature, or pick one above.");
             return;
         };
@@ -125,9 +127,7 @@ fn panel(
                 if ui.selectable_label(creature.clip == i, name).on_hover_text(format!("{seconds:.2} s")).clicked() {
                     creature.clip = i;
                     creature.replay();
-                    if wander.is_some() {
-                        commands.entity(entity).remove::<Wander>();
-                    }
+                    commands.entity(entity).remove::<(Wander, Wild)>();
                 }
             }
         });
@@ -149,7 +149,7 @@ fn panel(
             if (walking, running) != was {
                 if walking != was.0 && walking || running != was.1 && running {
                     let heading = transform.rotation.to_euler(EulerRot::YXZ).0;
-                    commands.entity(entity).insert(Wander { heading, run: running && running != was.1, ..default() });
+                    commands.entity(entity).remove::<Wild>().insert(Wander { heading, run: running && running != was.1, ..default() });
                     creature.hold = None;
                 } else {
                     commands.entity(entity).remove::<Wander>();
@@ -157,6 +157,16 @@ fn panel(
                 }
             }
         });
+        let mut minded = wild;
+        if ui.toggle_value(&mut minded, "Its own mind").on_hover_text("Lives as it would in the wild: grazes, roams, flees, hunts").changed() {
+            if minded {
+                commands.entity(entity).remove::<Wander>().insert(Wild);
+                creature.hold = None;
+            } else {
+                commands.entity(entity).remove::<Wild>();
+                creature.clip = 0;
+            }
+        }
         ui.horizontal(|ui| {
             if ui.button("Look at (F)").clicked() {
                 for mut o in &mut orbit {

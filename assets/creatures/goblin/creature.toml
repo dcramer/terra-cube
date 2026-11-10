@@ -3,3 +3,9 @@ kind = "monster"
 plan = "biped"
 subject = "a green goblin raider with big pointed ears, a hunched wiry body, a leather loincloth and shoulder strap"
 height = 1.2
+
+[life]
+temper = "hostile"
+habitat = "meadow"
+group = 3
+groups = 1

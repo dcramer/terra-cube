@@ -3,3 +3,9 @@ kind = "wildlife"
 plan = "quadruped"
 subject = "a small brown rabbit with long upright ears, standing on all four feet"
 height = 0.3
+
+[life]
+temper = "timid"
+habitat = "meadow"
+group = 3
+groups = 4

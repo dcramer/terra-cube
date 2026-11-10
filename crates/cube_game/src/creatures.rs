@@ -2,7 +2,10 @@
 //! `model.glb`, and playing its clips. A creature is spawned as an entity with [`Creature`];
 //! its scene and animation player are attached when the file has loaded.
 
-use crate::world::Terrain;
+use crate::{
+    motion::{Gait, Live, Mover},
+    world::Terrain,
+};
 use bevy::{prelude::*, world_serialization::WorldAssetRoot};
 use serde::Deserialize;
 use std::time::Duration;
@@ -31,13 +34,8 @@ pub struct Meta {
     /// Metres a second the ground passes under the walk and run clips at speed 1.
     pub walk_speed: f32,
     pub run_speed: f32,
-    /// 0 for a creature with no sprint clip.
-    #[serde(default)]
-    pub sprint_speed: f32,
     pub height: f32,
     pub length: f32,
-    #[serde(default)]
-    pub width: f32,
     pub triangles: usize,
     pub joints: usize,
     #[serde(default)]
@@ -231,11 +229,14 @@ fn drive(registry: Res<Registry>, mut creatures: Query<(&mut Creature, &Rig)>, m
 
 /// Steers a wandering creature: its body (`motion`) does the moving, at the speed its clip
 /// was measured at, so feet that slide show the measurement is wrong.
-fn wander(time: Res<Time>, registry: Res<Registry>, mut movers: Query<(&mut Wander, &Creature, &mut crate::motion::Mover)>) {
+fn wander(time: Res<Time>, args: Res<crate::Args>, mut live: ResMut<Live>, mut movers: Query<(&mut Wander, &Mover)>) {
     let dt = time.delta_secs();
-    for (mut w, creature, mut mover) in &mut movers {
-        let def = &registry.0[creature.def];
-        let at = mover.body.pos;
+    let middle = Vec2::new(args.at.0, args.at.1);
+    for (mut w, mover) in &mut movers {
+        let gait = if w.run { Gait::Run } else { Gait::Walk };
+        let Some(speed) = live.kind(mover).map(|k| k.speed(gait)) else { continue };
+        let Some(agent) = live.agent_mut(mover) else { continue };
+        let at = agent.body.pos;
         w.until_turn -= dt;
         if w.until_turn <= 0.0 {
             // A cheap deterministic wobble: no randomness needed for a debug walk.
@@ -243,24 +244,25 @@ fn wander(time: Res<Time>, registry: Res<Registry>, mut movers: Query<(&mut Wand
             w.turn = phase.sin() * 0.8;
             w.until_turn = 2.0 + (phase * 1.7).cos().abs() * 2.0;
         }
-        // Stay near the flat middle of the test world.
-        if at.xz().length() > 14.0 {
-            let home = (-at.x).atan2(-at.z);
+        // Stay near where creatures are put.
+        let out = at.xz() - middle;
+        if out.length() > 9.0 {
+            let home = (-out.x).atan2(-out.y);
             let diff = (home - w.heading + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
             w.turn = diff.clamp(-1.0, 1.0);
         }
         w.heading += w.turn * dt;
-        mover.intent.dir = Vec2::new(w.heading.sin(), w.heading.cos());
-        mover.intent.speed = crate::motion::speed(def, if w.run { crate::motion::Gait::Run } else { crate::motion::Gait::Walk });
-        mover.gait = if w.run { crate::motion::Gait::Run } else { crate::motion::Gait::Walk };
+        agent.intent.dir = Vec2::new(w.heading.sin(), w.heading.cos());
+        agent.intent.speed = speed;
+        agent.gait = gait;
     }
 }
 
-/// Where the n-th spawned creature stands: a spiral out from the middle of the flat ground.
-pub fn spot(n: usize, terrain: &Terrain) -> Transform {
+/// Where the n-th spawned creature stands: a spiral out from the start (`--at`).
+pub fn spot(n: usize, terrain: &Terrain, middle: (f32, f32)) -> Transform {
     let angle = n as f32 * 2.4;
     let radius = 1.5 + 1.1 * (n as f32).sqrt() * 1.6;
-    let (x, z) = (radius * angle.cos(), radius * angle.sin());
-    Transform::from_xyz(x, terrain.0.ground_height(x, z), z).with_rotation(Quat::from_rotation_y(0.6))
+    let (x, z) = (middle.0 + radius * angle.cos(), middle.1 + radius * angle.sin());
+    Transform::from_xyz(x, terrain.ground(x, z), z).with_rotation(Quat::from_rotation_y(0.6))
 }
 

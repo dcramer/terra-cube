@@ -1,15 +1,15 @@
 # The everyday commands, so nobody has to remember the cargo ones. `make` alone checks the
 # machine is set up; `make help` lists them.
-# Each is one line over `cargo forge` or `cargo sandbox`; those take more options (--help).
+# Each is one line over `cargo forge`, `cargo sandbox` or `cargo world`; those take more options (--help).
 
 SPAWN ?= all
-ARGS ?= --play --spawn $(SPAWN)
+ARGS ?= --play --wild
 WINDOWS := x86_64-pc-windows-gnu
 # In WSL the game is built for Windows and opened there: the real GPU, a native window.
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: help setup run play windows list scene sheet status creature finish test lint cross check
+.PHONY: help setup run play windows list scene sheet status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -17,18 +17,18 @@ help: ## this list
 setup: ## (plain `make`) check this machine: node, Tripo login, display, models
 	cargo forge doctor
 
-run: ## the game window, one of each creature (SPAWN=wolf,player for some)
+run: ## the sandbox window, one of each creature to pose and inspect (SPAWN=wolf,player for some)
 ifeq ($(WSL),1)
 	@$(MAKE) --no-print-directory windows ARGS="--spawn $(SPAWN)"
 else
 	cargo sandbox --spawn $(SPAWN)
 endif
 
-play: ## the game window, as the player: WASD, Shift sprints, Ctrl walks, Space jumps, V first person, Tab frees the mouse
+play: ## the living world, as the player: WASD, Shift sprints, Ctrl walks, Space jumps, V first person, Tab frees the mouse
 ifeq ($(WSL),1)
-	@$(MAKE) --no-print-directory windows ARGS="--play --spawn $(SPAWN)"
+	@$(MAKE) --no-print-directory windows ARGS="--play --wild"
 else
-	cargo sandbox --play --spawn $(SPAWN)
+	cargo sandbox --play --wild
 endif
 
 windows: ## build for Windows and, in WSL, open it there; `make play` and `make run` do this themselves in WSL
@@ -40,8 +40,15 @@ windows: ## build for Windows and, in WSL, open it there; `make play` and `make 
 list: ## the creatures that can be spawned
 	@cargo sandbox --list 2>/dev/null
 
-scene: ## no window: shots/scene.png, the world with creatures in it
+scene: ## no window: shots/scene.png, the sandbox with creatures in it
 	cargo sandbox --scene shots/scene.png --spawn $(SPAWN)
+
+world: ## no window: is the world sound? the land, then five minutes of its creatures, in numbers
+	cargo world survey
+	cargo world run --seconds 300
+
+map: ## no window: shots/map.png, the island from above with where each creature went
+	cargo world map shots/map.png
 
 sheet: need-id ## no window: shots/ID.png, every clip of one creature (ID=wolf)
 	cargo forge sheet $(ID)

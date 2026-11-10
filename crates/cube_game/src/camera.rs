@@ -1,7 +1,7 @@
 //! The free orbit camera: right-drag orbits, wheel zooms, WASD/QE moves the focus, F focuses
 //! the selected creature. While a creature is controlled the camera is `player::follow`'s.
 
-use crate::{creatures::Creature, ui::Selected, world::SKY};
+use crate::{creatures::Creature, ui::Selected, world};
 use bevy::{
     input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll},
     prelude::*,
@@ -23,12 +23,8 @@ impl Plugin for CameraPlugin {
     }
 }
 
-fn setup(mut commands: Commands) {
-    commands.spawn((
-        Camera3d::default(),
-        Orbit { focus: Vec3::new(0.0, 8.0, 0.0), yaw: 0.6, pitch: 0.35, distance: 12.0 },
-        DistanceFog { color: SKY, falloff: FogFalloff::Linear { start: 60.0, end: 160.0 }, ..default() },
-    ));
+fn setup(mut commands: Commands, args: Res<crate::Args>) {
+    commands.spawn((Camera3d::default(), Orbit { focus: Vec3::new(args.at.0, 11.0, args.at.1), yaw: 0.6, pitch: 0.35, distance: 12.0 }, world::fog()));
 }
 
 fn orbit(

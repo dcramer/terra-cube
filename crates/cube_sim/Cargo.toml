@@ -7,6 +7,8 @@ publish.workspace = true
 [dependencies]
 cube_voxel = { path = "../cube_voxel" }
 glam.workspace = true
+serde.workspace = true
+toml.workspace = true
 
 [lints]
 workspace = true

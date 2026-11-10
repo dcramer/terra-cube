@@ -2,10 +2,9 @@
 //! render mesh, and the simulation will read and write [`World`] without a renderer.
 //!
 //! Map: `Block` (what a cell is) → `Chunk` (32³ cells) → `World` (chunks by position) →
-//! `terrain::generate` (fills a world) → `mesh::mesh_chunk` (visible faces with baked AO).
+//! `mesh::mesh_chunk` (visible faces with baked AO). Worlds are made in `cube_sim::terrain`.
 
 pub mod mesh;
-pub mod terrain;
 
 use glam::{IVec3, Vec3};
 use std::collections::HashMap;
@@ -26,6 +25,13 @@ pub enum Block {
     Sand,
     Snow,
     Water,
+    /// The darker ground under trees.
+    Turf,
+    Gravel,
+    Wood,
+    Leaves,
+    /// A conifer's foliage.
+    Needles,
 }
 
 impl Block {
@@ -40,12 +46,17 @@ impl Block {
     pub fn colors(self) -> ([f32; 3], [f32; 3]) {
         match self {
             Block::Air => ([0.0; 3], [0.0; 3]),
-            Block::Grass => ([0.21, 0.42, 0.10], [0.27, 0.17, 0.09]),
+            Block::Grass => ([0.21, 0.42, 0.10], [0.15, 0.30, 0.08]),
             Block::Dirt => ([0.27, 0.17, 0.09], [0.25, 0.16, 0.085]),
             Block::Stone => ([0.30, 0.30, 0.31], [0.26, 0.26, 0.275]),
             Block::Sand => ([0.66, 0.56, 0.36], [0.62, 0.52, 0.33]),
             Block::Snow => ([0.85, 0.87, 0.92], [0.78, 0.80, 0.88]),
             Block::Water => ([0.08, 0.26, 0.42], [0.08, 0.26, 0.42]),
+            Block::Turf => ([0.12, 0.30, 0.09], [0.09, 0.22, 0.07]),
+            Block::Gravel => ([0.40, 0.38, 0.35], [0.36, 0.34, 0.32]),
+            Block::Wood => ([0.30, 0.20, 0.11], [0.22, 0.14, 0.08]),
+            Block::Leaves => ([0.16, 0.38, 0.10], [0.12, 0.31, 0.08]),
+            Block::Needles => ([0.07, 0.24, 0.13], [0.05, 0.19, 0.11]),
         }
     }
 }
@@ -62,6 +73,7 @@ impl Default for Chunk {
 }
 
 impl Chunk {
+    #[inline]
     fn index(p: IVec3) -> usize {
         (p.x + p.z * CHUNK + p.y * CHUNK * CHUNK) as usize
     }
@@ -169,11 +181,4 @@ mod tests {
         assert_eq!(m.indices.len(), 36);
     }
 
-    #[test]
-    fn terrain_is_deterministic_and_grounded() {
-        let a = terrain::generate(7, 2);
-        let b = terrain::generate(7, 2);
-        assert_eq!(a.ground_height(3.0, 3.0), b.ground_height(3.0, 3.0));
-        assert!(a.ground_height(3.0, 3.0) > 0.0);
-    }
 }

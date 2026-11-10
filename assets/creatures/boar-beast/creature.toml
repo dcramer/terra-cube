@@ -4,3 +4,9 @@ plan = "quadruped"
 subject = "a monstrous corrupted boar with large curved tusks, a ridge of dark spines down its back, glowing purple eyes"
 height = 1.3
 gait_gain = 0.7
+
+[life]
+temper = "wary"
+habitat = "forest"
+group = 2
+groups = 1

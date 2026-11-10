@@ -4,3 +4,9 @@ plan = "quadruped"
 subject = "a red deer stag with antlers"
 height = 1.5
 gait_gain = 0.4
+
+[life]
+temper = "timid"
+habitat = "forest"
+group = 3
+groups = 2

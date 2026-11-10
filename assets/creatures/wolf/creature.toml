@@ -3,3 +3,9 @@ kind = "wildlife"
 plan = "quadruped"
 subject = "a grey wolf"
 height = 0.85
+
+[life]
+temper = "hunter"
+habitat = "forest"
+group = 3
+groups = 1

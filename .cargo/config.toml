@@ -3,6 +3,8 @@
 forge = "run --quiet --release --package forge --"
 # The sandbox level: `cargo sandbox --help` (docs/development.md).
 sandbox = "run --release --package cube_game --"
+# The world and its creatures with no window: `cargo world` (docs/development.md).
+world = "run --quiet --release --package world --"
 
 [env]
 # Every binary loads from the one assets/ folder at the root.

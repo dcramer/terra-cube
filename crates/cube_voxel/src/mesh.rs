@@ -2,7 +2,7 @@
 //! and a little per-cell colour variation so flat ground does not read as one tile.
 //! Not greedy yet: see docs/engine.md for the order of meshing work.
 
-use crate::{Block, CELL, CHUNK, World};
+use crate::{Block, CELL, CHUNK, Chunk, World};
 use glam::IVec3;
 
 #[derive(Default)]
@@ -31,11 +31,44 @@ fn hash(p: IVec3) -> f32 {
     (h & 0xFFFF) as f32 / 65535.0
 }
 
+/// A slow drift of colour over the ground, 0 to 1: patches some metres across, so a meadow is
+/// not one green.
+fn patch(p: IVec3) -> f32 {
+    let at = |x: i32, z: i32| hash(IVec3::new(x, 77, z));
+    let (gx, gz) = (p.x.div_euclid(12), p.z.div_euclid(12));
+    let (fx, fz) = (p.x.rem_euclid(12) as f32 / 12.0, p.z.rem_euclid(12) as f32 / 12.0);
+    let (sx, sz) = (fx * fx * (3.0 - 2.0 * fx), fz * fz * (3.0 - 2.0 * fz));
+    let a = at(gx, gz) * (1.0 - sx) + at(gx + 1, gz) * sx;
+    let b = at(gx, gz + 1) * (1.0 - sx) + at(gx + 1, gz + 1) * sx;
+    a * (1.0 - sz) + b * sz
+}
+
+/// The chunk and the 26 round it, so a cell's neighbours are read without looking the chunk
+/// up each time: meshing reads about thirty cells for every face it draws.
+struct Near<'a>([Option<&'a Chunk>; 27]);
+
+impl Near<'_> {
+    /// The block at a position local to the middle chunk, from -32 to 63 on each axis.
+    #[inline]
+    fn get(&self, local: IVec3) -> Block {
+        let c = local.div_euclid(IVec3::splat(CHUNK));
+        match self.0[((c.x + 1) + (c.z + 1) * 3 + (c.y + 1) * 9) as usize] {
+            Some(chunk) => chunk.get(local - c * CHUNK),
+            None => Block::Air,
+        }
+    }
+}
+
 /// The mesh of one chunk, in metres, positioned in world space: its solid blocks, or with
 /// `liquid` its water, which is drawn apart because it is seen through.
 pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
     let mut m = MeshData::default();
     let Some(data) = world.chunks.get(&chunk) else { return m };
+    let mut near = Near([None; 27]);
+    for (i, slot) in near.0.iter_mut().enumerate() {
+        let i = i as i32;
+        *slot = world.chunks.get(&(chunk + IVec3::new(i % 3 - 1, i / 9 - 1, i / 3 % 3 - 1)));
+    }
     let origin = chunk * CHUNK;
     for y in 0..CHUNK {
         for z in 0..CHUNK {
@@ -47,9 +80,24 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                 }
                 let cell = origin + local;
                 let (top, side) = block.colors();
-                let tint = 0.9 + 0.2 * hash(cell);
+                let mut tint = 0.9 + 0.2 * hash(cell);
+                let mut warm = 0.0;
+                // Water hides what is under it by how much of it there is: a ford shows its
+                // bed, the sea does not.
+                let depth = if liquid { (1..9).take_while(|d| near.get(local - IVec3::Y * *d) == Block::Water).count() } else { 0 };
+                let alpha = if liquid { 0.42 + depth as f32 * 0.07 } else { 1.0 };
+                if matches!(block, Block::Grass | Block::Turf | Block::Leaves) {
+                    // Patches: lighter and yellower here, deeper there.
+                    let drift = patch(cell) - 0.5;
+                    tint *= 1.0 + drift * 0.35;
+                    warm = drift * 0.25;
+                }
                 for (n, u, v) in FACES {
-                    let other = world.get(cell + n);
+                    // The underside of the world is never seen.
+                    if cell.y == 0 && n == IVec3::NEG_Y {
+                        continue;
+                    }
+                    let other = near.get(local + n);
                     let hidden = if block == Block::Water { other != Block::Air } else { other.opaque() };
                     if hidden {
                         continue;
@@ -60,14 +108,14 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                     for (i, (su, sv)) in [(0, 0), (1, 0), (1, 1), (0, 1)].into_iter().enumerate() {
                         let corner = cell + n.max(IVec3::ZERO) + u * su + v * sv;
                         let (du, dv) = (u * (su * 2 - 1), v * (sv * 2 - 1));
-                        let occ = |d: IVec3| world.get(cell + n + d).opaque() as i32;
+                        let occ = |d: IVec3| near.get(local + n + d).opaque() as i32;
                         let (a, b, c) = (occ(du), occ(dv), occ(du + dv));
                         let level = if a + b == 2 { 0 } else { 3 - (a + b + c) };
                         ao[i] = 0.45 + 0.55 * level as f32 / 3.0;
                         let k = ao[i] * tint;
                         m.positions.push((corner.as_vec3() * CELL).to_array());
                         m.normals.push(n.as_vec3().to_array());
-                        m.colors.push([base[0] * k, base[1] * k, base[2] * k, if block == Block::Water { 0.45 } else { 1.0 }]);
+                        m.colors.push([base[0] * k * (1.0 + warm), base[1] * k, base[2] * k * (1.0 - warm), alpha]);
                     }
                     // Split the quad along the diagonal that keeps the AO gradient smooth.
                     if ao[0] + ao[2] > ao[1] + ao[3] {

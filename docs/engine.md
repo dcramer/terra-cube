@@ -22,10 +22,11 @@ What Bevy costs, and how we contain it:
 
 | Crate | Depends on | Holds |
 |---|---|---|
-| `cube_voxel` | glam | Blocks, chunks (32³), the world map, test terrain, meshing to plain vertex arrays |
-| `cube_game` | bevy, cube_voxel | Drawing and input. Today the sandbox |
+| `cube_voxel` | glam | Blocks, chunks (32³), the world map, meshing to plain vertex arrays |
+| `cube_sim` | cube_voxel, serde | The simulation at a fixed 60 ticks a second, runnable and testable with no window: making the world from a seed (`terrain`), measuring it (`survey`), how a body moves through voxels (`body`), the creatures and one tick of all of them (`life`), what each decides (`mind`), seeded randomness (`rng`). To come: block changes, needs, saving |
+| `cube_game` | bevy, cube_sim, cube_voxel | Drawing and input: it draws what the simulation holds and feeds the player's keys in |
+| `world` | cube_sim, image | `cargo world`: the world and its creatures judged with no window, in numbers and one map |
 | `forge` | glam, serde, image | The creature pipeline; never linked into the game |
-| `cube_sim` | cube_voxel | The simulation at a fixed 60 ticks a second, runnable and testable with no window. Today only `body`, how a creature moves through voxels. To come: world generation, block changes, creatures' needs and behaviour, seeded randomness |
 
 The rule this protects: **the simulation never needs a window.** A big sandbox with heavy simulation will be server-authoritative sooner or later, and a simulation that runs headless is also one an agent can test in milliseconds.
 
@@ -34,7 +35,33 @@ The rule this protects: **the simulation never needs a window.** A big sandbox w
 - **A cell is 0.5 m**, a chunk 32³ cells (16 m). Half-metre cells are the cheapest step up from Minecraft's 1 m: slopes and silhouettes read finer and a 1.75 m player is 3.5 cells tall. Costs 8× the cells per cubic metre; storage is the thing to watch (palette-compress chunks when it matters).
 - **Meshing today**: one quad per visible face, ambient occlusion baked into vertex colour, slight per-cell tint. No textures. About the simplest thing that does not look like one flat tile.
 - **The Eco look is shaped blocks, not smooth isosurfaces**: blocks keep the grid (so building and simulation stay simple) but draw as mesh pieces chosen by their neighbours (bevelled edges, slopes, rounded corners). That is the main lever for "much better than Minecraft" and the next terrain job. Marching cubes or surface nets would look smoother but lose the block grid that building and simulation want.
+- **Deep water is harder to see through**: a water face's alpha grows with the water under it, so a ford shows its bed and the sea does not. The sea beyond the island is four plain sheets out past the fog.
 - **Not yet**: greedy meshing (measured elsewhere at 50 to 350 µs a chunk for plain meshing, so not urgent), meshing off the main thread, level of detail, chunk streaming, saving.
+
+## The world
+
+Built 2026-11-10. `cube_sim::terrain` makes it; `cargo world survey` and `map` judge it.
+
+- **An island from a seed**, 192 m across (`SEED`, `RADIUS`). The same seed is always the same world, in the game, in tests and in `cargo world`. An island because a finite world needs an edge, and sea to the horizon is an edge nobody questions.
+- **Height is layered noise with four shapes cut into it**: rolling lowland; a mountain mask that raises ridges and steps them into ledges (cliffs read well in blocks; smooth cones do not); a river where a slow noise crosses its middle, deep in places and a ford in others; and the shore falling into the sea. The start is a flat clearing and mountains are kept 25 m off it: they are what is seen from the start, not where it is.
+- **Biomes come from height, slope and a moisture noise**: shore, meadow, forest, rock (high or steep), snow. A biome decides the surface block, what is planted (broadleaf trees, pines higher up, bushes, boulders) and who lives there.
+- **`Land` is kept beside the voxels**: every column's height and biome, and the trees. Placing creatures and measuring the world read it, not the cells.
+- **Trees and bushes are solid blocks.** A crown starts 3 m up so a troll walks under it. Creatures will not climb onto leaves; the player can.
+- **Judged by numbers first** (`cargo world survey`): water 20% to 60%, each of meadow, forest and rock at least 6%, 150 trees, ground at least 15 m high, cliffs on 3% to 35% of the land, half the land reached from the start on foot and nine tenths by swimming. A seed that fails one is not a world to ship; seed 6 passes and is the default.
+- **Not yet:** caves and overhangs (the land is a height map), shaped blocks, grass and flowers, streaming (the whole island is meshed at the start, about a second).
+
+## What lives in it
+
+Built 2026-11-10. `cube_sim::life` and `mind`; `cargo world run` judges it.
+
+- **The simulation owns every creature.** `Sim` holds an agent for each: its body, who drives it (the keys, its own mind, nobody) and what it is doing (`Act`, which is a clip's name). The game keeps a model in step with each agent and never moves one itself. So the same tick runs in the window, in a test and in `cargo world run`, and a server later.
+- **A mind is a temper and a handful of states**, not a behaviour tree. Tempers, set in `creature.toml` `[life]`: *timid* (rabbit, deer) grazes and runs from people, hunters and monsters; *hunter* (wolf) runs timid creatures down, then is spent for a while; *wary* (bear, boar) faces whatever comes within 7 m and hits it if it comes closer; *hostile* (goblin, troll) goes for people on sight. A deer bolts from a wolf at 12 m and lets a bear come to 5. Enough for a world that looks alive and for the player to have something to run from; more is added when a need (hunger, sleep) asks for it.
+- **No path planning.** A creature heads for a point and looks a step ahead: it turns aside from walls, drops and water it would have to swim, trying ways further round until one is open, and its own box must be able to move that way. At its ease it takes one-cell steps and small drops, so it stays on the ground it knows; fleeing or chasing it jumps two cells and drops three metres. Good enough on open ground; a creature can still be walled in, and then it waits.
+- **Roaming keeps to a home**: a group shares one, placed in the kind's biome. A creature that flees settles where it stops.
+- **Nothing dies yet.** A blow is a shove and a flinch (`hurt`). Health, death and what the player hits back with come with combat.
+- **A swimmer climbs out over a bank** up to a cell above its waist. Without it a steep-sided river was a trap, for the player too; the headless run found it.
+- **Random choices come from one seeded generator** in the `Sim`, and agents are visited in id order, so a seed replays exactly (tested).
+- **Judged by numbers** (`cargo world run`): no creature ends a tick inside the ground or falls out of the world, each kind walks into something for at most 8% of the time, is walled in for at most 10%, swims for at most 5%, and goes at least 3 m.
 
 ## Creatures
 
@@ -55,7 +82,7 @@ Built 2026-11-10. The rules are `cube_sim::body`; the game only feeds it keys an
 - **Fixed tick, drawn in between.** Bodies step 60 times a second whatever the frame rate; the game draws them between the last two ticks.
 - **Third person, camera-relative.** The models are the point of the game, so the player sees theirs. WASD is relative to the camera, the character turns to face where it goes, and ground between camera and character pulls the camera in (a ray through the voxels).
 - **Every moving creature has the same body.** The keys drive one; a wander drives the rest; the player is not special. So an animal steps, falls and swims by the same rules, and any creature can be controlled (`--as wolf`).
-- **Creatures do not pass through each other.** Each tick, before bodies step, overlapping ones are pushed apart over the ground (`body::separate`): two movers share the push, one standing still gives none. A creature is met as a capsule sized from its measured standing width and length (`meta.toml`): round for an upright figure, a fattened line along the body for an animal, so a wolf is bumped at its nose and not only its middle. Rounded, so they slide past instead of locking corners. `--bodies`, or the panel's tick box, draws the shapes. Against the voxel world a body is still a square box of the capsule's radius, so a long animal's head can poke into a wall.
+- **Creatures do not pass through each other.** Each tick (`Sim::step`), before bodies step, overlapping ones are pushed apart over the ground (`body::separate`): two movers share the push, one standing still gives none. A creature is met as a capsule sized from its measured standing width and length (`meta.toml`): round for an upright figure, a fattened line along the body for an animal, so a wolf is bumped at its nose and not only its middle. Rounded, so they slide past instead of locking corners. `--bodies`, or the panel's tick box, draws the shapes. Against the voxel world a body is still a square box of the capsule's radius, so a long animal's head can poke into a wall.
 - **The gait is asked for, and moves at its clip's speed.** Walk, run or sprint is the driver's choice (Ctrl, nothing, Shift) and the body moves at the speed forge built or measured that clip for, so feet hold: 1.2, 4.0 and 5.6 m/s for the player. While speeding up or slowing the clip's rate follows the body's speed.
 - **In the air and in water the body picks the clip:** `jump` on the way up from a jump, `fall` otherwise, `land` after a drop of more than about a cell if it is not running on, `swim` when the water is over its middle. All are made by forge ([pipeline.md](pipeline.md)).
 - **Feel, in numbers** (`Tuning`): a run is reached in under a fifth of a second (18 m/s²) and stopped in an eighth (26); gravity 22 m/s²; a held jump clears two cells (1.08 m) and a tapped one is a hop of a third of that; a jump pressed up to 0.12 s before landing still happens, and up to 0.1 s after walking off an edge; falls are capped at 25 m/s so a tick never crosses a cell. The model leans a few degrees into turns and into speeding up.
@@ -66,21 +93,26 @@ Built 2026-11-10. The rules are `cube_sim::body`; the game only feeds it keys an
 
 ## The sandbox and agent tooling
 
-- `cargo sandbox` is the debug level: spawn any creature, play any clip, scrub, wander, show skeletons.
+- `cargo world` judges the world and its creatures with no window, in under two seconds: `survey` (the land), `run` (five minutes of life, a line a kind, then `ok` or `FAIL` lines), `map` (one picture from above with where everything went), `who` (where each group lives). `WORLD_TRACE=deer cargo world run` follows the deer that ends up most stuck, a line a second, with the ground round it when it is caught. This is where behaviour and terrain are changed and checked; the window is for how it looks.
+- `cargo sandbox` is the debug level: spawn any creature, play any clip, scrub, wander, give it its own mind, show skeletons. `--wild` starts the living world instead.
+- `--scene FILE --wild --at X,Z` pictures any place on the island (`--view high` from the air), so a herd or a hillside can be looked at without walking there.
 - `cargo sandbox --shot ID` draws offscreen to a PNG with no window, so an agent on a server can look. A sheet is one image: rows are clips, columns are moments.
 - `--scene FILE --play --script '…' --strip 10` runs a scripted route with no window and saves it as a strip of pictures: how movement is judged without a screen. `--trace` prints the body.
 - The real window runs on a machine with no GPU screen through the software Vulkan driver, and `tools/drive/drive.py` presses keys and moves the mouse in it. That is how the keyboard, mouse look and cursor lock were tested ([development.md](development.md)).
-- Wanted next: a remote port (Bevy Remote Protocol) so an agent can drive a running sandbox, and fixed-seed simulation tests.
+- Wanted next: a remote port (Bevy Remote Protocol) so an agent can drive a running sandbox.
 
 ## Order of work
 
 1. ~~Creature pipeline and sandbox~~ (this night).
 2. ~~Player control in the sandbox~~ (2026-11-10; see Moving through the world).
-3. `cube_sim`, the rest: seeded randomness; move terrain generation into it; block edits (the ray is in `cube_voxel`), then placing and digging from the player.
-4. Shaped blocks (the Eco look), then textures or material colour by block.
-5. More body plans (bird, spider, serpent) and their clips; a real gallop.
-6. Player gear: one rigid helmet and one weapon through the same forge steps.
-7. Chunk streaming, meshing off-thread, saving.
+3. ~~A world worth walking in~~ (2026-11-10): terrain from a seed, creatures living in it, `cargo world` to judge both.
+4. Block edits (the ray is in `cube_voxel`), then placing and digging from the player; remeshing a changed chunk.
+5. Combat: health, the player's attack, death. With it, **hit shapes**: a box for the head, the trunk and each limb, fitted by forge to each bone's share of the skin, written to `meta.toml` and drawn by `--bodies`. The one capsule stays for walking and bumping; these answer what a blow or an arrow struck.
+6. Shaped blocks (the Eco look), then textures or material colour by block.
+7. Needs for creatures (hunger, sleep, a day and night), so behaviour has reasons.
+8. More body plans (bird, spider, serpent) and their clips; a real gallop.
+9. Player gear: one rigid helmet and one weapon through the same forge steps.
+10. Chunk streaming, meshing off-thread, saving.
 
 ## Open questions
 

@@ -126,8 +126,9 @@ fn layout(
     stage.legend = format!("rows={} cols={cols} view={}", names.join(","), args.view);
 }
 
-fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, time: Res<Time>, rigs: Query<&Rig>, mut exit: MessageWriter<AppExit>, mut waited: Local<f32>) {
-    if !stage.laid_out || rigs.iter().count() < stage.expected {
+fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, time: Res<Time>, rigs: Query<&Rig>, creatures: Query<(), With<Creature>>, mut exit: MessageWriter<AppExit>, mut waited: Local<f32>) {
+    // Every creature there is going to be has its model: the ones asked for, and any the world came with.
+    if !stage.laid_out || rigs.iter().count() < stage.expected.max(creatures.iter().count()) {
         return;
     }
     stage.settled += 1;
@@ -211,19 +212,26 @@ fn scene(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terra
         if n % 2 == 1 && !args.play {
             creature.clip_name = Some("walk".into());
         }
-        commands.spawn((creature, creatures::spot(n, &terrain), Visibility::default()));
+        commands.spawn((creature, creatures::spot(n, &terrain, args.at), Visibility::default()));
         stage.expected += 1;
     }
     let (w, h) = if args.strip > 0 { (1920 / args.strip.clamp(4, 12) as u32, 300) } else { (1600, 900) };
     stage.target = images.add(Image::new_target_texture(w, h, TextureFormat::Rgba8UnormSrgb, None));
-    let focus = Vec3::new(0.0, terrain.0.ground_height(0.0, 0.0) + 0.8, 0.0);
+    let focus = Vec3::new(args.at.0, terrain.ground(args.at.0, args.at.1) + 0.8, args.at.1);
+    // Without `--play` the camera stands off the start: `--dist` metres away, `--pitch` up,
+    // round to `--yaw`. `--view high` is the lie of the land from the air.
+    let high = args.view == "high";
+    let dist = args.dist.unwrap_or(if high { 150.0 } else { 8.7 * (1.0 + ids.len() as f32 * 0.07) });
+    let pitch = args.pitch.unwrap_or(if high { 0.6 } else { 0.3 });
+    let yaw = if args.play || args.yaw_given { args.yaw } else { 0.57 };
+    let from = focus + Quat::from_euler(EulerRot::YXZ, yaw, -pitch, 0.0) * Vec3::Z * dist;
     commands.spawn((
         Camera3d::default(),
         RenderTarget::Image(stage.target.clone().into()),
-        // Only `--play` uses the orbit: behind the player, facing the hills.
+        // Only `--play` uses the orbit: behind the player, facing the way the route runs.
         crate::camera::Orbit { focus, yaw: args.yaw, pitch: 0.28, distance: 5.5 },
-        Transform::from_translation(focus + Vec3::new(4.5, 2.6, 7.0) * (1.0 + ids.len() as f32 * 0.07)).looking_at(focus, Vec3::Y),
-        DistanceFog { color: world::SKY, falloff: FogFalloff::Linear { start: 60.0, end: 160.0 }, ..default() },
+        Transform::from_translation(from).looking_at(focus, Vec3::Y),
+        world::fog(),
     ));
     stage.path = args.scene.clone().unwrap();
     stage.legend = format!("creatures={}", ids.join(","));

@@ -2526,6 +2526,8 @@ version = "0.1.0"
 dependencies = [
  "cube_voxel",
  "glam",
+ "serde",
+ "toml",
 ]
 
 [[package]]
@@ -6775,6 +6777,16 @@ dependencies = [
  "wayland-client",
  "wayland-protocols",
  "wayland-protocols-wlr",
+]
+
+[[package]]
+name = "world"
+version = "0.1.0"
+dependencies = [
+ "cube_sim",
+ "cube_voxel",
+ "glam",
+ "image",
 ]
 
 [[package]]

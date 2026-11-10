@@ -16,6 +16,7 @@ cargo forge sheet fox                  # shots/fox.png: look once
 
 - **The subject** says what the creature is, with at most one defining feature and two named colours. No style words: the style comes from `assets/creatures/style.toml` ([art-guide.md](art-guide.md)). `cargo forge prompt ID` shows the whole prompt.
 - **The height** is in metres to the top of the rest pose (antlers and ears count).
+- **How it lives** is a `[life]` table added to `creature.toml` by hand: `temper` (`timid`, `hunter`, `wary`, `hostile`; see [engine.md](engine.md#what-lives-in-it)), `habitat` (`meadow`, `forest`, `rock`, `shore`, `snow`), `group` (how many keep together) and `groups` (how many such groups a world starts with). Without it the creature can be spawned in the sandbox but no world has any. `cargo world run` shows what the new creature does.
 - **A bad concept** (wrong pose, joined legs, props): delete `concept` from `steps` in `assets/creatures/ID/forge.lock`, adjust the subject, build `--to concept` again. Each try is 2 credits; a model is 45, so look first.
 
 ## What a build does

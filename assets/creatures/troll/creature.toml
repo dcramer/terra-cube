@@ -5,3 +5,9 @@ subject = "a tall mossy stone troll with broad shoulders, long thick arms, a sma
 height = 2.6
 gait_gain = 0.6
 made = ["attack"]
+
+[life]
+temper = "hostile"
+habitat = "rock"
+group = 1
+groups = 1

@@ -7,7 +7,7 @@ use crate::{
     Args,
     camera::Orbit,
     creatures::{Creature, Registry, Wander},
-    motion::{self, Gait, Mover},
+    motion::{Gait, Live, Mover},
     world::Terrain,
 };
 use bevy::{
@@ -150,17 +150,18 @@ fn script(time: Res<Time>, args: Res<Args>, mut controls: ResMut<Controls>, mut 
 }
 
 /// `--trace`, and every scripted run: the controlled body in a line, four times a second.
-fn trace(time: Res<Time>, args: Res<Args>, controlled: Query<(&Mover, &Creature, &Controlled)>, registry: Res<Registry>, cameras: Query<&Orbit>, mut clock: Local<(f32, f32)>) {
+fn trace(time: Res<Time>, args: Res<Args>, live: Res<Live>, controlled: Query<(&Mover, &Creature, &Controlled)>, registry: Res<Registry>, cameras: Query<&Orbit>, mut clock: Local<(f32, f32)>) {
     if !(args.trace || args.scene.is_some() && args.play) {
         return;
     }
     let Ok((m, creature, c)) = controlled.single() else { return };
+    let Some(agent) = live.agent(m) else { return };
     clock.0 += time.delta_secs();
     if clock.0 >= clock.1 {
         clock.1 += if args.trace { 0.25 } else { 1.0 };
         let def = &registry.0[creature.def];
         let clip = def.clips.get(creature.clip).map_or("-", |c| c.0.as_str());
-        let b = &m.body;
+        let b = &agent.body;
         let yaw = cameras.iter().next().map_or(0.0, |o| o.yaw);
         println!(
             "play t={:.1} pos={:.1},{:.1},{:.1} speed={:.2} grounded={} swimming={} clip={clip}x{:.2} yaw={yaw:.2} first={}",
@@ -170,14 +171,16 @@ fn trace(time: Res<Time>, args: Res<Args>, controlled: Query<(&Mover, &Creature,
 }
 
 /// Hands the controls to the controlled creature's body, turned to the way the camera faces.
-fn drive(controls: Res<Controls>, args: Res<Args>, registry: Res<Registry>, cameras: Query<&Orbit>, mut controlled: Query<(&Controlled, &Creature, &mut Mover, &mut Visibility)>) {
+fn drive(controls: Res<Controls>, args: Res<Args>, mut live: ResMut<Live>, cameras: Query<&Orbit>, mut controlled: Query<(&Controlled, &Mover, &mut Visibility)>) {
     // A scripted route runs the way `--yaw` says, whatever the camera is doing.
     let yaw = if args.scene.is_some() { args.yaw } else { cameras.iter().next().map_or(0.0, |o| o.yaw) };
     // The camera looks along -Z turned by its yaw; right is +X turned the same.
     let (sin, cos) = yaw.sin_cos();
-    for (c, creature, mut m, mut visibility) in &mut controlled {
+    for (c, mover, mut visibility) in &mut controlled {
+        let Some(speed) = live.kind(mover).map(|k| k.speed(controls.gait)) else { continue };
+        let Some(m) = live.agent_mut(mover) else { continue };
         m.intent.dir = Vec2::new(cos, -sin) * controls.dir.x + Vec2::new(-sin, -cos) * controls.dir.y;
-        m.intent.speed = motion::speed(&registry.0[creature.def], controls.gait);
+        m.intent.speed = speed;
         // Wanted for a moment after the press, so one just before landing still jumps.
         if controls.jump {
             m.want_jump = 0.12;

@@ -1,9 +1,11 @@
-//! The sandbox: a small voxel world to spawn creatures in and watch their clips.
+//! The game so far: an island made from a seed, with its creatures living in it (`--wild`), to
+//! walk about as the player (`--play`); and the sandbox panel to spawn any creature and watch
+//! its clips.
 //!
 //! `cargo sandbox --help` lists the ways to start it (`HELP` below).
 //!
-//! Map: `world` (terrain from cube_voxel) · `creatures` (registry, spawning, clips, wander) ·
-//! `motion` (bodies that walk, jump and bump, and the clip that fits) · `player` (controlling
+//! Map: `world` (terrain from cube_sim, drawn) · `creatures` (registry, spawning, clips, wander) ·
+//! `motion` (the simulation's creatures, drawn between ticks with the clip that fits) · `player` (controlling
 //! one with the keys, the follow and first-person cameras) · `ui` (the egui panel, skeleton
 //! overlay) · `camera` (free orbit) · `shot` (contact sheets and scene pictures).
 
@@ -43,6 +45,16 @@ pub struct Args {
     pub play_as: Option<String>,
     /// Seconds into a scene at which its picture is taken.
     pub after: f32,
+    /// The world's seed.
+    pub seed: u32,
+    /// The world starts with its creatures in it, living by their own minds.
+    pub wild: bool,
+    /// Where spawned creatures are put and a scene looks, metres (x, z).
+    pub at: (f32, f32),
+    /// A scene's camera: metres from what it looks at, and radians above level.
+    pub dist: Option<f32>,
+    pub pitch: Option<f32>,
+    pub yaw_given: bool,
 }
 
 const HELP: &str = "\
@@ -50,6 +62,8 @@ cargo sandbox                           the window, with the spawn panel
 cargo sandbox --play [--as wolf]        start as the player, or as any creature: WASD runs, Shift
                                         sprints, Ctrl walks (in water: dives), Space jumps, the mouse looks, the
                                         wheel zooms, V is first person, Tab gives the mouse back
+cargo sandbox --play --wild             the same in the living world: every creature where it lives,
+                                        grazing, roaming, fleeing and hunting by its own mind
 cargo sandbox --spawn wolf,player       start with these in the world (`all` for one of each)
 cargo sandbox --list                    the creatures that can be spawned
 cargo sandbox --shot ID                 no window: shots/ID.png, every clip at six moments
@@ -67,6 +81,11 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
                                         the route, as times and what changes then: fwd back left
                                         right stop · walk run sprint · jump hop · dive surface ·
                                         first third
+        … --wild --at 47,28 [--dist 12] [--pitch 0.3] [--yaw 1.0] [--view high]
+                                        a scene somewhere else: metres east and south of the start
+                                        (`cargo world who` says where creatures live), the camera
+                                        that far off and that high; `--view high` is from the air
+--seed N makes another island. cargo world (survey, run, map, who) judges one with no window.
 --bodies draws the shape each creature is bumped as (also a tick box in the panel).
 --trace prints the controlled body (position, speed, clip, camera) four times a second.
 In the window: Tab controls the picked creature, and lets go of it. Otherwise right-drag
@@ -92,7 +111,7 @@ fn creature_ids() -> Vec<String> {
 }
 
 fn parse_args() -> Args {
-    let mut args = Args { view: "quarter".into(), cols: 6, yaw: -2.2, every: 0.1, script: player::ROUTE.into(), ..default() };
+    let mut args = Args { view: "quarter".into(), cols: 6, yaw: -2.2, every: 0.1, script: player::ROUTE.into(), seed: cube_sim::terrain::SEED, at: (0.25, 0.25), ..default() };
     let mut it = std::env::args().skip(1);
     let list = |v: Option<String>| v.map(|s| s.split(',').map(str::to_owned).collect::<Vec<_>>()).unwrap_or_default();
     while let Some(a) = it.next() {
@@ -117,7 +136,21 @@ fn parse_args() -> Args {
             "--script" => args.script = it.next().unwrap_or_default(),
             "--strip" => args.strip = it.next().and_then(|v| v.parse().ok()).unwrap_or(8),
             "--every" => args.every = it.next().and_then(|v| v.parse().ok()).unwrap_or(0.1),
-            "--yaw" => args.yaw = it.next().and_then(|v| v.parse().ok()).unwrap_or(-2.2),
+            "--yaw" => {
+                args.yaw = it.next().and_then(|v| v.parse().ok()).unwrap_or(-2.2);
+                args.yaw_given = true;
+            }
+            "--wild" => args.wild = true,
+            "--seed" => args.seed = it.next().and_then(|v| v.parse().ok()).unwrap_or(cube_sim::terrain::SEED),
+            "--dist" => args.dist = it.next().and_then(|v| v.parse().ok()),
+            "--pitch" => args.pitch = it.next().and_then(|v| v.parse().ok()),
+            "--at" => {
+                let at: Vec<f32> = it.next().unwrap_or_default().split(',').filter_map(|v| v.parse().ok()).collect();
+                if at.len() != 2 {
+                    fail("--at wants metres east and south of the start: --at 30,-12");
+                }
+                args.at = (at[0], at[1]);
+            }
             "--as" => {
                 args.play = true;
                 args.play_as = it.next();

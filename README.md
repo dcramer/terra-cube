@@ -10,5 +10,6 @@ An experiment: a voxel sandbox game in Rust (Bevy), with every creature in it ge
 ```bash
 make          # checks this machine is set up
 make help     # lists the commands
-make run      # the sandbox, one of each creature
+make play     # the island and its creatures, as the player
+make run      # the sandbox, one of each creature to pose
 ```

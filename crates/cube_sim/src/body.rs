@@ -206,6 +206,20 @@ impl Body {
                 return;
             }
         }
+        if self.swimming {
+            // Out of the water: a swimmer against a bank climbs onto it, if the bank's top is
+            // no more than a cell over its waist. Without this a steep-sided river is a trap.
+            let waist = self.pos.y + self.height * WAIST;
+            let mut up = ((self.pos.y / CELL + 1e-3).floor() + 1.0) * CELL;
+            while up <= waist + CELL + 1e-3 {
+                if !self.blocked(world, self.pos.with_y(up)) && !self.blocked(world, to.with_y(up)) {
+                    self.pos = to.with_y(up);
+                    self.vel.y = 0.0;
+                    return;
+                }
+                up += CELL;
+            }
+        }
         // The face of the cell the leading edge went into.
         let edge = to[axis] + self.half * by.signum();
         let face = if by > 0.0 { (edge / CELL).floor() * CELL } else { ((edge / CELL).floor() + 1.0) * CELL };
@@ -288,7 +302,7 @@ impl Body {
 mod tests {
     use super::*;
     use crate::TICKS;
-    use cube_voxel::terrain;
+    use crate::terrain;
 
     /// A floor of stone with its top at y = 1 m, 40 m square.
     fn floor() -> World {
@@ -449,13 +463,35 @@ mod tests {
     }
 
     #[test]
+    fn climbs_out_of_water_over_a_steep_bank() {
+        // A pool 2 m deep with sheer sides: the bank's top is one cell over the water.
+        let mut w = floor();
+        for z in -40..40 {
+            for x in -40..40 {
+                for y in 2..=5 {
+                    w.set(IVec3::new(x, y, z), if x.abs() < 8 && z.abs() < 8 { if y < 5 { Block::Water } else { Block::Air } } else { Block::Stone });
+                }
+            }
+        }
+        let mut b = Body::new(Vec3::new(0.25, 1.5, 0.25), 0.3, 1.75);
+        run(&mut b, &w, 3.0, Intent::default());
+        assert!(b.swimming, "{b:?}");
+        run(&mut b, &w, 6.0, EAST);
+        assert!(!b.swimming && b.grounded && b.pos.y == 3.0 && b.pos.x > 4.5, "{b:?}");
+    }
+
+    #[test]
     fn never_ends_a_tick_inside_the_test_terrain() {
-        let w = terrain::generate(7, 2);
+        let (w, _) = terrain::generate(7, 2);
         let mut b = Body::new(Vec3::new(0.25, w.ground_height(0.25, 0.25), 0.25), 0.3, 1.75);
         for tick in 0..TICKS * 60 {
             // A wandering heading that turns over the minute, jumping now and then.
             let a = tick as f32 * 0.004;
-            let intent = Intent { dir: Vec2::new(a.cos(), (a * 1.7).sin()), speed: 5.0, jump: tick % 90 == 0, hold: tick % 180 < 90, dive: false };
+            let mut intent = Intent { dir: Vec2::new(a.cos(), (a * 1.7).sin()), speed: 5.0, jump: tick % 90 == 0, hold: tick % 180 < 90, dive: false };
+            // The world ends 32 m out: turn back before then.
+            if Vec2::new(b.pos.x, b.pos.z).length() > 24.0 {
+                intent.dir = -Vec2::new(b.pos.x, b.pos.z).normalize();
+            }
             b.step(&w, intent, &Tuning::default());
             assert!(!b.blocked(&w, b.pos), "inside the ground at tick {tick}: {b:?}");
             assert!(b.pos.y > 0.0, "fell out of the world at tick {tick}");
