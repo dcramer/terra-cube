@@ -56,6 +56,15 @@ A gait is right when a foot that is down stays where it was put while the body g
 - **`meta.toml` speeds are the speeds the game moves at**, so a clip always plays at its own rate. To make a creature faster, change the gait, not a number in the game.
 - `gait_gain` in `creature.toml` (under 1) shortens stride, lift, rock and arm swing for a body whose skin tears at full reach: bear 0.6, boar 0.7, deer 0.4, troll 0.6.
 
+## The roster, and two plans that do not work yet
+
+2026-11-10: 36 creatures besides the player are wanted first (100 in the end). The 29 new ones have a `creature.toml` and a concept each (58 credits); `cargo forge status` lists them. The 13 four-legged and 3 two-legged ones use plans that work and can be bought as they are. The bird and crawler plans were tried on one creature each before buying the rest, and neither works:
+
+- **`bird` (the crow, built, failing):** Tripo's rig for it reads as one leg, with a wing and the spine taken for arms; clips made on that tear the skin by up to 560%. The role reader needs to know a bird: two legs under a body that lies level, and wings that are not arms.
+- **`crawler` (the crab, rigged, not finished):** six legs are found of its eight and its claws, and making its run crashes forge (`quicker` is handed a clip with no frames: there is no gait for more than four legs).
+
+Until those are fixed, no more birds or crawlers are bought, and the crow is kept out of the world (`groups = 0`). Nothing flies in the simulation either: a bird that worked would still only walk.
+
 ## Roles and made clips
 
 Tripo's bone names cannot be trusted (`bone_7` beside `tripo::0_Right_Limb_0`; a tail bone named `1_Left_Limb_0`). So `rig.rs` reads roles from shape:

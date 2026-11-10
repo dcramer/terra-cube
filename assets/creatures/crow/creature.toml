@@ -8,4 +8,5 @@ height = 0.3
 temper = "timid"
 habitat = "meadow"
 group = 3
-groups = 2
+# 0 until the bird plan reads its skeleton and its clips pass: it is built but not fit to be seen.
+groups = 0
