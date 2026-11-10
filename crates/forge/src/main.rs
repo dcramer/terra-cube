@@ -3,10 +3,11 @@
 //!
 //! Map: `spec` (the files) · `tripo` (paid steps, once each) · `finish` (stand, name and make
 //! clips, measure) · `rig` (skeleton, roles) · `clips` (clip recipes) · `check` (the bars) ·
-//! `glb` (the file format).
+//! `glb` (the file format) · `cubes` (a model rebuilt from little cubes).
 
 mod check;
 mod clips;
+mod cubes;
 mod finish;
 mod glb;
 mod rig;
@@ -31,6 +32,8 @@ cargo forge build ID… [--to STEP]       do what is missing: concept, model, ri
 cargo forge finish ID…|--all            the local half again (after changing clips or style)
 cargo forge check ID…|--all             the checks alone
 cargo forge sheet ID [--view side]      render shots/ID.png, every clip at six moments
+cargo forge cubes ID [--size 0.05]      a trial: ID-cubes, that model rebuilt from little cubes each
+                                        fixed to one bone, with the same skeleton and clips
 cargo forge inspect FILE.glb|ID         the skeleton's roles
 cargo forge doctor                      is this machine set up: node, Tripo login, display, models
 kinds: player monster wildlife · plans: see assets/creatures/style.toml";
@@ -100,6 +103,12 @@ fn run() -> Result<bool> {
     match command.as_str() {
         "status" => status(&style()?)?,
         "doctor" => ok = doctor(),
+        "cubes" => {
+            let size: f32 = option(&mut args, "--size").map_or(Ok(0.05), |s| s.parse())?;
+            for id in targets(&args) {
+                println!("{}", cubes::run(&id, size)?);
+            }
+        }
         "new" => {
             let kind = option(&mut args, "--kind").context("--kind player|monster|wildlife")?;
             let plan = option(&mut args, "--plan").context("--plan")?;

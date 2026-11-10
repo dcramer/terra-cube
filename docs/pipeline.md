@@ -102,6 +102,14 @@ The bars are first guesses calibrated on eight creatures. Terra measured a hand-
 
 In the sandbox (`cargo sandbox --spawn ID`) the panel plays clips, scrubs a held frame, sets speed, sends the creature wandering at its measured walk or run speed (so sliding feet show), and draws skeletons.
 
+## Cubes, a trial
+
+`cargo forge cubes ID` makes `assets/creatures/ID-cubes/`: the finished model rebuilt from 5 cm cubes, the size of a bit of the world, with the same skeleton and clips. It is there to answer whether creatures made of the world's own cubes read well; nothing uses it yet, and its output is not committed (run it, then `cargo forge sheet ID-cubes` or `cargo sandbox --spawn ID-cubes`).
+
+- The model is stood as in its idle, its surface sampled into a 5 cm grid and the inside filled. Each cube takes the texture's colour there and is fixed to the one bone that pulls on it most. A cube never bends: limbs turn as rigid pieces, and cubes of different bones pass through each other at a joint.
+- What it showed, 2026-11-10: the player (1,732 cubes) and wolf (871) read clearly and move well with their clips. The player's face is gone: a head is four cubes wide, too few for eyes. The rabbit is 83 cubes and reads as a rabbit only by its ears and colour. The troll is 8,110 cubes and 23,000 triangles, over the bar: big bodies want their inside faces culled across bones, or bigger cubes.
+- If this becomes the look: faces painted or modelled at the cube scale by hand or by a second pass, creatures under half a metre designed for it rather than converted, and the conversion made a step of `finish`.
+
 ## Known limits
 
 - Made gaits are regular: every step is the same, and a made biped walk is stiffer than a recorded one. They are the place to add craft (a head that leads a turn, a gallop's gathered and stretched phases held longer).

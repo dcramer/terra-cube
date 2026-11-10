@@ -135,6 +135,77 @@ impl Glb {
         self.push("accessors", accessor)
     }
 
+    /// Adds whole-number data, already as little-endian bytes, as a new accessor.
+    pub fn add_raw(&mut self, bytes: &[u8], component: u32, kind: &str, count: usize) -> usize {
+        while !self.bin.len().is_multiple_of(4) {
+            self.bin.push(0);
+        }
+        let offset = self.bin.len();
+        self.bin.extend(bytes);
+        let view = self.push("bufferViews", json!({ "buffer": 0, "byteOffset": offset, "byteLength": bytes.len() }));
+        self.push("accessors", json!({ "bufferView": view, "componentType": component, "count": count, "type": kind }))
+    }
+
+    /// Cuts out of the binary whatever no accessor or image still points at: after a mesh or
+    /// a texture is replaced, the old one's bytes.
+    pub fn drop_unused(&mut self) {
+        let mut used = vec![false; self.array("bufferViews").len()];
+        let mark = |v: &Value, used: &mut Vec<bool>| {
+            if let Some(i) = v["bufferView"].as_u64() {
+                used[i as usize] = true;
+            }
+        };
+        // Accessors nothing refers to go first: a mesh's, once its primitives are replaced.
+        let mut wanted = vec![false; self.array("accessors").len()];
+        let mut want = |v: &Value| {
+            if let Some(i) = v.as_u64() {
+                wanted[i as usize] = true;
+            }
+        };
+        for mesh in self.array("meshes") {
+            for p in mesh["primitives"].as_array().into_iter().flatten() {
+                want(&p["indices"]);
+                p["attributes"].as_object().into_iter().flatten().for_each(|(_, a)| want(a));
+            }
+        }
+        for skin in self.array("skins") {
+            want(&skin["inverseBindMatrices"]);
+        }
+        for animation in self.array("animations") {
+            for sampler in animation["samplers"].as_array().into_iter().flatten() {
+                want(&sampler["input"]);
+                want(&sampler["output"]);
+            }
+        }
+        for (accessor, wanted) in self.array("accessors").iter().zip(&wanted) {
+            if *wanted {
+                mark(accessor, &mut used);
+            }
+        }
+        for image in self.array("images") {
+            mark(image, &mut used);
+        }
+        // Accessors and views keep their numbers; the bytes of unused views are closed up.
+        let mut bin = Vec::with_capacity(self.bin.len());
+        let views = self.json["bufferViews"].as_array_mut().map(std::mem::take).unwrap_or_default();
+        let mut kept = Vec::with_capacity(views.len());
+        for (mut view, used) in views.into_iter().zip(used) {
+            let (from, len) = (view["byteOffset"].as_u64().unwrap_or(0) as usize, view["byteLength"].as_u64().unwrap_or(0) as usize);
+            while !bin.len().is_multiple_of(4) {
+                bin.push(0);
+            }
+            view["byteOffset"] = json!(bin.len());
+            if used {
+                bin.extend(&self.bin[from..from + len]);
+            } else {
+                view["byteLength"] = json!(0);
+            }
+            kept.push(view);
+        }
+        self.json["bufferViews"] = Value::Array(kept);
+        self.bin = bin;
+    }
+
     /// Triangles over every mesh primitive.
     pub fn triangles(&self) -> usize {
         let mut n = 0;

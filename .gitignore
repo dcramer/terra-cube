@@ -7,3 +7,6 @@ node_modules/
 .work/
 shots/
 .claude/worktrees/
+
+# Trial output of `cargo forge cubes ID` (docs/pipeline.md); made again by running it.
+assets/creatures/*-cubes/

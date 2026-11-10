@@ -229,7 +229,9 @@ fn drive(registry: Res<Registry>, mut creatures: Query<(&mut Creature, &Rig)>, m
 
 /// Steers a wandering creature: its body (`motion`) does the moving, at the speed its clip
 /// was measured at, so feet that slide show the measurement is wrong.
-fn wander(time: Res<Time>, args: Res<crate::Args>, mut live: ResMut<Live>, mut movers: Query<(&mut Wander, &Mover)>) {
+fn wander(time: Res<Time>, args: Res<crate::Args>, live: Option<ResMut<Live>>, mut movers: Query<(&mut Wander, &Mover)>) {
+    // A contact sheet has creatures and no simulation.
+    let Some(mut live) = live else { return };
     let dt = time.delta_secs();
     let middle = Vec2::new(args.at.0, args.at.1);
     for (mut w, mover) in &mut movers {

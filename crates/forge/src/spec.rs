@@ -166,7 +166,8 @@ pub fn ids() -> Vec<String> {
         .into_iter()
         .flatten()
         .flatten()
-        .filter(|e| e.path().join("creature.toml").exists())
+        // Not the ones made from another creature (`cargo forge cubes`): they are not built.
+        .filter(|e| std::fs::read_to_string(e.path().join("creature.toml")).is_ok_and(|text| !text.contains("\ncubes_of = ")))
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
     out.sort();
