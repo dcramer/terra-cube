@@ -1,6 +1,6 @@
 //! A body moving through the voxel world: an upright box pushed by an [`Intent`], held out of
-//! solid cells. It walks up a one-cell step without jumping (cells are half a metre, so hills
-//! are staircases), stays on the ground down one, jumps, falls, and floats in water.
+//! solid cells. It walks up a ledge of half a metre without jumping (hills are staircases of
+//! cells), stays on the ground down one, jumps, falls, and floats in water.
 //!
 //! The box is moved one axis at a time and, because a tick never moves it a whole cell, put
 //! back against the cell face it crossed. No physics engine: this is all a block world needs.
@@ -25,9 +25,9 @@ pub struct Tuning {
     pub short_jump: f32,
     /// The same in the air: some steering, not much.
     pub air_accel: f32,
-    /// The highest ledge walked up without jumping, metres.
+    /// The highest ledge walked up without jumping, metres: half a metre, whatever a cell is.
     pub step: f32,
-    /// Fastest fall, m/s. Kept under a cell a tick so the floor is never skipped.
+    /// Fastest fall, m/s. A body is taller than a tick of it, so no floor is passed through.
     pub max_fall: f32,
     /// Seconds after walking off an edge in which a jump still counts.
     pub coyote: f32,
@@ -37,7 +37,7 @@ pub struct Tuning {
 
 impl Default for Tuning {
     fn default() -> Self {
-        Self { gravity: 22.0, jump_speed: 6.9, ground_accel: 18.0, ground_decel: 26.0, short_jump: 2.4, air_accel: 7.0, step: CELL + 0.05, max_fall: 25.0, coyote: 0.1, swim: 0.55 }
+        Self { gravity: 22.0, jump_speed: 6.9, ground_accel: 18.0, ground_decel: 26.0, short_jump: 2.4, air_accel: 7.0, step: 0.55, max_fall: 25.0, coyote: 0.1, swim: 0.55 }
     }
 }
 
@@ -164,24 +164,39 @@ impl Body {
         self.grounded = false;
         if self.blocked(world, to) {
             if self.vel.y <= 0.0 {
-                self.pos.y = ((to.y / CELL).floor() + 1.0) * CELL;
+                // Onto the floor it met: a fast fall can end more than a cell into it.
+                let mut top = ((to.y / CELL).floor() + 1.0) * CELL;
+                while top < self.pos.y && self.blocked(world, self.pos.with_y(top)) {
+                    top += CELL;
+                }
+                self.pos.y = top.min(self.pos.y);
                 self.grounded = true;
             } else {
-                self.pos.y = ((to.y + self.height) / CELL).floor() * CELL - self.height;
+                let mut under = ((to.y + self.height) / CELL).floor() * CELL - self.height;
+                while under > self.pos.y && self.blocked(world, self.pos.with_y(under)) {
+                    under -= CELL;
+                }
+                self.pos.y = under.max(self.pos.y);
             }
             self.vel.y = 0.0;
         } else {
             self.pos = to;
         }
 
-        // Walking off a one-cell ledge keeps the feet down instead of a short fall.
+        // Walking off a ledge no higher than a step keeps the feet down instead of a short fall.
         if was_grounded && !self.grounded && !jumped && !self.swimming && self.pos.y <= start_y {
-            let floor = ((start_y - tuning.step) / CELL).ceil() * CELL;
-            let (on, under) = (self.pos.with_y(floor), self.pos.with_y(floor - 0.01));
-            if !self.blocked(world, on) && self.blocked(world, under) {
-                self.pos.y = floor;
-                self.vel.y = 0.0;
-                self.grounded = true;
+            let mut floor = ((start_y / CELL).round() - 1.0) * CELL;
+            while floor >= start_y - tuning.step {
+                if self.blocked(world, self.pos.with_y(floor)) {
+                    break;
+                }
+                if self.blocked(world, self.pos.with_y(floor - 0.01)) {
+                    self.pos.y = floor;
+                    self.vel.y = 0.0;
+                    self.grounded = true;
+                    break;
+                }
+                floor -= CELL;
             }
         }
     }
@@ -199,19 +214,22 @@ impl Body {
             return;
         }
         if may_step {
-            // The top of the next cell up, if it is within a step.
-            let up = ((self.pos.y / CELL + 1e-3).floor() + 1.0) * CELL;
-            if up - self.pos.y <= tuning.step && !self.blocked(world, self.pos.with_y(up)) && !self.blocked(world, to.with_y(up)) {
-                self.pos = to.with_y(up);
-                return;
+            // The lowest cell top above the feet that clears the ledge, if it is within a step.
+            let mut up = ((self.pos.y / CELL + 1e-3).floor() + 1.0) * CELL;
+            while up - self.pos.y <= tuning.step && !self.blocked(world, self.pos.with_y(up)) {
+                if !self.blocked(world, to.with_y(up)) {
+                    self.pos = to.with_y(up);
+                    return;
+                }
+                up += CELL;
             }
         }
         if self.swimming {
             // Out of the water: a swimmer against a bank climbs onto it, if the bank's top is
-            // no more than a cell over its waist. Without this a steep-sided river is a trap.
+            // no more than half a metre over its waist. Without this a steep-sided river is a trap.
             let waist = self.pos.y + self.height * WAIST;
             let mut up = ((self.pos.y / CELL + 1e-3).floor() + 1.0) * CELL;
-            while up <= waist + CELL + 1e-3 {
+            while up <= waist + 0.5 + 1e-3 {
                 if !self.blocked(world, self.pos.with_y(up)) && !self.blocked(world, to.with_y(up)) {
                     self.pos = to.with_y(up);
                     self.vel.y = 0.0;
@@ -307,12 +325,13 @@ mod tests {
     /// A floor of stone with its top at y = 1 m, 40 m square.
     fn floor() -> World {
         let mut w = World::default();
-        for z in -40..40 {
-            for x in -40..40 {
-                w.set(IVec3::new(x, 1, z), Block::Stone);
-            }
-        }
+        w.fill(Vec3::new(-20.0, 0.5, -20.0), Vec3::new(20.0, 1.0, 20.0), Block::Stone);
         w
+    }
+
+    /// Stone from `x0` to `x1` metres east, 4 m wide across the way, from the floor up to `top`.
+    fn block(w: &mut World, x0: f32, x1: f32, top: f32) {
+        w.fill(Vec3::new(x0, 1.0, -2.0), Vec3::new(x1, top, 2.0), Block::Stone);
     }
 
     fn player() -> Body {
@@ -343,14 +362,10 @@ mod tests {
     }
 
     #[test]
-    fn walks_up_one_cell_and_stops_at_two() {
+    fn walks_up_half_a_metre_and_stops_at_a_whole_one() {
         let mut w = floor();
-        for z in -4..4 {
-            w.set(IVec3::new(4, 2, z), Block::Stone); // a step, top at 1.5
-            for y in 2..4 {
-                w.set(IVec3::new(8, y, z), Block::Stone); // a wall, top at 2.0
-            }
-        }
+        block(&mut w, 2.0, 2.5, 1.5); // a step
+        block(&mut w, 4.0, 4.5, 2.0); // a wall
         let mut b = player();
         run(&mut b, &w, 0.2, Intent::default());
         run(&mut b, &w, 3.0, EAST);
@@ -362,11 +377,7 @@ mod tests {
     #[test]
     fn stays_grounded_over_a_step_down_and_up() {
         let mut w = floor();
-        for x in 4..8 {
-            for z in -4..4 {
-                w.set(IVec3::new(x, 2, z), Block::Stone);
-            }
-        }
+        block(&mut w, 2.0, 4.0, 1.5);
         let mut b = player();
         run(&mut b, &w, 0.2, Intent::default());
         let mut top = 0.0f32;
@@ -379,7 +390,7 @@ mod tests {
     }
 
     #[test]
-    fn a_jump_clears_two_cells_and_lands() {
+    fn a_jump_clears_a_metre_and_lands() {
         let (w, mut b) = (floor(), player());
         run(&mut b, &w, 0.2, Intent::default());
         let rise = |b: &mut Body, hold: bool| {
@@ -392,13 +403,13 @@ mod tests {
             assert!(b.grounded && b.pos.y == 1.0);
             top
         };
-        // Held, it clears two cells; tapped, it is a hop of under one.
+        // Held, it clears a metre; tapped, it is a hop of under half of one.
         let (held, tapped) = (rise(&mut b, true), rise(&mut b, false));
         assert!(held > 1.0 && held < 1.3, "rose {held}");
         assert!(tapped > 0.25 && tapped < 0.5, "hopped {tapped}");
         // Held, it jumps again only once back on the ground, and a ceiling stops it.
         let mut w = w;
-        w.set(IVec3::new(0, 6, 0), Block::Stone); // underside at 3.0: 0.25 m of headroom
+        w.fill(Vec3::new(0.0, 3.0, 0.0), Vec3::new(0.5, 3.5, 0.5), Block::Stone); // 0.25 m of headroom
         run(&mut b, &w, 1.0, Intent { jump: true, ..Intent::default() });
         assert!(b.pos.y <= 3.0 - 1.75 + 1e-3);
     }
@@ -443,14 +454,8 @@ mod tests {
     #[test]
     fn floats_in_water() {
         let mut w = World::default();
-        for z in -8..8 {
-            for x in -8..8 {
-                w.set(IVec3::new(x, 0, z), Block::Stone);
-                for y in 1..9 {
-                    w.set(IVec3::new(x, y, z), Block::Water); // surface at 4.5
-                }
-            }
-        }
+        w.fill(Vec3::new(-4.0, 0.0, -4.0), Vec3::new(4.0, 0.5, 4.0), Block::Stone);
+        w.fill(Vec3::new(-4.0, 0.5, -4.0), Vec3::new(4.0, 4.5, 4.0), Block::Water);
         let mut b = Body::new(Vec3::new(0.25, 6.0, 0.25), 0.3, 1.75);
         run(&mut b, &w, 6.0, Intent::default());
         let waist = b.pos.y + 1.75 * WAIST;
@@ -464,15 +469,11 @@ mod tests {
 
     #[test]
     fn climbs_out_of_water_over_a_steep_bank() {
-        // A pool 2 m deep with sheer sides: the bank's top is one cell over the water.
+        // A pool 1.5 m deep with sheer sides: the bank's top is half a metre over the water.
         let mut w = floor();
-        for z in -40..40 {
-            for x in -40..40 {
-                for y in 2..=5 {
-                    w.set(IVec3::new(x, y, z), if x.abs() < 8 && z.abs() < 8 { if y < 5 { Block::Water } else { Block::Air } } else { Block::Stone });
-                }
-            }
-        }
+        w.fill(Vec3::new(-20.0, 1.0, -20.0), Vec3::new(20.0, 3.0, 20.0), Block::Stone);
+        w.fill(Vec3::new(-4.0, 1.0, -4.0), Vec3::new(4.0, 3.0, 4.0), Block::Air);
+        w.fill(Vec3::new(-4.0, 1.0, -4.0), Vec3::new(4.0, 2.5, 4.0), Block::Water);
         let mut b = Body::new(Vec3::new(0.25, 1.5, 0.25), 0.3, 1.75);
         run(&mut b, &w, 3.0, Intent::default());
         assert!(b.swimming, "{b:?}");
@@ -482,7 +483,7 @@ mod tests {
 
     #[test]
     fn never_ends_a_tick_inside_the_test_terrain() {
-        let (w, _) = terrain::generate(7, 2);
+        let (w, _) = terrain::generate(7, 4);
         let mut b = Body::new(Vec3::new(0.25, w.ground_height(0.25, 0.25), 0.25), 0.3, 1.75);
         for tick in 0..TICKS * 60 {
             // A wandering heading that turns over the minute, jumping now and then.

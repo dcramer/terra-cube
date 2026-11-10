@@ -11,8 +11,15 @@ use std::collections::HashMap;
 
 /// Cells along a chunk's edge.
 pub const CHUNK: i32 = 32;
-/// A cell's edge in metres. Half a metre: finer than Minecraft's 1 m, as Eco's blocks read.
-pub const CELL: f32 = 0.5;
+/// A cell's edge in metres. A quarter of a metre: a quarter of Minecraft's, so slopes read as
+/// slopes and a tree's crown as round. Everything that means a distance is written in metres
+/// and turned to cells with this (see [`cells`]), so it can change again.
+pub const CELL: f32 = 0.25;
+
+/// A length in metres as a whole number of cells, to the nearest.
+pub fn cells(metres: f32) -> i32 {
+    (metres / CELL).round() as i32
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
 #[repr(u8)]
@@ -106,6 +113,32 @@ impl World {
         let (c, l) = Self::split(cell);
         self.chunks.entry(c).or_default().set(l, b);
     }
+    /// Sets a column of cells from `from` up to, not including, `to`, each to what `block`
+    /// gives for its height. Much quicker than a `set` a cell: the chunk is found once.
+    pub fn set_column(&mut self, x: i32, z: i32, from: i32, to: i32, mut block: impl FnMut(i32) -> Block) {
+        let mut y = from;
+        while y < to {
+            let (c, l) = Self::split(IVec3::new(x, y, z));
+            let chunk = self.chunks.entry(c).or_default();
+            for ly in l.y..CHUNK.min(l.y + to - y) {
+                chunk.set(IVec3::new(l.x, ly, l.z), block(y));
+                y += 1;
+            }
+        }
+    }
+
+    /// Sets every cell in a box given in metres: from `lo` up to, not including, `hi`.
+    pub fn fill(&mut self, lo: Vec3, hi: Vec3, b: Block) {
+        let (lo, hi) = ((lo / CELL).round().as_ivec3(), (hi / CELL).round().as_ivec3());
+        for y in lo.y..hi.y {
+            for z in lo.z..hi.z {
+                for x in lo.x..hi.x {
+                    self.set(IVec3::new(x, y, z), b);
+                }
+            }
+        }
+    }
+
     /// How far along a ray the first solid cell is, in metres, if within `reach`. Walks the
     /// grid a cell face at a time, so nothing thin is skipped.
     pub fn raycast(&self, from: Vec3, dir: Vec3, reach: f32) -> Option<f32> {
@@ -156,13 +189,13 @@ mod tests {
         w.set(IVec3::new(-1, 40, 33), Block::Stone);
         assert_eq!(w.get(IVec3::new(-1, 40, 33)), Block::Stone);
         assert_eq!(w.get(IVec3::new(0, 40, 33)), Block::Air);
-        assert_eq!(w.ground_height(-0.25, 16.7), 41.0 * CELL);
+        assert_eq!(w.ground_height(-0.5 * CELL, 33.5 * CELL), 41.0 * CELL);
     }
 
     #[test]
     fn a_ray_stops_at_the_first_solid_face() {
         let mut w = World::default();
-        w.set(IVec3::new(6, 2, 0), Block::Stone); // x from 3.0 to 3.5
+        w.fill(Vec3::new(3.0, 1.0, 0.0), Vec3::new(3.5, 1.5, 0.5), Block::Stone);
         let from = Vec3::new(0.25, 1.25, 0.25);
         assert_eq!(w.raycast(from, Vec3::X, 10.0), Some(2.75));
         assert_eq!(w.raycast(from, Vec3::X, 2.0), None);

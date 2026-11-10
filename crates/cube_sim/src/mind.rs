@@ -102,16 +102,18 @@ enum Footing {
 }
 
 /// How far up and down, in cells, a creature will go from one column to the next. At its
-/// ease it takes steps and small drops, so it stays on the ground it knows; in a hurry it
-/// jumps what a jump clears and drops what will not hurt.
+/// ease it takes what it can step up (half a metre) and drops of a metre, so it stays on the
+/// ground it knows; in a hurry it jumps what a jump clears (a metre) and drops three.
 #[derive(Clone, Copy)]
 struct Nerve {
     up: i32,
     down: i32,
 }
 
-const EASY: Nerve = Nerve { up: 1, down: 2 };
-const HURRIED: Nerve = Nerve { up: 2, down: 6 };
+/// The highest ledge a body walks up without jumping, in cells (`Tuning::step`).
+const STEP: i32 = (0.5 / CELL) as i32;
+const EASY: Nerve = Nerve { up: STEP, down: STEP * 2 };
+const HURRIED: Nerve = Nerve { up: STEP * 2, down: STEP * 6 };
 
 fn footing(world: &World, x: i32, z: i32, level: i32, height: f32, nerve: Nerve) -> Footing {
     let solid = |y: i32| world.get(IVec3::new(x, y, z)).solid();
@@ -140,7 +142,7 @@ fn footing(world: &World, x: i32, z: i32, level: i32, height: f32, nerve: Nerve)
 /// Whether there is dry ground to stand on at a point, looking down from well over `near`.
 fn dry_ground(world: &World, at: Vec2, near: f32, height: f32) -> bool {
     let (x, z) = (cell_of(at.x), cell_of(at.y));
-    let mut y = cell_of(near) + 24;
+    let mut y = cell_of(near + 12.0);
     let get = |y: i32| world.get(IVec3::new(x, y, z));
     // Down through the air, and through any tree's crown, to the ground.
     loop {
@@ -154,7 +156,7 @@ fn dry_ground(world: &World, at: Vec2, near: f32, height: f32) -> bool {
             y -= 1;
         }
     }
-    y > 0 && get(y) != Block::Wood && (get(y + 1) != Block::Water || height > 2.0 * CELL)
+    y > 0 && get(y) != Block::Wood && (get(y + 1) != Block::Water || height > 1.0)
 }
 
 /// How many metres of the straight line from a body to a point can be walked.
@@ -172,7 +174,7 @@ fn clear_way(world: &World, agent: &Agent, to: Vec2) -> f32 {
         last = column;
         match footing(world, column.0, column.1, at, agent.body.height, EASY) {
             Footing::Floor(found) => at = found,
-            _ => return out - CELL,
+            _ => return out - 0.5,
         }
     }
     whole
@@ -200,7 +202,7 @@ fn steer(world: &World, agent: &Agent, speed: f32, want: Vec2, nerve: Nerve, vee
         let (mut at, mut jump) = (level, false);
         let mut out = body.half + 0.25;
         let mut last = (cell_of(pos.x), cell_of(pos.y));
-        while ok && out <= look + CELL {
+        while ok && out <= look + 0.5 {
             let p = pos + dir * out;
             let column = (cell_of(p.x), cell_of(p.y));
             out += CELL;
@@ -211,7 +213,7 @@ fn steer(world: &World, agent: &Agent, speed: f32, want: Vec2, nerve: Nerve, vee
             let found = footing(world, column.0, column.1, at, body.height, nerve);
             ok = passes(&found);
             if let Footing::Floor(found) = found {
-                jump |= found - at == 2 && out < body.half + 0.25 + CELL * 2.5;
+                jump |= found - at > STEP && out < body.half + 1.5;
                 at = found;
             }
         }

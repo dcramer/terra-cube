@@ -2,7 +2,7 @@
 //! grows where, how high it goes, and how much of it can be walked to from the start.
 
 use crate::terrain::{Biome, Land, SEA};
-use cube_voxel::CELL;
+use cube_voxel::{CELL, cells};
 use std::collections::VecDeque;
 
 pub struct Survey {
@@ -11,7 +11,7 @@ pub struct Survey {
     pub trees: usize,
     /// Metres from the sea to the highest ground.
     pub highest: f32,
-    /// The part of dry land with a drop or rise of 1.5 m or more beside it.
+    /// The part of dry land that is cliff: steeper than three up for one along.
     pub cliffs: f32,
     /// The part of dry land reached from the start on foot: steps, jumps and wading.
     pub on_foot: f32,
@@ -19,14 +19,15 @@ pub struct Survey {
     pub swimming: f32,
 }
 
-/// Whether a creature gets from one column to the next: up two cells (a jump), down six,
-/// and through water no deeper than a cell unless it swims.
+/// Whether a creature gets from one column to the next: up a metre (a jump), down three,
+/// and through water no deeper than half a metre unless it swims.
 fn passable(land: &Land, from: (i32, i32), to: (i32, i32), swim: bool) -> bool {
-    let (a, b) = (land.height(from.0, from.1).max(SEA - 1), land.height(to.0, to.1));
-    if b < SEA - 1 {
+    let wade = SEA - cells(0.5);
+    let (a, b) = (land.height(from.0, from.1).max(wade), land.height(to.0, to.1));
+    if b < wade {
         return swim;
     }
-    b - a <= 2 && a - b <= 6
+    b - a <= cells(1.0) && a - b <= cells(3.0)
 }
 
 /// Which columns are reached from the origin.

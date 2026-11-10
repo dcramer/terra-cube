@@ -8,7 +8,7 @@ use cube_sim::{
     survey,
     terrain::{self, Biome, Land, SEA},
 };
-use cube_voxel::{Block, CELL, World};
+use cube_voxel::{Block, CELL, World, cells};
 use glam::{IVec3, Vec3};
 use std::path::Path;
 
@@ -80,10 +80,12 @@ fn living(args: &Args) -> (World, Land, Sim) {
 }
 
 fn survey_command(args: &Args) -> ! {
-    let (_, land) = terrain::generate(args.seed, args.radius);
+    let (world, land) = terrain::generate(args.seed, args.radius);
     let s = survey::survey(&land);
+    // What the game will have to draw: every chunk meshed as it meshes them.
+    let faces: usize = world.chunks.keys().map(|&c| [false, true].map(|liquid| cube_voxel::mesh::mesh_chunk(&world, c, liquid).indices.len() / 6).iter().sum::<usize>()).sum();
     let shares: Vec<String> = Biome::ALL.iter().map(|b| format!("{} {:.0}%", b.name(), s.share[*b as usize] * 100.0)).collect();
-    println!("land seed={} {:.0}m across: {} · trees {} · highest {:.0}m · cliffs {:.0}% · reached on foot {:.0}%, swimming {:.0}%", args.seed, (land.span * 2) as f32 * CELL, shares.join(" "), s.trees, s.highest, s.cliffs * 100.0, s.on_foot * 100.0, s.swimming * 100.0);
+    println!("land seed={} {:.0}m across, {:.2}m cells: {} · trees {} · highest {:.0}m · cliffs {:.0}% · reached on foot {:.0}%, swimming {:.0}% · {} chunks, {:.1}M faces to draw", args.seed, (land.span * 2) as f32 * CELL, CELL, shares.join(" "), s.trees, s.highest, s.cliffs * 100.0, s.on_foot * 100.0, s.swimming * 100.0, world.chunks.len(), faces as f32 / 1e6);
     let mut checks = Checks(Vec::new());
     let share = |b: Biome| s.share[b as usize];
     checks.bar("water", share(Biome::Water), (0.2..=0.6).contains(&share(Biome::Water)), "0.20 to 0.60 of the world");
@@ -93,6 +95,7 @@ fn survey_command(args: &Args) -> ! {
     checks.bar("trees", s.trees as f32, s.trees >= 150, "at least 150");
     checks.bar("highest", s.highest, s.highest >= 15.0, "at least 15 m");
     checks.bar("cliffs", s.cliffs, (0.03..=0.35).contains(&s.cliffs), "0.03 to 0.35 of the land");
+    checks.bar("faces", faces as f32 / 1e6, faces <= 4_000_000, "at most 4 million");
     checks.bar("on-foot", s.on_foot, s.on_foot >= 0.5, "at least 0.50 of the land from the start");
     checks.bar("swimming", s.swimming, s.swimming >= 0.9, "at least 0.90 of the land from the start");
     checks.finish()
@@ -164,7 +167,7 @@ fn run_command(args: &Args) -> ! {
 
 /// The top block of a column and how high it is, looking down from the sky.
 fn top(world: &World, x: i32, z: i32) -> (Block, i32) {
-    let mut y = SEA + 110;
+    let mut y = SEA + cells(55.0);
     while y > 0 && world.get(IVec3::new(x, y, z)) == Block::Air {
         y -= 1;
     }
@@ -175,8 +178,9 @@ fn map_command(args: &Args) -> ! {
     let Some(file) = &args.file else { fail("map wants a file: cargo world map shots/map.png") };
     let (world, land, mut sim) = living(args);
     let side = (land.span * 2) as u32;
-    const PX: u32 = 2;
-    let mut picture = image::RgbImage::new(side * PX, side * PX);
+    // A pixel is a quarter of a metre.
+    let scale = (CELL / 0.25).round().max(1.0) as u32;
+    let mut picture = image::RgbImage::new(side * scale, side * scale);
     let tone = |v: f32| (v.clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0) as u8;
     for z in 0..side as i32 {
         for x in 0..side as i32 {
@@ -184,25 +188,25 @@ fn map_command(args: &Args) -> ! {
             let (block, y) = top(&world, cx, cz);
             let (_, y_lit) = top(&world, cx - 1, cz - 1);
             // Lit from the north-west: a rise toward the light is bright, away from it dark.
-            let shade = (1.0 + (y - y_lit) as f32 * 0.12).clamp(0.55, 1.5) * (0.8 + (y - SEA) as f32 * 0.006);
+            let shade = (1.0 + (y - y_lit) as f32 * 0.12).clamp(0.55, 1.5) * (0.8 + (y - SEA) as f32 * CELL * 0.012);
             let mut colour = block.colors().0;
             if block == Block::Water {
-                let depth = (SEA - land.height(cx, cz)) as f32;
+                let depth = (SEA - land.height(cx, cz)) as f32 * CELL * 2.0;
                 colour = [0.10 - depth * 0.006, 0.34 - depth * 0.018, 0.50 - depth * 0.02];
             }
             let shade = if block == Block::Water { 1.0 } else { shade };
             let pixel = image::Rgb(colour.map(|c| tone(c * shade * 1.6)));
-            for (dx, dz) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-                picture.put_pixel(x as u32 * PX + dx, z as u32 * PX + dz, pixel);
+            for (dx, dz) in (0..scale).flat_map(|dx| (0..scale).map(move |dz| (dx, dz))) {
+                picture.put_pixel(x as u32 * scale + dx, z as u32 * scale + dz, pixel);
             }
         }
     }
     let mut dot = |pos: Vec3, colour: [u8; 3], size: i32| {
-        let (px, pz) = (((pos.x / CELL) + land.span as f32) * PX as f32, ((pos.z / CELL) + land.span as f32) * PX as f32);
+        let (px, pz) = (((pos.x / CELL) + land.span as f32) * scale as f32, ((pos.z / CELL) + land.span as f32) * scale as f32);
         for dz in -size..=size {
             for dx in -size..=size {
                 let (x, z) = (px as i32 + dx, pz as i32 + dz);
-                if x >= 0 && z >= 0 && (x as u32) < side * PX && (z as u32) < side * PX {
+                if x >= 0 && z >= 0 && (x as u32) < side * scale && (z as u32) < side * scale {
                     picture.put_pixel(x as u32, z as u32, image::Rgb(colour));
                 }
             }
@@ -233,7 +237,7 @@ fn map_command(args: &Args) -> ! {
     if let Err(e) = picture.save(file) {
         fail(&format!("saving {file}: {e}"));
     }
-    println!("map {file} seed={} {}px a side, {:.0}m across, creatures={} after {}s", args.seed, side * PX, side as f32 * CELL, sim.agents.len(), args.seconds);
+    println!("map {file} seed={} {}px a side, {:.0}m across, creatures={} after {}s", args.seed, side * scale, side as f32 * CELL, sim.agents.len(), args.seconds);
     std::process::exit(0);
 }
 

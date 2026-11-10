@@ -353,11 +353,11 @@ impl Sim {
             if was_grounded && !agent.body.grounded && !agent.body.swimming {
                 agent.jumped = agent.body.vel.y > 0.5;
             }
-            // Down from more than about a cell: a landing.
+            // Down from more than about half a metre: a landing.
             if !was_grounded && agent.body.grounded && fall < -4.5 {
                 agent.landing = 0.3;
             }
-            // A step up or down moves the body half a metre in one tick; the model eases after.
+            // A step up or down moves the body all at once; the model eases after.
             let rise = agent.body.pos.y - was.y;
             if was_grounded && (agent.body.grounded || agent.body.swimming) && rise.abs() > 0.2 {
                 agent.stepped += rise;
@@ -461,7 +461,6 @@ mod tests {
     use super::*;
     use crate::{TICKS, mind::State, terrain};
     use cube_voxel::Block;
-    use glam::IVec3;
 
     fn kind(id: &str, temper: Temper, height: f32, speeds: [f32; 3]) -> Kind {
         Kind { id: id.into(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3 }
@@ -470,11 +469,7 @@ mod tests {
     /// Rabbit, wolf, bear, goblin and a person, on a floor of stone 60 m square.
     fn stage() -> (World, Sim) {
         let mut world = World::default();
-        for z in -60..60 {
-            for x in -60..60 {
-                world.set(IVec3::new(x, 1, z), Block::Stone);
-            }
-        }
+        world.fill(Vec3::new(-30.0, 0.5, -30.0), Vec3::new(30.0, 1.0, 30.0), Block::Stone);
         let kinds = vec![
             kind("rabbit", Temper::Timid, 0.3, [0.5, 0.9, 1.6]),
             kind("wolf", Temper::Hunter, 0.85, [1.0, 2.0, 3.6]),
@@ -543,7 +538,7 @@ mod tests {
 
     #[test]
     fn the_same_seed_lives_the_same_life_and_nothing_leaves_the_world() {
-        let (world, land) = terrain::generate(6, 5);
+        let (world, land) = terrain::generate(6, terrain::RADIUS);
         let live = || {
             let (_, mut sim) = stage();
             let placed = sim.populate(&world, &land);

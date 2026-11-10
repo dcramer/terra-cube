@@ -35,8 +35,10 @@ fn hash(p: IVec3) -> f32 {
 /// not one green.
 fn patch(p: IVec3) -> f32 {
     let at = |x: i32, z: i32| hash(IVec3::new(x, 77, z));
-    let (gx, gz) = (p.x.div_euclid(12), p.z.div_euclid(12));
-    let (fx, fz) = (p.x.rem_euclid(12) as f32 / 12.0, p.z.rem_euclid(12) as f32 / 12.0);
+    // Six metres from one patch to the next.
+    let n = crate::cells(6.0);
+    let (gx, gz) = (p.x.div_euclid(n), p.z.div_euclid(n));
+    let (fx, fz) = (p.x.rem_euclid(n) as f32 / n as f32, p.z.rem_euclid(n) as f32 / n as f32);
     let (sx, sz) = (fx * fx * (3.0 - 2.0 * fx), fz * fz * (3.0 - 2.0 * fz));
     let a = at(gx, gz) * (1.0 - sx) + at(gx + 1, gz) * sx;
     let b = at(gx, gz + 1) * (1.0 - sx) + at(gx + 1, gz + 1) * sx;
@@ -84,8 +86,8 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                 let mut warm = 0.0;
                 // Water hides what is under it by how much of it there is: a ford shows its
                 // bed, the sea does not.
-                let depth = if liquid { (1..9).take_while(|d| near.get(local - IVec3::Y * *d) == Block::Water).count() } else { 0 };
-                let alpha = if liquid { 0.42 + depth as f32 * 0.07 } else { 1.0 };
+                let depth = if liquid { (1..=crate::cells(4.0)).take_while(|d| near.get(local - IVec3::Y * *d) == Block::Water).count() } else { 0 };
+                let alpha = if liquid { 0.42 + depth as f32 * CELL * 0.14 } else { 1.0 };
                 if matches!(block, Block::Grass | Block::Turf | Block::Leaves) {
                     // Patches: lighter and yellower here, deeper there.
                     let drift = patch(cell) - 0.5;

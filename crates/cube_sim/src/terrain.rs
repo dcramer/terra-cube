@@ -5,8 +5,8 @@
 //! layered noise; [`generate`] fills the cells and plants things. `Land` is kept beside the
 //! world: it is how creatures are placed and how the world is measured (`survey`).
 
-use cube_voxel::{Block, CHUNK, World};
-use glam::IVec3;
+use cube_voxel::{Block, CELL, CHUNK, World, cells};
+use glam::{IVec3, Vec3};
 
 /// 0 to 1 from two whole numbers and a seed.
 pub fn hash2(x: i32, z: i32, seed: u32) -> f32 {
@@ -43,12 +43,13 @@ fn mix(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
 
-/// Water level, in cells.
-pub const SEA: i32 = 16;
+/// Water level: metres over the bottom of the world, and the same in cells.
+pub const SEA_LEVEL: f32 = 8.0;
+pub const SEA: i32 = (SEA_LEVEL / CELL) as i32;
 /// The world the game starts in, and the one `cargo world` judges: its seed, and how many
-/// chunks it runs out from the origin (6 is 96 m each way).
+/// chunks it runs out from the origin (96 m each way).
 pub const SEED: u32 = 6;
-pub const RADIUS: i32 = 6;
+pub const RADIUS: i32 = (96.0 / (CELL * CHUNK as f32)) as i32;
 
 /// What grows on a column, and so who lives there.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
@@ -90,7 +91,8 @@ impl Land {
         let mut heights = vec![0; side * side];
         for z in -span..span {
             for x in -span..span {
-                heights[((x + span) + (z + span) * span * 2) as usize] = column(x as f32, z as f32, seed, span as f32);
+                let metres = column((x as f32 + 0.5) * CELL, (z as f32 + 0.5) * CELL, seed, span as f32 * CELL);
+                heights[((x + span) + (z + span) * span * 2) as usize] = cells(metres).max(cells(1.0));
             }
         }
         let mut land = Land { seed, span, heights, biomes: Vec::new(), trees: Vec::new() };
@@ -118,7 +120,9 @@ impl Land {
         self.index(x, z).map_or(Biome::Water, |i| self.biomes[i])
     }
 
-    /// The most the ground rises or falls to a neighbouring column, in cells.
+    /// The most the ground rises or falls to a neighbouring column, in cells. Cells are as
+    /// high as they are wide, so this is the same steepness whatever their size: 1 is a
+    /// 45° stair, 3 and over a cliff.
     pub fn slope(&self, x: i32, z: i32) -> i32 {
         let h = self.height(x, z);
         [(1, 0), (-1, 0), (0, 1), (0, -1)].into_iter().map(|(dx, dz)| (self.height(x + dx, z + dz) - h).abs()).max().unwrap_or(0)
@@ -126,14 +130,15 @@ impl Land {
 
     fn biome_of(&self, x: i32, z: i32) -> Biome {
         let h = self.height(x, z);
-        let moist = fbm(x as f32 / 70.0, z as f32 / 70.0, self.seed + 21);
+        let over_sea = (h - SEA) as f32 * CELL;
+        let moist = fbm(x as f32 * CELL / 35.0, z as f32 * CELL / 35.0, self.seed + 21);
         if h < SEA {
             Biome::Water
-        } else if h <= SEA + 1 {
+        } else if over_sea <= 0.5 {
             Biome::Shore
-        } else if h > SEA + 56 {
+        } else if over_sea > 28.0 {
             Biome::Snow
-        } else if h > SEA + 34 || self.slope(x, z) >= 3 {
+        } else if over_sea > 17.0 || self.slope(x, z) >= 3 {
             Biome::Rock
         } else if moist > 0.5 {
             Biome::Forest
@@ -143,39 +148,42 @@ impl Land {
     }
 }
 
-/// A column's height in cells. Lowland rolls a few metres over the sea; a mountain mask
-/// raises ridges in part of the island, stepped into ledges; a river winds through where a
-/// slow noise crosses its middle; the edge falls away into the sea; the origin is a clearing.
-fn column(x: f32, z: f32, seed: u32, span: f32) -> i32 {
+/// The ground's height at a point, both in metres. Lowland rolls a few metres over the sea; a
+/// mountain mask raises ridges in part of the island, stepped into ledges; a river winds
+/// through where a slow noise crosses its middle; the edge falls away into the sea; the origin
+/// is a clearing. Nothing here knows the size of a cell.
+fn column(x: f32, z: f32, seed: u32, span: f32) -> f32 {
+    // The shapes were tuned in half metres, and are kept so.
+    let (x, z, span, sea) = (x * 2.0, z * 2.0, span * 2.0, SEA_LEVEL * 2.0);
     // Bent coordinates, so nothing runs straight.
     let (wx, wz) = (x + (fbm(x / 70.0, z / 70.0, seed + 11) - 0.5) * 44.0, z + (fbm(x / 70.0, z / 70.0, seed + 12) - 0.5) * 44.0);
     let base = fbm(wx / 120.0, wz / 120.0, seed);
     let hills = (fbm(wx / 38.0, wz / 38.0, seed + 3) - 0.5) * 12.0;
-    let mut h = SEA as f32 + 5.0 + (base - 0.45) * 30.0 + hills;
+    let mut h = sea + 5.0 + (base - 0.45) * 30.0 + hills;
 
     let from_origin = (x * x + z * z).sqrt();
     // Mountains keep off the start: they are what is seen from it, not where it is.
     let mask = smooth(0.50, 0.66, fbm(wx / 150.0, wz / 150.0, seed + 7)) * smooth(50.0, 120.0, from_origin);
     let ridge = 1.0 - (2.0 * fbm(wx / 64.0, wz / 64.0, seed + 5) - 1.0).abs();
     let high = h + mask * (14.0 + ridge * ridge * 52.0);
-    // Ledges: the height rounded to steps, most strongly where the mountain is.
+    // Ledges: the height rounded to steps of three metres, most strongly where the mountain is.
     let ledged = (high / 6.0).round() * 6.0;
     h = mix(high, ledged, mask * 0.65);
 
     let wind = (fbm(wx / 130.0, wz / 130.0, seed + 9) - 0.5).abs();
     let valley = 1.0 - smooth(0.0, 0.085, wind);
     let channel = 1.0 - smooth(0.006, 0.03, wind);
-    h = mix(h, h.min(SEA as f32 + 2.0), valley * 0.85);
+    h = mix(h, h.min(sea + 2.0), valley * 0.85);
     // The river is deep in places and a ford in others.
     let bed = mix(1.0, 4.5, smooth(0.42, 0.58, fbm(x / 45.0, z / 45.0, seed + 10)));
-    h = mix(h, SEA as f32 - bed, channel);
+    h = mix(h, sea - bed, channel);
 
     let clearing = 1.0 - smooth(14.0, 40.0, from_origin);
-    h = mix(h, SEA as f32 + 4.0 + hills * 0.15, clearing);
+    h = mix(h, sea + 4.0 + hills * 0.15, clearing);
 
     let out = from_origin / span + (fbm(x / 50.0, z / 50.0, seed + 15) - 0.5) * 0.25;
-    h = mix(h, SEA as f32 - 9.0, smooth(0.68, 0.95, out));
-    (h.round() as i32).max(2)
+    h = mix(h, sea - 9.0, smooth(0.68, 0.95, out));
+    h * 0.5
 }
 
 /// A world `radius` chunks out from the origin in x and z, and the land it was made from.
@@ -183,49 +191,54 @@ pub fn generate(seed: u32, radius: i32) -> (World, Land) {
     let mut land = Land::new(seed, radius);
     let mut world = World::default();
     let span = land.span;
+    // Snow lies half a metre deep, soil two metres, and the river's bed is gravel where it is
+    // over half a metre down.
+    let (snow, soil, deep) = (cells(0.5), cells(2.0), cells(1.0));
     for z in -span..span {
         for x in -span..span {
             let (h, biome) = (land.height(x, z), land.biome(x, z));
-            for y in 0..h.max(SEA) {
+            world.set_column(x, z, 0, h.max(SEA), |y| {
                 let depth = h - 1 - y;
-                let block = if y >= h {
-                    Block::Water
-                } else {
-                    match biome {
-                        Biome::Snow if depth < 2 => Block::Snow,
-                        Biome::Rock | Biome::Snow => Block::Stone,
-                        _ if depth > 4 => Block::Stone,
-                        Biome::Water if h < SEA - 2 => Block::Gravel,
-                        Biome::Water | Biome::Shore => Block::Sand,
-                        Biome::Forest if depth == 0 => Block::Turf,
-                        Biome::Meadow if depth == 0 => Block::Grass,
-                        _ => Block::Dirt,
-                    }
-                };
-                world.set(IVec3::new(x, y, z), block);
-            }
+                if y >= h {
+                    return Block::Water;
+                }
+                match biome {
+                    Biome::Snow if depth < snow => Block::Snow,
+                    Biome::Rock | Biome::Snow => Block::Stone,
+                    _ if depth > soil => Block::Stone,
+                    Biome::Water if h < SEA - deep => Block::Gravel,
+                    Biome::Water | Biome::Shore => Block::Sand,
+                    Biome::Forest if depth == 0 => Block::Turf,
+                    Biome::Meadow if depth == 0 => Block::Grass,
+                    _ => Block::Dirt,
+                }
+            });
         }
     }
     plant(&mut world, &mut land);
     (world, land)
 }
 
+/// How far from the start the first tree may stand, metres.
+const CLEARING: f32 = 7.0;
+
 /// Trees, bushes and boulders. One may stand in each square of a coarse grid, at a spot and
-/// with a chance that come from the seed, so they never crowd and never line up.
+/// with a chance that come from the seed, so they never crowd and never line up. Sizes are in
+/// metres.
 fn plant(world: &mut World, land: &mut Land) {
-    const GRID: i32 = 5;
+    let grid = cells(2.5);
     let (span, seed) = (land.span, land.seed);
-    for gz in -span / GRID..span / GRID {
-        for gx in -span / GRID..span / GRID {
+    for gz in -span / grid..span / grid {
+        for gx in -span / grid..span / grid {
             let roll = |n: u32| hash2(gx, gz, seed + 40 + n);
-            let (x, z) = (gx * GRID + (roll(0) * GRID as f32) as i32, gz * GRID + (roll(1) * GRID as f32) as i32);
+            let (x, z) = (gx * grid + (roll(0) * grid as f32) as i32, gz * grid + (roll(1) * grid as f32) as i32);
             let (h, biome) = (land.height(x, z), land.biome(x, z));
             let foot = IVec3::new(x, h, z);
-            let near_start = (x * x + z * z) < 14 * 14;
+            let near_start = Vec3::new(x as f32, 0.0, z as f32).length() * CELL < CLEARING;
             if land.slope(x, z) >= 2 || near_start || land.index(x, z).is_none() {
                 continue;
             }
-            let high = h > SEA + 20;
+            let high = h > SEA + cells(10.0);
             let (tree, bush, boulder) = match biome {
                 Biome::Forest => (0.6, 0.08, 0.02),
                 Biome::Meadow => (0.035, 0.05, 0.015),
@@ -235,25 +248,27 @@ fn plant(world: &mut World, land: &mut Land) {
                 Biome::Water => (0.0, 0.0, 0.0),
             };
             let pick = roll(2);
+            let on = foot.as_vec3() + Vec3::new(0.5, 0.0, 0.5);
             if pick < tree {
                 if high || biome == Biome::Rock || biome == Biome::Snow || roll(3) < 0.2 {
-                    pine(world, foot, 10 + (roll(4) * 7.0) as i32, 2.4 + roll(5) * 1.2);
+                    pine(world, foot, 5.0 + roll(4) * 3.5, 1.2 + roll(5) * 0.6);
                 } else {
-                    broadleaf(world, foot, 6 + (roll(4) * 5.0) as i32, 3.0 + roll(5) * 1.6, seed);
+                    broadleaf(world, foot, 3.0 + roll(4) * 2.5, 1.5 + roll(5) * 0.8, seed);
                 }
                 land.trees.push(foot);
             } else if pick < tree + bush {
-                blob(world, foot.as_vec3() + glam::Vec3::new(0.5, 0.4, 0.5), glam::Vec3::new(1.2 + roll(4), 0.9 + roll(5) * 0.6, 1.2 + roll(6)), Block::Leaves, seed);
+                let size = Vec3::new(0.6 + roll(4) * 0.5, 0.45 + roll(5) * 0.3, 0.6 + roll(6) * 0.5);
+                blob(world, on + Vec3::Y * 0.2 / CELL, size / CELL, Block::Leaves, seed);
             } else if pick < tree + bush + boulder {
-                let r = 1.2 + roll(4) * 2.2;
-                blob(world, foot.as_vec3() + glam::Vec3::new(0.5, r * 0.25, 0.5), glam::Vec3::new(r, r * (0.6 + roll(5) * 0.4), r * (0.7 + roll(6) * 0.5)), Block::Stone, seed);
+                let r = 0.6 + roll(4) * 1.1;
+                blob(world, on + Vec3::Y * r * 0.25 / CELL, Vec3::new(r, r * (0.6 + roll(5) * 0.4), r * (0.7 + roll(6) * 0.5)) / CELL, Block::Stone, seed);
             }
         }
     }
 }
 
-/// Fills the air inside an ellipsoid, its edge chipped so it is not a ball.
-fn blob(world: &mut World, middle: glam::Vec3, radii: glam::Vec3, block: Block, seed: u32) {
+/// Fills the air inside an ellipsoid, its edge chipped so it is not a ball. In cells.
+fn blob(world: &mut World, middle: Vec3, radii: Vec3, block: Block, seed: u32) {
     let (lo, hi) = ((middle - radii).floor().as_ivec3(), (middle + radii).ceil().as_ivec3());
     for y in lo.y..=hi.y {
         for z in lo.z..=hi.z {
@@ -268,16 +283,28 @@ fn blob(world: &mut World, middle: glam::Vec3, radii: glam::Vec3, block: Block, 
     }
 }
 
-/// A trunk with a rounded crown well over head height: a troll walks under it.
-fn broadleaf(world: &mut World, foot: IVec3, trunk: i32, crown: f32, seed: u32) {
-    let top = foot + IVec3::Y * trunk;
-    let middle = top.as_vec3() + glam::Vec3::new(0.5, crown * 0.35, 0.5);
-    blob(world, middle, glam::Vec3::new(crown, crown * 0.8, crown), Block::Leaves, seed);
+/// A trunk half a metre through, `tall` metres to its top.
+fn trunk(world: &mut World, foot: IVec3, tall: i32) {
+    let thick = cells(0.5).max(1);
+    for y in 0..=tall {
+        for z in 0..thick {
+            for x in 0..thick {
+                world.set(foot + IVec3::new(x, y, z), Block::Wood);
+            }
+        }
+    }
+}
+
+/// A trunk with a rounded crown that starts three metres up: a troll walks under it.
+fn broadleaf(world: &mut World, foot: IVec3, tall: f32, crown: f32, seed: u32) {
+    let (tall, crown, clear) = (cells(tall), crown / CELL, cells(3.0));
+    let top = foot + IVec3::Y * tall;
+    let middle = top.as_vec3() + Vec3::new(0.5, crown * 0.35, 0.5);
+    blob(world, middle, Vec3::new(crown, crown * 0.8, crown), Block::Leaves, seed);
     // Nothing hangs lower than the crown's start.
-    let floor = foot.y + 6;
-    for y in foot.y..floor {
-        for z in -6..=6 {
-            for x in -6..=6 {
+    for y in foot.y..foot.y + clear {
+        for z in -clear..=clear {
+            for x in -clear..=clear {
                 let cell = IVec3::new(foot.x + x, y, foot.z + z);
                 if world.get(cell) == Block::Leaves {
                     world.set(cell, Block::Air);
@@ -285,18 +312,17 @@ fn broadleaf(world: &mut World, foot: IVec3, trunk: i32, crown: f32, seed: u32) 
             }
         }
     }
-    for y in 0..=trunk {
-        world.set(foot + IVec3::Y * y, Block::Wood);
-    }
+    trunk(world, foot, tall);
 }
 
-/// A tall trunk with tiers of needles narrowing to a point.
-fn pine(world: &mut World, foot: IVec3, trunk: i32, spread: f32) {
-    let first = 5;
-    for y in first..=trunk + 1 {
-        let up = (y - first) as f32 / (trunk + 1 - first) as f32;
-        // Tiers: every other layer is drawn in.
-        let r = spread * (1.0 - up) + 0.6 - if y % 2 == 0 { 0.9 } else { 0.0 };
+/// A tall trunk with tiers of needles, a metre apart, narrowing to a point.
+fn pine(world: &mut World, foot: IVec3, tall: f32, spread: f32) {
+    let (tall, first, tier) = (cells(tall), cells(2.5), cells(1.0).max(2));
+    for y in first..=tall + cells(0.5) {
+        let up = (y - first) as f32 / (tall + cells(0.5) - first) as f32;
+        // The lower half of each tier is drawn in.
+        let drawn_in = if (y - first) % tier < tier / 2 { 0.45 } else { 0.0 };
+        let r = (spread * (1.0 - up) + 0.3 - drawn_in) / CELL;
         let reach = r.ceil() as i32;
         for z in -reach..=reach {
             for x in -reach..=reach {
@@ -307,9 +333,7 @@ fn pine(world: &mut World, foot: IVec3, trunk: i32, spread: f32) {
             }
         }
     }
-    for y in 0..=trunk {
-        world.set(foot + IVec3::Y * y, Block::Wood);
-    }
+    trunk(world, foot, tall);
 }
 
 #[cfg(test)]
@@ -318,7 +342,7 @@ mod tests {
 
     #[test]
     fn the_same_seed_makes_the_same_world() {
-        let ((a, la), (b, lb)) = (generate(7, 2), generate(7, 2));
+        let ((a, la), (b, lb)) = (generate(7, 3), generate(7, 3));
         assert_eq!(la.trees, lb.trees);
         for (at, chunk) in &a.chunks {
             for y in 0..CHUNK {
@@ -326,15 +350,15 @@ mod tests {
                 assert_eq!(chunk.get(cell), b.chunks[at].get(cell));
             }
         }
-        let (_, other) = generate(8, 2);
-        assert!((-60..60).any(|x| other.height(x, 3) != la.height(x, 3)));
+        let (_, other) = generate(8, 3);
+        assert!((-90..90).any(|x| other.height(x, 3) != la.height(x, 3)));
     }
 
     #[test]
     fn the_start_is_a_dry_clearing_and_the_edge_is_sea() {
-        let (world, land) = generate(7, 3);
+        let (world, land) = generate(7, 5);
         assert_eq!(land.biome(0, 0), Biome::Meadow);
-        assert!(land.trees.iter().all(|t| t.x * t.x + t.z * t.z >= 14 * 14));
+        assert!(land.trees.iter().all(|t| Vec3::new(t.x as f32, 0.0, t.z as f32).length() * CELL >= CLEARING));
         assert_eq!(world.get(IVec3::new(0, land.height(0, 0), 0)), Block::Air);
         assert_eq!(land.biome(land.span - 1, 0), Biome::Water);
     }
