@@ -67,6 +67,6 @@ A machine with no screen needs `DISPLAY=:1` (an Xvfb) for `sheet` and `sandbox`;
 
 - **How a creature behaves:** `[life]` in its `creature.toml`; a new temper or state in `crates/cube_sim/src/mind.rs` with a test beside the others in `life.rs`, then `cargo world run`.
 - **A creature:** [docs/pipeline.md](docs/pipeline.md). Four commands, about 67 credits.
-- **Creatures are not made of cubes.** That was tried and parked (`cargo forge cubes`, [docs/pipeline.md](docs/pipeline.md#cubes)); `adventurer` is its test model, not a game creature. They fit the world by style.
+- **Creatures are not made of cubes.** That was tried and parked (`cargo forge cubes`, [docs/pipeline.md](docs/pipeline.md#cubes)); They fit the world by style, and the style is the house style in `style.toml`: other looks were tried and it was kept.
 - **A clip for a body plan:** a recipe in `crates/forge/src/clips.rs`, its name in the plan's `clips` in `style.toml`, then `cargo forge finish --all`.
 - **A body plan (bird, spider, snake):** a `[plans.x]` in `style.toml`; the role reader and recipes are plan-agnostic, so check `cargo forge inspect ID` reads the new shape sensibly first.

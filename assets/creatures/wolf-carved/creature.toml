@@ -1,7 +1,0 @@
-name = "Wolf (carved)"
-kind = "wildlife"
-plan = "quadruped"
-subject = "a grey wolf"
-height = 0.85
-look = "carved"
-look_of = "wolf"
