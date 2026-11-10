@@ -163,7 +163,7 @@ fn scene(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terra
         return;
     }
     stage.laid_out = true;
-    let ids: Vec<String> = if args.spawn.iter().any(|s| s == "all") { registry.0.iter().map(|d| d.id.clone()).collect() } else { args.spawn.clone() };
+    let ids = &args.spawn;
     for (n, id) in ids.iter().enumerate() {
         let Some(def) = registry.index(id) else {
             eprintln!("no creature `{id}`");

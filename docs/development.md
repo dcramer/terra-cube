@@ -8,6 +8,8 @@
 4. **A display.** winit wants one even to draw offscreen. A server with no screen runs `Xvfb :1 -screen 0 1920x1080x24` and sets `DISPLAY=:1`; contact sheets then draw on the real GPU into an image. The sandbox window itself needs a real screen.
 5. **`.env`** at the root of the main checkout with `TRIPO_STUDIO_COOKIE=…` ([tools/tripo/README.md](../tools/tripo/README.md)). Worktrees read the main checkout's. `node tools/tripo/tripo.ts balance` checks it.
 
+`cargo forge doctor` checks 2, 4 and 5 and says what to do about each one that is wrong.
+
 The first build compiles Bevy: several minutes. After that a change to the game links in seconds.
 
 ## Commands
@@ -15,7 +17,8 @@ The first build compiles Bevy: several minutes. After that a change to the game 
 | Command | What it does |
 |---|---|
 | `cargo forge …` | The creature pipeline; `cargo forge help` lists it ([pipeline.md](pipeline.md)) |
-| `cargo sandbox` | The sandbox window. `--spawn a,b` starts with creatures in it |
+| `cargo forge doctor` | One line when the machine is set up; a `FAIL` line with the fix for each thing that is not |
+| `cargo sandbox` | The sandbox window. `--spawn a,b` starts with creatures in it, `--spawn all` with one of each. `--help` lists every way to start it, `--list` the creatures |
 | `cargo sandbox --shot ID` | A contact sheet to `shots/ID.png`, no window. `--view quarter\|side\|front`, `--cols N`, `--clips a,b` |
 | `cargo sandbox --scene FILE --spawn all` | A picture of the test world with creatures in it, no window |
 | `cargo test --workspace` | Unit tests: voxel world and meshing, skeleton roles and turns |
@@ -27,6 +30,8 @@ Both `forge` and `sandbox` build in release: Bevy unoptimised is too slow to jud
 ## The sandbox
 
 A panel on the left: spawn any creature by kind, or one of each; pick one; play a clip, set its speed, hold and scrub a frame; send it wandering or running at its measured speed; draw skeletons. Right-drag orbits, the wheel zooms, WASD and QE move the focus, F looks at the picked creature.
+
+A name that is not a creature, or no display, stops the sandbox with one line before the engine starts.
 
 Creatures are found by scanning `assets/creatures/*/` for a `creature.toml` beside a `model.glb`, so a creature forge has just built appears on the next start.
 

@@ -32,6 +32,7 @@ cargo forge finish ID…|--all            the local half again (after changing c
 cargo forge check ID…|--all             the checks alone
 cargo forge sheet ID [--view side]      render shots/ID.png, every clip at six moments
 cargo forge inspect FILE.glb|ID         the skeleton's roles
+cargo forge doctor                      is this machine set up: node, Tripo login, display, models
 kinds: player monster wildlife · plans: see assets/creatures/style.toml";
 
 fn style() -> Result<Style> {
@@ -98,6 +99,7 @@ fn run() -> Result<bool> {
     let mut ok = true;
     match command.as_str() {
         "status" => status(&style()?)?,
+        "doctor" => ok = doctor(),
         "new" => {
             let kind = option(&mut args, "--kind").context("--kind player|monster|wildlife")?;
             let plan = option(&mut args, "--plan").context("--plan")?;
@@ -207,6 +209,47 @@ fn run() -> Result<bool> {
         other => bail!("unknown command {other}\n{HELP}"),
     }
     Ok(ok)
+}
+
+/// Is this machine set up to build creatures and run the sandbox. Says what to do about
+/// each thing that is not.
+fn doctor() -> bool {
+    let mut lines = Vec::new();
+    let mut ok = true;
+    let mut report = |good: bool, name: &str, detail: String| {
+        ok &= good;
+        lines.push(format!("{} {name} {detail}", if good { "ok" } else { "FAIL" }));
+    };
+
+    let node = Command::new("node").arg("--version").output().ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned()).unwrap_or_default();
+    let mut parts = node.trim_start_matches('v').split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    let version = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    let detail = if node.is_empty() { "not found; install Node 22.18 or newer".into() } else if version < (22, 18) { format!("{node}; needs 22.18 or newer") } else { node.clone() };
+    report(version >= (22, 18), "node", detail);
+
+    match tripo::balance() {
+        Ok(credits) => report(true, "tripo", format!("{credits} credits")),
+        Err(e) => report(false, "tripo", format!("{}; see tools/tripo/README.md", format!("{e:#}").lines().next().unwrap_or(""))),
+    }
+
+    let display = std::env::var("WAYLAND_DISPLAY").or_else(|_| std::env::var("DISPLAY")).unwrap_or_default();
+    let needed = cfg!(target_os = "linux");
+    let detail = if !display.is_empty() { display.clone() } else if needed { "none; on a server run `Xvfb :1 -screen 0 1920x1080x24` and set DISPLAY=:1".into() } else { "native".into() };
+    report(!needed || !display.is_empty(), "display", detail);
+
+    let ids = spec::ids();
+    let built = ids.iter().filter(|id| spec::dir(id).join("model.glb").exists()).count();
+    report(built > 0, "creatures", format!("{built} of {} have a model", ids.len()));
+
+    for line in &lines {
+        if !ok || line.starts_with("FAIL") || std::env::var_os("FORGE_VERBOSE").is_some() {
+            println!("{line}");
+        }
+    }
+    if ok {
+        println!("ok: {}. Start with: cargo sandbox --spawn all", lines.iter().map(|l| l.trim_start_matches("ok ")).collect::<Vec<_>>().join(" · "));
+    }
+    ok
 }
 
 fn main() -> ExitCode {

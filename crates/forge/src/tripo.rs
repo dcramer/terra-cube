@@ -24,6 +24,11 @@ fn tripo(args: &[String]) -> Result<Value> {
     Ok(serde_json::from_str(last)?)
 }
 
+/// Credits left, which also proves the login in `.env` works.
+pub fn balance() -> Result<f64> {
+    tripo(&["balance".into()])?["credits"].as_f64().context("no credits in the balance")
+}
+
 /// The whole prompt for a creature's concept image: what it is, how it stands, the house style.
 pub fn prompt(creature: &Creature, plan: &Plan, style: &Style) -> String {
     format!("{}, {}, {}", creature.subject.trim(), plan.pose.trim(), style.style.trim()).replace('\n', " ")

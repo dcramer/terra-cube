@@ -24,11 +24,13 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 ## Commands
 
 ```bash
+cargo forge doctor                 # is this machine set up: node, Tripo login, display, models
+cargo sandbox --help               # every way to start the game (--list names the creatures)
 cargo forge status                 # every creature: Tripo steps done, credits, model
 cargo forge build wolf             # make what is missing, then finish and check (spends credits once)
 cargo forge finish --all           # the free local half again, after changing clips.rs or style.toml
 cargo forge sheet wolf             # shots/wolf.png: every clip at six moments, one image
-cargo sandbox --spawn wolf,player  # the interactive sandbox (needs a real screen)
+cargo sandbox --spawn all          # the interactive sandbox (needs a real screen)
 cargo sandbox --scene shots/scene.png --spawn all   # a picture of the world with creatures, offscreen
 cargo test --workspace             # must pass before a commit
 cargo clippy --workspace -- -D warnings
