@@ -23,7 +23,7 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 
 ## Commands
 
-`make` lists the everyday ones (`make setup`, `make run`, `make windows` from WSL, `make sheet ID=wolf`, `make check`). Each is one line over these; add a target when a new command becomes everyday.
+`make` alone checks the machine is set up; `make help` lists the everyday ones (`make setup`, `make run`, `make windows` from WSL, `make sheet ID=wolf`, `make check`). Each is one line over these; add a target when a new command becomes everyday.
 
 ```bash
 cargo forge doctor                 # is this machine set up: node, Tripo login, display, models

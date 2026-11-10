@@ -8,7 +8,7 @@ An experiment: a voxel sandbox game in Rust (Bevy), with every creature in it ge
 - [docs/art-guide.md](docs/art-guide.md): how things should look.
 
 ```bash
-make          # lists the commands
-make setup    # checks this machine
+make          # checks this machine is set up
+make help     # lists the commands
 make run      # the sandbox, one of each creature
 ```

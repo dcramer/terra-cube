@@ -1,16 +1,17 @@
-# The everyday commands, so nobody has to remember the cargo ones. `make` lists them.
+# The everyday commands, so nobody has to remember the cargo ones. `make` alone checks the
+# machine is set up; `make help` lists them.
 # Each is one line over `cargo forge` or `cargo sandbox`; those take more options (--help).
 
 SPAWN ?= all
 WINDOWS := x86_64-pc-windows-gnu
 
-.DEFAULT_GOAL := help
+.DEFAULT_GOAL := setup
 .PHONY: help setup run windows list scene sheet status creature finish test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
-setup: ## check this machine: node, Tripo login, display, models
+setup: ## (plain `make`) check this machine: node, Tripo login, display, models
 	cargo forge doctor
 
 run: ## the game window, one of each creature (SPAWN=wolf,player for some)

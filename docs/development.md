@@ -14,7 +14,7 @@ The first build compiles Bevy: several minutes. After that a change to the game 
 
 ## Commands
 
-`make` lists the everyday ones and is all a newcomer needs: `make setup`, then `make run`. The Makefile is one line a target over the commands below, which take more options.
+`make` alone checks the machine is set up, and `make help` lists the everyday commands: all a newcomer needs is `make`, then `make run`. The Makefile is one line a target over the commands below, which take more options.
 
 | Command | What it does |
 |---|---|
