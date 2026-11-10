@@ -1,32 +1,21 @@
 # Looks being tried against the house style (style.toml), drawn by `cargo forge looks` as
-# shots/looks.jpg, a row a look. Each must fit a world of cubes without being made of them, and
-# must keep limbs of natural length and set apart, so Tripo's rig and the clips fit: the stout
-# toy figure tried on 2026-11-10 tore its skin in every clip.
+# shots/looks.jpg, a row a look under the house style's own row.
+#
+# Tried and settled 2026-11-10: carved, flat and painted, against the house style, which was
+# kept (docs/pipeline.md, Trying a look). What is on trial now is the house style with the
+# cuteness taken out: the first roster came back as a shelf of toys. It was taken as the house
+# style the same day; this entry is kept as the record of what was compared.
 
-of = ["player", "wolf", "troll"]
+of = ["fox", "squirrel", "hedgehog", "owl", "shambler", "toad"]
 
 frame = "single character, full body in frame, nothing held and nothing loose, plain light grey background, even studio light, no ground shadow"
 
-[looks.carved]
-note = "carved from blocks: squared limbs and chamfered edges, the nearest to the world's cubes"
+[looks.wild]
+note = "the house style without the toy proportions: true to the animal, lean, wary; monsters menacing"
 style = """
-stylized game character that looks carved from wooden blocks, every part a simple squared-off volume with \
-softened chamfered edges, flat planes meeting at crisp bevels, limbs of natural length as straight box shapes \
-set clearly apart, a slightly oversized squared head with a simple friendly face, flat matte colour in a few \
-large areas with slightly darker painted edges, no fine detail, no fur strands, no noise, no photorealism"""
-
-[looks.painted]
-note = "hand-painted and smooth, as Eco: natural proportions, the safest to animate"
-style = """
-stylized hand-painted game character, natural athletic proportions with a slightly large head and hands, \
-smooth simple rounded forms, clean readable silhouette, soft painted gradients with a little brushwork, \
-warm earthy palette with one accent colour, large simple shapes with no small fiddly parts, \
-no noise, no grain, no photorealism, no fur strands"""
-
-[looks.flat]
-note = "strict flat-shaded low-poly: big plain triangles, one colour a surface"
-style = """
-minimalist flat-shaded low-poly game character, built from a small number of large flat triangles, \
-each surface one solid colour with no texture detail and no gradients, natural proportions, \
-crisp angular silhouette, limbs set clearly apart, limited palette of five colours, \
-no noise, no grain, no photorealism, no fur strands, no outlines"""
+stylized low-poly game creature, proportions true to the real animal with a head and eyes of natural size, \
+lean and angular, alert and wary like a wild thing and never cute, a dangerous creature looks dangerous, \
+chunky faceted planar forms, bold readable silhouette, simple large shapes with no small fiddly parts, \
+hand-painted flat colour in a few muted natural hues with one accent colour, soft stepped light-to-dark shading, \
+not cute, not chibi, not a toy, not a mascot, no big round eyes, no smile, \
+no noise, no grain, no photorealism, no fur strands, no pure black, no pure white"""

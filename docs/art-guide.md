@@ -25,7 +25,7 @@ Status: first draft, 2026-11-09, written from eight generated creatures. The dev
 
 **Plan pose** (per body plan): the pose that rigs. A biped is a T-pose from the front, hands open and empty. A quadruped stands on four straight, separated legs, seen from the side and slightly in front, tail clear of the legs, mouth closed. Limbs that touch get fused into one mesh and cannot be rigged.
 
-**Style** (shared): see `style.toml`. In short: stylised low-poly, bulky cartoony proportions, faceted planar forms, bold silhouette, flat hand-painted colour in a few saturated hues with one accent, soft stepped shading, no noise or grain or fur strands, no pure black or white, one character, plain grey background, even light, no ground shadow.
+**Style** (shared): see `style.toml`. In short: stylised low-poly, proportions true to the animal (a head and eyes of natural size), lean and wary and never cute, a dangerous thing looking dangerous, faceted planar forms, bold silhouette, flat hand-painted colour in a few muted natural hues with one accent, soft stepped shading, no noise or grain or fur strands, no pure black or white, one character, plain grey background, even light, no ground shadow.
 
 ## Sizes and proportions
 
@@ -63,3 +63,5 @@ Look at `cargo forge concepts` (every concept in one picture) before paying for 
 - Quadrupeds come out faceted and painterly, as wanted. Bipeds drawn with Tripo's T-pose option come out smoother and more "mobile game". If the developer wants them matched, the biped pose line is the place to push facets harder.
 - The style line holds across subjects: eight creatures from one line look like one set.
 - Tripo's textures come back paler than the concept. A palette snap would fix both that and drift.
+
+**Not cute.** The first roster of 29 came back as a shelf of toys: big heads, big round eyes, smiles. The style used to ask for "small bulky cartoony proportions with a slightly oversized head", and that is what it got. A creature may be appealing; it may not be a mascot. The style text now says so in as many words (2026-11-10), and the seven creatures built before it are the old proportions.

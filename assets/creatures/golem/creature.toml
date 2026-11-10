@@ -1,7 +1,7 @@
 name = "Stone golem"
 kind = "monster"
 plan = "biped"
-subject = "a golem of stacked grey boulders with glowing blue cracks, huge forearms and a small head sunk between the shoulders"
+subject = "a golem of stacked grey boulders with glowing blue cracks, huge forearms and a small head sunk between the shoulders, both arms held straight out sideways at shoulder height"
 height = 2.2
 
 [life]

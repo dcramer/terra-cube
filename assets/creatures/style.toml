@@ -3,9 +3,11 @@
 # "<creature subject>, <plan pose>, <style>".
 
 style = """
-stylized low-poly game creature, small bulky cartoony proportions with a slightly oversized head, \
+stylized low-poly game creature, proportions true to the real animal with a head and eyes of natural size, \
+lean and angular, alert and wary like a wild thing and never cute, a dangerous creature looks dangerous, \
 chunky faceted planar forms, bold readable silhouette, simple large shapes with no small fiddly parts, \
-hand-painted flat colour in a few saturated hues with one accent colour, soft stepped light-to-dark shading, \
+hand-painted flat colour in a few muted natural hues with one accent colour, soft stepped light-to-dark shading, \
+not cute, not chibi, not a toy, not a mascot, no big round eyes, no smile, \
 no noise, no grain, no photorealism, no fur strands, no pure black, no pure white, \
 single character, full body in frame, nothing held and nothing loose, \
 plain light grey background, even studio light, no ground shadow"""
