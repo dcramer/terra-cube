@@ -3,11 +3,13 @@
 //! `cargo sandbox --help` lists the ways to start it (`HELP` below).
 //!
 //! Map: `world` (terrain from cube_voxel) · `creatures` (registry, spawning, clips, wander) ·
-//! `player` (controlling one with the keys, the follow camera) · `ui` (the egui panel, skeleton
+//! `motion` (bodies that walk, jump and bump, and the clip that fits) · `player` (controlling
+//! one with the keys, the follow and first-person cameras) · `ui` (the egui panel, skeleton
 //! overlay) · `camera` (free orbit) · `shot` (contact sheets and scene pictures).
 
 mod camera;
 mod creatures;
+mod motion;
 mod player;
 mod shot;
 mod ui;
@@ -26,22 +28,28 @@ pub struct Args {
     pub clips: Vec<String>,
     /// Control the player from the start.
     pub play: bool,
+    /// The way a scene's play camera faces, radians: the way the set route runs.
+    pub yaw: f32,
+    /// The creature to control instead of the player.
+    pub play_as: Option<String>,
     /// Seconds into a scene at which its picture is taken.
     pub after: f32,
 }
 
 const HELP: &str = "\
 cargo sandbox                           the window, with the spawn panel
-cargo sandbox --play                    start as the player: WASD runs, Shift walks, Space jumps,
-                                        the mouse looks, the wheel zooms, Tab gives the mouse back
+cargo sandbox --play [--as wolf]        start as the player, or as any creature: WASD runs, Shift
+                                        sprints, Ctrl walks, Space jumps, the mouse looks, the
+                                        wheel zooms, V is first person, Tab gives the mouse back
 cargo sandbox --spawn wolf,player       start with these in the world (`all` for one of each)
 cargo sandbox --list                    the creatures that can be spawned
 cargo sandbox --shot ID                 no window: shots/ID.png, every clip at six moments
         [--view quarter|side|front] [--cols N] [--clips walk,run]
 cargo sandbox --scene FILE --spawn all  no window: a picture of the world with creatures in it
-cargo sandbox --scene FILE --play [--after SECONDS]
-                                        no window: the player on a set run (walk, run, two
-                                        jumps, toward the hills), pictured from the follow camera
+cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--yaw 2.16]
+                                        no window: a set route (walk, run, jump, sprint, jump),
+                                        pictured from the camera at SECONDS. It runs toward the
+                                        hills; --yaw 2.16 runs it into the pond instead
 In the window: Tab controls the picked creature, and lets go of it. Otherwise right-drag
 orbits, wheel zooms, WASD and QE move, F looks at the picked creature.
 Setup trouble: cargo forge doctor";
@@ -65,7 +73,7 @@ fn creature_ids() -> Vec<String> {
 }
 
 fn parse_args() -> Args {
-    let mut args = Args { view: "quarter".into(), cols: 6, ..default() };
+    let mut args = Args { view: "quarter".into(), cols: 6, yaw: -2.2, ..default() };
     let mut it = std::env::args().skip(1);
     let list = |v: Option<String>| v.map(|s| s.split(',').map(str::to_owned).collect::<Vec<_>>()).unwrap_or_default();
     while let Some(a) = it.next() {
@@ -85,6 +93,11 @@ fn parse_args() -> Args {
             "--cols" => args.cols = it.next().and_then(|v| v.parse().ok()).unwrap_or(6),
             "--clips" => args.clips = list(it.next()),
             "--play" => args.play = true,
+            "--yaw" => args.yaw = it.next().and_then(|v| v.parse().ok()).unwrap_or(-2.2),
+            "--as" => {
+                args.play = true;
+                args.play_as = it.next();
+            }
             "--after" => args.after = it.next().and_then(|v| v.parse().ok()).unwrap_or(0.0),
             other => fail(&format!("unknown argument {other}\n{HELP}")),
         }
@@ -97,10 +110,11 @@ fn parse_args() -> Args {
     if args.spawn.iter().any(|s| s == "all") {
         args.spawn = known.clone();
     }
-    if args.play && !args.spawn.iter().any(|s| s == "player") && known.iter().any(|s| s == "player") {
-        args.spawn.insert(0, "player".into());
+    let me = args.play_as.clone().unwrap_or("player".into());
+    if args.play && !args.spawn.contains(&me) {
+        args.spawn.insert(0, me);
     }
-    if let Some(id) = args.spawn.iter().chain(&args.shot).find(|id| !known.contains(id)) {
+    if let Some(id) = args.spawn.iter().chain(&args.shot).chain(&args.play_as).find(|id| !known.contains(id)) {
         fail(&format!("no creature `{id}`; there are: {}", known.join(" ")));
     }
     let headless = args.shot.is_some() || args.scene.is_some();
@@ -140,11 +154,11 @@ fn main() {
     .insert_resource(args)
     .add_plugins(creatures::CreaturesPlugin);
     if scene {
-        app.add_plugins((world::WorldPlugin, player::PlayPlugin, shot::ScenePlugin));
+        app.add_plugins((world::WorldPlugin, motion::MotionPlugin, player::PlayPlugin, shot::ScenePlugin));
     } else if shot {
         app.add_plugins(shot::ShotPlugin);
     } else {
-        app.add_plugins((world::WorldPlugin, camera::CameraPlugin, player::PlayPlugin, ui::UiPlugin));
+        app.add_plugins((world::WorldPlugin, camera::CameraPlugin, motion::MotionPlugin, player::PlayPlugin, ui::UiPlugin));
     }
     app.run();
 }

@@ -34,10 +34,10 @@ pub fn height(x: i32, z: i32, seed: u32) -> i32 {
     let (fx, fz) = (x as f32, z as f32);
     let rolling = fbm(fx / 48.0, fz / 48.0, seed) * 22.0 - 4.0;
     let mountain = ((fx + fz) / 90.0 - 0.9).clamp(0.0, 1.0).powi(2) * 40.0;
-    let pond = (1.0 - ((fx + 44.0).powi(2) + (fz - 30.0).powi(2)).sqrt() / 26.0).clamp(0.0, 1.0) * 14.0;
+    let pond = (1.0 - ((fx + 44.0).powi(2) + (fz - 30.0).powi(2)).sqrt() / 26.0).clamp(0.0, 1.0) * 24.0;
     let wild = (rolling + mountain - pond).round();
     let flat = 1.0 - ((fx * fx + fz * fz).sqrt() / 40.0 - 0.6).clamp(0.0, 1.0);
-    (SEA as f32 + 4.0 + wild * (1.0 - flat)).round() as i32
+    ((SEA as f32 + 4.0 + wild * (1.0 - flat)).round() as i32).max(3)
 }
 
 /// A world `radius` chunks out from the origin in x and z.

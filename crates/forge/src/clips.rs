@@ -146,9 +146,9 @@ pub fn write(glb: &mut Glb, sk: &Skeleton, clips: &[Clip]) {
 /// Recipes are written from the rest pose. `stand` is how the creature really stands (the first
 /// frame of its idle, where Tripo gave one): a figure rigged in a T-pose rests with its arms
 /// out, so each recipe's turns are laid over `stand` instead.
-pub fn make(name: &str, sk: &Skeleton, roles: &Roles, walk: Option<&Clip>, stand: Option<&Pose>, upright: bool) -> Option<Clip> {
-    let mut clip = recipe(name, sk, roles, walk, upright)?;
-    if let Some(stand) = stand.filter(|_| name != "run" && name != "walk") {
+pub fn make(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option<&Pose>, upright: bool) -> Option<Clip> {
+    let mut clip = recipe(name, sk, roles, have, stand, upright)?;
+    if let Some(stand) = stand.filter(|_| !matches!(name, "run" | "walk" | "sprint")) {
         let rest = sk.rest();
         for pose in &mut clip.frames {
             for j in 0..sk.joints.len() {
@@ -236,11 +236,17 @@ pub fn close_loop(frames: &mut [Pose]) {
     }
 }
 
-fn recipe(name: &str, sk: &Skeleton, roles: &Roles, walk: Option<&Clip>, upright: bool) -> Option<Clip> {
+fn recipe(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option<&Pose>, upright: bool) -> Option<Clip> {
+    let had = |name: &str| have.iter().find(|c| c.name == name);
+    let stance = Stance::new(sk, stand);
     Some(match name {
         "idle" => idle(sk, roles),
         "walk" => stride(sk, roles),
-        "run" => run(sk, roles, walk?),
+        "run" => quicker("run", sk, roles, had("walk")?, 0.55, 1.3, 1.5, 0.05, 0.0),
+        "sprint" => quicker("sprint", sk, roles, had("run")?, 0.8, 0.94, 1.0, 0.0, if upright { 0.05 } else { 0.0 }),
+        "jump" => jump(sk, roles, &stance, upright),
+        "fall" => fall(sk, roles, &stance, upright),
+        "swim" => swim(sk, roles, &stance, upright),
         "attack" => attack(sk, roles),
         "hurt" => hurt(sk, roles),
         "die" => die(sk, roles, upright),
@@ -339,11 +345,14 @@ fn stride(sk: &Skeleton, roles: &Roles) -> Clip {
     })
 }
 
-/// The walk, quicker and wider, with the trunk pumping: a stand-in until a plan has a real run.
-fn run(sk: &Skeleton, roles: &Roles, walk: &Clip) -> Clip {
+/// A gait made from a slower one: the same frames in `time` of the time, every joint turned
+/// `gain` times as far, the body's bob scaled by `bob`, the trunk pumping by `pump` and leant
+/// `lean` forward. Run from walk for a plan with no run preset, sprint from run: stand-ins until a
+/// plan has studied gaits.
+fn quicker(name: &str, sk: &Skeleton, roles: &Roles, from: &Clip, time: f32, gain: f32, bob: f32, pump: f32, lean: f32) -> Clip {
     let rest = sk.rest();
-    let n = ((walk.frames.len() - 1) as f32 * 0.55).round().max(4.0) as usize;
-    let last = walk.frames.len() - 1;
+    let n = ((from.frames.len() - 1) as f32 * time).round().max(4.0) as usize;
+    let last = from.frames.len() - 1;
     let frames = (0..=n)
         .map(|i| {
             let t = i as f32 / n as f32;
@@ -352,22 +361,137 @@ fn run(sk: &Skeleton, roles: &Roles, walk: &Clip) -> Clip {
             let hi = (lo + 1).min(last);
             let mut pose = rest.clone();
             for j in 0..sk.joints.len() {
-                let q = walk.frames[lo].rotations[j].slerp(walk.frames[hi].rotations[j], f);
+                let q = from.frames[lo].rotations[j].slerp(from.frames[hi].rotations[j], f);
                 let (axis, angle) = (rest.rotations[j].inverse() * q).to_axis_angle();
                 let angle = if angle > PI { angle - TAU } else { angle };
-                pose.rotations[j] = (rest.rotations[j] * Quat::from_axis_angle(axis, angle * 1.3)).normalize();
+                pose.rotations[j] = (rest.rotations[j] * Quat::from_axis_angle(axis, angle * gain)).normalize();
             }
-            let bob = walk.frames[lo].root_t.lerp(walk.frames[hi].root_t, f) - rest.root_t;
-            pose.root_t = rest.root_t + bob * 1.5;
+            let up = from.frames[lo].root_t.lerp(from.frames[hi].root_t, f) - rest.root_t;
+            pose.root_t = rest.root_t + up * bob;
             // Tripo's walk leaves the trunk still; add the pump on top of whatever it has.
             for &j in &roles.spine {
-                let extra = sk.turned(j, pitch(roles, 0.05 * (2.0 * t * TAU).sin()));
+                let extra = sk.turned(j, pitch(roles, pump * (2.0 * t * TAU).sin() + lean / roles.spine.len() as f32));
                 pose.rotations[j] = (pose.rotations[j] * rest.rotations[j].inverse() * extra).normalize();
             }
             pose
         })
         .collect();
-    Clip { name: "run".into(), looping: true, frames, source: "made" }
+    Clip { name: name.into(), looping: true, frames, source: "made" }
+}
+
+/// Turns joints by rotations given as the creature stands, not as it rests. A figure rigged in
+/// a T-pose rests with its arms out; "swing the arm forward" is a different turn there than
+/// with the arm hanging. `make` lays a recipe over the standing pose afterwards, so a recipe
+/// that cares which way a limb really points asks for its turns through this.
+struct Stance {
+    /// For each joint, the turn from how it rests to how it stands, in the file's space.
+    to_stand: Vec<Quat>,
+}
+
+impl Stance {
+    fn new(sk: &Skeleton, stand: Option<&Pose>) -> Self {
+        let world = |pose: &Pose| -> Vec<Quat> { sk.pose_world(pose).iter().map(|m| m.to_scale_rotation_translation().1).collect() };
+        let rest = world(&sk.rest());
+        let to_stand = match stand {
+            Some(stand) => world(stand).iter().zip(&rest).map(|(s, r)| (*s * r.inverse()).normalize()).collect(),
+            None => vec![Quat::IDENTITY; rest.len()],
+        };
+        Self { to_stand }
+    }
+    fn turn(&self, sk: &Skeleton, pose: &mut Pose, joint: usize, delta: Quat) {
+        let a = self.to_stand[joint];
+        pose.rotations[joint] = sk.turned(joint, a.inverse() * delta * a);
+    }
+}
+
+/// The pose of a body in the air, `k` of the way into it, with `wave` (-1 to 1) stirring the
+/// limbs. An upright figure tucks one knee higher than the other and lifts its arms; an animal
+/// reaches its forelegs ahead and trails its hind legs.
+fn airborne(sk: &Skeleton, roles: &Roles, st: &Stance, pose: &mut Pose, upright: bool, k: f32, wave: f32) {
+    for (i, leg) in roles.legs.iter().enumerate() {
+        let side = if i % 2 == 0 { 1.0 } else { -1.0 };
+        let (thigh, knee) = if upright {
+            // One knee up, the other leg trailing.
+            (if side > 0.0 { -0.85 } else { 0.2 } - 0.12 * wave * side, if side > 0.0 { 1.2 } else { 0.55 })
+        } else if leg.front {
+            (-0.5 - 0.06 * wave * side, 0.08)
+        } else {
+            (0.28 + 0.06 * wave * side, 0.12)
+        };
+        st.turn(sk, pose, leg.chain[0], pitch(roles, thigh * k));
+        if leg.chain.len() > 2 {
+            st.turn(sk, pose, leg.chain[1], pitch(roles, knee * k));
+        }
+    }
+    for arm in &roles.arms {
+        let out = if arm.left { 1.0 } else { -1.0 };
+        let upper = arm.chain[1.min(arm.chain.len() - 1)];
+        st.turn(sk, pose, upper, roll(roles, out * (0.9 + 0.2 * wave) * k) * pitch(roles, -0.3 * k));
+        if let Some(&fore) = arm.chain.get(2) {
+            st.turn(sk, pose, fore, pitch(roles, -0.35 * k));
+        }
+    }
+    curl(sk, pose, &roles.tail, |a| pitch(roles, a), 0.3 * k + 0.1 * wave * k);
+    curl(sk, pose, &roles.head, |a| pitch(roles, a), if upright { 0.0 } else { -0.15 * k });
+}
+
+/// Leaving the ground: into the airborne pose in a third of a second, and held there. The
+/// game plays it on the way up and `fall` on the way down.
+fn jump(sk: &Skeleton, roles: &Roles, st: &Stance, upright: bool) -> Clip {
+    Clip::made("jump", false, 0.3, sk, |t, pose| airborne(sk, roles, st, pose, upright, ramp(t, 0.0, 1.0), -1.0))
+}
+
+/// In the air with nothing underfoot: the airborne pose, limbs stirring.
+fn fall(sk: &Skeleton, roles: &Roles, st: &Stance, upright: bool) -> Clip {
+    Clip::made("fall", true, 0.9, sk, |t, pose| airborne(sk, roles, st, pose, upright, 1.0, (t * TAU).sin()))
+}
+
+/// Swimming. An upright figure lies forward in the water, kicks, and reaches its arms over in
+/// turn; an animal holds its head up and paddles.
+fn swim(sk: &Skeleton, roles: &Roles, st: &Stance, upright: bool) -> Clip {
+    Clip::made("swim", true, 1.6, sk, |t, pose| {
+        let a = t * TAU;
+        if upright {
+            st.turn(sk, pose, sk.root, pitch(roles, 1.15));
+            for &j in &roles.spine {
+                st.turn(sk, pose, j, pitch(roles, -0.3 / roles.spine.len() as f32) * roll(roles, 0.05 * a.sin()));
+            }
+            if let Some(&neck) = roles.head.first() {
+                st.turn(sk, pose, neck, pitch(roles, -0.6));
+            }
+            for (i, leg) in roles.legs.iter().enumerate() {
+                let kick = (2.0 * a + i as f32 * PI).sin();
+                st.turn(sk, pose, leg.chain[0], pitch(roles, 0.1 + 0.28 * kick));
+                if leg.chain.len() > 2 {
+                    st.turn(sk, pose, leg.chain[1], pitch(roles, 0.25 - 0.2 * kick));
+                }
+            }
+            for arm in &roles.arms {
+                let phase = a + if arm.left { 0.0 } else { PI };
+                let out = if arm.left { 1.0 } else { -1.0 };
+                let upper = arm.chain[1.min(arm.chain.len() - 1)];
+                // Down by the hip, forward past the head, and round.
+                st.turn(sk, pose, upper, pitch(roles, -1.35 - 1.0 * phase.sin()) * roll(roles, out * 0.35 * phase.cos().max(0.0)));
+                if let Some(&fore) = arm.chain.get(2) {
+                    st.turn(sk, pose, fore, pitch(roles, -0.3 - 0.3 * phase.cos()));
+                }
+            }
+        } else {
+            curl(sk, pose, &roles.head, |x| pitch(roles, x), -0.3);
+            for (i, leg) in roles.legs.iter().enumerate() {
+                let phase = if roles.legs.len() <= 4 { if leg.front == leg.left { 0.0 } else { PI } } else { i as f32 * PI };
+                let swing = 0.4 * (2.0 * a + phase).sin();
+                st.turn(sk, pose, leg.chain[0], pitch(roles, swing));
+                if leg.chain.len() > 2 {
+                    st.turn(sk, pose, leg.chain[1], pitch(roles, -0.3 * (2.0 * a + phase - 0.9).sin().max(0.0)));
+                }
+            }
+            for (i, &j) in roles.tail.iter().enumerate() {
+                pose.rotations[j] = sk.turned(j, yaw(0.15 * (a - i as f32 * 0.6).sin()));
+            }
+            pose.root_t = sk.root_moved(Vec3::Y * 0.01 * roles.height * (2.0 * a).sin());
+        }
+    })
 }
 
 /// A lunge: draw back with the head up, snap forward and down, recover.

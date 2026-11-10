@@ -121,10 +121,10 @@ pub fn check(done: &Finished, required: &[String], bars: &Bars, max_stretch: f32
             ok &= gap <= bars.max_loop_gap;
             notes.push(format!("loop gap {:.1}°", gap.to_degrees()));
         }
-        if !roles.legs.is_empty() && matches!(clip.name.as_str(), "idle" | "walk" | "run" | "eat") {
+        if !roles.legs.is_empty() && matches!(clip.name.as_str(), "idle" | "walk" | "run" | "sprint" | "eat") {
             // The lowest foot should stay on the floor it stands on at rest. A run may leave
             // the ground, so there only sinking counts.
-            let run = clip.name == "run";
+            let run = matches!(clip.name.as_str(), "run" | "sprint");
             let err = clip
                 .frames
                 .iter()

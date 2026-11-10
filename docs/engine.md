@@ -54,10 +54,13 @@ Built 2026-11-10. The rules are `cube_sim::body`; the game only feeds it keys an
 - **A one-cell step is walked up, and down, without leaving the ground.** With half-metre cells every hill is a staircase; needing a jump for each would be unplayable. The model eases after the body over a step so the half-metre does not pop.
 - **Fixed tick, drawn in between.** Bodies step 60 times a second whatever the frame rate; the game draws them between the last two ticks.
 - **Third person, camera-relative.** The models are the point of the game, so the player sees theirs. WASD is relative to the camera, the character turns to face where it goes, and ground between camera and character pulls the camera in (a ray through the voxels).
-- **Speed picks the clip; the clip's rate follows the speed.** Idle, walk or run by ground speed, played at speed ÷ the clip's measured speed so feet do not slide. Tripo's clips are slow (walk 0.9 m/s, run 2.7), so play speeds are 1.6× and 1.3× those: 1.4 and 3.5 m/s for the player. Faster wants better clips, not more rate.
-- **Any creature can be controlled**, with the same code. The player is not special to the movement.
+- **Every moving creature has the same body.** The keys drive one; a wander drives the rest; the player is not special. So an animal steps, falls and swims by the same rules, and any creature can be controlled (`--as wolf`).
+- **Creatures do not pass through each other.** Each tick, before bodies step, overlapping ones are pushed apart over the ground as if round (`body::separate`): two movers share the push, one standing still gives none. Round, so they slide past instead of locking corners. The voxel world wins over a push.
+- **The gait is asked for; the clip's rate follows the speed.** Walk, run or sprint is the driver's choice (Ctrl, nothing, Shift), played at ground speed ÷ the clip's measured speed so feet do not slide. Tripo's clips are slow, so each gait is allowed 1.6×, 1.3× and 1.6× its clip: 1.4, 3.5 and 5.3 m/s for the player. Faster wants better clips, not more rate.
+- **In the air and in water the body picks the clip:** `jump` on the way up from a jump, `fall` otherwise, `swim` when the water is over its middle, where it then floats. All three are made by forge ([pipeline.md](pipeline.md)).
+- **First person is the same camera at the eyes** with the model hidden and turned to face where the camera looks (V). Third person stays the default.
 - **Numbers:** gravity 22 m/s², jump 6.9 m/s (clears two cells, 1.08 m), fall capped at 25 m/s so a tick never crosses a whole cell. All in `Tuning`.
-- **Not yet:** a jump or fall clip (the run, slowed, stands in; Tripo's jump preset is three hops on the spot), a swim clip (it floats and paddles with the walk), first person, sprint, creatures colliding with each other, feet placed on steps by IK.
+- **Not yet:** a landing, feet placed on steps by IK, turning in place, arms or body visible in first person, diving under water (it only floats), animals' gaits (their run and sprint are their one walk made quicker; a gallop is its own job).
 
 ## The sandbox and agent tooling
 

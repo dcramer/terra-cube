@@ -88,13 +88,16 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan) -> Result<Finishe
                 Clip { name: name.clone(), looping, frames, source: "tripo" }
             }
             None => {
-                let walk = out.iter().find(|c| c.name == "walk");
                 let stand = out.iter().find(|c| c.name == "idle" && c.source == "tripo").map(|c| &c.frames[0]);
-                clips::make(name, &skeleton, &roles, walk, stand, plan.upright).with_context(|| format!("no preset and no recipe for the clip `{name}` (clips.rs `make`)"))?
+                clips::make(name, &skeleton, &roles, &out, stand, plan.upright).with_context(|| format!("no preset and no recipe for the clip `{name}` (clips.rs `make`)"))?
             }
         };
         let mut clip = clip;
-        if matches!(name.as_str(), "walk" | "run") && !roles.legs.is_empty() {
+        // A body that needed its gait reined in needs the same of a leap, by half as much.
+        if matches!(name.as_str(), "jump" | "fall") && clip.source == "made" && creature.gait_gain != 1.0 {
+            clips::gained(&skeleton, &mut clip.frames, (1.0 + creature.gait_gain) / 2.0);
+        }
+        if matches!(name.as_str(), "walk" | "run" | "sprint") && !roles.legs.is_empty() {
             clips::grounded(&skeleton, &roles, &mut clip.frames);
         }
         out.push(clip);
@@ -120,6 +123,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan) -> Result<Finishe
 
     let walk = out.iter().find(|c| c.name == "walk");
     let run = out.iter().find(|c| c.name == "run");
+    let sprint = out.iter().find(|c| c.name == "sprint");
     // A walk nobody can measure moves about a body length a cycle.
     let speed = |c: Option<&Clip>| c.map(|c| ground_speed(&skeleton, &roles, c).unwrap_or(roles.length / c.seconds()) * scale).unwrap_or(0.0);
     let name = |j: Option<&usize>| j.map(|&j| skeleton.joints[j].name.clone());
@@ -134,6 +138,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan) -> Result<Finishe
         length: (hi - lo).dot(roles.forward).abs() * scale,
         walk_speed: speed(walk),
         run_speed: speed(run),
+        sprint_speed: speed(sprint),
         triangles: glb.triangles(),
         joints: skeleton.joints.len(),
         clips: out.iter().map(|c| (c.name.clone(), ClipMeta { seconds: c.seconds(), looping: c.looping, source: c.source.into() })).collect(),

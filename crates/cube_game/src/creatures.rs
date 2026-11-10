@@ -31,6 +31,9 @@ pub struct Meta {
     /// Metres a second the ground passes under the walk and run clips at speed 1.
     pub walk_speed: f32,
     pub run_speed: f32,
+    /// 0 for a creature with no sprint clip.
+    #[serde(default)]
+    pub sprint_speed: f32,
     pub height: f32,
     pub length: f32,
     pub triangles: usize,
@@ -105,7 +108,7 @@ pub struct Wander {
     pub run: bool,
 }
 
-const CLIP_ORDER: [&str; 8] = ["idle", "walk", "run", "attack", "hurt", "die", "jump", "eat"];
+const CLIP_ORDER: [&str; 11] = ["idle", "walk", "run", "sprint", "jump", "fall", "swim", "attack", "hurt", "die", "eat"];
 
 /// Sorts clips into the order they are listed everywhere: the common ones first.
 pub fn clip_rank(name: &str) -> (usize, String) {
@@ -224,39 +227,30 @@ fn drive(registry: Res<Registry>, mut creatures: Query<(&mut Creature, &Rig)>, m
     }
 }
 
-fn wander(
-    time: Res<Time>,
-    registry: Res<Registry>,
-    terrain: Option<Res<Terrain>>,
-    mut movers: Query<(&mut Wander, &mut Creature, &mut Transform)>,
-) {
+/// Steers a wandering creature: its body (`motion`) does the moving, at the speed its clip
+/// was measured at, so feet that slide show the measurement is wrong.
+fn wander(time: Res<Time>, registry: Res<Registry>, mut movers: Query<(&mut Wander, &Creature, &mut crate::motion::Mover)>) {
     let dt = time.delta_secs();
-    for (mut w, mut creature, mut t) in &mut movers {
+    for (mut w, creature, mut mover) in &mut movers {
         let def = &registry.0[creature.def];
-        let gait = if w.run { "run" } else { "walk" };
-        if let Some(clip) = def.clips.iter().position(|c| c.0 == gait) {
-            creature.clip = clip;
-        }
+        let at = mover.body.pos;
         w.until_turn -= dt;
         if w.until_turn <= 0.0 {
             // A cheap deterministic wobble: no randomness needed for a debug walk.
-            let phase = time.elapsed_secs() * 0.37 + t.translation.x;
+            let phase = time.elapsed_secs() * 0.37 + at.x;
             w.turn = phase.sin() * 0.8;
             w.until_turn = 2.0 + (phase * 1.7).cos().abs() * 2.0;
         }
         // Stay near the flat middle of the test world.
-        let home = (-t.translation.x).atan2(-t.translation.z);
-        if t.translation.xz().length() > 14.0 {
+        if at.xz().length() > 14.0 {
+            let home = (-at.x).atan2(-at.z);
             let diff = (home - w.heading + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
             w.turn = diff.clamp(-1.0, 1.0);
         }
         w.heading += w.turn * dt;
-        t.rotation = Quat::from_rotation_y(w.heading);
-        let forward = t.rotation * Vec3::Z;
-        t.translation += forward * if w.run { def.meta.run_speed } else { def.meta.walk_speed } * creature.speed * dt;
-        if let Some(terrain) = &terrain {
-            t.translation.y = terrain.0.ground_height(t.translation.x, t.translation.z);
-        }
+        mover.intent.dir = Vec2::new(w.heading.sin(), w.heading.cos());
+        mover.intent.speed = if w.run { def.meta.run_speed } else { def.meta.walk_speed };
+        mover.gait = if w.run { crate::motion::Gait::Run } else { crate::motion::Gait::Walk };
     }
 }
 

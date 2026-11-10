@@ -46,6 +46,10 @@ pub struct Intent {
     pub jump: bool,
 }
 
+/// How far up a body the water must come before it swims, and where it then floats: just
+/// over the middle, so a figure lying forward to swim has its back out of the water.
+const WAIST: f32 = 0.52;
+
 #[derive(Clone, Copy, Debug)]
 pub struct Body {
     /// The middle of the box's underside: where the feet are.
@@ -55,7 +59,7 @@ pub struct Body {
     pub half: f32,
     pub height: f32,
     pub grounded: bool,
-    /// Chest deep in water: swimming.
+    /// Waist deep in water: swimming.
     pub swimming: bool,
     since_ground: f32,
 }
@@ -80,9 +84,9 @@ impl Body {
         (y0..=y1).any(|y| (z0..=z1).any(|z| (x0..=x1).any(|x| world.get(IVec3::new(x, y, z)).solid())))
     }
 
-    /// The water's surface over the chest, in metres, when the chest is under water.
-    fn water_over_chest(&self, world: &World) -> Option<f32> {
-        let chest = self.pos + Vec3::Y * self.height * 0.6;
+    /// The water's surface over the waist, in metres, when the waist is under water.
+    fn water_over_waist(&self, world: &World) -> Option<f32> {
+        let chest = self.pos + Vec3::Y * self.height * WAIST;
         let mut cell = (chest / CELL).floor().as_ivec3();
         if world.get(cell) != Block::Water {
             return None;
@@ -96,7 +100,7 @@ impl Body {
     /// One tick of [`DT`].
     pub fn step(&mut self, world: &World, intent: Intent, tuning: &Tuning) {
         let was_grounded = self.grounded;
-        let surface = self.water_over_chest(world);
+        let surface = self.water_over_waist(world);
         self.swimming = surface.is_some();
 
         // Over the ground: toward the asked velocity, as fast as the footing allows.
@@ -111,7 +115,7 @@ impl Body {
         self.since_ground = if self.grounded { 0.0 } else { self.since_ground + DT };
         let mut jumped = false;
         if let Some(surface) = surface {
-            let chest = self.pos.y + self.height * 0.6;
+            let chest = self.pos.y + self.height * WAIST;
             let rise = ((surface - chest) * 6.0).clamp(-2.0, 2.0) + if intent.jump { 1.5 } else { 0.0 };
             self.vel.y += (rise - self.vel.y).clamp(-20.0 * DT, 20.0 * DT);
         } else {
@@ -182,6 +186,57 @@ impl Body {
         // Never past where it started: a box already against the wall stays put.
         self.pos[axis] = if by > 0.0 { stopped.max(self.pos[axis].min(stopped)) } else { stopped.min(self.pos[axis].max(stopped)) };
         self.vel[axis] = 0.0;
+    }
+}
+
+/// Something a body cannot walk through that is not a body being moved: a creature standing
+/// still. A pillar at `pos` (its foot), `half` wide and `height` tall.
+#[derive(Clone, Copy, Debug)]
+pub struct Pillar {
+    pub pos: Vec3,
+    pub half: f32,
+    pub height: f32,
+}
+
+/// How far a pillar of `half` at `at` must move over the ground to stop overlapping `other`.
+fn overlap(at: Vec3, half: f32, height: f32, other: &Pillar) -> Vec2 {
+    if at.y >= other.pos.y + other.height || other.pos.y >= at.y + height {
+        return Vec2::ZERO;
+    }
+    let apart = Vec2::new(at.x - other.pos.x, at.z - other.pos.z);
+    let deep = half + other.half - apart.length();
+    if deep <= 0.0 { Vec2::ZERO } else { apart.try_normalize().unwrap_or(Vec2::X) * deep }
+}
+
+/// Pushes bodies out of each other and out of `fixed` pillars, over the ground. Two bodies
+/// share the push; a pillar gives none. The most in a tick is more than two runners close in
+/// one, so nothing gets through, and little enough that a body dropped onto another eases off.
+/// Bodies are treated as round here, which is what lets them slide past one another. The
+/// voxel world still wins: a push never puts a body in a wall or up a step.
+pub fn separate(world: &World, bodies: &mut [Body], fixed: &[Pillar]) {
+    const MOST: f32 = 0.2;
+    let pillar = |b: &Body| Pillar { pos: b.pos, half: b.half, height: b.height };
+    for i in 0..bodies.len() {
+        for j in i + 1..bodies.len() {
+            let push = overlap(bodies[i].pos, bodies[i].half, bodies[i].height, &pillar(&bodies[j])).clamp_length_max(MOST) / 2.0;
+            bodies[i].nudge(world, push);
+            bodies[j].nudge(world, -push);
+        }
+        for other in fixed {
+            let push = overlap(bodies[i].pos, bodies[i].half, bodies[i].height, other).clamp_length_max(MOST);
+            bodies[i].nudge(world, push);
+        }
+    }
+}
+
+impl Body {
+    /// Moves over the ground by `by` as far as the world allows, without changing speed.
+    fn nudge(&mut self, world: &World, by: Vec2) {
+        let vel = self.vel;
+        let tuning = Tuning::default();
+        self.slide(world, 0, by.x, false, &tuning);
+        self.slide(world, 2, by.y, false, &tuning);
+        self.vel = vel;
     }
 }
 
@@ -280,6 +335,35 @@ mod tests {
     }
 
     #[test]
+    fn bodies_do_not_pass_through_each_other_or_a_pillar() {
+        let w = floor();
+        let step = |bodies: &mut [Body], fixed: &[Pillar], intents: &[Intent]| {
+            separate(&w, bodies, fixed);
+            for (b, i) in bodies.iter_mut().zip(intents) {
+                b.step(&w, *i, &Tuning::default());
+            }
+        };
+        // Head on: they meet and stop, neither inside the other.
+        let mut pair = [player(), Body::new(Vec3::new(4.25, 1.0, 0.25), 0.3, 1.75)];
+        let west = Intent { dir: Vec2::new(-1.0, 0.0), ..EAST };
+        for _ in 0..TICKS * 3 {
+            step(&mut pair, &[], &[EAST, west]);
+        }
+        let gap = pair[1].pos.x - pair[0].pos.x;
+        // Each tick they step into each other and are put back, so they rest a step's worth in.
+        assert!(gap > 0.45 && gap < 0.62, "gap {gap}");
+        // Past a standing pillar a little off its line: it slides round and carries on.
+        let mut one = [player()];
+        let post = [Pillar { pos: Vec3::new(3.0, 1.0, 0.45), half: 0.3, height: 1.0 }];
+        for _ in 0..TICKS * 3 {
+            step(&mut one, &post, &[EAST]);
+            let apart = Vec2::new(one[0].pos.x - 3.0, one[0].pos.z - 0.45).length();
+            assert!(apart > 0.52, "inside the pillar: {apart}");
+        }
+        assert!(one[0].pos.x > 6.0 && one[0].pos.z < 0.0, "{:?}", one[0].pos);
+    }
+
+    #[test]
     fn floats_in_water() {
         let mut w = World::default();
         for z in -8..8 {
@@ -292,8 +376,8 @@ mod tests {
         }
         let mut b = Body::new(Vec3::new(0.25, 6.0, 0.25), 0.3, 1.75);
         run(&mut b, &w, 6.0, Intent::default());
-        let chest = b.pos.y + 1.75 * 0.6;
-        assert!(b.swimming && (chest - 4.5).abs() < 0.15, "chest at {chest}");
+        let waist = b.pos.y + 1.75 * WAIST;
+        assert!(b.swimming && (waist - 4.5).abs() < 0.15, "waist at {waist}");
     }
 
     #[test]

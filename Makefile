@@ -18,7 +18,7 @@ setup: ## (plain `make`) check this machine: node, Tripo login, display, models
 run: ## the game window, one of each creature (SPAWN=wolf,player for some)
 	cargo sandbox --spawn $(SPAWN)
 
-play: ## the game window, as the player: WASD, Shift walks, Space jumps, mouse looks, Tab frees it
+play: ## the game window, as the player: WASD, Shift sprints, Ctrl walks, Space jumps, V first person, Tab frees the mouse
 	cargo sandbox --play --spawn $(SPAWN)
 
 windows: ## from WSL: build for Windows and open the game there, as the player (ARGS="--spawn all" for the plain sandbox)

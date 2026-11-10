@@ -184,7 +184,7 @@ fn scene(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terra
         Camera3d::default(),
         RenderTarget::Image(stage.target.clone().into()),
         // Only `--play` uses the orbit: behind the player, facing the hills.
-        crate::camera::Orbit { focus, yaw: -2.2, pitch: 0.28, distance: 5.5 },
+        crate::camera::Orbit { focus, yaw: args.yaw, pitch: 0.28, distance: 5.5 },
         Transform::from_translation(focus + Vec3::new(4.5, 2.6, 7.0) * (1.0 + ids.len() as f32 * 0.07)).looking_at(focus, Vec3::Y),
         DistanceFog { color: world::SKY, falloff: FogFalloff::Linear { start: 60.0, end: 160.0 }, ..default() },
     ));

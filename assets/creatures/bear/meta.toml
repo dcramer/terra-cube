@@ -3,6 +3,7 @@ height = 1.3
 length = 1.5557078
 walk_speed = 0.76247746
 run_speed = 1.7703105
+sprint_speed = 1.9863482
 triangles = 9857
 joints = 33
 
@@ -21,6 +22,11 @@ seconds = 4.0
 looping = true
 source = "made"
 
+[clips.fall]
+seconds = 0.9
+looping = true
+source = "made"
+
 [clips.hurt]
 seconds = 0.5
 looping = false
@@ -31,8 +37,23 @@ seconds = 4.0
 looping = true
 source = "made"
 
+[clips.jump]
+seconds = 0.3
+looping = false
+source = "made"
+
 [clips.run]
 seconds = 0.8
+looping = true
+source = "made"
+
+[clips.sprint]
+seconds = 0.6333333
+looping = true
+source = "made"
+
+[clips.swim]
+seconds = 1.6
 looping = true
 source = "made"
 

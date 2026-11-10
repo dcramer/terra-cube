@@ -169,6 +169,9 @@ pub struct Roles {
     pub spine: Vec<usize>,
     /// Every other chain: arms, wings, ears, fins.
     pub others: Vec<Vec<usize>>,
+    /// Limbs that leave the trunk and end in a branching hand: shoulder, upper arm, forearm,
+    /// hand. Their fingers are in `others`.
+    pub arms: Vec<Leg>,
     /// Skeleton extent: lowest and highest joint, and length along `forward`.
     pub floor: f32,
     pub height: f32,
@@ -277,7 +280,21 @@ impl Roles {
                 Leg { front: along(p) > 0.0, left: (p - centre).dot(side) > 0.0, chain }
             })
             .collect();
-        Roles { forward, side, legs, head, tail, spine, others, floor, height, length }
+        let mut arms: Vec<Leg> = Vec::new();
+        for chain in &others {
+            let mut path = Vec::new();
+            let mut at = sk.joints[chain[0]].parent;
+            while let Some(j) = at.filter(|&j| j != sk.root && !spine.contains(&j)) {
+                path.push(j);
+                at = sk.joints[j].parent;
+            }
+            path.reverse();
+            if path.len() >= 2 && !arms.iter().any(|a| a.chain[0] == path[0]) {
+                let left = (sk.position(*path.last().unwrap()) - centre).dot(side) > 0.0;
+                arms.push(Leg { front: true, left, chain: path });
+            }
+        }
+        Roles { forward, side, legs, head, tail, spine, others, arms, floor, height, length }
     }
 
     /// One line a role, for `forge inspect`.
@@ -287,6 +304,9 @@ impl Roles {
         out += &format!("spine  {}\nhead   {}\ntail   {}\n", names(&self.spine), names(&self.head), names(&self.tail));
         for l in &self.legs {
             out += &format!("leg {}{} {}\n", if l.front { "front" } else { "hind " }, if l.left { " left " } else { " right" }, names(&l.chain));
+        }
+        for a in &self.arms {
+            out += &format!("arm {} {}\n", if a.left { "left " } else { "right" }, names(&a.chain));
         }
         for o in &self.others {
             out += &format!("other  {}\n", names(o));
@@ -304,7 +324,7 @@ pub mod tests {
     pub fn animal() -> Skeleton {
         let twist = Quat::from_euler(glam::EulerRot::XYZ, 0.7, -1.1, 2.0);
         let mut joints: Vec<Joint> = Vec::new();
-        let mut add = |name: &str, parent: Option<usize>, at: Vec3, joints: &mut Vec<Joint>| -> usize {
+        let add = |name: &str, parent: Option<usize>, at: Vec3, joints: &mut Vec<Joint>| -> usize {
             let world = Mat4::from_rotation_translation(twist, at);
             let local = parent.map_or(world, |p: usize| joints[p].world.inverse() * world);
             let (rest_s, rest_r, rest_t) = local.to_scale_rotation_translation();

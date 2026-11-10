@@ -37,10 +37,10 @@ A plan (`[plans.*]` in `style.toml`) says how the concept is posed, how Tripo ri
 
 | Plan | Rig | From Tripo | Made by forge |
 |---|---|---|---|
-| `biped` | humanoid, Mixamo names | idle, walk, run, attack (slash), hurt, jump | die |
-| `quadruped` | as Tripo reads it | walk | idle, run, attack, hurt, die, eat |
+| `biped` | humanoid, Mixamo names | idle, walk, run, attack (slash) | sprint, jump, fall, swim, hurt, die |
+| `quadruped` | as Tripo reads it | walk | idle, run, sprint, jump, fall, swim, attack, hurt, die, eat |
 
-A plan can also cut a preset that runs long (`trim`: clip → from, to, speed). The biped's `attack` is 2.4 s of Tripo's 6.6 s overhead chop at double speed; the animals' walk plays at 1.8×. Tripo's biped `hurt` is a figure sat wounded for 14 s, so ours is made.
+A plan can also cut a preset that runs long (`trim`: clip → from, to, speed). The biped's `attack` is 2.4 s of Tripo's 6.6 s overhead chop at double speed; the animals' walk plays at 1.8×. Tripo's biped `hurt` is a figure sat wounded for 14 s and its `jump` is three hops on the spot, so ours are made. Its `fall`, `dive` and `climb` presets are free and have not been looked at.
 
 Tripo has no other presets for animals (one walk or march per rig type, none for birds), which is why the rest are made.
 
@@ -50,16 +50,18 @@ Tripo's bone names cannot be trusted (`bone_7` beside `tripo::0_Right_Limb_0`; a
 
 - A **chain** runs from a leaf bone up to the first bone that branches.
 - Chains whose tip is near the floor are **legs**, front or hind and left or right by position.
-- The highest other chain is the **head**; one trailing behind the feet is the **tail**; the trunk from the root to the head is the **spine**; the rest (arms, wings, ears) are **others**.
+- The highest other chain is the **head**; one trailing behind the feet is the **tail**; the trunk from the root to the head is the **spine**; the rest (fingers, wings, ears) are **others**.
+- A limb that leaves the trunk and ends in a branching hand is an **arm** (shoulder to hand); its fingers are the others.
 - **Forward** is toward the head when it sits ahead of the feet, else +Z as Tripo exports an upright figure. `facing = "+x"` in `creature.toml` overrides a wrong guess.
 
 `cargo forge inspect ID` prints the roles. Look at it first when a creature moves wrongly.
 
-Clip recipes (`clips.rs`) are written against roles, so each serves every plan: `idle` (breathing, a look about, tail sway), `run` (the walk quicker and wider with the trunk pumping), `attack` (a lunge), `hurt` (a flinch), `die` (falls and is settled on the floor each frame), `eat` (neck and head down, nibbling), and `walk` as a fallback for a rig with no preset. They are plain and readable on purpose; they are the place to add craft.
+Clip recipes (`clips.rs`) are written against roles, so each serves every plan: `idle` (breathing, a look about, tail sway), `run` (the walk quicker and wider with the trunk pumping), `sprint` (the run quicker again, leant forward), `jump` (into an airborne pose and held: one knee up and arms out for a biped, forelegs reaching for an animal), `fall` (that pose, limbs stirring), `swim` (a biped lies forward, kicks and reaches its arms over in turn; an animal holds its head up and paddles), `attack` (a lunge), `hurt` (a flinch), `die` (falls and is settled on the floor each frame), `eat` (neck and head down, nibbling), and `walk` as a fallback for a rig with no preset. They are plain and readable on purpose; they are the place to add craft.
 
 What finish does to every clip, so no creature needs hand fixes:
 
 - A made clip is laid over how the creature **stands** (the first frame of Tripo's idle), not its rest pose, so a biped does not snap to a T-pose.
+- A recipe that cares which way a limb really points (arms in `jump`, `fall`, `swim`) gives its turns **as the creature stands** (`Stance` in clips.rs): on a T-pose rig "swing the arm forward" is a different turn at rest than with the arm hanging.
 - A looping preset is **closed**: its last fifth eases into its first frame (Tripo's biped run was 19° open).
 - Walk and run are **grounded**: the body is lifted on any frame where a foot would be under the floor.
 - `gait_gain` in `creature.toml` scales how far Tripo's walk swings the limbs. The bear needs 0.6: the preset is fitted to long legs and folded its short ones (73% stretch, feet 9% under the floor, both caught by the checks).
@@ -92,8 +94,9 @@ In the sandbox (`cargo sandbox --spawn ID`) the panel plays clips, scrubs a held
 
 - **The troll fails one check**: its attack stretches 94% against a bar of 80%. The overhead chop lifts both arms far from where a bulky body's weights hold; it looks acceptable on the sheet. Left failing rather than raising the bar. Its first build failed all seven (arms fused to the body, 177% in the attack) because the concept was not in a T-pose; a slimmer subject line fixed the rest. That is the case for looking at concepts first.
 
-- Animals are slow: Tripo's walk is an amble, and `run` is that walk quicker and wider, not a gallop (the wolf runs at 1.6 m/s). The game can play clips faster; a real gallop recipe is the fix.
+- Animals are slow: Tripo's walk is an amble, and `run` and `sprint` are that walk quicker, not a gallop (the wolf runs at 1.6 m/s, sprints at 1.7). The game can play clips faster; a real gallop recipe is the fix.
 - `die` leaves legs stiff.
 - Walk speed is measured from the feet of the in-place clip; if it reads wrong the creature slides when wandering.
-- A biped's `die` and an animal's whole set have only been judged on sheets, not in play.
+- `jump`, `fall`, `swim` and `sprint` were judged on sheets for the player, wolf and bear and in scripted runs for the player and wolf; the other creatures by the checks alone.
+- A biped's `die` has only been judged on a sheet, not in play.
 - The Tripo CLI drives the web app's private backend with a browser cookie that lasts about 30 days ([tools/tripo/README.md](../tools/tripo/README.md)). When builds fail with a login error, the cookie in `.env` needs replacing.

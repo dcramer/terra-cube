@@ -166,7 +166,8 @@ fn panel(
         });
         ui.separator();
         ui.small("Right-drag orbits · wheel zooms · WASD QE moves");
-        ui.small("Tab controls the picked creature: WASD, Shift walks, Space jumps");
+        ui.small("Tab controls the picked creature: WASD, Shift sprints,");
+        ui.small("Ctrl walks, Space jumps, V first person");
     });
     Ok(())
 }

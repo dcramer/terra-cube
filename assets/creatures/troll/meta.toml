@@ -3,6 +3,7 @@ height = 2.6
 length = 0.774862
 walk_speed = 1.5827211
 run_speed = 4.962929
+sprint_speed = 5.964926
 triangles = 9795
 joints = 65
 
@@ -16,6 +17,11 @@ seconds = 1.4
 looping = false
 source = "made"
 
+[clips.fall]
+seconds = 0.9
+looping = true
+source = "made"
+
 [clips.hurt]
 seconds = 0.5
 looping = false
@@ -27,14 +33,24 @@ looping = true
 source = "tripo"
 
 [clips.jump]
-seconds = 2.2
+seconds = 0.3
 looping = false
-source = "tripo"
+source = "made"
 
 [clips.run]
 seconds = 1.2666667
 looping = true
 source = "tripo"
+
+[clips.sprint]
+seconds = 1.0
+looping = true
+source = "made"
+
+[clips.swim]
+seconds = 1.6
+looping = true
+source = "made"
 
 [clips.walk]
 seconds = 2.3333333

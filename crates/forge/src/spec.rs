@@ -113,6 +113,9 @@ pub struct Meta {
     pub length: f32,
     pub walk_speed: f32,
     pub run_speed: f32,
+    /// 0 when the plan has no sprint.
+    #[serde(default)]
+    pub sprint_speed: f32,
     pub triangles: usize,
     pub joints: usize,
     pub clips: BTreeMap<String, ClipMeta>,
