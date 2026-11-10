@@ -37,6 +37,9 @@ cargo forge cubes ID [--size 0.05] [--head 1.0]
                                         a trial: ID-cubes, that model rebuilt from little cubes each
                                         fixed to one of a dozen parts, with the same skeleton and
                                         clips; --head 1.4 makes its head that much bigger
+cargo forge ideas ID                    shots/ideas-ID.jpg: other things that creature could be, each
+                                        subject in its ideas.toml drawn in the house style (2 credits
+                                        an image, once)
 cargo forge looks                       shots/looks.jpg: a few creatures drawn in each look being tried
                                         (assets/creatures/looks.toml); 2 credits an image, once
 cargo forge inspect FILE.glb|ID         the skeleton's roles
@@ -109,6 +112,12 @@ fn run() -> Result<bool> {
         "status" => status(&style()?)?,
         "doctor" => ok = doctor(),
         "looks" => println!("{}", looks::run(&style()?)?),
+        "ideas" => {
+            let style = style()?;
+            for id in targets(&args) {
+                println!("{}", looks::ideas(&id, &style)?);
+            }
+        }
         "cubes" => {
             let size: f32 = option(&mut args, "--size").map_or(Ok(0.05), |s| s.parse())?;
             let head: f32 = option(&mut args, "--head").map_or(Ok(1.0), |s| s.parse())?;

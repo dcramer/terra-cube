@@ -1,0 +1,10 @@
+# Other people the player could be, drawn by `cargo forge ideas player` as shots/ideas-player.jpg.
+# Each is a subject as in creature.toml: what they are, one defining feature, two colours, no
+# style words. The one chosen replaces `subject` there.
+
+castaway = "a young castaway on a wild island, sun-bleached rolled-up trousers, a patched sailcloth shirt with one sleeve torn off, a thick rope belt, bare forearms wrapped in cloth, a red bandana tied round the head, barefoot in rope sandals, friendly weathered face, androgynous build"
+naturalist = "a young field naturalist, a short waxed mustard-yellow coat with big patch pockets, a round wide-brimmed hat, a teal scarf, sturdy knee-high boots, a specimen satchel strapped flat across the chest, round spectacles, curious friendly face, androgynous build"
+tinkerer = "a young tinkerer, a heavy leather work apron over a striped shirt with rolled sleeves, brass goggles pushed up into a shock of messy hair, thick padded gloves, a tool belt of pouches, stout clogs, orange and slate grey, soot-smudged cheerful face, androgynous build"
+wayfarer = "a young wayfarer from far away, a short poncho of bold woven stripes in indigo and saffron, loose trousers bound at the shin, a broad sash, soft wrapped boots, hair in one thick braid, a painted stripe across the nose, calm friendly face, androgynous build"
+stargazer = "a young stranger fallen from the sky, a snug quilted one-piece suit in cream with coral panels, a rounded soft collar like a deflated helmet, a small boxy pack fixed flat to the back, chunky magnetic boots, short cropped hair, wide-eyed friendly face, androgynous build"
+moss = "a young woodland dweller who looks half grown from the forest, a tunic of layered broad green leaves, bark bracers on the forearms, a short cloak of moss on the shoulders, twig-and-acorn necklace, bare feet wrapped in vine, freckled friendly face, androgynous build"
