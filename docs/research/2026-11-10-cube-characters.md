@@ -23,6 +23,24 @@ Smaller cubes do not fix the legs. The cause is the source: a model of natural p
 
 Not found in this search: how Cube World or Stonehearth build theirs. From memory, unverified: Eco and Dragon Quest Builders put smooth characters in a block world, which is what terra-cube did before this trial.
 
+## What their characters look like
+
+Looked at 2026-11-10 in each game's own store screenshots (not kept in the repository: they are theirs).
+
+| Game | World | Character |
+|---|---|---|
+| [Lay of the Land](https://store.steampowered.com/app/2776090/) (in development) | Fine voxels, dug and built | Built of the same fine voxels; limbs are thin separate stacks with clear air between the legs |
+| [Voxile](https://store.steampowered.com/app/2283580/) | Fine voxels | Chunky body, big head, legs two separate blocks |
+| [Teardown](https://store.steampowered.com/app/1167630/) | 10 cm voxels | The nearest to natural proportions; legs still plainly two |
+| [The Touryst](https://store.steampowered.com/app/1796410/) | Voxel sets | Head about a third of the height, stubby separate legs |
+| [Stonehearth](https://store.steampowered.com/app/253250/) | Blocks | Huge head, small body, tiny separate legs |
+| [Trove](https://store.steampowered.com/app/304050/) | Blocks | Cube head, limbs straight box shapes held apart |
+| [Cube World](https://store.steampowered.com/app/1128000/) | Blocks | Big head and hair, small body |
+| [Staxel](https://store.steampowered.com/app/405710/) | Blocks with fine detail | Big head, straight limbs, arms held out from the body |
+| [Everwind](https://store.steampowered.com/app/2253100/) | Blocks | Not voxels: a few textured boxes, as Minecraft and Hytale |
+
+Every one of them, whatever its voxel size: legs are two straight pieces with a gap you can see, arms stand off the body, the head is big for the body, and a figure is a handful of parts. None has the thing ours has, two legs fused into one mass.
+
 ## What follows for us
 
 1. **It is the method, not the size.** Every game above that makes cube characters work designs them as a handful of clean rigid parts, with proportions chosen for the grid (big head, thick separate legs, mitten hands). None converts a natural-proportioned smooth model bone by bone.
