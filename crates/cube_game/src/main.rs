@@ -30,6 +30,8 @@ pub struct Args {
     pub play: bool,
     /// The way a scene's play camera faces, radians: the way the set route runs.
     pub yaw: f32,
+    /// Print the controlled body four times a second.
+    pub trace: bool,
     /// The creature to control instead of the player.
     pub play_as: Option<String>,
     /// Seconds into a scene at which its picture is taken.
@@ -50,6 +52,7 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
                                         no window: a set route (walk, run, jump, sprint, jump),
                                         pictured from the camera at SECONDS. It runs toward the
                                         hills; --yaw 2.16 runs it into the pond instead
+--trace prints the controlled body (position, speed, clip, camera) four times a second.
 In the window: Tab controls the picked creature, and lets go of it. Otherwise right-drag
 orbits, wheel zooms, WASD and QE move, F looks at the picked creature.
 Setup trouble: cargo forge doctor";
@@ -93,6 +96,7 @@ fn parse_args() -> Args {
             "--cols" => args.cols = it.next().and_then(|v| v.parse().ok()).unwrap_or(6),
             "--clips" => args.clips = list(it.next()),
             "--play" => args.play = true,
+            "--trace" => args.trace = true,
             "--yaw" => args.yaw = it.next().and_then(|v| v.parse().ok()).unwrap_or(-2.2),
             "--as" => {
                 args.play = true;

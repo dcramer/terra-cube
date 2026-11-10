@@ -20,7 +20,7 @@ pub struct PlayPlugin;
 
 impl Plugin for PlayPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Controls>().add_systems(Update, (start, keys, script, drive, follow, cursor).chain());
+        app.init_resource::<Controls>().add_systems(Update, (start, keys, script, drive, follow, cursor, trace).chain());
     }
 }
 
@@ -48,7 +48,7 @@ fn start(
     registry: Res<Registry>,
     keys: Res<ButtonInput<KeyCode>>,
     selected: Option<Res<crate::ui::Selected>>,
-    creatures: Query<(Entity, &Creature)>,
+    creatures: Query<(Entity, &Creature, &Transform)>,
     controlled: Query<Entity, With<Controlled>>,
     mut cameras: Query<&mut Orbit>,
     mut begun: Local<bool>,
@@ -65,13 +65,17 @@ fn start(
     *begun = true;
     let picked = selected.and_then(|s| s.0).and_then(|e| creatures.get(e).ok());
     let wanted = args.play_as.as_deref().unwrap_or("player");
-    let named = creatures.iter().find(|(_, c)| registry.0[c.def].id == wanted);
-    let Some((entity, creature)) = (if begin { named.or(picked) } else { picked.or(named) }).or_else(|| creatures.iter().next()) else { return };
+    let named = creatures.iter().find(|(_, c, _)| registry.0[c.def].id == wanted);
+    let Some((entity, creature, at)) = (if begin { named.or(picked) } else { picked.or(named) }).or_else(|| creatures.iter().next()) else { return };
     let def = &registry.0[creature.def];
     commands.entity(entity).remove::<Wander>().insert(Controlled { first_person: args.view == "first" });
     for mut orbit in &mut cameras {
         orbit.distance = (def.meta.height.max(def.meta.length) * 3.2).clamp(2.5, 9.0);
         orbit.pitch = 0.28;
+        // Behind it, looking the way it faces. A scene's camera is aimed by `--yaw` instead.
+        if args.scene.is_none() {
+            orbit.yaw = at.rotation.to_euler(EulerRot::YXZ).0 + std::f32::consts::PI;
+        }
     }
 }
 
@@ -97,14 +101,13 @@ fn keys(keys: Res<ButtonInput<KeyCode>>, args: Res<Args>, mut controls: ResMut<C
 }
 
 /// With no window there are no keys: a set route for a picture to be taken of. Stand, walk,
-/// run and jump, then sprint and jump, toward the hills. Prints the body once a second.
-fn script(time: Res<Time>, args: Res<Args>, mut controls: ResMut<Controls>, controlled: Query<(&Mover, &Creature), With<Controlled>>, registry: Res<Registry>, mut clock: Local<(f32, f32)>) {
-    if args.scene.is_none() || !args.play {
+/// run and jump, then sprint and jump, the way the camera faces.
+fn script(time: Res<Time>, args: Res<Args>, mut controls: ResMut<Controls>, controlled: Query<(), With<Controlled>>, mut clock: Local<f32>) {
+    if args.scene.is_none() || !args.play || controlled.is_empty() {
         return;
     }
-    let Ok((m, creature)) = controlled.single() else { return };
-    clock.0 += time.delta_secs();
-    let t = clock.0;
+    *clock += time.delta_secs();
+    let t = *clock;
     controls.dir = if t > 0.5 { Vec2::Y } else { Vec2::ZERO };
     controls.gait = if t < 2.0 {
         Gait::Walk
@@ -114,12 +117,25 @@ fn script(time: Res<Time>, args: Res<Args>, mut controls: ResMut<Controls>, cont
         Gait::Sprint
     };
     controls.jump = (3.0..3.1).contains(&t) || (6.0..6.1).contains(&t);
-    if t >= clock.1 {
-        clock.1 += 1.0;
+}
+
+/// `--trace`, and every scripted run: the controlled body in a line, four times a second.
+fn trace(time: Res<Time>, args: Res<Args>, controlled: Query<(&Mover, &Creature, &Controlled)>, registry: Res<Registry>, cameras: Query<&Orbit>, mut clock: Local<(f32, f32)>) {
+    if !(args.trace || args.scene.is_some() && args.play) {
+        return;
+    }
+    let Ok((m, creature, c)) = controlled.single() else { return };
+    clock.0 += time.delta_secs();
+    if clock.0 >= clock.1 {
+        clock.1 += if args.trace { 0.25 } else { 1.0 };
         let def = &registry.0[creature.def];
         let clip = def.clips.get(creature.clip).map_or("-", |c| c.0.as_str());
         let b = &m.body;
-        println!("play t={t:.1} pos={:.1},{:.1},{:.1} speed={:.2} grounded={} swimming={} clip={clip}x{:.2}", b.pos.x, b.pos.y, b.pos.z, b.ground_speed(), b.grounded, b.swimming, creature.speed);
+        let yaw = cameras.iter().next().map_or(0.0, |o| o.yaw);
+        println!(
+            "play t={:.1} pos={:.1},{:.1},{:.1} speed={:.2} grounded={} swimming={} clip={clip}x{:.2} yaw={yaw:.2} first={}",
+            clock.0, b.pos.x, b.pos.y, b.pos.z, b.ground_speed(), b.grounded, b.swimming, creature.speed, c.first_person
+        );
     }
 }
 

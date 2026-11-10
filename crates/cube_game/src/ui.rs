@@ -27,7 +27,8 @@ impl Plugin for UiPlugin {
         app.add_plugins(EguiPlugin::default())
             .init_resource::<Selected>()
             .init_resource::<Debug>()
-            .add_systems(Startup, (gizmos_on_top, spawn_from_args))
+            .add_systems(Startup, gizmos_on_top)
+            .add_systems(Update, spawn_from_args)
             .add_systems(EguiPrimaryContextPass, panel)
             .add_systems(Update, skeletons);
     }
@@ -37,7 +38,10 @@ fn gizmos_on_top(mut store: ResMut<GizmoConfigStore>) {
     store.config_mut::<DefaultGizmoConfigGroup>().0.depth_bias = -1.0;
 }
 
-fn spawn_from_args(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terrain: Res<Terrain>, mut debug: ResMut<Debug>, mut selected: ResMut<Selected>) {
+/// Once, when the world exists: it is made by a startup system, so not yet at startup.
+fn spawn_from_args(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terrain: Option<Res<Terrain>>, mut debug: ResMut<Debug>, mut selected: ResMut<Selected>, mut done: Local<bool>) {
+    let Some(terrain) = terrain.filter(|_| !*done) else { return };
+    *done = true;
     for id in &args.spawn {
         match creatures::spawn(&mut commands, &registry, id, creatures::spot(debug.spawned, &terrain)) {
             Some(e) => {
