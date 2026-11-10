@@ -44,6 +44,15 @@ pub struct Mover {
     airborne: f32,
     /// Left the ground by jumping, not by walking off something.
     jumped: bool,
+    /// Seconds a jump is still wanted for: pressed a moment before landing, it still jumps.
+    pub want_jump: f32,
+    /// The jump key is down: the jump rises to its full height.
+    pub hold_jump: bool,
+    /// Seconds of the landing still to play, after a fall worth one.
+    landing: f32,
+    /// The model tipped into its turns and its starts and stops: roll and pitch, radians.
+    tilt: Vec2,
+    was_speed: f32,
 }
 
 /// Half the width of a creature's body box, from its measured size.
@@ -79,7 +88,7 @@ fn enrol(
         pos.y = pos.y.max(terrain.0.ground_height(pos.x, pos.z));
         let body = Body::new(pos, half_width(def), def.meta.height.max(0.3));
         let facing = at.rotation.to_euler(EulerRot::YXZ).0;
-        commands.entity(entity).insert(Mover { body, intent: Intent::default(), gait: Gait::Walk, facing, turn_to: None, before: pos, lift: 0.0, airborne: 0.0, jumped: false });
+        commands.entity(entity).insert(Mover { body, intent: Intent::default(), gait: Gait::Walk, facing, turn_to: None, before: pos, lift: 0.0, airborne: 0.0, jumped: false, want_jump: 0.0, hold_jump: false, landing: 0.0, tilt: Vec2::ZERO, was_speed: 0.0 });
     }
     for entity in &idle {
         commands.entity(entity).remove::<Mover>();
@@ -96,12 +105,19 @@ fn tick(terrain: Option<Res<Terrain>>, registry: Res<Registry>, mut movers: Quer
     for (mut m, pushed) in movers.iter_mut().zip(bodies) {
         let (was, was_grounded) = (m.body.pos, m.body.grounded);
         m.body = pushed;
-        let intent = m.intent;
+        let mut intent = m.intent;
+        intent.jump = m.want_jump > 0.0;
+        intent.hold = m.hold_jump;
+        let fall = m.body.vel.y;
         m.body.step(world, intent, &Tuning::default());
-        m.intent.jump = false;
+        m.want_jump = if m.body.jumping { 0.0 } else { (m.want_jump - cube_sim::DT).max(0.0) };
         m.before = was;
         if was_grounded && !m.body.grounded {
             m.jumped = m.body.vel.y > 0.5;
+        }
+        // Down from more than about a cell: a landing.
+        if !was_grounded && m.body.grounded && fall < -4.5 {
+            m.landing = 0.3;
         }
         // A step up or down moves the body half a metre in one tick; the model eases after.
         let rise = m.body.pos.y - was.y;
@@ -133,7 +149,15 @@ fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, mut m
             let turn = (want - m.facing + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
             m.facing += turn * (1.0 - (-14.0 * dt).exp());
         }
-        transform.rotation = Quat::from_rotation_y(m.facing);
+        // Tip into turns and into speeding up, out of slowing down: a few degrees, eased.
+        let turning = want.map_or(0.0, |w| (w - m.facing + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI);
+        let pushing = if dt > 0.0 && m.body.grounded { (speed - m.was_speed) / dt } else { 0.0 };
+        m.was_speed = speed;
+        let lean = Vec2::new((-turning * speed * 0.12).clamp(-0.16, 0.16), (pushing * 0.006).clamp(-0.07, 0.09));
+        let ease = 1.0 - (-8.0 * dt).exp();
+        m.tilt = m.tilt + (lean - m.tilt) * ease;
+        transform.rotation = Quat::from_rotation_y(m.facing) * Quat::from_rotation_x(m.tilt.y) * Quat::from_rotation_z(m.tilt.x);
+        m.landing = (m.landing - dt).max(0.0);
 
         let def = &registry.0[creature.def];
         let meta = &def.meta;
@@ -142,6 +166,8 @@ fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, mut m
             ("swim", if speed > 0.3 { 1.1 } else { 0.55 }, "walk")
         } else if m.airborne > 0.1 {
             (if m.jumped && m.body.vel.y > 0.0 { "jump" } else { "fall" }, 1.0, "run")
+        } else if m.landing > 0.0 && speed < 1.5 {
+            ("land", 1.0, "idle")
         } else if speed < 0.2 {
             ("idle", 1.0, "idle")
         } else {

@@ -263,6 +263,7 @@ fn recipe(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option
         "jump" => jump(sk, roles, &stance, upright),
         "fall" => fall(sk, roles, &stance, upright),
         "swim" => swim(sk, roles, &stance, upright),
+        "land" => land(sk, roles, &stance, upright),
         "attack" => attack(sk, roles, &stance),
         "hurt" => hurt(sk, roles),
         "die" => die(sk, roles, upright),
@@ -691,6 +692,27 @@ fn jump(sk: &Skeleton, roles: &Roles, st: &Stance, upright: bool) -> Clip {
 /// In the air with nothing underfoot: the airborne pose, limbs stirring.
 fn fall(sk: &Skeleton, roles: &Roles, st: &Stance, upright: bool) -> Clip {
     Clip::made("fall", true, 0.9, sk, |t, pose| airborne(sk, roles, st, pose, upright, 1.0, (t * TAU).sin()))
+}
+
+/// Touching down: the body sinks onto bent legs and comes back up, feet where they were.
+fn land(sk: &Skeleton, roles: &Roles, st: &Stance, upright: bool) -> Clip {
+    Clip::made("land", false, 0.35, sk, |t, pose| {
+        let k = pulse(t, 0.0, 0.25, 0.35, 1.0);
+        let leg = roles.legs.iter().map(|l| sk.position(l.chain[0]).y - roles.floor).fold(f32::MAX, f32::min).max(1e-3);
+        pose.root_t = sk.root_moved(Vec3::Y * -0.16 * leg * k);
+        for &j in &roles.spine {
+            st.turn(sk, pose, j, pitch(roles, if upright { 0.22 } else { 0.06 } * k / roles.spine.len() as f32));
+        }
+        for arm in &roles.arms {
+            let out = if arm.left { 1.0 } else { -1.0 };
+            st.turn(sk, pose, arm.chain[1.min(arm.chain.len() - 1)], roll(roles, out * 0.35 * k) * pitch(roles, 0.2 * k));
+        }
+        curl(sk, pose, &roles.head, |a| pitch(roles, a), -0.1 * k);
+        for l in &roles.legs {
+            let tip = if upright && l.chain.len() >= 4 { l.chain[2] } else { l.foot() };
+            reach(sk, roles, pose, l, tip, sk.position(tip));
+        }
+    })
 }
 
 /// Swimming. An upright figure lies forward in the water, kicks, and reaches its arms over in

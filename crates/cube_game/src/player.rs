@@ -100,23 +100,42 @@ fn keys(keys: Res<ButtonInput<KeyCode>>, args: Res<Args>, mut controls: ResMut<C
     }
 }
 
-/// With no window there are no keys: a set route for a picture to be taken of. Stand, walk,
-/// run and jump, then sprint and jump, the way the camera faces.
-fn script(time: Res<Time>, args: Res<Args>, mut controls: ResMut<Controls>, controlled: Query<(), With<Controlled>>, mut clock: Local<f32>) {
+/// The route a scripted run takes when `--script` gives none: toward where the camera faces.
+pub const ROUTE: &str = "0.5 fwd walk; 2 run; 3 jump; 5 sprint; 6 jump";
+
+/// With no window there are no keys: `--script` stands in for them. It is steps split by `;`,
+/// each a time in seconds and what changes then: `fwd back left right stop` (direction),
+/// `walk run sprint` (gait), `jump` (held, a full jump), `hop` (tapped), `first third` (view).
+fn script(time: Res<Time>, args: Res<Args>, mut controls: ResMut<Controls>, mut controlled: Query<&mut Controlled>, mut clock: Local<(f32, f32)>) {
     if args.scene.is_none() || !args.play || controlled.is_empty() {
         return;
     }
-    *clock += time.delta_secs();
-    let t = *clock;
-    controls.dir = if t > 0.5 { Vec2::Y } else { Vec2::ZERO };
-    controls.gait = if t < 2.0 {
-        Gait::Walk
-    } else if t < 5.0 {
-        Gait::Run
-    } else {
-        Gait::Sprint
-    };
-    controls.jump = (3.0..3.1).contains(&t) || (6.0..6.1).contains(&t);
+    let (before, now) = (clock.0, clock.0 + time.delta_secs());
+    clock.0 = now;
+    controls.jump = now < clock.1;
+    for step in args.script.split(';') {
+        let mut words = step.split_whitespace();
+        let Some(at) = words.next().and_then(|w| w.parse::<f32>().ok()) else { continue };
+        if !(before < at && at <= now) {
+            continue;
+        }
+        for word in words {
+            match word {
+                "fwd" => controls.dir = Vec2::Y,
+                "back" => controls.dir = Vec2::NEG_Y,
+                "left" => controls.dir = Vec2::NEG_X,
+                "right" => controls.dir = Vec2::X,
+                "stop" => controls.dir = Vec2::ZERO,
+                "walk" => controls.gait = Gait::Walk,
+                "run" => controls.gait = Gait::Run,
+                "sprint" => controls.gait = Gait::Sprint,
+                "jump" => clock.1 = now + 0.4,
+                "hop" => clock.1 = now + 0.04,
+                "first" | "third" => controlled.iter_mut().for_each(|mut c| c.first_person = word == "first"),
+                other => warn!("--script: no such step `{other}`"),
+            }
+        }
+    }
 }
 
 /// `--trace`, and every scripted run: the controlled body in a line, four times a second.
@@ -148,8 +167,11 @@ fn drive(controls: Res<Controls>, args: Res<Args>, registry: Res<Registry>, came
     for (c, creature, mut m, mut visibility) in &mut controlled {
         m.intent.dir = Vec2::new(cos, -sin) * controls.dir.x + Vec2::new(-sin, -cos) * controls.dir.y;
         m.intent.speed = motion::speed(&registry.0[creature.def], controls.gait);
-        // Held until a tick uses it, so a tap between ticks still counts.
-        m.intent.jump |= controls.jump;
+        // Wanted for a moment after the press, so one just before landing still jumps.
+        if controls.jump {
+            m.want_jump = 0.12;
+        }
+        m.hold_jump = controls.jump;
         m.gait = controls.gait;
         m.turn_to = c.first_person.then_some(yaw + std::f32::consts::PI);
         let want = if c.first_person { Visibility::Hidden } else { Visibility::Inherited };
@@ -184,7 +206,7 @@ fn follow(
             // For filmstrips: level, square on to the route, close enough to read the feet.
             let size = def.meta.height.max(def.meta.length);
             let focus = at.translation + Vec3::Y * def.meta.height * 0.5;
-            transform.translation = focus + Quat::from_rotation_y(args.yaw + std::f32::consts::FRAC_PI_2) * Vec3::Z * size * 4.0 + Vec3::Y * size * 0.3;
+            transform.translation = focus + Quat::from_rotation_y(args.yaw + std::f32::consts::FRAC_PI_2) * Vec3::Z * size * 3.0 + Vec3::Y * size * 0.25;
             transform.look_at(focus, Vec3::Y);
             continue;
         }

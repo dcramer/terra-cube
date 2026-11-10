@@ -35,7 +35,7 @@ skeleton = "mixamo"
 upright = true
 # The rest pose is a T-pose, so arms at the sides already read as stretch at the armpits.
 max_stretch = 0.8
-clips = ["idle", "walk", "run", "sprint", "jump", "fall", "swim", "attack", "hurt", "die"]
+clips = ["idle", "walk", "run", "sprint", "jump", "fall", "land", "swim", "attack", "hurt", "die"]
 # Tripo's `hurt` is a figure sat wounded on the ground for 14 s, not a flinch, and its `jump`
 # is three hops on the spot, which no controller can use: ours are made.
 [plans.biped.presets]
@@ -51,7 +51,7 @@ attack = [0.9, 3.3, 2.0]
 [plans.quadruped]
 pose = "standing still on all four legs in a neutral pose, seen from the side and slightly in front, all four legs straight and clearly separated, tail away from the legs, mouth closed"
 rig = "other"
-clips = ["idle", "walk", "run", "sprint", "jump", "fall", "swim", "attack", "hurt", "die", "eat"]
+clips = ["idle", "walk", "run", "sprint", "jump", "fall", "land", "swim", "attack", "hurt", "die", "eat"]
 # No presets: Tripo's one animal clip is a walk whose feet neither reach the ground nor hold
 # still on it (measured: the planted foot moving at 90% to 180% of the body's speed). Walk,
 # trot and gallop are made with planted feet instead (clips.rs `gait`).

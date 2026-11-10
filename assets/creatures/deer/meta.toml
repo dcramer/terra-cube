@@ -42,6 +42,11 @@ seconds = 0.3
 looping = false
 source = "made"
 
+[clips.land]
+seconds = 0.36666667
+looping = false
+source = "made"
+
 [clips.run]
 seconds = 0.36666667
 looping = true

@@ -16,8 +16,13 @@ pub struct Tuning {
     pub gravity: f32,
     /// Upward speed a jump starts with. 6.9 with gravity 22 clears two cells (1.08 m).
     pub jump_speed: f32,
-    /// How fast ground speed changes toward what is asked, m/s².
+    /// How fast ground speed changes toward what is asked, m/s²: up to a run in about a fifth
+    /// of a second, so starts and turns have weight without feeling late.
     pub ground_accel: f32,
+    /// The same when slowing: a little quicker, so letting go of the keys stops.
+    pub ground_decel: f32,
+    /// How much harder gravity pulls on a jump once the jump key is let go: a tap is a hop.
+    pub short_jump: f32,
     /// The same in the air: some steering, not much.
     pub air_accel: f32,
     /// The highest ledge walked up without jumping, metres.
@@ -32,7 +37,7 @@ pub struct Tuning {
 
 impl Default for Tuning {
     fn default() -> Self {
-        Self { gravity: 22.0, jump_speed: 6.9, ground_accel: 40.0, air_accel: 8.0, step: CELL + 0.05, max_fall: 25.0, coyote: 0.1, swim: 0.55 }
+        Self { gravity: 22.0, jump_speed: 6.9, ground_accel: 18.0, ground_decel: 26.0, short_jump: 2.4, air_accel: 7.0, step: CELL + 0.05, max_fall: 25.0, coyote: 0.1, swim: 0.55 }
     }
 }
 
@@ -43,7 +48,10 @@ pub struct Intent {
     pub dir: Vec2,
     /// Metres a second at full `dir`.
     pub speed: f32,
+    /// Jump now, if there is ground to jump from.
     pub jump: bool,
+    /// The jump is still being asked for: it rises to its full height.
+    pub hold: bool,
 }
 
 /// How far up a body the water must come before it swims, and where it then floats: just
@@ -61,12 +69,14 @@ pub struct Body {
     pub grounded: bool,
     /// Waist deep in water: swimming.
     pub swimming: bool,
+    /// Rising from a jump, not yet at its top.
+    pub jumping: bool,
     since_ground: f32,
 }
 
 impl Body {
     pub fn new(pos: Vec3, half: f32, height: f32) -> Self {
-        Self { pos, vel: Vec3::ZERO, half, height, grounded: false, swimming: false, since_ground: 1.0 }
+        Self { pos, vel: Vec3::ZERO, half, height, grounded: false, swimming: false, jumping: false, since_ground: 1.0 }
     }
 
     /// Speed over the ground, m/s.
@@ -106,8 +116,14 @@ impl Body {
         // Over the ground: toward the asked velocity, as fast as the footing allows.
         let dir = if intent.dir.length() > 1.0 { intent.dir.normalize() } else { intent.dir };
         let asked = dir * intent.speed * if self.swimming { tuning.swim } else { 1.0 };
-        let accel = if self.grounded || self.swimming { tuning.ground_accel } else { tuning.air_accel };
         let flat = Vec2::new(self.vel.x, self.vel.z);
+        let accel = if !(self.grounded || self.swimming) {
+            tuning.air_accel
+        } else if asked.length() < flat.length() {
+            tuning.ground_decel
+        } else {
+            tuning.ground_accel
+        };
         let change = (asked - flat).clamp_length_max(accel * DT);
         (self.vel.x, self.vel.z) = (flat.x + change.x, flat.y + change.y);
 
@@ -122,9 +138,12 @@ impl Body {
             if intent.jump && self.since_ground <= tuning.coyote && self.vel.y <= 0.0 {
                 self.vel.y = tuning.jump_speed;
                 self.since_ground = tuning.coyote + 1.0;
+                self.jumping = true;
                 jumped = true;
             }
-            self.vel.y = (self.vel.y - tuning.gravity * DT).max(-tuning.max_fall);
+            self.jumping &= self.vel.y > 0.0;
+            let pull = if self.jumping && !(intent.hold || intent.jump) { tuning.short_jump } else { 1.0 };
+            self.vel.y = (self.vel.y - tuning.gravity * pull * DT).max(-tuning.max_fall);
         }
 
         let start_y = self.pos.y;
@@ -267,7 +286,7 @@ mod tests {
         }
     }
 
-    const EAST: Intent = Intent { dir: Vec2::new(1.0, 0.0), speed: 3.5, jump: false };
+    const EAST: Intent = Intent { dir: Vec2::new(1.0, 0.0), speed: 3.5, jump: false, hold: false };
 
     #[test]
     fn stands_and_walks_at_the_asked_speed() {
@@ -275,8 +294,13 @@ mod tests {
         run(&mut b, &w, 0.5, Intent::default());
         assert!(b.grounded && b.pos.y == 1.0, "{b:?}");
         run(&mut b, &w, 2.0, EAST);
-        assert!((b.pos.x - 0.25 - 7.0).abs() < 0.3, "went {}", b.pos.x);
         assert!((b.ground_speed() - 3.5).abs() < 0.01);
+        assert!((b.pos.x - 0.25 - 6.66).abs() < 0.1, "went {}", b.pos.x);
+        // Let go, it stops within a quarter of a metre.
+        let at = b.pos.x;
+        run(&mut b, &w, 0.5, Intent::default());
+        assert!(b.ground_speed() == 0.0 && b.pos.x - at < 0.3, "slid {}", b.pos.x - at);
+
     }
 
     #[test]
@@ -319,14 +343,20 @@ mod tests {
     fn a_jump_clears_two_cells_and_lands() {
         let (w, mut b) = (floor(), player());
         run(&mut b, &w, 0.2, Intent::default());
-        b.step(&w, Intent { jump: true, ..Intent::default() }, &Tuning::default());
-        let mut top = 0.0f32;
-        for _ in 0..TICKS {
-            b.step(&w, Intent::default(), &Tuning::default());
-            top = top.max(b.pos.y - 1.0);
-        }
-        assert!(top > 1.0 && top < 1.3, "rose {top}");
-        assert!(b.grounded && b.pos.y == 1.0);
+        let mut rise = |b: &mut Body, hold: bool| {
+            b.step(&w, Intent { jump: true, ..Intent::default() }, &Tuning::default());
+            let mut top = 0.0f32;
+            for _ in 0..TICKS {
+                b.step(&w, Intent { hold, ..Intent::default() }, &Tuning::default());
+                top = top.max(b.pos.y - 1.0);
+            }
+            assert!(b.grounded && b.pos.y == 1.0);
+            top
+        };
+        // Held, it clears two cells; tapped, it is a hop of under one.
+        let (held, tapped) = (rise(&mut b, true), rise(&mut b, false));
+        assert!(held > 1.0 && held < 1.3, "rose {held}");
+        assert!(tapped > 0.25 && tapped < 0.5, "hopped {tapped}");
         // Held, it jumps again only once back on the ground, and a ceiling stops it.
         let mut w = w;
         w.set(IVec3::new(0, 6, 0), Block::Stone); // underside at 3.0: 0.25 m of headroom
@@ -387,7 +417,7 @@ mod tests {
         for tick in 0..TICKS * 60 {
             // A wandering heading that turns over the minute, jumping now and then.
             let a = tick as f32 * 0.004;
-            let intent = Intent { dir: Vec2::new(a.cos(), (a * 1.7).sin()), speed: 5.0, jump: tick % 90 == 0 };
+            let intent = Intent { dir: Vec2::new(a.cos(), (a * 1.7).sin()), speed: 5.0, jump: tick % 90 == 0, hold: tick % 180 < 90 };
             b.step(&w, intent, &Tuning::default());
             assert!(!b.blocked(&w, b.pos), "inside the ground at tick {tick}: {b:?}");
             assert!(b.pos.y > 0.0, "fell out of the world at tick {tick}");
