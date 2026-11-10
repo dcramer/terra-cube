@@ -23,6 +23,8 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 
 ## Commands
 
+`make` lists the everyday ones (`make setup`, `make run`, `make sheet ID=wolf`, `make check`). Each is one line over these; add a target when a new command becomes everyday.
+
 ```bash
 cargo forge doctor                 # is this machine set up: node, Tripo login, display, models
 cargo sandbox --help               # every way to start the game (--list names the creatures)

@@ -247,7 +247,7 @@ fn doctor() -> bool {
         }
     }
     if ok {
-        println!("ok: {}. Start with: cargo sandbox --spawn all", lines.iter().map(|l| l.trim_start_matches("ok ")).collect::<Vec<_>>().join(" · "));
+        println!("ok: {}. Start with: make run", lines.iter().map(|l| l.trim_start_matches("ok ")).collect::<Vec<_>>().join(" · "));
     }
     ok
 }

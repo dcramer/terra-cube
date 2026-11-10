@@ -8,6 +8,7 @@ An experiment: a voxel sandbox game in Rust (Bevy), with every creature in it ge
 - [docs/art-guide.md](docs/art-guide.md): how things should look.
 
 ```bash
-cargo forge status
-cargo sandbox --spawn wolf,player
+make          # lists the commands
+make setup    # checks this machine
+make run      # the sandbox, one of each creature
 ```
