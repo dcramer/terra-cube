@@ -1,0 +1,7 @@
+name = "Player (carved)"
+kind = "player"
+plan = "biped"
+subject = "a young adventurer with short hair wearing a plain fitted tunic, trousers and boots, bare hands, friendly face, androgynous build"
+height = 1.75
+look = "carved"
+look_of = "player"

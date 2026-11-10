@@ -33,6 +33,7 @@ The first build compiles Bevy: several minutes. After that a change to the game 
 | `cargo sandbox --scene FILE --play --after 6` | No window: a scripted run pictured from the camera at that second, with `play t= pos= speed= grounded= swimming= clip=` printed each second. `--as wolf` runs it as another creature, `--view first` from its eyes, `--yaw 2.16` aims it at the pond instead of the hills |
 | `… --script '1 jump; 2 fwd run; 4 stop'` | The route: times in seconds and what changes then. `fwd back left right stop`, `walk run sprint`, `jump hop`, `dive surface`, `dig put`, `first third` |
 | `… --strip 10 --every 0.1 --view side` | The run as a strip of pictures from `--after`, one image: how a movement is judged. Side view is level and square on, for reading feet |
+| `cargo sandbox --scene shots/wolf.gif --play --as wolf --gif 12 --view three` | No window: a moving picture of the show reel (walk, run, turn and sprint back, jump, stop, attack, flinch, run, jump, walk), so every clip and every change between clips is seen. `make gif ID=wolf`. About 8 MB; made to be watched by a person, and costs an agent nothing to make. `--script` gives another route; `attack`, `eat` and `hurt` are steps too |
 | `cargo sandbox --bodies` | Draws the shape each creature is bumped as (also a tick box in the panel) |
 | `cargo sandbox --trace` | In the window too: the controlled body printed four times a second |
 | `cargo sandbox --shot ID` | A contact sheet to `shots/ID.png`, no window. `--view quarter\|side\|front`, `--cols N`, `--clips a,b` |

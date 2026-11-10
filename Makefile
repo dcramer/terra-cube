@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: help setup run play windows list scene sheet status creature finish world map test lint cross check
+.PHONY: help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -52,6 +52,9 @@ map: ## no window: shots/map.png, the island from above with where each creature
 
 sheet: need-id ## no window: shots/ID.png, every clip of one creature (ID=wolf)
 	cargo forge sheet $(ID)
+
+gif: need-id ## no window: shots/ID.gif, creature ID moving through every gait, a jump, a blow and a flinch (ID=wolf)
+	cargo sandbox --scene shots/$(ID).gif --play --as $(ID) --gif 12 --view three
 
 status: ## every creature: Tripo steps done, credits, model
 	cargo forge status

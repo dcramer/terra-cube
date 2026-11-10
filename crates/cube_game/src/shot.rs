@@ -139,7 +139,7 @@ fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, ti
             stage.taken += 1;
             commands.spawn(Screenshot::image(stage.target.clone())).observe(gather);
         }
-        if stage.settled > 4000 {
+        if stage.settled > 20000 {
             eprintln!("the strip never finished");
             exit.write(AppExit::error());
         }
@@ -169,6 +169,24 @@ fn gather(shot: On<bevy::render::view::screenshot::ScreenshotCaptured>, args: Re
     let Ok(picture) = shot.image.clone().try_into_dynamic() else { return };
     stage.frames.push(picture.to_rgb8());
     if stage.frames.len() < args.strip {
+        return;
+    }
+    if let Some(dir) = std::path::Path::new(&stage.path).parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if args.gif {
+        // A moving picture: the frames in turn, each shown for as long as they were apart.
+        let saved = std::fs::File::create(&stage.path).map_err(|e| e.to_string()).and_then(|file| {
+            let mut gif = image::codecs::gif::GifEncoder::new_with_speed(std::io::BufWriter::new(file), 10);
+            gif.set_repeat(image::codecs::gif::Repeat::Infinite).map_err(|e| e.to_string())?;
+            let delay = image::Delay::from_saturating_duration(std::time::Duration::from_secs_f32(args.every));
+            gif.encode_frames(stage.frames.iter().map(|f| image::Frame::from_parts(image::DynamicImage::ImageRgb8(f.clone()).to_rgba8(), 0, 0, delay))).map_err(|e| e.to_string())
+        });
+        match saved {
+            Ok(()) => println!("gif {} {} frames={} seconds={:.1}", stage.path, stage.legend, args.strip, args.strip as f32 * args.every),
+            Err(e) => eprintln!("saving {}: {e}", stage.path),
+        }
+        exit.write(AppExit::Success);
         return;
     }
     let (w, h) = stage.frames[0].dimensions();
@@ -215,7 +233,13 @@ fn scene(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terra
         commands.spawn((creature, creatures::spot(n, &terrain, args.at), Visibility::default()));
         stage.expected += 1;
     }
-    let (w, h) = if args.strip > 0 { (1920 / args.strip.clamp(4, 12) as u32, 300) } else { (1600, 900) };
+    let (w, h) = if args.gif {
+        (360, 240)
+    } else if args.strip > 0 {
+        (1920 / args.strip.clamp(4, 12) as u32, 300)
+    } else {
+        (1600, 900)
+    };
     stage.target = images.add(Image::new_target_texture(w, h, TextureFormat::Rgba8UnormSrgb, None));
     let mut focus = Vec3::new(args.at.0, terrain.ground(args.at.0, args.at.1) + 0.8, args.at.1);
     // One creature alone is a portrait: the camera looks at it, not at the start.

@@ -220,13 +220,14 @@ pub fn generate(seed: u32, radius: i32) -> (World, Land) {
 }
 
 /// How far from the start the first tree may stand, metres.
-const CLEARING: f32 = 7.0;
+const CLEARING: f32 = 10.0;
 
 /// Trees, bushes and boulders. One may stand in each square of a coarse grid, at a spot and
 /// with a chance that come from the seed, so they never crowd and never line up. Sizes are in
 /// metres.
 fn plant(world: &mut World, land: &mut Land) {
-    let grid = cells(2.5);
+    // A grown tree wants four metres to itself.
+    let grid = cells(4.0);
     let (span, seed) = (land.span, land.seed);
     for gz in -span / grid..span / grid {
         for gx in -span / grid..span / grid {
@@ -240,20 +241,23 @@ fn plant(world: &mut World, land: &mut Land) {
             }
             let high = h > SEA + cells(10.0);
             let (tree, bush, boulder) = match biome {
-                Biome::Forest => (0.6, 0.08, 0.02),
-                Biome::Meadow => (0.035, 0.05, 0.015),
-                Biome::Rock => (0.05, 0.0, 0.08),
-                Biome::Snow => (0.02, 0.0, 0.05),
+                Biome::Forest => (0.62, 0.12, 0.03),
+                Biome::Meadow => (0.06, 0.12, 0.03),
+                Biome::Rock => (0.08, 0.0, 0.16),
+                Biome::Snow => (0.03, 0.0, 0.1),
                 Biome::Shore => (0.0, 0.0, 0.03),
                 Biome::Water => (0.0, 0.0, 0.0),
             };
             let pick = roll(2);
+            // Trees are the size of trees: a young one is 9 m to its top, an old oak 18, a tall
+            // pine 24, on a trunk half a metre to a metre through.
+            let age = roll(4);
             let on = foot.as_vec3() + Vec3::new(0.5, 0.0, 0.5);
             if pick < tree {
                 if high || biome == Biome::Rock || biome == Biome::Snow || roll(3) < 0.2 {
-                    pine(world, foot, 5.0 + roll(4) * 3.5, 1.2 + roll(5) * 0.6);
+                    pine(world, foot, 12.0 + age * 12.0, 2.2 + age * 1.6 + roll(5) * 0.4, 0.5 + age * 0.25);
                 } else {
-                    broadleaf(world, foot, 3.0 + roll(4) * 2.5, 1.5 + roll(5) * 0.8, seed);
+                    broadleaf(world, foot, 6.0 + age * 6.0, 2.6 + age * 2.2 + roll(5) * 0.5, 0.5 + age * 0.5, seed);
                 }
                 land.trees.push(foot);
             } else if pick < tree + bush {
@@ -283,9 +287,9 @@ fn blob(world: &mut World, middle: Vec3, radii: Vec3, block: Block, seed: u32) {
     }
 }
 
-/// A trunk half a metre through, `tall` metres to its top.
-fn trunk(world: &mut World, foot: IVec3, tall: i32) {
-    let thick = cells(0.5).max(1);
+/// A trunk `thick` metres through, `tall` cells to its top.
+fn trunk(world: &mut World, foot: IVec3, tall: i32, thick: f32) {
+    let thick = cells(thick).max(1);
     for y in 0..=tall {
         for z in 0..thick {
             for x in 0..thick {
@@ -295,16 +299,16 @@ fn trunk(world: &mut World, foot: IVec3, tall: i32) {
     }
 }
 
-/// A trunk with a rounded crown that starts three metres up: a troll walks under it.
-fn broadleaf(world: &mut World, foot: IVec3, tall: f32, crown: f32, seed: u32) {
-    let (tall, crown, clear) = (cells(tall), crown / CELL, cells(3.0));
+/// A trunk with a rounded crown that starts four metres up: a troll walks under it with room.
+fn broadleaf(world: &mut World, foot: IVec3, tall: f32, crown: f32, thick: f32, seed: u32) {
+    let (tall, reach, crown, clear) = (cells(tall), cells(crown + 1.0), crown / CELL, cells(4.0));
     let top = foot + IVec3::Y * tall;
     let middle = top.as_vec3() + Vec3::new(0.5, crown * 0.35, 0.5);
     blob(world, middle, Vec3::new(crown, crown * 0.8, crown), Block::Leaves, seed);
     // Nothing hangs lower than the crown's start.
     for y in foot.y..foot.y + clear {
-        for z in -clear..=clear {
-            for x in -clear..=clear {
+        for z in -reach..=reach {
+            for x in -reach..=reach {
                 let cell = IVec3::new(foot.x + x, y, foot.z + z);
                 if world.get(cell) == Block::Leaves {
                     world.set(cell, Block::Air);
@@ -312,17 +316,18 @@ fn broadleaf(world: &mut World, foot: IVec3, tall: f32, crown: f32, seed: u32) {
             }
         }
     }
-    trunk(world, foot, tall);
+    trunk(world, foot, tall, thick);
 }
 
-/// A tall trunk with tiers of needles, a metre apart, narrowing to a point.
-fn pine(world: &mut World, foot: IVec3, tall: f32, spread: f32) {
-    let (tall, first, tier) = (cells(tall), cells(2.5), cells(1.0).max(2));
+/// A tall trunk, bare for its lowest quarter, with tiers of needles two metres apart narrowing
+/// to a point.
+fn pine(world: &mut World, foot: IVec3, tall: f32, spread: f32, thick: f32) {
+    let (first, tall, tier) = (cells((tall * 0.25).max(3.5)), cells(tall), cells(2.0).max(2));
     for y in first..=tall + cells(0.5) {
         let up = (y - first) as f32 / (tall + cells(0.5) - first) as f32;
         // The lower half of each tier is drawn in.
-        let drawn_in = if (y - first) % tier < tier / 2 { 0.45 } else { 0.0 };
-        let r = (spread * (1.0 - up) + 0.3 - drawn_in) / CELL;
+        let drawn_in = if (y - first) % tier < tier / 2 { 0.9 } else { 0.0 };
+        let r = (spread * (1.0 - up) + 0.5 - drawn_in).max(0.3) / CELL;
         let reach = r.ceil() as i32;
         for z in -reach..=reach {
             for x in -reach..=reach {
@@ -333,7 +338,8 @@ fn pine(world: &mut World, foot: IVec3, tall: f32, spread: f32) {
             }
         }
     }
-    trunk(world, foot, tall);
+    // The trunk stops short of the tip, inside the needles.
+    trunk(world, foot, tall - cells(1.0), thick);
 }
 
 #[cfg(test)]

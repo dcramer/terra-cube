@@ -230,7 +230,24 @@ impl Roles {
                 // Toward the head when it sits clearly ahead of the feet (an animal); else the
                 // way Tripo exports an upright figure, +Z.
                 let lean = head_at.map_or(Vec3::ZERO, |i| (tip(&rest[i]) - centre) * Vec3::new(1.0, 0.0, 1.0));
-                if lean.length() < 0.15 * height {
+                // A model made from a three-quarter view can stand at an angle to the axes. On
+                // four legs or more the body runs the way its feet are spread furthest: when
+                // that agrees with where the head is and is well off both axes, it is the way
+                // it faces, exactly.
+                let spread = (legs.len() >= 4)
+                    .then(|| {
+                        let (mut xx, mut xz, mut zz) = (0.0, 0.0, 0.0);
+                        for d in legs.iter().map(|l| tip(l) - feet) {
+                            (xx, xz, zz) = (xx + d.x * d.x, xz + d.x * d.z, zz + d.z * d.z);
+                        }
+                        let angle = 0.5 * (2.0f32 * xz).atan2(xx - zz);
+                        let axis = Vec3::new(angle.cos(), 0.0, angle.sin());
+                        if axis.dot(lean) < 0.0 { -axis } else { axis }
+                    })
+                    .filter(|axis| lean.length() >= 0.15 * height && axis.angle_between(lean) < 0.6 && axis.x.abs().min(axis.z.abs()) > 0.34);
+                if let Some(axis) = spread {
+                    axis
+                } else if lean.length() < 0.15 * height {
                     Vec3::Z
                 } else if lean.x.abs() > lean.z.abs() {
                     Vec3::X * lean.x.signum()

@@ -164,8 +164,8 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -
     let (slo, shi) = crate::check::bounds(&glb, &skeleton, &stand).unwrap_or((lo, hi));
     let meta = Meta {
         height: creature.height,
-        length: (shi - slo).dot(roles.forward).abs() * scale,
-        width: (shi - slo).dot(roles.side).abs() * scale,
+        length: crate::check::extent(&glb, &skeleton, &stand, roles.forward).unwrap_or((shi - slo).dot(roles.forward).abs()) * scale,
+        width: crate::check::extent(&glb, &skeleton, &stand, roles.side).unwrap_or((shi - slo).dot(roles.side).abs()) * scale,
         walk_speed: speed(walk),
         run_speed: speed(run),
         sprint_speed: speed(sprint),

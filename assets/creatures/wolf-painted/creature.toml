@@ -1,0 +1,8 @@
+name = "Wolf (painted)"
+kind = "wildlife"
+plan = "quadruped"
+subject = "a grey wolf"
+height = 0.85
+gait_gain = 0.55
+look = "painted"
+look_of = "wolf"

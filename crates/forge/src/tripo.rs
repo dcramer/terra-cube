@@ -31,7 +31,9 @@ pub fn balance() -> Result<f64> {
 
 /// The whole prompt for a creature's concept image: what it is, how it stands, the house style.
 pub fn prompt(creature: &Creature, plan: &Plan, style: &Style) -> String {
-    format!("{}, {}, {}", creature.subject.trim(), plan.pose.trim(), style.style.trim()).replace('\n', " ")
+    // A creature being built in a look that is on trial takes that look's style.
+    let look = creature.look.as_deref().and_then(|name| crate::looks::style_of(name).ok());
+    format!("{}, {}, {}", creature.subject.trim(), plan.pose.trim(), look.as_deref().unwrap_or(&style.style).trim()).replace('\n', " ")
 }
 
 fn s(v: impl ToString) -> String {
@@ -54,6 +56,14 @@ pub fn run(id: &str, creature: &Creature, plan: &Plan, style: &Style, until: &st
         if !have || refetch {
             eprintln!("{id}: {step}…");
             let report = match step {
+                // The picture already drawn and looked at, when there is one: the model is
+                // made from what was chosen, and it is not paid for twice.
+                "concept" if creature.look.as_deref().zip(creature.look_of.as_deref()).is_some_and(|(look, of)| crate::looks::picture(look, of).exists()) => {
+                    let (look, of) = (creature.look.as_deref().unwrap(), creature.look_of.as_deref().unwrap());
+                    std::fs::copy(crate::looks::picture(look, of), work.join("concept.png"))?;
+                    thumbnail(&work.join("concept.png"), &dir.join("concept.jpg"))?;
+                    serde_json::json!({ "credits": 0.0 })
+                }
                 "concept" => {
                     let mut args = vec![s("image"), prompt(creature, plan, style), s("--model"), style.tripo.image_model.clone(), s("-o"), path("concept.png")];
                     if plan.rig == "humanoid" {

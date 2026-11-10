@@ -28,6 +28,18 @@ struct Look {
     style: String,
 }
 
+/// The style text and the framing of a named look.
+pub fn style_of(name: &str) -> Result<String> {
+    let looks: Looks = spec::load(&Path::new(spec::ROOT).join("looks.toml"))?;
+    let look = looks.looks.get(name).with_context(|| format!("no look `{name}` in looks.toml"))?;
+    Ok(format!("{}, {}", look.style.trim(), looks.frame.trim()))
+}
+
+/// The full-size picture `cargo forge looks` drew of a creature in a look, if it is still in scratch.
+pub fn picture(look: &str, of: &str) -> std::path::PathBuf {
+    Path::new(".work").join("looks").join(format!("{look}-{of}.png"))
+}
+
 /// Draws what is missing and writes `shots/looks.jpg`. Returns the one line to print.
 pub fn run(style: &Style) -> Result<String> {
     let root = Path::new(spec::ROOT);
@@ -44,9 +56,8 @@ pub fn run(style: &Style) -> Result<String> {
                 let creature: Creature = spec::load(&spec::dir(id).join("creature.toml"))?;
                 let plan = style.plans.get(&creature.plan).with_context(|| format!("no plan `{}`", creature.plan))?;
                 let prompt = format!("{}, {}, {}, {}", creature.subject.trim(), plan.pose.trim(), look.style.trim(), looks.frame.trim()).replace('\n', " ");
-                let scratch = Path::new(".work").join("looks");
-                std::fs::create_dir_all(&scratch)?;
-                let png = scratch.join(format!("{name}-{id}.png"));
+                let png = picture(name, id);
+                std::fs::create_dir_all(png.parent().unwrap())?;
                 eprintln!("{name}: {id}…");
                 let mut args = vec!["tools/tripo/tripo.ts".to_owned(), "image".into(), prompt, "--model".into(), style.tripo.image_model.clone(), "-o".into(), png.to_string_lossy().into_owned()];
                 if plan.rig == "humanoid" {

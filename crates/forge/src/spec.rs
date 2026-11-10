@@ -114,6 +114,14 @@ pub struct Creature {
     /// the preset tears (the stretch check says so).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub made: Vec<String>,
+    /// A look from `looks.toml` to draw this creature in, where the house style would be:
+    /// for building one creature in a look that is being tried.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub look: Option<String>,
+    /// The creature whose picture in that look (already drawn by `cargo forge looks`) is this
+    /// one's concept, so the model is made from the image that was looked at.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub look_of: Option<String>,
 }
 
 fn one() -> f32 {

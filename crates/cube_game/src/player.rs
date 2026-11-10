@@ -36,6 +36,8 @@ pub struct Controls {
     /// Dig a hole where it looks, or build a lump there: once, then cleared.
     pub dig: bool,
     pub put: bool,
+    /// Something to do on the spot, once: a blow, a bite of grass, a flinch.
+    pub act: Option<cube_sim::life::Act>,
 }
 
 /// On the creature being controlled.
@@ -115,6 +117,11 @@ fn keys(keys: Res<ButtonInput<KeyCode>>, buttons: Res<ButtonInput<MouseButton>>,
 }
 
 /// The route a scripted run takes when `--script` gives none: toward where the camera faces.
+/// What `--gif` runs when no script is given: every gait and every change between them, a
+/// turn about, a jump, a stop, a blow and a flinch, then off again. Out and back, so it stays
+/// in the clearing at the start where nothing stands between it and the camera.
+pub const SHOW: &str = "0.5 fwd walk; 2.5 run; 4 back sprint; 5 jump; 5.6 stop; 6.4 attack; 8 hurt; 8.8 left run; 9.6 jump; 10.4 right walk; 11.5 stop";
+
 pub const ROUTE: &str = "0.5 fwd walk; 2 run; 3 jump; 5 sprint; 6 jump";
 
 /// With no window there are no keys: `--script` stands in for them. It is steps split by `;`,
@@ -145,6 +152,9 @@ fn script(time: Res<Time>, args: Res<Args>, mut controls: ResMut<Controls>, mut 
                 "sprint" => controls.gait = Gait::Sprint,
                 "jump" => clock.1 = now + 0.4,
                 "dive" => controls.dive = true,
+                "attack" => controls.act = Some(cube_sim::life::Act::Attack),
+                "eat" => controls.act = Some(cube_sim::life::Act::Eat),
+                "hurt" => controls.act = Some(cube_sim::life::Act::Hurt),
                 "dig" => controls.dig = true,
                 "put" => controls.put = true,
                 "surface" => controls.dive = false,
@@ -178,7 +188,7 @@ fn trace(time: Res<Time>, args: Res<Args>, live: Res<Live>, controlled: Query<(&
 }
 
 /// Hands the controls to the controlled creature's body, turned to the way the camera faces.
-fn drive(controls: Res<Controls>, args: Res<Args>, mut live: ResMut<Live>, cameras: Query<&Orbit>, mut controlled: Query<(&Controlled, &Mover, &mut Visibility)>) {
+fn drive(mut controls: ResMut<Controls>, args: Res<Args>, mut live: ResMut<Live>, cameras: Query<&Orbit>, mut controlled: Query<(&Controlled, &Mover, &mut Visibility)>) {
     // A scripted route runs the way `--yaw` says, whatever the camera is doing.
     let yaw = if args.scene.is_some() { args.yaw } else { cameras.iter().next().map_or(0.0, |o| o.yaw) };
     // The camera looks along -Z turned by its yaw; right is +X turned the same.
@@ -193,6 +203,11 @@ fn drive(controls: Res<Controls>, args: Res<Args>, mut live: ResMut<Live>, camer
             m.want_jump = 0.12;
         }
         m.hold_jump = controls.jump;
+        match controls.act.take() {
+            Some(cube_sim::life::Act::Hurt) => m.hurt = 0.5,
+            Some(act) => m.doing = Some((act, if act == cube_sim::life::Act::Eat { 3.0 } else { 1.3 })),
+            None => {}
+        }
         m.intent.dive = controls.dive;
         m.gait = controls.gait;
         m.turn_to = c.first_person.then_some(yaw + std::f32::consts::PI);
@@ -224,11 +239,13 @@ fn follow(
                 orbit.distance = (orbit.distance * (1.0 - scroll.delta.y * 0.1)).clamp(1.2, 30.0);
             }
         }
-        if args.scene.is_some() && args.view == "side" {
-            // For filmstrips: level, square on to the route, close enough to read the feet.
+        if args.scene.is_some() && (args.view == "side" || args.view == "three") {
+            // For filmstrips: level, square on to the route, close enough to read the feet. `three`
+            // is from ahead and to one side, for a moving picture: the face and the gait both show.
             let size = def.meta.height.max(def.meta.length);
             let focus = at.translation + Vec3::Y * def.meta.height * 0.5;
-            transform.translation = focus + Quat::from_rotation_y(args.yaw + std::f32::consts::FRAC_PI_2) * Vec3::Z * size * 3.0 + Vec3::Y * size * 0.25;
+            let round = if args.view == "three" { std::f32::consts::PI - 0.95 } else { std::f32::consts::FRAC_PI_2 };
+            transform.translation = focus + Quat::from_rotation_y(args.yaw + round) * Vec3::Z * size * if args.gif { 2.3 } else { 3.0 } + Vec3::Y * size * 0.25;
             transform.look_at(focus, Vec3::Y);
             continue;
         }

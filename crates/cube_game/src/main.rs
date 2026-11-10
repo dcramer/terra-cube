@@ -34,6 +34,8 @@ pub struct Args {
     pub yaw: f32,
     /// A scene as a strip of this many pictures, `every` seconds apart, from `after`.
     pub strip: usize,
+    /// The strip is saved as a moving picture, a frame each `every` seconds, not side by side.
+    pub gif: bool,
     pub every: f32,
     /// What a scripted run does (`player::script`).
     pub script: String,
@@ -84,7 +86,7 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
         … --script '1 jump; 2 fwd run; 4 stop'
                                         the route, as times and what changes then: fwd back left
                                         right stop · walk run sprint · jump hop · dive surface ·
-                                        dig put · first third
+                                        attack eat hurt · dig put · first third
         … --wild --at 47,28 [--dist 12] [--pitch 0.3] [--yaw 1.0] [--view high]
                                         a scene somewhere else: metres east and south of the start
                                         (`cargo world who` says where creatures live), the camera
@@ -92,6 +94,10 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
 --dig X,Z,ACROSS and --build X,Z,ACROSS cut a round hole in the ground there, or raise a round
 stone on it, to the 5 cm bit, before the first frame: for looking at what broken cells cost.
 --seed N makes another island. cargo world (survey, run, map, who) judges one with no window.
+        … --gif 12 [--view three|side] [--as wolf]
+                                        the same as a moving picture, FILE.gif: with no --script it
+                                        is the show reel (walk, run, sprint, jump, stop, attack,
+                                        hurt, run and jump again), so every change of clip is seen
 --bodies draws the shape each creature is bumped as (also a tick box in the panel).
 --trace prints the controlled body (position, speed, clip, camera) four times a second.
 In the window: Tab controls the picked creature, and lets go of it. Otherwise right-drag
@@ -119,6 +125,7 @@ fn creature_ids() -> Vec<String> {
 fn parse_args() -> Args {
     let mut args = Args { view: "quarter".into(), cols: 6, yaw: -2.2, every: 0.1, script: player::ROUTE.into(), seed: cube_sim::terrain::SEED, at: (0.25, 0.25), ..default() };
     let mut it = std::env::args().skip(1);
+    let mut script_given = false;
     let list = |v: Option<String>| v.map(|s| s.split(',').map(str::to_owned).collect::<Vec<_>>()).unwrap_or_default();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -139,8 +146,20 @@ fn parse_args() -> Args {
             "--play" => args.play = true,
             "--trace" => args.trace = true,
             "--bodies" => args.bodies = true,
-            "--script" => args.script = it.next().unwrap_or_default(),
+            "--script" => {
+                args.script = it.next().unwrap_or_default();
+                script_given = true;
+            }
             "--strip" => args.strip = it.next().and_then(|v| v.parse().ok()).unwrap_or(8),
+            "--gif" => {
+                // Twelve frames a second for that many seconds: enough to read a gait, and a
+                // file a few megabytes long.
+                let seconds: f32 = it.next().and_then(|v| v.parse().ok()).unwrap_or(12.0);
+                (args.gif, args.every, args.strip) = (true, 1.0 / 12.0, (seconds * 12.0) as usize);
+                if !script_given {
+                    args.script = player::SHOW.into();
+                }
+            }
             "--every" => args.every = it.next().and_then(|v| v.parse().ok()).unwrap_or(0.1),
             "--yaw" => {
                 args.yaw = it.next().and_then(|v| v.parse().ok()).unwrap_or(-2.2);

@@ -47,7 +47,8 @@ Built 2026-11-10. `cube_sim::terrain` makes it; `cargo world survey` and `map` j
 - **Height is layered noise with four shapes cut into it**: rolling lowland; a mountain mask that raises ridges and steps them into ledges (cliffs read well in blocks; smooth cones do not); a river where a slow noise crosses its middle, deep in places and a ford in others; and the shore falling into the sea. The start is a flat clearing and mountains are kept 25 m off it: they are what is seen from the start, not where it is.
 - **Biomes come from height, slope and a moisture noise**: shore, meadow, forest, rock (high or steep), snow. A biome decides the surface block, what is planted (broadleaf trees, pines higher up, bushes, boulders) and who lives there.
 - **`Land` is kept beside the voxels**: every column's height and biome, and the trees. Placing creatures and measuring the world read it, not the cells.
-- **Trees and bushes are solid blocks.** A crown starts 3 m up so a troll walks under it. Creatures will not climb onto leaves; the player can.
+- **Things are their real size, drawn in cubes.** A tree is the size of a tree: a young broadleaf 9 m to its top and an old one 18, a pine 12 to 24 m, on a trunk half a metre to a metre through, four metres apart in a forest. The first trees were 5 to 8 m and read as saplings beside a 1.75 m player. The island itself is still small for that (192 m across, its mountains two trees high): it cannot grow until chunks are streamed, since all of it is meshed at the start.
+- **Trees and bushes are solid blocks.** A crown starts 4 m up so a troll walks under it. Creatures will not climb onto leaves; the player can.
 - **Judged by numbers first** (`cargo world survey`): at most 4 million faces to draw, water 20% to 60%, each of meadow, forest and rock at least 6%, 150 trees, ground at least 15 m high, cliffs on 3% to 35% of the land, half the land reached from the start on foot and nine tenths by swimming. A seed that fails one is not a world to ship; seed 6 passes and is the default.
 - **Not yet:** caves and overhangs (the land is a height map), shaped blocks, grass and flowers, streaming (the whole island is meshed at the start, about three seconds).
 
@@ -99,6 +100,7 @@ Built 2026-11-10. The rules are `cube_sim::body`; the game only feeds it keys an
 - `--scene FILE --wild --at X,Z` pictures any place on the island (`--view high` from the air), so a herd or a hillside can be looked at without walking there.
 - `cargo sandbox --shot ID` draws offscreen to a PNG with no window, so an agent on a server can look. A sheet is one image: rows are clips, columns are moments.
 - `--scene FILE --play --script '…' --strip 10` runs a scripted route with no window and saves it as a strip of pictures: how movement is judged without a screen. `--trace` prints the body.
+- `--gif 12` saves the same run as a moving picture. A strip is for the agent, which reads numbers and one still; a GIF is for the person, who can see in a second whether a change of clip pops or a gait feels wrong, and the agent does not have to look at it.
 - The real window runs on a machine with no GPU screen through the software Vulkan driver, and `tools/drive/drive.py` presses keys and moves the mouse in it. That is how the keyboard, mouse look and cursor lock were tested ([development.md](development.md)).
 - Wanted next: a remote port (Bevy Remote Protocol) so an agent can drive a running sandbox.
 

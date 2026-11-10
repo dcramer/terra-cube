@@ -78,6 +78,14 @@ pub fn bounds(glb: &Glb, sk: &Skeleton, pose: &Pose) -> Result<(Vec3, Vec3)> {
     Ok(posed(&s, sk, pose).iter().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), p| (lo.min(*p), hi.max(*p))))
 }
 
+/// How far the skin reaches along a direction in a pose: its extent, in the file's units.
+/// True whatever way the direction points, where a bounding box is only for the axes.
+pub fn extent(glb: &Glb, sk: &Skeleton, pose: &Pose, along: Vec3) -> Result<f32> {
+    let s = skin(glb)?;
+    let (lo, hi) = posed(&s, sk, pose).iter().map(|p| p.dot(along)).fold((f32::MAX, f32::MIN), |(lo, hi), v| (lo.min(v), hi.max(v)));
+    Ok(hi - lo)
+}
+
 /// The 99th-percentile edge stretch of a clip's worst sampled frame, against the rest pose.
 fn stretch(s: &Skin, sk: &Skeleton, rest_len: &[f32], clip: &Clip) -> f32 {
     let step = (clip.frames.len() / 8).max(1);
