@@ -68,7 +68,7 @@ Built 2026-11-10. `cube_sim::life` and `mind`; `cargo world run` judges it.
 
 Full detail in [pipeline.md](pipeline.md). The design choices:
 
-- **Creatures are stylised low-poly skinned meshes, not voxel models.** Eco does the same. The world is blocks; what lives in it is not.
+- **Creatures are stylised low-poly skinned meshes, not voxel models.** Eco does the same. The world is blocks; what lives in it is not. Tried the other way on 2026-11-10 and decided against: creatures rebuilt from the world's 5 cm cubes (`cargo forge cubes`) can look right standing still when the model is drawn for it, but took a dozen rounds to get one figure there, come apart at the joints in motion, lose small animals altogether, and would mean buying every creature again. A creature should belong to the world by its style (chunky shapes, flat colour, a shared palette), not by being made of the same cubes. The trial, its checks and what it showed are kept in [pipeline.md](pipeline.md#cubes).
 - **Tripo makes mesh, texture, skeleton and skin weights. We make most of the motion.** Tripo has a dozen preset clips for bipeds and exactly one (a walk) for anything else, so animals' other clips are made in code against bone *roles* read from the skeleton's shape. One recipe serves every species; Spore did the same.
 - **Clips are baked into the model file by forge, not computed in the game.** A baked clip can be checked by numbers and seen on a sheet before it ships, and the game just plays glTF. The same Rust recipes can move into the game later for what must react at runtime (feet on slopes, looking at things).
 - **One skeleton for every biped** (Tripo's Mixamo-named rig, 65 joints). The player and humanoid monsters share bone names, so clips and gear are shared.

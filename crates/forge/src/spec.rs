@@ -32,11 +32,13 @@ pub struct CubeBars {
     pub max_loose: f32,
     /// Most surface cubes that may share their colour with no neighbour, as a part of all.
     pub max_speckle: f32,
+    /// Most of any arm or leg piece that may be lost inside another part.
+    pub max_swallowed: f32,
 }
 
 impl Default for CubeBars {
     fn default() -> Self {
-        Self { min_tall: 10, min_limb: 2, max_loose: 0.03, max_speckle: 0.06 }
+        Self { min_tall: 10, min_limb: 2, max_loose: 0.03, max_speckle: 0.06, max_swallowed: 0.5 }
     }
 }
 

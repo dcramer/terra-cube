@@ -76,7 +76,7 @@ fn living(args: &Args) -> (World, Land, Sim) {
     let (world, land) = terrain::generate(args.seed, args.radius);
     let mut sim = Sim::new(kinds(), args.seed as u64);
     sim.populate(&world, &land);
-    if let Some(person) = sim.kinds.iter().position(|k| k.temper == Temper::Person) {
+    if let Some(person) = sim.kind("player") {
         sim.add(&world, person, Vec3::new(0.25, land.height(0, 0) as f32 * CELL, 0.25), 0.0, Driver::Mind);
     }
     (world, land, sim)

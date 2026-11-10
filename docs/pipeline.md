@@ -104,7 +104,9 @@ In the sandbox (`cargo sandbox --spawn ID`) the panel plays clips, scrubs a held
 
 ## Cubes
 
-`cargo forge cubes ID` rebuilds a finished model from 5 cm cubes, the size of a bit of the world, as `assets/creatures/ID-cubes/` with the same skeleton and clips. It is still a trial: the game uses the smooth models, and the output is not committed. This section is the routine for getting a good one, written after getting several bad ones. Why it is built this way: [research/2026-11-10-cube-characters.md](research/2026-11-10-cube-characters.md).
+**Parked 2026-11-10: the game keeps its smooth models** ([engine.md](engine.md#creatures) says why). What follows is kept so the trial need not be repeated.
+
+`cargo forge cubes ID` rebuilds a finished model from 5 cm cubes, the size of a bit of the world, as `assets/creatures/ID-cubes/` with the same skeleton and clips. Its output is not committed. This section is the routine for getting a good one, written after getting several bad ones. Why it is built this way: [research/2026-11-10-cube-characters.md](research/2026-11-10-cube-characters.md).
 
 ### The routine
 
@@ -124,6 +126,11 @@ In the sandbox (`cargo sandbox --spawn ID`) the panel plays clips, scrubs a held
 | `loose` | Fingers, wisps of hair, crumbs of cloth | Ask for mitten hands and solid hair; it is the source's fine detail |
 | `speckle` | One-cube spots of colour | The texture is busy: ask for plain colour areas |
 | `face` | No room for eyes, nose and mouth | A bigger head (`--head 1.4`), or hair that leaves the face clear |
+
+| `limbs-shown` | Most of an arm or leg piece is inside another part | A clip made for a slim figure sinks a stout one's arms in its sides; arms are moved out of the trunk, so what is left is a limb folded into itself |
+| `face-framed` | The face is the colour of the hair round it | The skin colour was read off hair: look at where the hair falls |
+
+**The first model made to these rules** (`adventurer`, 67 credits, 2026-11-10): the concept came back as asked but for fingers where mittens were wanted. Stood still and walking it is the first cube figure that reads right, with a clear face. It was also the one that showed the checks were not enough: it passed them all with a hair-coloured face and no arms to be seen, which is where the two checks above came from. It still fails `limbs-shown`, and in its run and attack the arms cut through the chest: a part turns about its bone's joint, which is no longer where the cubes' joint was put. As a smooth model it fails the stretch check in every clip; a stout body on the slim skeleton's clips is a problem either way.
 
 Where the eight stand, 2026-11-10: player and wolf pass. Goblin fails `loose` and `speckle` (ragged cloth, busy skin). Deer fails `limbs`. Bear, boar and troll fail `triangles`. Rabbit fails nearly everything, being 8 cubes tall.
 

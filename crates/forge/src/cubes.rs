@@ -220,6 +220,10 @@ pub struct Cut {
     /// was made.
     person: bool,
     face: Option<(i32, i32)>,
+    /// The part of the head's front round the face that is not skin-coloured.
+    face_stands_out: Option<f32>,
+    /// The most of any limb piece that was lost inside another part.
+    swallowed: f32,
 }
 
 /// Tidies one part's cubes, as a person drawing in cubes would: a cube that hangs on by one
@@ -319,9 +323,12 @@ fn judge(made: &HashMap<IVec3, Cube>, cut: &Cut, bars: &spec::CubeBars, triangle
     let alone = surface.iter().filter(|(at, c)| !FACES.iter().any(|(n, ..)| made.get(&(**at + *n)).is_some_and(|o| bucket(o.colour) == bucket(c.colour)))).count() as f32 / surface.len().max(1) as f32;
     line(alone <= bars.max_speckle, "speckle", format!("{:.1}% of surface cubes", alone * 100.0), format!("≤ {:.0}%: one-cube spots of colour", bars.max_speckle * 100.0));
 
+    line(cut.swallowed <= bars.max_swallowed, "limbs-shown", format!("{:.0}% of the worst limb piece is inside another part", cut.swallowed * 100.0), format!("≤ {:.0}%: an arm sunk in the body", bars.max_swallowed * 100.0));
     if cut.person {
         let (wide, tall) = cut.face.unwrap_or((0, 0));
         line(wide >= 3 && tall >= 3, "face", format!("{wide} wide, {tall} tall"), "≥ 3 by 3: room for eyes, a nose and a mouth".into());
+        let framed = cut.face_stands_out.unwrap_or(0.0);
+        line(framed >= 0.5, "face-framed", format!("{:.0}% of what is round the face is another colour", framed * 100.0), "≥ 50%: else the face is the colour of the hair".into());
     }
     out
 }
@@ -430,6 +437,31 @@ fn cubes(glb: &Glb, sk: &Skeleton, roles: &Roles, world: &[Mat4], size: f32, hea
         }
     }
 
+    // Arms out of the body: a clip made for a slim figure leaves a stout one's arms sunk in
+    // its sides, where the trunk's cubes would swallow them. Each arm is moved out, a cube at
+    // a time, until no more than a tenth of it is inside the trunk.
+    let solids: Vec<HashMap<IVec3, Vec3>> = parts
+        .iter()
+        .map(|part| {
+            let mut cells = solid(&part.cells);
+            tidy(&mut cells);
+            cells
+        })
+        .collect();
+    let in_limb = |i: usize| roles.legs.iter().chain(&roles.arms).any(|l| l.chain.contains(&parts[i].driver));
+    let trunk: std::collections::HashSet<IVec3> = (0..parts.len()).filter(|&i| !in_limb(i)).flat_map(|i| solids[i].keys().copied()).collect();
+    for arm in &roles.arms {
+        let ids: Vec<usize> = (0..parts.len()).filter(|&i| arm.chain[arm.chain.len().min(1)..].contains(&parts[i].driver) || arm.chain.contains(&parts[i].driver) && in_limb(i) && roles.spine.iter().all(|&s| part_of[s] != i)).collect();
+        let cells: Vec<IVec3> = ids.iter().flat_map(|&i| solids[i].keys().copied()).collect();
+        if cells.is_empty() {
+            continue;
+        }
+        let out_way = if cells.iter().map(|c| c.x as f32 + 0.5).sum::<f32>() >= 0.0 { 1 } else { -1 };
+        let sunk = |by: i32| cells.iter().filter(|c| trunk.contains(&(**c + IVec3::X * by))).count() as f32 / cells.len() as f32;
+        let by = (0..8).map(|n| n * out_way).find(|&by| sunk(by) <= 0.1).unwrap_or(7 * out_way);
+        ids.iter().for_each(|&i| shift[i] = by);
+    }
+
     cut.parts = parts.iter().filter(|p| !p.cells.is_empty()).count();
     cut.person = !roles.arms.is_empty();
     cut.limbs = roles.legs.iter().chain(&roles.arms).flat_map(|l| l.chain.iter().map(|&bone| part_of[bone]).collect::<std::collections::BTreeSet<_>>().into_iter().rev().skip(1).collect::<Vec<_>>()).filter(|&i| Some(i) != roles.spine.first().map(|&s| part_of[s]) && parts[i].driver != sk.root && roles.spine.iter().all(|&s| part_of[s] != i)).collect();
@@ -437,18 +469,22 @@ fn cubes(glb: &Glb, sk: &Skeleton, roles: &Roles, world: &[Mat4], size: f32, hea
     let mut out: HashMap<IVec3, Cube> = HashMap::new();
     let mut eyes: HashMap<IVec3, f32> = HashMap::new();
     for (i, part) in parts.iter().enumerate() {
-        let mut cells = solid(&part.cells);
-        tidy(&mut cells);
-        let mut cells: Vec<(IVec3, Vec3)> = cells.into_iter().collect();
+        let mut cells: Vec<(IVec3, Vec3)> = solids[i].iter().map(|(at, colour)| (*at, *colour)).collect();
+        let whole = cells.len();
+        let mut kept = 0;
         cells.sort_by_key(|c| c.0.to_array());
         for (cell, colour) in cells {
             let moved = cell + IVec3::X * shift[i];
             if let std::collections::hash_map::Entry::Vacant(free) = out.entry(moved) {
                 free.insert(Cube { colour, part: i, bone: part.driver });
+                kept += 1;
                 if Some(i) == head {
                     eyes.insert(moved, part.cells.get(&cell).map_or(0.0, Tally::dark));
                 }
             }
+        }
+        if in_limb(i) && whole > 0 {
+            cut.swallowed = cut.swallowed.max(1.0 - kept as f32 / whole as f32);
         }
     }
 
@@ -481,8 +517,17 @@ fn cubes(glb: &Glb, sk: &Skeleton, roles: &Roles, world: &[Mat4], size: f32, hea
     let highest = front.iter().map(|c| c.y).max().unwrap_or(0);
     let bucket = |c: Vec3| (c.powf(1.0 / 2.2) * 5.0).round().as_ivec3();
     let mut counts: HashMap<IVec3, (Vec3, f32)> = HashMap::new();
-    // Skin is what the bottom third of the head's front mostly is: hair can be the top half.
-    for at in front.iter().filter(|c| c.y <= lowest + (highest - lowest) / 3) {
+    // Skin is what the lower half of the face is: the face being the part of the head's front,
+    // in the middle half of its width, that is furthest forward. Hair can be the top half of
+    // a head, hang down both sides, and show under the chin from behind.
+    let (side_lo, side_hi) = front.iter().fold((i32::MAX, i32::MIN), |(lo, hi), c| (lo.min(c.x), hi.max(c.x)));
+    let quarter = (side_hi - side_lo + 1) / 4;
+    let middle: Vec<&IVec3> = front.iter().filter(|c| (side_lo + quarter..=side_hi - quarter).contains(&c.x)).collect();
+    let foremost = middle.iter().map(|c| c.z).max().unwrap_or(0);
+    let forward: Vec<&IVec3> = middle.into_iter().filter(|c| c.z >= foremost - 2).collect();
+    let (low, high) = forward.iter().fold((i32::MAX, i32::MIN), |(lo, hi), c| (lo.min(c.y), hi.max(c.y)));
+    let _ = (lowest, highest);
+    for at in forward.into_iter().filter(|c| c.y <= (low + high) / 2) {
         let entry = counts.entry(bucket(out[at].colour)).or_default();
         *entry = (entry.0 + out[at].colour, entry.1 + 1.0);
     }
@@ -512,6 +557,11 @@ fn cubes(glb: &Glb, sk: &Skeleton, roles: &Roles, world: &[Mat4], size: f32, hea
         }
     }
     cut.face = Some((right - left + 1, brow - bottom + 1));
+    // How unlike the skin the rest of the head's front is: a face must stand out from the hair.
+    let around: Vec<Vec3> = front.iter().filter(|c| !((left..=right).contains(&c.x) && (bottom..=brow).contains(&c.y))).map(|c| out[c].colour).collect();
+    if !around.is_empty() {
+        cut.face_stands_out = Some(around.iter().filter(|c| c.distance(skin) >= 0.08).count() as f32 / around.len() as f32);
+    }
     let mut feature = |x: i32, y: i32, z: i32, colour: Vec3| {
         if (left..=right).contains(&x) && (bottom..=brow).contains(&y) {
             out.insert(IVec3::new(x, y, z), Cube { colour, part: head, bone: driver });

@@ -33,6 +33,7 @@ min_tall = 10       # cubes; a shorter creature wants drawing for the grid, not 
 min_limb = 2        # cubes across the thinnest arm or leg
 max_loose = 0.03    # cubes hanging on by one face or none: fingers, wisps, crumbs
 max_speckle = 0.06  # surface cubes that share their colour with no neighbour
+max_swallowed = 0.5 # of any arm or leg piece lost inside another part: an arm sunk in the body
 
 # Upright two-legged figures: the player and humanoid monsters. Tripo rigs these on one named
 # skeleton (so gear and clips are shared) and has preset clips for them.
