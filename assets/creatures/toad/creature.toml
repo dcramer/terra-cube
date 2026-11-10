@@ -1,0 +1,11 @@
+name = "Bog toad"
+kind = "monster"
+plan = "quadruped"
+subject = "a monstrous warty toad with a huge wide mouth, bulging orange eyes and a slimy olive hide"
+height = 0.7
+
+[life]
+temper = "hostile"
+habitat = "shore"
+group = 1
+groups = 2

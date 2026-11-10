@@ -1,0 +1,11 @@
+name = "Crow"
+kind = "wildlife"
+plan = "bird"
+subject = "a glossy black crow with a heavy beak"
+height = 0.3
+
+[life]
+temper = "timid"
+habitat = "meadow"
+group = 3
+groups = 2

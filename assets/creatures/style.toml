@@ -70,3 +70,17 @@ clips = ["idle", "walk", "run", "sprint", "jump", "fall", "land", "swim", "attac
 # No presets: Tripo's one animal clip is a walk whose feet neither reach the ground nor hold
 # still on it (measured: the planted foot moving at 90% to 180% of the body's speed). Walk,
 # trot and gallop are made with planted feet instead (clips.rs `gait`).
+
+# Birds: two legs, a beak, wings. Drawn with the wings held a little off the body so the rig
+# gives them bones. They walk and hop for now: nothing in the simulation flies yet.
+[plans.bird]
+pose = "standing on both feet seen from the side and slightly in front, wings held slightly open and away from the body, legs clearly visible and apart, tail level, beak closed"
+rig = "other"
+clips = ["idle", "walk", "run", "jump", "fall", "land", "attack", "hurt", "die", "eat"]
+
+# Six legs or eight: insects, spiders, scorpions, crabs. Seen from above and to one side so
+# every leg is drawn apart from the others.
+[plans.crawler]
+pose = "standing still seen from above and slightly to one side, every leg spread and clearly separated from the body and from each other, body level"
+rig = "other"
+clips = ["idle", "walk", "run", "jump", "fall", "land", "attack", "hurt", "die"]

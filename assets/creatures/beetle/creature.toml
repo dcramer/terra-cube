@@ -1,0 +1,11 @@
+name = "Stag beetle"
+kind = "wildlife"
+plan = "crawler"
+subject = "a stag beetle with huge antler-like jaws and a glossy chestnut shell"
+height = 0.1
+
+[life]
+temper = "timid"
+habitat = "forest"
+group = 1
+groups = 3

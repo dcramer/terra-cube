@@ -1,0 +1,11 @@
+name = "Giant spider"
+kind = "monster"
+plan = "crawler"
+subject = "a giant spider with eight long jointed legs, a swollen black abdomen marked with a red hourglass and a cluster of eyes"
+height = 0.6
+
+[life]
+temper = "hostile"
+habitat = "forest"
+group = 2
+groups = 1

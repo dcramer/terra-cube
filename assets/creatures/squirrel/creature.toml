@@ -1,0 +1,11 @@
+name = "Squirrel"
+kind = "wildlife"
+plan = "quadruped"
+subject = "a red squirrel with a big curled tail and tufted ears, cream belly"
+height = 0.2
+
+[life]
+temper = "timid"
+habitat = "forest"
+group = 2
+groups = 3

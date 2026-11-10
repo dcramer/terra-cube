@@ -1,0 +1,11 @@
+name = "Fox"
+kind = "wildlife"
+plan = "quadruped"
+subject = "a red fox with a bushy white-tipped tail and black legs"
+height = 0.4
+
+[life]
+temper = "hunter"
+habitat = "meadow"
+group = 1
+groups = 2

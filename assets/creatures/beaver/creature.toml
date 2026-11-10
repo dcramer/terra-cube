@@ -1,0 +1,11 @@
+name = "Beaver"
+kind = "wildlife"
+plan = "quadruped"
+subject = "a beaver with a broad flat scaly tail and big orange front teeth, dark brown"
+height = 0.3
+
+[life]
+temper = "timid"
+habitat = "shore"
+group = 2
+groups = 2

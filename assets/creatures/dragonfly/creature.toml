@@ -1,0 +1,11 @@
+name = "Dragonfly"
+kind = "wildlife"
+plan = "crawler"
+subject = "a dragonfly with four clear wings spread flat, a long blue segmented body and huge eyes"
+height = 0.1
+
+[life]
+temper = "timid"
+habitat = "shore"
+group = 2
+groups = 3

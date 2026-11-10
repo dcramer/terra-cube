@@ -1,0 +1,11 @@
+name = "Crab"
+kind = "wildlife"
+plan = "crawler"
+subject = "a shore crab with two big raised pincers and a broad red shell"
+height = 0.15
+
+[life]
+temper = "wary"
+habitat = "shore"
+group = 2
+groups = 3

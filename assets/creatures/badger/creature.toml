@@ -1,0 +1,11 @@
+name = "Badger"
+kind = "wildlife"
+plan = "quadruped"
+subject = "a badger with a black and white striped face and a low grey body"
+height = 0.3
+
+[life]
+temper = "wary"
+habitat = "forest"
+group = 1
+groups = 2

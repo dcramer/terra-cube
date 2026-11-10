@@ -1,0 +1,11 @@
+name = "Hedgehog"
+kind = "wildlife"
+plan = "quadruped"
+subject = "a hedgehog with a dome of brown spines and a pale pointed face"
+height = 0.15
+
+[life]
+temper = "timid"
+habitat = "meadow"
+group = 1
+groups = 3

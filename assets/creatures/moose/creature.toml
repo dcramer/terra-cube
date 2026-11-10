@@ -1,0 +1,11 @@
+name = "Moose"
+kind = "wildlife"
+plan = "quadruped"
+subject = "a bull moose with broad flat antlers and a long drooping muzzle, dark brown with pale legs"
+height = 2.0
+
+[life]
+temper = "wary"
+habitat = "forest"
+group = 1
+groups = 1

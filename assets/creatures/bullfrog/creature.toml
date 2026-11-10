@@ -1,0 +1,11 @@
+name = "Bullfrog"
+kind = "wildlife"
+plan = "quadruped"
+subject = "a fat green bullfrog with a pale yellow throat and long folded hind legs"
+height = 0.15
+
+[life]
+temper = "timid"
+habitat = "shore"
+group = 2
+groups = 3

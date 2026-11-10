@@ -1,0 +1,11 @@
+name = "Tortoise"
+kind = "wildlife"
+plan = "quadruped"
+subject = "a tortoise with a high domed shell of olive plates and stumpy grey legs"
+height = 0.3
+
+[life]
+temper = "timid"
+habitat = "shore"
+group = 1
+groups = 3

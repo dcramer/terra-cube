@@ -1,0 +1,11 @@
+name = "Frost ogre"
+kind = "monster"
+plan = "biped"
+subject = "a frost ogre with pale blue skin, a mane of white fur, icicle tusks and a ragged hide kilt"
+height = 2.8
+
+[life]
+temper = "hostile"
+habitat = "snow"
+group = 1
+groups = 1

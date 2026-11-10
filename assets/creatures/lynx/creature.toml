@@ -1,0 +1,11 @@
+name = "Lynx"
+kind = "wildlife"
+plan = "quadruped"
+subject = "a lynx with black-tufted ears, a short bobbed tail and a spotted tawny coat"
+height = 0.6
+
+[life]
+temper = "hunter"
+habitat = "rock"
+group = 1
+groups = 2

@@ -1,0 +1,11 @@
+name = "Pheasant"
+kind = "wildlife"
+plan = "bird"
+subject = "a cock pheasant with a very long barred tail, a red face and a copper body"
+height = 0.4
+
+[life]
+temper = "timid"
+habitat = "meadow"
+group = 2
+groups = 2

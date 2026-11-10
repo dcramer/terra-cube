@@ -1,0 +1,11 @@
+name = "Stone golem"
+kind = "monster"
+plan = "biped"
+subject = "a golem of stacked grey boulders with glowing blue cracks, huge forearms and a small head sunk between the shoulders"
+height = 2.2
+
+[life]
+temper = "hostile"
+habitat = "rock"
+group = 1
+groups = 1

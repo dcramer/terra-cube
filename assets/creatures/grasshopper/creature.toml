@@ -1,0 +1,11 @@
+name = "Grasshopper"
+kind = "wildlife"
+plan = "crawler"
+subject = "a bright green grasshopper with long folded hind legs and yellow stripes"
+height = 0.1
+
+[life]
+temper = "timid"
+habitat = "meadow"
+group = 3
+groups = 3

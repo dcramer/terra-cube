@@ -1,0 +1,11 @@
+name = "Duck"
+kind = "wildlife"
+plan = "bird"
+subject = "a mallard duck with a glossy green head, a white neck ring and orange feet"
+height = 0.35
+
+[life]
+temper = "timid"
+habitat = "shore"
+group = 3
+groups = 2

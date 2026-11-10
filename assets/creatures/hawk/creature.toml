@@ -1,0 +1,11 @@
+name = "Hawk"
+kind = "wildlife"
+plan = "bird"
+subject = "a hawk with a hooked yellow beak, barred chest and broad brown wings"
+height = 0.45
+
+[life]
+temper = "hunter"
+habitat = "rock"
+group = 1
+groups = 2

@@ -1,0 +1,11 @@
+name = "Heron"
+kind = "wildlife"
+plan = "bird"
+subject = "a grey heron with very long legs, a long S-shaped neck and a yellow dagger beak"
+height = 1.0
+
+[life]
+temper = "timid"
+habitat = "shore"
+group = 1
+groups = 3

@@ -1,0 +1,11 @@
+name = "Owl"
+kind = "wildlife"
+plan = "bird"
+subject = "a tawny owl with a round flat face and big orange eyes, mottled brown"
+height = 0.45
+
+[life]
+temper = "hunter"
+habitat = "forest"
+group = 1
+groups = 2

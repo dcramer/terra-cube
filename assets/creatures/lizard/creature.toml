@@ -1,0 +1,11 @@
+name = "Monitor lizard"
+kind = "wildlife"
+plan = "quadruped"
+subject = "a monitor lizard with a long whip tail and a forked blue tongue, sandy with dark bands"
+height = 0.3
+
+[life]
+temper = "wary"
+habitat = "rock"
+group = 1
+groups = 2

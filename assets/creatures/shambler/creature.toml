@@ -1,0 +1,11 @@
+name = "Moss shambler"
+kind = "monster"
+plan = "biped"
+subject = "a hunched creature of tangled roots and moss with long arms, a hollow log for a head and two pale yellow eyes"
+height = 1.9
+
+[life]
+temper = "hostile"
+habitat = "forest"
+group = 1
+groups = 2

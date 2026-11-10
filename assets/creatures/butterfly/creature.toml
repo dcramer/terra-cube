@@ -1,0 +1,11 @@
+name = "Butterfly"
+kind = "wildlife"
+plan = "crawler"
+subject = "a butterfly with wide orange wings edged in black, spread flat"
+height = 0.1
+
+[life]
+temper = "timid"
+habitat = "meadow"
+group = 3
+groups = 3
