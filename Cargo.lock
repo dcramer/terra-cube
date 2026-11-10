@@ -2513,9 +2513,18 @@ dependencies = [
  "anyhow",
  "bevy",
  "bevy_egui",
+ "cube_sim",
  "cube_voxel",
  "serde",
  "toml",
+]
+
+[[package]]
+name = "cube_sim"
+version = "0.1.0"
+dependencies = [
+ "cube_voxel",
+ "glam",
 ]
 
 [[package]]

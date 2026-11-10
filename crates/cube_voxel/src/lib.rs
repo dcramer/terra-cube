@@ -7,7 +7,7 @@
 pub mod mesh;
 pub mod terrain;
 
-use glam::IVec3;
+use glam::{IVec3, Vec3};
 use std::collections::HashMap;
 
 /// Cells along a chunk's edge.
@@ -94,6 +94,34 @@ impl World {
         let (c, l) = Self::split(cell);
         self.chunks.entry(c).or_default().set(l, b);
     }
+    /// How far along a ray the first solid cell is, in metres, if within `reach`. Walks the
+    /// grid a cell face at a time, so nothing thin is skipped.
+    pub fn raycast(&self, from: Vec3, dir: Vec3, reach: f32) -> Option<f32> {
+        let dir = dir.try_normalize()?;
+        let mut cell = (from / CELL).floor().as_ivec3();
+        let step = dir.signum().as_ivec3();
+        // Distance along the ray to the next cell face on each axis, and between faces.
+        let between = (Vec3::splat(CELL) / dir.abs()).min(Vec3::splat(f32::MAX));
+        let next_face = (cell + step.max(IVec3::ZERO)).as_vec3() * CELL;
+        let mut next = ((next_face - from) / dir).abs().min(Vec3::splat(f32::MAX));
+        for axis in 0..3 {
+            if dir[axis] == 0.0 {
+                next[axis] = f32::MAX;
+            }
+        }
+        let mut at = 0.0;
+        while at <= reach {
+            if self.get(cell).solid() {
+                return Some(at);
+            }
+            let axis = if next.x <= next.y && next.x <= next.z { 0 } else if next.y <= next.z { 1 } else { 2 };
+            at = next[axis];
+            next[axis] += between[axis];
+            cell[axis] += step[axis];
+        }
+        None
+    }
+
     /// The y of the top face of the highest solid cell in a column, in metres.
     pub fn ground_height(&self, x: f32, z: f32) -> f32 {
         let (cx, cz) = ((x / CELL).floor() as i32, (z / CELL).floor() as i32);
@@ -117,6 +145,19 @@ mod tests {
         assert_eq!(w.get(IVec3::new(-1, 40, 33)), Block::Stone);
         assert_eq!(w.get(IVec3::new(0, 40, 33)), Block::Air);
         assert_eq!(w.ground_height(-0.25, 16.7), 41.0 * CELL);
+    }
+
+    #[test]
+    fn a_ray_stops_at_the_first_solid_face() {
+        let mut w = World::default();
+        w.set(IVec3::new(6, 2, 0), Block::Stone); // x from 3.0 to 3.5
+        let from = Vec3::new(0.25, 1.25, 0.25);
+        assert_eq!(w.raycast(from, Vec3::X, 10.0), Some(2.75));
+        assert_eq!(w.raycast(from, Vec3::X, 2.0), None);
+        assert_eq!(w.raycast(from, Vec3::NEG_X, 10.0), None);
+        let slant = w.raycast(Vec3::new(0.25, 4.0, 0.25), Vec3::new(3.0, -2.75, 0.0), 10.0).unwrap();
+        // It meets the face at x = 3.0, eleven twelfths of the way along (3, -2.75).
+        assert!((slant - 3.0f32.hypot(2.75) * 11.0 / 12.0).abs() < 1e-3, "{slant}");
     }
 
     #[test]

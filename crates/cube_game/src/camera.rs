@@ -1,5 +1,5 @@
-//! An orbit camera: right-drag orbits, wheel zooms, WASD/QE moves the focus, F focuses the
-//! selected creature.
+//! The free orbit camera: right-drag orbits, wheel zooms, WASD/QE moves the focus, F focuses
+//! the selected creature. While a creature is controlled the camera is `player::follow`'s.
 
 use crate::{creatures::Creature, ui::Selected, world::SKY};
 use bevy::{
@@ -41,7 +41,11 @@ fn orbit(
     selected: Res<Selected>,
     creatures: Query<&GlobalTransform, With<Creature>>,
     mut egui: bevy_egui::EguiContexts,
+    controlled: Query<(), With<crate::player::Controlled>>,
 ) {
+    if !controlled.is_empty() {
+        return;
+    }
     let over_ui = egui.ctx_mut().map(|c| c.egui_wants_pointer_input() || c.is_pointer_over_egui()).unwrap_or(false);
     for (mut o, mut t) in &mut cameras {
         if buttons.pressed(MouseButton::Right) && !over_ui {

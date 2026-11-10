@@ -3,10 +3,12 @@
 //! `cargo sandbox --help` lists the ways to start it (`HELP` below).
 //!
 //! Map: `world` (terrain from cube_voxel) · `creatures` (registry, spawning, clips, wander) ·
-//! `ui` (the egui panel, skeleton overlay) · `camera` (orbit) · `shot` (contact sheets).
+//! `player` (controlling one with the keys, the follow camera) · `ui` (the egui panel, skeleton
+//! overlay) · `camera` (free orbit) · `shot` (contact sheets and scene pictures).
 
 mod camera;
 mod creatures;
+mod player;
 mod shot;
 mod ui;
 mod world;
@@ -22,16 +24,26 @@ pub struct Args {
     pub view: String,
     pub cols: usize,
     pub clips: Vec<String>,
+    /// Control the player from the start.
+    pub play: bool,
+    /// Seconds into a scene at which its picture is taken.
+    pub after: f32,
 }
 
 const HELP: &str = "\
 cargo sandbox                           the window, with the spawn panel
+cargo sandbox --play                    start as the player: WASD runs, Shift walks, Space jumps,
+                                        the mouse looks, the wheel zooms, Tab gives the mouse back
 cargo sandbox --spawn wolf,player       start with these in the world (`all` for one of each)
 cargo sandbox --list                    the creatures that can be spawned
 cargo sandbox --shot ID                 no window: shots/ID.png, every clip at six moments
         [--view quarter|side|front] [--cols N] [--clips walk,run]
 cargo sandbox --scene FILE --spawn all  no window: a picture of the world with creatures in it
-In the window: right-drag orbits, wheel zooms, WASD and QE move, F looks at the picked creature.
+cargo sandbox --scene FILE --play [--after SECONDS]
+                                        no window: the player on a set run (walk, run, two
+                                        jumps, toward the hills), pictured from the follow camera
+In the window: Tab controls the picked creature, and lets go of it. Otherwise right-drag
+orbits, wheel zooms, WASD and QE move, F looks at the picked creature.
 Setup trouble: cargo forge doctor";
 
 fn fail(message: &str) -> ! {
@@ -72,6 +84,8 @@ fn parse_args() -> Args {
             "--view" => args.view = it.next().unwrap_or_default(),
             "--cols" => args.cols = it.next().and_then(|v| v.parse().ok()).unwrap_or(6),
             "--clips" => args.clips = list(it.next()),
+            "--play" => args.play = true,
+            "--after" => args.after = it.next().and_then(|v| v.parse().ok()).unwrap_or(0.0),
             other => fail(&format!("unknown argument {other}\n{HELP}")),
         }
     }
@@ -82,6 +96,9 @@ fn parse_args() -> Args {
     }
     if args.spawn.iter().any(|s| s == "all") {
         args.spawn = known.clone();
+    }
+    if args.play && !args.spawn.iter().any(|s| s == "player") && known.iter().any(|s| s == "player") {
+        args.spawn.insert(0, "player".into());
     }
     if let Some(id) = args.spawn.iter().chain(&args.shot).find(|id| !known.contains(id)) {
         fail(&format!("no creature `{id}`; there are: {}", known.join(" ")));
@@ -123,11 +140,11 @@ fn main() {
     .insert_resource(args)
     .add_plugins(creatures::CreaturesPlugin);
     if scene {
-        app.add_plugins((world::WorldPlugin, shot::ScenePlugin));
+        app.add_plugins((world::WorldPlugin, player::PlayPlugin, shot::ScenePlugin));
     } else if shot {
         app.add_plugins(shot::ShotPlugin);
     } else {
-        app.add_plugins((world::WorldPlugin, camera::CameraPlugin, ui::UiPlugin));
+        app.add_plugins((world::WorldPlugin, camera::CameraPlugin, player::PlayPlugin, ui::UiPlugin));
     }
     app.run();
 }

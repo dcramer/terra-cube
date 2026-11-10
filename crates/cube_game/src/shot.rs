@@ -124,12 +124,14 @@ fn layout(
     stage.legend = format!("rows={} cols={cols} view={}", names.join(","), args.view);
 }
 
-fn capture(mut commands: Commands, mut stage: ResMut<Stage>, rigs: Query<&Rig>, mut exit: MessageWriter<AppExit>) {
+fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, time: Res<Time>, rigs: Query<&Rig>, mut exit: MessageWriter<AppExit>, mut waited: Local<f32>) {
     if !stage.laid_out || rigs.iter().count() < stage.expected {
         return;
     }
     stage.settled += 1;
-    if stage.settled == 40 && !stage.asked {
+    *waited += time.delta_secs();
+    if stage.settled >= 40 && *waited >= args.after && !stage.asked {
+        stage.settled = 40;
         stage.asked = true;
         if let Some(dir) = std::path::Path::new(&stage.path).parent() {
             let _ = std::fs::create_dir_all(dir);
@@ -141,7 +143,7 @@ fn capture(mut commands: Commands, mut stage: ResMut<Stage>, rigs: Query<&Rig>, 
         println!("shot {} {}", stage.path, stage.legend);
         exit.write(AppExit::Success);
     }
-    if stage.settled > 600 {
+    if stage.asked && stage.settled > 600 {
         eprintln!("the screenshot never arrived");
         exit.write(AppExit::error());
     }
@@ -170,7 +172,7 @@ fn scene(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terra
             continue;
         };
         let mut creature = Creature::new(def);
-        if n % 2 == 1 {
+        if n % 2 == 1 && !args.play {
             creature.clip_name = Some("walk".into());
         }
         commands.spawn((creature, creatures::spot(n, &terrain), Visibility::default()));
@@ -181,6 +183,8 @@ fn scene(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terra
     commands.spawn((
         Camera3d::default(),
         RenderTarget::Image(stage.target.clone().into()),
+        // Only `--play` uses the orbit: behind the player, facing the hills.
+        crate::camera::Orbit { focus, yaw: -2.2, pitch: 0.28, distance: 5.5 },
         Transform::from_translation(focus + Vec3::new(4.5, 2.6, 7.0) * (1.0 + ids.len() as f32 * 0.07)).looking_at(focus, Vec3::Y),
         DistanceFog { color: world::SKY, falloff: FogFalloff::Linear { start: 60.0, end: 160.0 }, ..default() },
     ));

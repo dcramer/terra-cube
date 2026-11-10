@@ -21,9 +21,11 @@ The first build compiles Bevy: several minutes. After that a change to the game 
 | `cargo forge …` | The creature pipeline; `cargo forge help` lists it ([pipeline.md](pipeline.md)) |
 | `cargo forge doctor` | One line when the machine is set up; a `FAIL` line with the fix for each thing that is not |
 | `cargo sandbox` | The sandbox window. `--spawn a,b` starts with creatures in it, `--spawn all` with one of each. `--help` lists every way to start it, `--list` the creatures |
+| `cargo sandbox --play` | The window, controlling the player (`make play`) |
+| `cargo sandbox --scene FILE --play --after 6` | No window: the player on a set run (walk, run, two jumps, toward the hills), pictured from the follow camera at that second. Prints `play t= pos= speed= grounded= clip=` each second |
 | `cargo sandbox --shot ID` | A contact sheet to `shots/ID.png`, no window. `--view quarter\|side\|front`, `--cols N`, `--clips a,b` |
 | `cargo sandbox --scene FILE --spawn all` | A picture of the test world with creatures in it, no window |
-| `cargo test --workspace` | Unit tests: voxel world and meshing, skeleton roles and turns |
+| `cargo test --workspace` | Unit tests: voxel world, meshing and rays, body movement, skeleton roles and turns |
 | `cargo clippy --workspace -- -D warnings` | Lints |
 | `node --test tools/tripo/` | The Tripo CLI's own tests, against a fake Studio |
 
@@ -31,7 +33,7 @@ Both `forge` and `sandbox` build in release: Bevy unoptimised is too slow to jud
 
 ## Windows, from WSL
 
-`make windows` builds the game as a Windows program inside WSL and starts it, so it opens as an ordinary Windows window on the real GPU (DirectX 12 or Vulkan). The code, the agent and every other command stay in WSL. `SPAWN=wolf,player` picks the creatures, as with `make run`.
+`make windows` builds the game as a Windows program inside WSL and starts it as the player (`ARGS="--spawn all"` for the plain sandbox), so it opens as an ordinary Windows window on the real GPU (DirectX 12 or Vulkan). The code, the agent and every other command stay in WSL. `SPAWN=wolf,player` picks the creatures, as with `make run`.
 
 - **Once:** `sudo apt install mingw-w64` for the Windows linker. The Rust half (`x86_64-pc-windows-gnu`) comes with the pinned toolchain. `make setup` says if the linker is missing.
 - **Why not run the Linux build through WSLg:** `make run` does open a window that way, but WSL reaches the GPU through a Vulkan-on-DirectX layer, which is slower than the native path and a known source of trouble for wgpu. Try it if you like; `make windows` is the supported way.
@@ -43,6 +45,8 @@ Both `forge` and `sandbox` build in release: Bevy unoptimised is too slow to jud
 ## The sandbox
 
 A panel on the left: spawn any creature by kind, or one of each; pick one; play a clip, set its speed, hold and scrub a frame; send it wandering or running at its measured speed; draw skeletons. Right-drag orbits, the wheel zooms, WASD and QE move the focus, F looks at the picked creature.
+
+**Playing.** Tab takes control of the picked creature (the player, with `--play`, from the start) and Tab again lets go. Controlled: WASD runs relative to the camera, Shift walks, Space jumps, the mouse turns the camera, the wheel moves it in and out. The mouse is locked to the window while controlling, so Tab is also how to reach the panel. Any creature can be controlled, which shows its gaits at real speeds.
 
 A name that is not a creature, or no display, stops the sandbox with one line before the engine starts.
 

@@ -4,8 +4,8 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 
 ## Where things stand
 
-- **Works:** the creature pipeline (`cargo forge`): one line of text to an animated model the game loads, checked by numbers and by one picture. The sandbox (`cargo sandbox`) spawns them in a small voxel world.
-- **Baseline only:** the voxel world is one fixed test terrain with a simple mesher. No simulation, no saving, no player control, no networking yet.
+- **Works:** the creature pipeline (`cargo forge`): one line of text to an animated model the game loads, checked by numbers and by one picture. The sandbox (`cargo sandbox`) spawns them in a small voxel world, and `--play` walks the player (or any creature) about it with a follow camera.
+- **Baseline only:** the voxel world is one fixed test terrain with a simple mesher. The simulation is movement alone. No saving, no block editing, no networking yet.
 - **Next:** [docs/engine.md](docs/engine.md#order-of-work).
 
 ## Layout
@@ -13,6 +13,7 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 | Path | What it is |
 |---|---|
 | `crates/cube_voxel` | Voxel data, test terrain, chunk meshing. No engine types, so the simulation can use it headless. |
+| `crates/cube_sim` | The simulation, at a fixed 60 ticks a second, no engine types. Today: how a body moves through voxels (walk, step, jump, fall, float). |
 | `crates/cube_game` | The Bevy app. Today it is the sandbox: terrain, creature spawning, clip controls, contact sheets. |
 | `crates/forge` | The creature pipeline CLI. Each file's header says what it holds; `main.rs` has the map. |
 | `tools/tripo` | Tripo Studio CLI (TypeScript, Node ≥ 22.18, no dependencies). Forge drives it; see its README before calling it by hand. |
@@ -23,7 +24,7 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 
 ## Commands
 
-`make` alone checks the machine is set up; `make help` lists the everyday ones (`make setup`, `make run`, `make windows` from WSL, `make sheet ID=wolf`, `make check`). Each is one line over these; add a target when a new command becomes everyday.
+`make` alone checks the machine is set up; `make help` lists the everyday ones (`make setup`, `make run`, `make play`, `make windows` from WSL, `make sheet ID=wolf`, `make check`). Each is one line over these; add a target when a new command becomes everyday.
 
 ```bash
 cargo forge doctor                 # is this machine set up: node, Tripo login, display, models
@@ -33,6 +34,8 @@ cargo forge build wolf             # make what is missing, then finish and check
 cargo forge finish --all           # the free local half again, after changing clips.rs or style.toml
 cargo forge sheet wolf             # shots/wolf.png: every clip at six moments, one image
 cargo sandbox --spawn all          # the interactive sandbox (needs a real screen)
+cargo sandbox --play               # the same, controlling the player (make play)
+cargo sandbox --scene shots/play.png --play --after 6   # no window: the player on a set run, pictured; prints its position each second
 cargo sandbox --scene shots/scene.png --spawn all   # a picture of the world with creatures, offscreen
 cargo test --workspace             # must pass before a commit
 cargo clippy --workspace -- -D warnings
@@ -49,7 +52,7 @@ A machine with no screen needs `DISPLAY=:1` (an Xvfb) for `sheet` and `sandbox`;
 - **Credits are real money.** `forge.lock` makes a build spend once. Look at the concept (`cargo forge build ID --to concept`, then `cargo forge concepts`) before paying for a model. Never delete a lock step to retry without a reason you can state.
 - **Bones have roles, not names.** Tripo's bone names are unreliable; clips are written against roles read from the skeleton's shape (`crates/forge/src/rig.rs`). Do not match on bone names for animals.
 - **Runs on Linux, Windows and macOS.** Build paths with `Path::join`, never a typed `/` or a home folder; no shell-outs beyond `node` and `cargo`; anything one system needs sits behind `cfg!` with the reason. `make check` type-checks for Windows. In WSL the game is built as a Windows program and opened there (`make windows`), so it must start from any folder: it finds `assets/` itself.
-- **The simulation must not need a window.** Game rules go in crates with no rendering (`cube_voxel` today), tested headless. `cube_game` only draws and takes input.
+- **The simulation must not need a window.** Game rules go in crates with no rendering (`cube_voxel`, `cube_sim`), tested headless. `cube_game` only draws and takes input.
 - **Secrets:** `.env` (the Tripo login) lives in the main checkout, ignored by git. Never print it or commit it.
 - **Shaders** are for the environment only (terrain, water, sky, weather). Creatures use stock materials.
 - **Commits:** small, one change each, tests and clippy passing. Models and textures are committed for now (a few hundred KB each); see the open question in engine.md before adding anything over 5 MB.

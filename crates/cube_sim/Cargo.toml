@@ -1,0 +1,12 @@
+[package]
+name = "cube_sim"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+cube_voxel = { path = "../cube_voxel" }
+glam.workspace = true
+
+[lints]
+workspace = true

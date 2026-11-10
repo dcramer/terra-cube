@@ -158,6 +158,7 @@ fn panel(
                     o.distance = def.meta.height.max(def.meta.length) * 3.0;
                 }
             }
+            ui.label("Tab: control");
             if ui.button("Remove").clicked() {
                 commands.entity(entity).despawn();
                 selected.0 = None;
@@ -165,6 +166,7 @@ fn panel(
         });
         ui.separator();
         ui.small("Right-drag orbits · wheel zooms · WASD QE moves");
+        ui.small("Tab controls the picked creature: WASD, Shift walks, Space jumps");
     });
     Ok(())
 }
