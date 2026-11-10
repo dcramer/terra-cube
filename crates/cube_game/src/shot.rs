@@ -217,7 +217,13 @@ fn scene(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terra
     }
     let (w, h) = if args.strip > 0 { (1920 / args.strip.clamp(4, 12) as u32, 300) } else { (1600, 900) };
     stage.target = images.add(Image::new_target_texture(w, h, TextureFormat::Rgba8UnormSrgb, None));
-    let focus = Vec3::new(args.at.0, terrain.ground(args.at.0, args.at.1) + 0.8, args.at.1);
+    let mut focus = Vec3::new(args.at.0, terrain.ground(args.at.0, args.at.1) + 0.8, args.at.1);
+    // One creature alone is a portrait: the camera looks at it, not at the start.
+    if let (false, [id]) = (args.play, &ids[..])
+        && let Some(def) = registry.index(id)
+    {
+        focus = creatures::spot(0, &terrain, args.at).translation + Vec3::Y * registry.0[def].meta.height * 0.6;
+    }
     // Without `--play` the camera stands off the start: `--dist` metres away, `--pitch` up,
     // round to `--yaw`. `--view high` is the lie of the land from the air.
     let high = args.view == "high";

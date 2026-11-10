@@ -4,8 +4,13 @@
 //!
 //! The model is stood as it stands in its idle, so the cubes line up with the world's when it
 //! is at ease. Its surface is sampled into a grid, the inside filled, and each cube given to
-//! the one bone that pulls on it most and the colour of the texture there. A cube moves with
-//! its bone and never bends: limbs turn as rigid pieces, like a jointed toy.
+//! the one bone that pulls on it most and the colour most of the texture there has. A cube
+//! moves with its bone and never bends: limbs turn as rigid pieces, like a jointed toy.
+//!
+//! A face needs help: a head of true size is four cubes wide, and eyes are smaller than a
+//! cube, so they vanish. The head is made bigger first (`--head`, 1.4 times: a toy's
+//! proportions), and the two cubes on its surface where the texture is darkest against its
+//! surroundings, one each side, are made eyes.
 
 use crate::glb::Glb;
 use crate::rig::Skeleton;
@@ -20,12 +25,34 @@ struct Cube {
     bone: usize,
 }
 
-/// What a surface sample adds to the cube it falls in.
+/// What the surface samples that fall in a cube say of it.
 #[derive(Default)]
 struct Tally {
-    colour: Vec3,
-    samples: f32,
+    colours: Vec<Vec3>,
     pull: HashMap<usize, f32>,
+}
+
+fn light(c: Vec3) -> f32 {
+    c.dot(Vec3::new(0.2126, 0.7152, 0.0722))
+}
+
+impl Tally {
+    /// The colour most of its samples have, not their average: a cube half tunic and half
+    /// belt is tunic, where the average is a colour the model has nowhere.
+    fn colour(&self) -> Vec3 {
+        let bucket = |c: &Vec3| (c.powf(1.0 / 2.2) * 5.0).round().as_ivec3();
+        let mut counts: HashMap<IVec3, (Vec3, f32)> = HashMap::new();
+        for c in &self.colours {
+            let entry = counts.entry(bucket(c)).or_default();
+            *entry = (entry.0 + *c, entry.1 + 1.0);
+        }
+        counts.into_iter().max_by(|a, b| a.1.1.total_cmp(&b.1.1).then(a.0.to_array().cmp(&b.0.to_array()))).map_or(Vec3::splat(0.5), |(_, (sum, n))| sum / n)
+    }
+
+    /// How much of it is near black: a pupil is, and hair, fur and shadow are not.
+    fn dark(&self) -> f32 {
+        self.colours.iter().filter(|c| light(**c) < 0.03).count() as f32 / self.colours.len().max(1) as f32
+    }
 }
 
 /// A face: its normal, then its two in-plane axes (u, v) such that u × v = normal.
@@ -53,7 +80,7 @@ fn texture(glb: &Glb, primitive: &Value) -> Option<image::RgbImage> {
 }
 
 /// The cubes of a model stood in a pose: its surface sampled, its inside filled.
-fn cubes(glb: &Glb, sk: &Skeleton, world: &[Mat4], size: f32) -> Result<HashMap<IVec3, Cube>> {
+fn cubes(glb: &Glb, sk: &Skeleton, world: &[Mat4], size: f32, head: &[usize]) -> Result<HashMap<IVec3, Cube>> {
     let skin: Vec<Mat4> = world.iter().zip(&sk.inverse_bind).map(|(w, ib)| *w * *ib).collect();
     let mut shell: HashMap<IVec3, Tally> = HashMap::new();
     for mesh in glb.array("meshes") {
@@ -89,8 +116,7 @@ fn cubes(glb: &Glb, sk: &Skeleton, world: &[Mat4], size: f32) -> Result<HashMap<
                             Vec3::new(linear(px[0]), linear(px[1]), linear(px[2]))
                         });
                         let tally = shell.entry((point / size).floor().as_ivec3()).or_default();
-                        tally.colour += colour;
-                        tally.samples += 1.0;
+                        tally.colours.push(colour);
                         for (corner, share) in t.iter().zip(part) {
                             for k in 0..4 {
                                 *tally.pull.entry(joints[*corner][k]).or_default() += weights[*corner][k] * share;
@@ -103,9 +129,27 @@ fn cubes(glb: &Glb, sk: &Skeleton, world: &[Mat4], size: f32) -> Result<HashMap<
     }
     ensure!(!shell.is_empty(), "no skinned mesh to make cubes of");
     let mut out: HashMap<IVec3, Cube> = shell
-        .into_iter()
-        .map(|(at, t)| (at, Cube { colour: t.colour / t.samples, bone: t.pull.into_iter().max_by(|a, b| a.1.total_cmp(&b.1)).map_or(0, |b| b.0) }))
+        .iter()
+        .map(|(at, t)| (*at, Cube { colour: t.colour(), bone: t.pull.iter().max_by(|a, b| a.1.total_cmp(b.1).then(a.0.cmp(b.0))).map_or(0, |b| *b.0) }))
         .collect();
+
+    // Eyes: on the front of the head (a finished model faces +Z), the pair of cubes mirrored
+    // across its middle, at least a cube apart, with the most black in them. Each becomes
+    // one dark cube.
+    let of_head = |at: &IVec3| out.get(at).is_some_and(|c| head.contains(&c.bone));
+    let on_head: Vec<IVec3> = out.keys().filter(|at| of_head(at) && !(1..4).any(|ahead| of_head(&(**at + IVec3::Z * ahead)))).copied().collect();
+    let mirrored = |at: &IVec3| IVec3::new(-1 - at.x, at.y, at.z);
+    let pair = on_head
+        .iter()
+        .filter(|at| at.x >= 1 && on_head.contains(&mirrored(at)))
+        .map(|at| (*at, shell[at].dark().min(shell[&mirrored(at)].dark())))
+        .filter(|(_, dark)| *dark > 0.04)
+        .max_by(|a, b| a.1.total_cmp(&b.1).then(a.0.to_array().cmp(&b.0.to_array())));
+    if let Some((at, _)) = pair {
+        for eye in [at, mirrored(&at)] {
+            out.get_mut(&eye).unwrap().colour = Vec3::splat(0.012);
+        }
+    }
 
     // The inside: whatever the outside cannot reach from a corner of the box round it. Each
     // inside cube takes after the nearest surface one, so a limb that turns shows no hollow.
@@ -136,15 +180,33 @@ fn cubes(glb: &Glb, sk: &Skeleton, world: &[Mat4], size: f32) -> Result<HashMap<
     Ok(out)
 }
 
-/// Makes `ID-cubes` from the finished model of `id`. Returns one line of what it made.
-pub fn run(id: &str, size: f32) -> Result<String> {
+/// Makes `ID-cubes` from the finished model of `id`, its head `head_scale` times its size.
+/// Returns one line of what it made.
+pub fn run(id: &str, size: f32, head_scale: f32) -> Result<String> {
     let from = spec::dir(id);
     let mut glb = Glb::read(&from.join("model.glb"))?;
     let sk = Skeleton::read(&glb)?;
     let clips = clips::read(&glb, &sk)?;
     let stand = clips.iter().find(|c| c.name == "idle").map_or(sk.rest(), |c| c.frames[0].clone());
     let world = sk.pose_world(&stand);
-    let made = cubes(&glb, &sk, &world, size)?;
+    // The head is everything past the neck, and grows about where it joins it.
+    let mut meta: spec::Meta = spec::load(&from.join("meta.toml"))?;
+    let neck = meta.bones.get("neck").and_then(|name| sk.joints.iter().position(|j| &j.name == name));
+    let mut head: Vec<usize> = neck.map_or(Vec::new(), |n| sk.joints[n].children.clone());
+    let mut next = 0;
+    while next < head.len() {
+        head.extend(sk.joints[head[next]].children.clone());
+        next += 1;
+    }
+    let mut bigger = world.clone();
+    if let Some(&first) = head.first() {
+        let pivot = world[first].w_axis.truncate();
+        let grow = Mat4::from_translation(pivot) * Mat4::from_scale(Vec3::splat(head_scale)) * Mat4::from_translation(-pivot);
+        for &j in &head {
+            bigger[j] = grow * world[j];
+        }
+    }
+    let made = cubes(&glb, &sk, &bigger, size, &head)?;
 
     // Every face of a cube that is not against another cube of the same bone, taken back to
     // where its bone has it at rest, which is where a skin's vertices are kept.
@@ -202,7 +264,6 @@ pub fn run(id: &str, size: f32) -> Result<String> {
 
     let to = spec::dir(&format!("{id}-cubes"));
     glb.write(&to.join("model.glb"))?;
-    let mut meta: spec::Meta = spec::load(&from.join("meta.toml"))?;
     meta.triangles = glb.triangles();
     spec::save(&to.join("meta.toml"), &meta, &format!("# Made by `cargo forge cubes {id}` from that model; do not edit.\n"))?;
     // The same creature, marked as made from another so forge does not try to build it, and
