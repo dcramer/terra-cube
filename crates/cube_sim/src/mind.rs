@@ -108,12 +108,23 @@ enum Footing {
 struct Nerve {
     up: i32,
     down: i32,
+    /// What it walks up without a jump, in cells: more than this within `up` wants a jump.
+    step: i32,
 }
 
-/// The highest ledge a body walks up without jumping, in cells (`Tuning::step`).
-const STEP: i32 = (0.5 / CELL) as i32;
-const EASY: Nerve = Nerve { up: STEP, down: STEP * 2 };
-const HURRIED: Nerve = Nerve { up: STEP * 2, down: STEP * 6 };
+impl Nerve {
+    /// At its ease, a creature that steps up `step` metres without jumping.
+    fn easy(step: f32) -> Self {
+        let up = (step / CELL) as i32;
+        Nerve { up, down: up * 2, step: up }
+    }
+    /// The same creature in a hurry: it jumps what a jump clears (a metre) if that is more
+    /// than its step, and drops three metres or six of its steps.
+    fn hurried(step: f32) -> Self {
+        let up = (step / CELL) as i32;
+        Nerve { up: up.max((1.0 / CELL) as i32), down: (up * 6).max((3.0 / CELL) as i32), step: up }
+    }
+}
 
 fn footing(world: &World, x: i32, z: i32, level: i32, height: f32, nerve: Nerve) -> Footing {
     let solid = |y: i32| world.get(IVec3::new(x, y, z)).solid();
@@ -160,7 +171,7 @@ fn dry_ground(world: &World, at: Vec2, near: f32, height: f32) -> bool {
 }
 
 /// How many metres of the straight line from a body to a point can be walked.
-fn clear_way(world: &World, agent: &Agent, to: Vec2) -> f32 {
+fn clear_way(world: &World, agent: &Agent, step: f32, to: Vec2) -> f32 {
     let from = flat(agent.body.pos);
     let (dir, whole) = ((to - from).normalize_or_zero(), from.distance(to));
     let (mut at, mut last, mut out) = (cell_of(agent.body.pos.y + 0.01), (cell_of(from.x), cell_of(from.y)), 0.0);
@@ -172,7 +183,7 @@ fn clear_way(world: &World, agent: &Agent, to: Vec2) -> f32 {
             continue;
         }
         last = column;
-        match footing(world, column.0, column.1, at, agent.body.height, EASY) {
+        match footing(world, column.0, column.1, at, agent.body.height, Nerve::easy(step)) {
             Footing::Floor(found) => at = found,
             _ => return out - 0.5,
         }
@@ -213,7 +224,7 @@ fn steer(world: &World, agent: &Agent, speed: f32, want: Vec2, nerve: Nerve, vee
             let found = footing(world, column.0, column.1, at, body.height, nerve);
             ok = passes(&found);
             if let Footing::Floor(found) = found {
-                jump |= found - at > STEP && out < body.half + 1.5;
+                jump |= found - at > nerve.step && out < body.half + 1.5;
                 at = found;
             }
         }
@@ -301,7 +312,7 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
                         if !dry_ground(world, to, agent.body.pos.y, kind.height) {
                             continue;
                         }
-                        let far = clear_way(world, agent, to);
+                        let far = clear_way(world, agent, kind.step(), to);
                         if far >= 2.0 {
                             m.goal = me + (to - me).clamp_length_max(far);
                             break;
@@ -403,7 +414,7 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
     }
 
     let speed = kind.speed(gait);
-    let nerve = if matches!(m.state, State::Flee | State::Chase) || agent.body.swimming { HURRIED } else { EASY };
+    let nerve = if matches!(m.state, State::Flee | State::Chase) || agent.body.swimming { Nerve::hurried(kind.step()) } else { Nerve::easy(kind.step()) };
     let (dir, jump) = heading.map_or((Vec2::ZERO, false), |want| steer(world, agent, speed, want, nerve, &mut m.veer));
     if heading.is_some() && dir == Vec2::ZERO {
         // No way on from here. A roam is given up; a chase or a flight waits for one to open.

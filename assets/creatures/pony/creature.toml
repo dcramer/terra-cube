@@ -2,7 +2,7 @@ name = "Wild pony"
 kind = "wildlife"
 plan = "quadruped"
 subject = "a stocky wild pony with a shaggy black mane and a dun coat"
-height = 1.3
+height = 1.45
 
 [life]
 temper = "timid"

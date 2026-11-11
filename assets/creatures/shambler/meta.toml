@@ -1,0 +1,71 @@
+# Measured by `cargo forge finish`; do not edit.
+height = 2.4
+length = 1.3566679
+width = 1.1468549
+walk_speed = 1.562092
+run_speed = 6.920383
+sprint_speed = 9.553686
+triangles = 8798
+joints = 65
+
+[clips.attack]
+seconds = 1.2
+looping = false
+source = "tripo"
+
+[clips.die]
+seconds = 1.4
+looping = false
+source = "made"
+
+[clips.fall]
+seconds = 0.9
+looping = true
+source = "made"
+
+[clips.hurt]
+seconds = 0.5
+looping = false
+source = "made"
+
+[clips.idle]
+seconds = 15.333333
+looping = true
+source = "tripo"
+
+[clips.jump]
+seconds = 0.3
+looping = false
+source = "made"
+
+[clips.land]
+seconds = 0.36666667
+looping = false
+source = "made"
+
+[clips.run]
+seconds = 1.2666667
+looping = true
+source = "tripo"
+
+[clips.sprint]
+seconds = 1.0
+looping = true
+source = "made"
+
+[clips.swim]
+seconds = 1.6
+looping = true
+source = "made"
+
+[clips.walk]
+seconds = 1.0
+looping = true
+source = "made"
+
+[bones]
+foot0 = "mixamorig:LeftToe_End"
+foot1 = "mixamorig:RightToe_End"
+head = "mixamorig:HeadTop_End"
+neck = "mixamorig:Neck"
+root = "mixamorig:Hips"

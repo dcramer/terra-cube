@@ -2,7 +2,7 @@ name = "Mountain goat"
 kind = "wildlife"
 plan = "quadruped"
 subject = "a white mountain goat with short black horns and a shaggy beard"
-height = 0.95
+height = 1.1
 
 [life]
 temper = "timid"

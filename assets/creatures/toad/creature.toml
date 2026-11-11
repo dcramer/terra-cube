@@ -2,7 +2,7 @@ name = "Bog toad"
 kind = "monster"
 plan = "quadruped"
 subject = "a monstrous warty toad with a huge wide mouth, bulging orange eyes and a slimy olive hide"
-height = 0.7
+height = 0.9
 
 [life]
 temper = "hostile"

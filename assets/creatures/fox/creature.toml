@@ -2,7 +2,7 @@ name = "Fox"
 kind = "wildlife"
 plan = "quadruped"
 subject = "a red fox with a bushy white-tipped tail and black legs"
-height = 0.4
+height = 0.5
 
 [life]
 temper = "hunter"

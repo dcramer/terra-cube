@@ -95,11 +95,18 @@ impl Kind {
     pub fn shape(&self) -> (f32, f32) {
         let (length, width) = (self.length, if self.width > 0.0 { self.width } else { self.length });
         if length > width * 1.3 {
-            let radius = (width * 0.425).clamp(0.1, 0.6);
+            let radius = (width * 0.425).clamp(0.1, 1.2);
             (radius, (length / 2.0 - radius).max(0.0))
         } else {
-            (((length + width) / 4.0).clamp(0.1, 0.6), 0.0)
+            (((length + width) / 4.0).clamp(0.1, 1.2), 0.0)
         }
+    }
+
+    /// The highest ledge it walks up without jumping, metres: half a metre for anything up to
+    /// a person's size, more for what is bigger. A golem twice a person's height does not hop
+    /// up a kerb.
+    pub fn step(&self) -> f32 {
+        (self.height * 0.28).clamp(0.55, 1.25)
     }
 
     /// The speed a gait moves at: the speed its clip was built or measured for, so the clip
@@ -347,7 +354,6 @@ impl Sim {
         let mut bodies: Vec<Body> = self.agents.values().filter(|a| a.driver != Driver::Stand).map(|a| a.body).collect();
         body::separate(world, &mut bodies, &pillars);
 
-        let tuning = Tuning::default();
         for (agent, pushed) in self.agents.values_mut().filter(|a| a.driver != Driver::Stand).zip(bodies) {
             let (was, was_grounded) = (agent.body.pos, agent.body.grounded || agent.body.swimming);
             agent.body = pushed;
@@ -355,6 +361,7 @@ impl Sim {
             intent.jump = agent.want_jump > 0.0;
             intent.hold = agent.hold_jump;
             let fall = agent.body.vel.y;
+            let tuning = Tuning { step: self.kinds[agent.kind].step(), ..Tuning::default() };
             agent.body.step(world, intent, &tuning);
             agent.want_jump = if agent.body.jumping { 0.0 } else { (agent.want_jump - DT).max(0.0) };
             agent.before = was;

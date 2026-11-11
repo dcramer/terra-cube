@@ -1,0 +1,79 @@
+# Measured by `cargo forge finish`; do not edit.
+height = 0.2
+length = 0.22805555
+width = 0.066818126
+walk_speed = 0.37584516
+run_speed = 0.87849706
+sprint_speed = 1.5715336
+triangles = 10096
+joints = 30
+
+[clips.attack]
+seconds = 0.8
+looping = false
+source = "made"
+
+[clips.die]
+seconds = 1.4
+looping = false
+source = "made"
+
+[clips.eat]
+seconds = 4.0
+looping = true
+source = "made"
+
+[clips.fall]
+seconds = 0.9
+looping = true
+source = "made"
+
+[clips.hurt]
+seconds = 0.5
+looping = false
+source = "made"
+
+[clips.idle]
+seconds = 4.0
+looping = true
+source = "made"
+
+[clips.jump]
+seconds = 0.3
+looping = false
+source = "made"
+
+[clips.land]
+seconds = 0.36666667
+looping = false
+source = "made"
+
+[clips.run]
+seconds = 0.16666667
+looping = true
+source = "made"
+
+[clips.sprint]
+seconds = 0.16666667
+looping = true
+source = "made"
+
+[clips.swim]
+seconds = 1.6
+looping = true
+source = "made"
+
+[clips.walk]
+seconds = 0.23333333
+looping = true
+source = "made"
+
+[bones]
+foot0 = "tripo::0_Left_Limb_3"
+foot1 = "tripo::0_Right_Limb_2"
+foot2 = "tripo::1_Left_Limb_3"
+foot3 = "tripo::1_Right_Limb_3"
+head = "tripo::Tail_4"
+neck = "tripo::Tail_1"
+root = "tripo::Root"
+tail = "tripo::Head_1"

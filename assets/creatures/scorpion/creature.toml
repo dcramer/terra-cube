@@ -2,7 +2,7 @@ name = "Giant scorpion"
 kind = "monster"
 plan = "crawler"
 subject = "a giant scorpion with two heavy pincers and a tail arched over its back ending in a sting, amber with dark plates"
-height = 0.5
+height = 0.7
 
 [life]
 temper = "hostile"
