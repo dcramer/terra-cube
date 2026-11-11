@@ -185,7 +185,10 @@ fn column(x: f32, z: f32, seed: u32, span: f32) -> f32 {
     // open lowland, always a mountain to see from it, and the ground steepens toward the
     // mountain instead of standing up from the plain like a wall.
     let ridge = 1.0 - (2.0 * form(&scale::RIDGE, wx, wz, seed + 5) - 1.0).abs();
-    let turn = hash2(1, 2, seed + 7) * std::f32::consts::TAU;
+    // To the north (-z), within forty degrees: the sun goes round by the south (`sky`), so a
+    // mountain there is lit all day and never lies between the sun and the lowland. Placed
+    // anywhere, seed 6 had it due west, and the start was in its shadow from mid afternoon.
+    let turn = -std::f32::consts::FRAC_PI_2 + (hash2(1, 2, seed + 7) - 0.5) * 1.4;
     let mut bell = 0.0f32;
     for (i, massif) in [&scale::MASSIF, &scale::HEIGHTS].into_iter().enumerate() {
         let way = turn + i as f32 * (2.2 + hash2(3, 4, seed + 7) * 1.4);

@@ -458,6 +458,17 @@ impl Sim {
                 if land.biome(x, z) != k.habitat || land.slope(x, z) > 1 || middle.length() < keep_off {
                     continue;
                 }
+                // The timid do not make their home beside what hunts them, nor the other way
+                // round: a beaver put down on a strip of shore between a giant toad and the
+                // water spent its whole life fleeing into a corner.
+                let fierce = |t: Temper| matches!(t, Temper::Hunter | Temper::Hostile);
+                let uneasy = self.agents.values().any(|a| {
+                    let theirs = self.kinds[a.kind].temper;
+                    ((k.temper == Temper::Timid && fierce(theirs)) || (fierce(k.temper) && theirs == Temper::Timid)) && a.mind.home.distance(middle) < 35.0
+                });
+                if uneasy {
+                    continue;
+                }
                 let mut members = 0;
                 for _ in 0..k.group * 12 {
                     if members == k.group {

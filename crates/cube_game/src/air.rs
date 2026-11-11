@@ -17,7 +17,7 @@ pub struct AirPlugin;
 
 impl Plugin for AirPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup).add_systems(Update, (motes, leaves, butterflies, birds, glow));
+        app.add_systems(Startup, setup).add_systems(Update, (motes, leaves, butterflies, birds, glow, heavens));
     }
 }
 
@@ -40,9 +40,27 @@ fn roll(state: &mut u32) -> f32 {
     (*state & 0xFFFF) as f32 / 65535.0
 }
 
-/// The pollen's material, kept so its own light can follow the camera's exposure.
+/// The pollen's material and the fireflies', kept so their own light can follow the hour.
 #[derive(Resource)]
-struct Pale(Handle<StandardMaterial>);
+struct Pale(Handle<StandardMaterial>, Handle<StandardMaterial>);
+
+/// A mote that is a firefly, and how big it is by day.
+#[derive(Component)]
+struct Firefly(f32);
+
+/// A star: which way it lies from anywhere.
+#[derive(Component)]
+struct Star(Vec3);
+#[derive(Component)]
+struct MoonDisc;
+
+/// The stars' material and the moon's.
+#[derive(Resource)]
+struct Heavens(Handle<StandardMaterial>, Handle<StandardMaterial>);
+
+const STARS: usize = 420;
+/// How far off the stars and moon are drawn, metres: inside the camera's far plane.
+const DOME: f32 = 700.0;
 
 /// A speck of pollen or down. `0` is its own number, so no two move alike.
 #[derive(Component)]
@@ -84,11 +102,32 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     // with a little light of its own so it is not lost there.
     let speck = meshes.add(Sphere::new(0.011).mesh().ico(1).unwrap());
     let pale = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.96, 0.78), emissive: LinearRgba::rgb(260.0, 235.0, 150.0), perceptual_roughness: 1.0, ..default() });
-    commands.insert_resource(Pale(pale.clone()));
-    for _ in 0..MOTES {
+    // One in six is a firefly: by day a speck like the rest, by night a slow green lamp.
+    let lamp = materials.add(StandardMaterial { base_color: Color::srgb(0.9, 1.0, 0.6), perceptual_roughness: 1.0, ..default() });
+    commands.insert_resource(Pale(pale.clone(), lamp.clone()));
+    for i in 0..MOTES {
         let size = 0.6 + roll(&mut state) * 1.2;
-        commands.spawn((Mote(roll(&mut state) * 100.0), Mesh3d(speck.clone()), MeshMaterial3d(pale.clone()), Transform::from_translation(far).with_scale(Vec3::splat(size)), NotShadowCaster));
+        let mut mote = commands.spawn((Mote(roll(&mut state) * 100.0), Mesh3d(speck.clone()), Transform::from_translation(far).with_scale(Vec3::splat(size)), NotShadowCaster));
+        if i % 6 == 0 {
+            mote.insert((Firefly(size), MeshMaterial3d(lamp.clone())));
+        } else {
+            mote.insert(MeshMaterial3d(pale.clone()));
+        }
     }
+    // The night sky: stars on a dome round the camera, and a moon. Their own light only, not
+    // dimmed by haze; `heavens` turns them up as the day goes.
+    let star = meshes.add(Sphere::new(1.0).mesh().ico(0).unwrap());
+    let starlight = materials.add(StandardMaterial { base_color: Color::BLACK, unlit: false, fog_enabled: false, perceptual_roughness: 1.0, ..default() });
+    for _ in 0..STARS {
+        // Evenly over the upper sky, a few of them large.
+        let (turn, up) = (roll(&mut state) * TAU, 0.05 + roll(&mut state) * 0.95);
+        let at = Vec3::new(turn.cos() * (1.0 - up * up).sqrt(), up, turn.sin() * (1.0 - up * up).sqrt());
+        let size = 0.35 + roll(&mut state).powi(4) * 1.1;
+        commands.spawn((Star(at), Mesh3d(star.clone()), MeshMaterial3d(starlight.clone()), Transform::from_translation(far).with_scale(Vec3::splat(size)), NotShadowCaster));
+    }
+    let moonlight = materials.add(StandardMaterial { base_color: Color::BLACK, fog_enabled: false, perceptual_roughness: 1.0, ..default() });
+    commands.spawn((MoonDisc, Mesh3d(meshes.add(Sphere::new(1.0).mesh().ico(3).unwrap())), MeshMaterial3d(moonlight.clone()), Transform::from_translation(far).with_scale(Vec3::splat(16.0)), NotShadowCaster));
+    commands.insert_resource(Heavens(starlight, moonlight));
     // Leaves: a flat chip of one of four autumn-turning greens and browns.
     let chip = meshes.add(Cuboid::new(0.07, 0.008, 0.05));
     let tones = [Color::srgb(0.30, 0.42, 0.12), Color::srgb(0.52, 0.44, 0.12), Color::srgb(0.50, 0.26, 0.08), Color::srgb(0.22, 0.34, 0.10)].map(|c| materials.add(StandardMaterial { base_color: c, perceptual_roughness: 0.9, double_sided: true, ..default() }));
@@ -237,16 +276,53 @@ fn birds(time: Res<Time>, mut birds: Query<(&Bird, &mut Transform)>) {
 }
 
 /// Pollen's own light is set for day. As the camera opens up for night it is turned down by
-/// as much, or every speck would blaze like a lamp.
-fn glow(pale: Option<Res<Pale>>, cameras: Query<&bevy::camera::Exposure, With<Camera3d>>, mut materials: ResMut<Assets<StandardMaterial>>, mut was: Local<f32>) {
+/// as much, or every speck would blaze like a lamp; the fireflies among it are turned up
+/// instead, and each one swells and fades in its own time.
+fn glow(time: Res<Time>, pale: Option<Res<Pale>>, cameras: Query<&bevy::camera::Exposure, With<Camera3d>>, mut materials: ResMut<Assets<StandardMaterial>>, mut flies: Query<(&Firefly, &Mote, &mut Transform)>, mut was: Local<f32>) {
     let (Some(pale), Some(exposure)) = (pale, cameras.iter().next()) else { return };
+    let night = 1.0 - ((exposure.ev100 - 1.0) / 7.0).clamp(0.0, 1.0);
+    let t = time.elapsed_secs();
+    for (fly, mote, mut at) in &mut flies {
+        let pulse = (0.5 + 0.5 * (t * 1.1 + mote.0 * 3.0).sin()).powi(3);
+        at.scale = Vec3::splat(fly.0 * (1.0 + night * (0.2 + 2.2 * pulse)) * (1.0 - night * (1.0 - pulse).powi(6)));
+    }
     if (exposure.ev100 - *was).abs() < 0.05 {
         return;
     }
     *was = exposure.ev100;
+    // Dimmer still by night: pollen is not fireflies.
+    let dim = 2.0f32.powf(exposure.ev100 - 13.4) * (0.25 + 0.75 * ((exposure.ev100 - 6.0) / 7.0).clamp(0.0, 1.0));
     if let Some(mut material) = materials.get_mut(&pale.0) {
-        // Dimmer still by night: pollen is not fireflies.
-        let dim = 2.0f32.powf(exposure.ev100 - 13.4) * (0.25 + 0.75 * ((exposure.ev100 - 6.0) / 7.0).clamp(0.0, 1.0));
         material.emissive = LinearRgba::rgb(260.0 * dim, 235.0 * dim, 150.0 * dim);
+    }
+    if let Some(mut material) = materials.get_mut(&pale.1) {
+        let day = 2.0f32.powf(exposure.ev100 - 13.4);
+        material.emissive = LinearRgba::rgb(260.0 * day + 9.0 * night, 235.0 * day + 16.0 * night, 150.0 * day + 2.0 * night);
+    }
+}
+
+/// Stars and the moon keep their places in the sky wherever the camera goes, and come out as
+/// the light goes: nothing by day, faint at dusk, sharp in full night.
+fn heavens(live: Option<Res<crate::motion::Live>>, heavens: Option<Res<Heavens>>, cameras: Query<&GlobalTransform, With<Camera3d>>, mut materials: ResMut<Assets<StandardMaterial>>, mut stars: Query<(&Star, &mut Transform), Without<MoonDisc>>, mut moon: Query<&mut Transform, With<MoonDisc>>, mut was: Local<f32>) {
+    let (Some(eye), Some(heavens)) = (eye(&cameras), heavens) else { return };
+    let hour = live.map_or(cube_sim::sky::START, |l| l.0.hour);
+    let (to_sun, night) = (cube_sim::sky::sun(hour), 1.0 - cube_sim::sky::daylight(hour));
+    for (star, mut at) in &mut stars {
+        at.translation = if night > 0.0 { eye + star.0 * DOME } else { Vec3::new(0.0, -500.0, 0.0) };
+    }
+    // Where `world::sky` puts the moon's light.
+    let to_moon = (-to_sun + Vec3::new(0.0, 0.25, 0.3)).normalize();
+    if let Ok(mut at) = moon.single_mut() {
+        at.translation = if night > 0.0 && to_moon.y > -0.05 { eye + to_moon * DOME } else { Vec3::new(0.0, -500.0, 0.0) };
+    }
+    if (night - *was).abs() < 0.01 {
+        return;
+    }
+    *was = night;
+    if let Some(mut material) = materials.get_mut(&heavens.0) {
+        material.emissive = LinearRgba::rgb(0.9, 0.95, 1.1) * (2.4 * night * night);
+    }
+    if let Some(mut material) = materials.get_mut(&heavens.1) {
+        material.emissive = LinearRgba::rgb(1.0, 0.97, 0.88) * (1.6 * night);
     }
 }

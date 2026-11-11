@@ -5,13 +5,13 @@ use bevy::{asset::RenderAssetUsages, light::CascadeShadowConfigBuilder, mesh::In
 use cube_sim::terrain::{self, Land, SEA};
 use bevy::camera::{Exposure, visibility::VisibilityRange};
 use bevy::core_pipeline::tonemapping::Tonemapping;
-use bevy::light::{Atmosphere, AtmosphereEnvironmentMapLight, SunDisk, atmosphere::ScatteringMedium, light_consts::lux};
+use bevy::light::{Atmosphere, AtmosphereEnvironmentMapLight, DirectionalLightTexture, FogVolume, SunDisk, VolumetricFog, VolumetricLight, atmosphere::ScatteringMedium, light_consts::lux};
 use bevy::pbr::{AtmosphereSettings, ExtendedMaterial, MaterialExtension, ScreenSpaceAmbientOcclusion};
 use bevy::render::render_resource::AsBindGroup;
 use bevy::shader::ShaderRef;
 use bevy::render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection};
 use bevy::post_process::bloom::Bloom;
-use bevy::image::{ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
+use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use cube_voxel::{
     Block, CELL, CHUNK, World as Voxels,
@@ -108,6 +108,8 @@ pub fn look() -> impl Bundle {
         // cubes' own baked shade cannot give between one thing and another.
         Msaa::Off,
         ScreenSpaceAmbientOcclusion::default(),
+        // The mist is lit: shafts of sun between trunks.
+        VolumetricFog { ambient_intensity: 0.0, step_count: 48, ..default() },
     )
 }
 
@@ -125,11 +127,55 @@ struct Sun;
 #[derive(Component)]
 struct Moon;
 
-fn spawn_sun(commands: &mut Commands, mediums: &mut Assets<ScatteringMedium>) {
+/// How far across one tile of cloud shadow is on the ground, metres (the light's own size is
+/// half of it: a tile is two of the light's units), and how fast it drifts.
+const CLOUD_TILE: f32 = 420.0;
+const CLOUD_DRIFT: f32 = 2.2;
+
+/// The shadows of clouds, as how much of the sun gets through at each point of a tile that
+/// repeats: mostly clear, with soft-edged patches of shade some sixty metres over. Laid in
+/// the sun's light and drifted downwind, it is what makes a hillside go dim and bright again.
+fn clouds() -> Image {
+    const SIDE: usize = 256;
+    let hash = |x: i32, y: i32, n: i32| {
+        let mut h = (x as u32).wrapping_mul(0x9E3779B1) ^ (y as u32).wrapping_mul(0x85EBCA77) ^ (n as u32).wrapping_mul(0xC2B2AE3D);
+        h ^= h >> 15;
+        h = h.wrapping_mul(0x2C1B3C6D);
+        h ^= h >> 12;
+        (h & 0xFFFF) as f32 / 65535.0
+    };
+    // Noise that repeats at the tile's edge, in four layers.
+    let noise = |x: f32, y: f32| {
+        (0..4).map(|o| {
+            let cells = 4 << o;
+            let (fx, fy) = (x * cells as f32, y * cells as f32);
+            let (x0, y0) = (fx.floor(), fy.floor());
+            let (tx, ty) = (fx - x0, fy - y0);
+            let (sx, sy) = (tx * tx * (3.0 - 2.0 * tx), ty * ty * (3.0 - 2.0 * ty));
+            let at = |dx: i32, dy: i32| hash((x0 as i32 + dx).rem_euclid(cells), (y0 as i32 + dy).rem_euclid(cells), o);
+            ((at(0, 0) * (1.0 - sx) + at(1, 0) * sx) * (1.0 - sy) + (at(0, 1) * (1.0 - sx) + at(1, 1) * sx) * sy) / (1 << o) as f32
+        }).sum::<f32>() / 1.875
+    };
+    let mut data = Vec::with_capacity(SIDE * SIDE * 4);
+    for i in 0..SIDE * SIDE {
+        let cover = ((noise((i % SIDE) as f32 / SIDE as f32, (i / SIDE) as f32 / SIDE as f32) - 0.54) / 0.12).clamp(0.0, 1.0);
+        let through = 1.0 - 0.62 * cover * cover * (3.0 - 2.0 * cover);
+        let byte = (through * 255.0) as u8;
+        data.extend([byte, byte, byte, 255]);
+    }
+    let mut image = Image::new(Extent3d { width: SIDE as u32, height: SIDE as u32, depth_or_array_layers: 1 }, TextureDimension::D2, data, TextureFormat::Rgba8Unorm, RenderAssetUsages::RENDER_WORLD);
+    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor { address_mode_u: ImageAddressMode::Repeat, address_mode_v: ImageAddressMode::Repeat, mag_filter: ImageFilterMode::Linear, min_filter: ImageFilterMode::Linear, ..default() });
+    image
+}
+
+fn spawn_sun(commands: &mut Commands, mediums: &mut Assets<ScatteringMedium>, images: &mut Assets<Image>) {
     commands.insert_resource(GlobalAmbientLight::NONE);
     commands.spawn(Atmosphere::earth(mediums.add(ScatteringMedium::earth(256, 256))));
     let shadows = || CascadeShadowConfigBuilder { first_cascade_far_bound: 12.0, maximum_distance: 220.0, ..default() }.build();
-    commands.spawn((Sun, DirectionalLight { illuminance: lux::RAW_SUNLIGHT, shadow_maps_enabled: true, ..default() }, shadows(), SunDisk::EARTH));
+    commands.spawn((Sun, DirectionalLight { illuminance: lux::RAW_SUNLIGHT, shadow_maps_enabled: true, ..default() }, shadows(), SunDisk::EARTH, VolumetricLight, DirectionalLightTexture { image: images.add(clouds()), tiled: true }));
+    // Mist: thin lit air lying in the low ground and under the trees, so the sun comes
+    // through the crowns in shafts and far woods stand in haze. Low, so the sky stays clear.
+    commands.spawn((FogVolume { density_factor: 0.0022, scattering: 0.4, absorption: 0.0, light_tint: Color::srgb(1.0, 0.95, 0.86), ..default() }, Transform::from_xyz(0.0, SEA as f32 * CELL + 11.0, 0.0).with_scale(Vec3::new(800.0, 24.0, 800.0))));
     commands.spawn((Moon, DirectionalLight { illuminance: 0.0, shadow_maps_enabled: false, color: Color::srgb(0.62, 0.74, 1.0), ..default() }, shadows()));
 }
 
@@ -146,9 +192,9 @@ const MOONLIGHT: f32 = 1.6;
 fn exposure_for(sun_up: f32) -> f32 {
     let between = |lo: f32, hi: f32, from: f32, to: f32| from + (to - from) * ((sun_up - lo) / (hi - lo)).clamp(0.0, 1.0);
     if sun_up < 0.05 {
-        between(-0.105, 0.05, NIGHT_EV, 9.2)
+        between(-0.105, 0.05, NIGHT_EV, 10.6)
     } else if sun_up < 0.35 {
-        between(0.05, 0.35, 9.2, 13.0)
+        between(0.05, 0.35, 10.6, 13.0)
     } else {
         between(0.35, 0.85, 13.0, 14.0)
     }
@@ -158,18 +204,35 @@ fn exposure_for(sun_up: f32) -> f32 {
 /// camera opens as the light goes, and the haze takes the colour of the hour.
 fn sky(
     live: Option<Res<crate::motion::Live>>,
+    time: Res<Time>,
     mut ambient: ResMut<GlobalAmbientLight>,
     mut sun: Query<(&mut Transform, &mut DirectionalLight), (With<Sun>, Without<Moon>)>,
     mut moon: Query<(&mut Transform, &mut DirectionalLight), (With<Moon>, Without<Sun>)>,
     mut cameras: Query<(&mut Exposure, &mut DistanceFog, &mut ColorGrading)>,
+    mut mists: Query<&mut FogVolume>,
 ) {
     let hour = live.map_or(cube_sim::sky::START, |l| l.0.hour);
     let (to_sun, day) = (cube_sim::sky::sun(hour), cube_sim::sky::daylight(hour));
     if let Ok((mut at, mut light)) = sun.single_mut() {
-        *at = Transform::default().looking_to(-to_sun, Vec3::Y);
+        // Where it stands and how big it is are where the cloud shadows lie and how big they
+        // are: they drift downwind.
+        let drift = Vec3::new(0.8, 0.0, 0.6) * (time.elapsed_secs() * CLOUD_DRIFT);
+        *at = Transform::from_translation(drift).with_scale(Vec3::splat(CLOUD_TILE / 2.0)).looking_to(-to_sun, Vec3::Y);
         // The air reddens and dims it toward the horizon; this only puts it out below.
         let up = ((to_sun.y + 0.03) / 0.06).clamp(0.0, 1.0);
-        light.illuminance = lux::RAW_SUNLIGHT * up;
+        // And a low sun is made stronger than the air would leave it. True to life, the last
+        // hour of sun is weak and the sky's flat fill takes the picture; the gold of evening
+        // is wanted more than the truth.
+        let low = 1.0 - ((to_sun.y - 0.05) / 0.4).clamp(0.0, 1.0);
+        light.illuminance = lux::RAW_SUNLIGHT * up * (1.0 + 3.5 * low * low);
+        // The air here reddens a low sun only a little; an evening wants amber.
+        light.color = Color::srgb(1.0, 1.0 - 0.28 * low * low, 1.0 - 0.55 * low * low);
+        // Mist thins as the sun drops, or the low light floods it and whites the picture out,
+        // and what is left takes the sun's colour.
+        for mut mist in &mut mists {
+            mist.density_factor = 0.0022 * (1.0 - 0.7 * low);
+            mist.light_tint = Color::srgb(1.0, 0.95 - 0.15 * low, 0.86 - 0.3 * low);
+        }
         light.shadow_maps_enabled = up > 0.0;
     }
     if let Ok((mut at, mut light)) = moon.single_mut() {
@@ -187,7 +250,9 @@ fn sky(
     for (mut exposure, mut fog, mut grade) in &mut cameras {
         exposure.ev100 = exposure_for(to_sun.y);
         // By moonlight there is little colour to see.
-        grade.global.post_saturation = 0.62 + 0.5 * day;
+        grade.global.post_saturation = 0.62 + 0.5 * day + 0.12 * low;
+        grade.midtones.contrast = 1.04 + 0.1 * low;
+        grade.shadows.contrast = 1.04 + 0.1 * low;
         fog.color = Color::srgba((0.62 + 0.25 * low) * lit, (0.74 - 0.08 * low) * lit, (0.88 - 0.3 * low) * lit, 1.0);
         fog.directional_light_color = Color::srgba(1.0 * lit, (0.86 - 0.25 * low) * lit, (0.62 - 0.35 * low) * lit, 0.6);
     }
@@ -239,7 +304,7 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
         commands.spawn((Mesh3d(meshes.add(Plane3d::default().mesh().size(w * 2.0, d * 2.0))), MeshMaterial3d(sea.clone()), Transform::from_xyz(x, level, z)));
     }
     commands.insert_resource(Terrain(voxels, land));
-    spawn_sun(&mut commands, &mut mediums);
+    spawn_sun(&mut commands, &mut mediums, &mut images);
 }
 
 /// The levels of detail a chunk is drawn at: how many cells a side are taken as one, and the
