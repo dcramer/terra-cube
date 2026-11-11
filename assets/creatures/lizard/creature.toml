@@ -9,6 +9,7 @@ gait_gain = 0.6
 [life]
 temper = "wary"
 habitat = "rock"
+winter = 0.05
 cover = "open"
 hours = "day"
 group = 1

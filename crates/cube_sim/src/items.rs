@@ -9,10 +9,12 @@ pub enum Item {
     Sword,
     Shovel,
     Berries,
+    /// Cut from what was killed.
+    Meat,
 }
 
 impl Item {
-    pub const ALL: [Item; 4] = [Item::Torch, Item::Sword, Item::Shovel, Item::Berries];
+    pub const ALL: [Item; 5] = [Item::Torch, Item::Sword, Item::Shovel, Item::Berries, Item::Meat];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -20,12 +22,17 @@ impl Item {
             Item::Sword => "Short sword",
             Item::Shovel => "Shovel",
             Item::Berries => "Berries",
+            Item::Meat => "Meat",
         }
     }
 
     /// How many lie in one slot.
     pub fn stack(self) -> u32 {
-        if self == Item::Berries { 20 } else { 1 }
+        match self {
+            Item::Berries => 20,
+            Item::Meat => 10,
+            _ => 1,
+        }
     }
 
     /// What a blow with it in hand takes, if it is a weapon (bare hands take 6).
@@ -34,7 +41,7 @@ impl Item {
             Item::Sword => Some(28.0),
             Item::Shovel => Some(12.0),
             Item::Torch => Some(9.0),
-            Item::Berries => None,
+            Item::Berries | Item::Meat => None,
         }
     }
 
@@ -45,7 +52,11 @@ impl Item {
 
     /// Health given back by eating one.
     pub fn heals(self) -> Option<f32> {
-        (self == Item::Berries).then_some(15.0)
+        match self {
+            Item::Berries => Some(15.0),
+            Item::Meat => Some(35.0),
+            _ => None,
+        }
     }
 }
 

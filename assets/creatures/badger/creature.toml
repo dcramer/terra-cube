@@ -9,6 +9,7 @@ gait_gain = 0.65
 temper = "wary"
 voice = "boar"
 habitat = "forest"
+winter = 0.3
 cover = "deep"
 hours = "night"
 group = 1

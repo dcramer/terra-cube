@@ -11,6 +11,7 @@ gait_gain = -0.6
 temper = "timid"
 voice = "frog"
 habitat = "shore"
+winter = 0.0
 water = "edge"
 hours = "dusk"
 group = 2

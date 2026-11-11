@@ -280,8 +280,13 @@ fn scene(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terra
     let pitch = args.pitch.unwrap_or(if high { 0.6 } else { 0.3 });
     let yaw = if args.play || args.yaw_given { args.yaw } else { 0.57 };
     let from = focus + Quat::from_euler(EulerRot::YXZ, yaw, -pitch, 0.0) * Vec3::Z * dist;
+    // `--view moon`: from over the trees, looking at where the moon is at that day and hour,
+    // close in: its phase, to be seen.
+    let when = cube_sim::sky::at(args.day.unwrap_or(3), args.hour.unwrap_or(15.0));
+    let (from, focus, lens) = if args.view == "moon" { (focus + Vec3::Y * 40.0, focus + Vec3::Y * 40.0 + cube_sim::sky::moon(when) * 100.0, 0.12) } else { (from, focus, std::f32::consts::FRAC_PI_4) };
     commands.spawn((
         Camera3d::default(),
+        Projection::Perspective(PerspectiveProjection { fov: lens, far: 4000.0, ..default() }),
         RenderTarget::Image(stage.target.clone().into()),
         // Only `--play` uses the orbit: behind the player, facing the way the route runs.
         crate::camera::Orbit { focus, yaw: args.yaw, pitch: 0.28, distance: 5.5 },

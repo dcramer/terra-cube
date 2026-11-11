@@ -82,8 +82,7 @@ struct Firefly {
 struct Star(Vec3);
 #[derive(Component)]
 struct MoonDisc;
-#[derive(Component)]
-struct MoonShade;
+
 
 /// The stars' material and the moon's.
 #[derive(Resource)]
@@ -217,12 +216,17 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
         let size = 0.35 + roll(&mut state).powi(4) * 1.1;
         commands.spawn((Star(at), Mesh3d(star.clone()), MeshMaterial3d(starlight.clone()), Transform::from_translation(far).with_scale(Vec3::splat(size)), NotShadowCaster));
     }
-    let moonlight = materials.add(StandardMaterial { base_color: Color::BLACK, fog_enabled: false, perceptual_roughness: 1.0, ..default() });
-    commands.spawn((MoonDisc, Mesh3d(meshes.add(Sphere::new(1.0).mesh().ico(3).unwrap())), MeshMaterial3d(moonlight.clone()), Transform::from_translation(far).with_scale(Vec3::splat(16.0)), NotShadowCaster));
-    // The moon's phase: a dark disc the colour of the night sky over the part of its face the
-    // sun does not light, slid off it as the moon fills.
-    let dark = materials.add(StandardMaterial { base_color: Color::srgb(0.03, 0.045, 0.1), unlit: true, fog_enabled: false, ..default() });
-    commands.spawn((MoonShade, Mesh3d(meshes.add(Sphere::new(1.0).mesh().ico(3).unwrap())), MeshMaterial3d(dark), Transform::from_translation(far).with_scale(Vec3::splat(16.4)), NotShadowCaster));
+    // The moon: a ball whose one half is bright and the other the colour of the night, kept
+    // turned so the bright half faces the sun. Seen from the ground that is its phase, by
+    // the same geometry as the real one: a thin crescent near the sun, a full face opposite.
+    let moonlight = materials.add(StandardMaterial { base_color: Color::BLACK, unlit: true, fog_enabled: false, ..default() });
+    let mut ball = Sphere::new(1.0).mesh().uv(48, 24);
+    let faces: Vec<[f32; 4]> = match ball.attribute(Mesh::ATTRIBUTE_POSITION) {
+        Some(bevy::mesh::VertexAttributeValues::Float32x3(at)) => at.iter().map(|p| if p[2] > 0.0 { [1.0, 0.97, 0.88, 1.0] } else { [0.012, 0.018, 0.04, 1.0] }).collect(),
+        _ => Vec::new(),
+    };
+    ball.insert_attribute(Mesh::ATTRIBUTE_COLOR, faces);
+    commands.spawn((MoonDisc, Mesh3d(meshes.add(ball)), MeshMaterial3d(moonlight.clone()), Transform::from_translation(far).with_scale(Vec3::splat(16.0)), NotShadowCaster));
     commands.insert_resource(Heavens(starlight, moonlight));
     // Leaves: a flat chip of one of four autumn-turning greens and browns.
     let chip = meshes.add(Cuboid::new(0.17, 0.008, 0.12));
@@ -509,7 +513,7 @@ fn fireflies(time: Res<Time>, live: Option<Res<crate::motion::Live>>, cameras: Q
 
 /// Stars and the moon keep their places in the sky wherever the camera goes, and come out as
 /// the light goes: nothing by day, faint at dusk, sharp in full night.
-fn heavens(live: Option<Res<crate::motion::Live>>, heavens: Option<Res<Heavens>>, cameras: Query<&GlobalTransform, With<Camera3d>>, mut materials: ResMut<Assets<StandardMaterial>>, mut stars: Query<(&Star, &mut Transform), (Without<MoonDisc>, Without<MoonShade>)>, mut moon: Query<&mut Transform, (With<MoonDisc>, Without<MoonShade>)>, mut shade: Query<&mut Transform, With<MoonShade>>, mut was: Local<f32>) {
+fn heavens(live: Option<Res<crate::motion::Live>>, heavens: Option<Res<Heavens>>, cameras: Query<&GlobalTransform, With<Camera3d>>, mut materials: ResMut<Assets<StandardMaterial>>, mut stars: Query<(&Star, &mut Transform), Without<MoonDisc>>, mut moon: Query<&mut Transform, With<MoonDisc>>, mut was: Local<f32>) {
     let (Some(eye), Some(heavens)) = (eye(&cameras), heavens) else { return };
     let hour = live.map_or(cube_sim::sky::START, |l| l.0.when);
     let (to_sun, night) = (cube_sim::sky::sun(hour), 1.0 - cube_sim::sky::daylight(hour));
@@ -520,12 +524,8 @@ fn heavens(live: Option<Res<crate::motion::Live>>, heavens: Option<Res<Heavens>>
     let to_moon = cube_sim::sky::moon(hour);
     if let Ok(mut at) = moon.single_mut() {
         at.translation = if night > 0.0 && to_moon.y > -0.05 { eye + to_moon * DOME } else { Vec3::new(0.0, -500.0, 0.0) };
-    }
-    if let Ok(mut at) = shade.single_mut() {
-        // Over the limb away from the sun, and further off it the fuller the moon.
-        let away = -(to_sun - to_moon * to_sun.dot(to_moon)).normalize_or(Vec3::Y);
-        let off = away * 32.0 * cube_sim::sky::moon_lit(hour);
-        at.translation = if night > 0.0 && to_moon.y > -0.05 { eye + to_moon * (DOME - 24.0) + off } else { Vec3::new(0.0, -500.0, 0.0) };
+        // Its bright half to the sun.
+        at.look_to(-to_sun, Vec3::Y);
     }
     if (night - *was).abs() < 0.01 {
         return;
@@ -535,7 +535,7 @@ fn heavens(live: Option<Res<crate::motion::Live>>, heavens: Option<Res<Heavens>>
         material.emissive = LinearRgba::rgb(0.9, 0.95, 1.1) * (2.4 * night * night);
     }
     if let Some(mut material) = materials.get_mut(&heavens.1) {
-        material.emissive = LinearRgba::rgb(1.0, 0.97, 0.88) * (1.6 * night);
+        material.base_color = Color::linear_rgb(1.6 * night, 1.6 * night, 1.6 * night);
     }
 }
 

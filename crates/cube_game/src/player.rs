@@ -44,6 +44,8 @@ pub struct Controls {
     /// A slot of the bar to take in hand, or a step along it.
     pub hold: Option<usize>,
     pub cycle: i32,
+    /// The guard is up (the right button held, with anything but the shovel in hand).
+    pub guard: bool,
     /// A kind of creature to be put down just ahead (a script's `spawn=ID`).
     pub spawn: Option<String>,
 }
@@ -157,6 +159,7 @@ fn keys(keys: Res<ButtonInput<KeyCode>>, buttons: Res<ButtonInput<MouseButton>>,
         controls.hold = Some(usize::MAX);
     }
     controls.put |= buttons.just_pressed(MouseButton::Right) && !controlled.is_empty();
+    controls.guard = buttons.pressed(MouseButton::Right);
     if keys.just_pressed(KeyCode::KeyV) {
         for mut c in &mut controlled {
             c.first_person = !c.first_person;
@@ -202,6 +205,8 @@ fn script(time: Res<Time>, args: Res<Args>, mut controls: ResMut<Controls>, mut 
                 "dive" => controls.dive = true,
                 "attack" | "use" => controls.use_held = true,
                 "torch" => controls.hold = Some(usize::MAX),
+                "guard" => controls.guard = true,
+                "unguard" => controls.guard = false,
                 "hold1" | "hold2" | "hold3" | "hold4" | "hold5" | "hold6" | "hold7" | "hold8" => controls.hold = word[4..].parse::<usize>().ok().map(|n| n - 1),
                 "eat" => controls.act = Some(cube_sim::life::Act::Eat),
                 "hurt" => controls.act = Some(cube_sim::life::Act::Hurt),
@@ -270,6 +275,12 @@ fn drive(mut controls: ResMut<Controls>, args: Res<Args>, terrain: Option<Res<Te
         }
         let Some(speed) = live.kind(mover).map(|k| k.speed(controls.gait)) else { continue };
         let Some(m) = live.agent_mut(mover) else { continue };
+        // The right button builds with the shovel in hand, and guards with anything else.
+        let shovel = m.pack.as_ref().and_then(|p| p.held()) == Some(cube_sim::items::Item::Shovel);
+        m.guard = controls.guard && !shovel;
+        if !shovel {
+            controls.put = false;
+        }
         m.intent.dir = Vec2::new(cos, -sin) * controls.dir.x + Vec2::new(-sin, -cos) * controls.dir.y;
         m.intent.speed = speed;
         // Wanted for a moment after the press, so one just before landing still jumps.

@@ -9,6 +9,7 @@ gait_gain = 0.6
 temper = "wary"
 voice = "bear"
 habitat = "forest"
+winter = 0.1
 water = "near"
 cover = "edge"
 hours = "day"

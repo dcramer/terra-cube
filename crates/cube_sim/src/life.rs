@@ -62,6 +62,10 @@ pub struct Life {
     pub cover: crate::ecology::Cover,
     #[serde(default)]
     pub hours: crate::ecology::Hours,
+    /// How much it is about in the depth of winter, of 1: `winter = 0.1` for what sleeps it
+    /// through.
+    #[serde(default = "whole")]
+    pub winter: f32,
     /// The sound it makes: the name of a set of files in `assets/audio` (`wolf` for
     /// `wolf_1.ogg`, `wolf_2.ogg`). None, and it is silent.
     #[serde(default)]
@@ -88,6 +92,10 @@ impl<'de> Deserialize<'de> for Voice {
         bytes[..name.len()].copy_from_slice(name.as_bytes());
         Ok(Voice(bytes))
     }
+}
+
+fn whole() -> f32 {
+    1.0
 }
 
 fn one() -> usize {
@@ -125,9 +133,15 @@ pub struct Kind {
     pub cover: crate::ecology::Cover,
     pub hours: crate::ecology::Hours,
     pub voice: Option<Voice>,
+    pub winter: f32,
 }
 
 impl Kind {
+    /// What it wants of a place and an hour (`ecology`), whatever biome it is in.
+    pub fn niche(&self) -> crate::ecology::Niche {
+        crate::ecology::Niche { name: "", biomes: &[], water: self.water, cover: self.cover, hours: self.hours, cold: self.winter }
+    }
+
     /// The shape a creature is bumped as, from its measured standing size: its radius, and
     /// for a body longer than it is wide how far its capsule runs fore and aft of its middle.
     pub fn shape(&self) -> (f32, f32) {
@@ -204,7 +218,7 @@ impl Kind {
                 }
             };
             // With no [life], a player is a person and anything else just stands its ground.
-            let life = spec.life.unwrap_or(Life { temper: if spec.kind == "player" { Temper::Person } else { Temper::Wary }, habitat: None, group: 1, groups: 0, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None });
+            let life = spec.life.unwrap_or(Life { temper: if spec.kind == "player" { Temper::Person } else { Temper::Wary }, habitat: None, group: 1, groups: 0, water: Default::default(), cover: Default::default(), hours: Default::default(), winter: 1.0, voice: None });
             kinds.push(Kind {
                 id,
                 height: meta.height,
@@ -221,6 +235,7 @@ impl Kind {
                 cover: life.cover,
                 hours: life.hours,
                 voice: life.voice,
+                winter: life.winter,
             });
         }
         kinds
@@ -332,6 +347,8 @@ pub struct Agent {
     pub swing: Option<f32>,
     /// What its blow takes from what it hits: its kind's, or its weapon's.
     pub power: f32,
+    /// Whether it has its guard up: a blow from in front then takes a third of what it would.
+    pub guard: bool,
     /// Seconds since it was last hurt: left in peace, it mends.
     pub calm: f32,
     /// Whether it is being lived this tick: near enough to whoever is watching, and with
@@ -456,7 +473,7 @@ impl Sim {
         let mind = Mind::new(Vec2::new(pos.x, pos.z), &mut self.rng);
         self.agents.insert(
             id,
-            Agent { kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), calm: 0.0, awake: true, pack: (k.temper == Temper::Person).then(crate::items::Pack::starting), stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
+            Agent { kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), guard: false, calm: 0.0, awake: true, pack: (k.temper == Temper::Person).then(crate::items::Pack::starting), stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
         );
         id
     }
@@ -488,7 +505,7 @@ impl Sim {
         let when = self.when;
         for (&id, agent) in self.agents.iter_mut().filter(|(_, a)| a.driver == Driver::Mind && a.dead.is_none() && a.awake) {
             let k = &self.kinds[agent.kind];
-            agent.mind.about = crate::ecology::Niche { name: "", biomes: &[], water: k.water, cover: k.cover, hours: k.hours }.about(when);
+            agent.mind.about = k.niche().about(when);
             // A beast of the dusk is about a good deal by day as well; a firefly is not.
             if k.hours == crate::ecology::Hours::Dusk {
                 agent.mind.about = agent.mind.about.max(0.35);
@@ -528,12 +545,23 @@ impl Sim {
             agent.body.vel += hit.push;
             agent.log.struck += 1;
             agent.calm = 0.0;
-            agent.health -= hit.harm;
+            // Guarded, and the blow comes from in front: most of it is turned.
+            let from_front = Vec2::new(agent.facing.sin(), agent.facing.cos()).dot(-Vec2::new(hit.push.x, hit.push.z).normalize_or_zero()) > 0.3;
+            let turned = agent.guard && from_front;
+            agent.health -= hit.harm * if turned { 0.3 } else { 1.0 };
+            if turned {
+                agent.body.vel -= hit.push * 0.7;
+            }
             if agent.health <= 0.0 {
                 (agent.health, agent.dead, agent.swing, agent.intent) = (0.0, Some(0.0), None, Intent::default());
                 agent.log.died += 1;
+                // Whoever killed it and carries a pack takes meat from it, by its size.
+                let meat = 1 + (self.kinds[agent.kind].height * 1.5) as u32;
                 if let Some(killer) = self.agents.get_mut(&hit.by) {
                     killer.log.kills += 1;
+                    if let Some(pack) = killer.pack.as_mut() {
+                        pack.add(crate::items::Item::Meat, meat);
+                    }
                 }
             }
         }
@@ -710,7 +738,7 @@ impl Sim {
                     continue;
                 }
                 // The better a place suits it, the likelier it settles there.
-                let niche = crate::ecology::Niche { name: "", biomes: &[], water: k.water, cover: k.cover, hours: k.hours };
+                let niche = k.niche();
                 let place = ecology.place(land, middle.x, middle.y);
                 let suits = crate::ecology::Niche { biomes: &[(Biome::Water, 1.0), (Biome::Shore, 1.0), (Biome::Meadow, 1.0), (Biome::Forest, 1.0), (Biome::Rock, 1.0), (Biome::Snow, 1.0)], ..niche }.suits(&place);
                 if self.rng.between(0.0, 1.0) > suits.max(0.02) {
@@ -771,7 +799,7 @@ mod tests {
     use cube_voxel::Block;
 
     fn kind(id: &str, temper: Temper, height: f32, speeds: [f32; 3]) -> Kind {
-        Kind { id: id.into(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None }
+        Kind { id: id.into(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None, winter: 1.0 }
     }
 
     /// Rabbit, wolf, bear, goblin and a person, on a floor of stone 60 m square.
@@ -846,6 +874,7 @@ mod tests {
         run(&mut sim, &world, 1.0);
         assert!(sim.agents[&rabbit].dead.is_some() && sim.agents[&rabbit].act == Act::Die);
         assert_eq!(sim.agents[&person].log.kills, 1);
+        assert_eq!(sim.agents[&person].pack.as_ref().unwrap().count(crate::items::Item::Meat), 1);
         run(&mut sim, &world, LIES + 1.0);
         assert!(!sim.agents.contains_key(&rabbit));
         run(&mut sim, &world, RETURNS);
@@ -883,6 +912,28 @@ mod tests {
         assert_eq!(sim.use_held(person), Used::Ate);
         let p = &sim.agents[&person];
         assert_eq!((p.health, p.pack.as_ref().unwrap().count(Item::Berries)), (55.0, 5));
+    }
+
+    #[test]
+    fn a_guard_turns_most_of_a_blow_from_in_front() {
+        let hurt = |guard: bool, facing: f32| {
+            let (world, mut sim) = stage();
+            let person = sim.add(&world, 4, at(0.0, 0.0), facing, Driver::Outside);
+            sim.agents.get_mut(&person).unwrap().guard = guard;
+            sim.add(&world, 3, at(0.0, 4.0), 0.0, Driver::Mind);
+            let mut least = 100.0f32;
+            for _ in 0..(6.0 / DT) as u32 {
+                sim.step(&world);
+                least = least.min(sim.agents[&person].health);
+                if least < 100.0 {
+                    break;
+                }
+            }
+            100.0 - least
+        };
+        let (open, guarded, turned_away) = (hurt(false, 0.0), hurt(true, 0.0), hurt(true, std::f32::consts::PI));
+        assert!(open > 5.0, "the goblin never struck");
+        assert!((guarded - open * 0.3).abs() < 0.1 && (turned_away - open).abs() < 0.1, "open {open} guarded {guarded} turned away {turned_away}");
     }
 
     #[test]

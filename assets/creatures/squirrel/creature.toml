@@ -9,6 +9,7 @@ gait_gain = 0.9
 temper = "timid"
 voice = "rabbit"
 habitat = "forest"
+winter = 0.5
 cover = "deep"
 hours = "day"
 group = 2

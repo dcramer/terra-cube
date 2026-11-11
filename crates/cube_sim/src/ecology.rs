@@ -155,6 +155,9 @@ pub struct Niche {
     pub water: Water,
     pub cover: Cover,
     pub hours: Hours,
+    /// How much of it is about in the depth of winter, of what there is in summer: 0 for what
+    /// sleeps the winter through or has flown south, 1 for what does not mind.
+    pub cold: f32,
 }
 
 /// 1 inside `lo..hi`, falling to 0 over `soft` beyond either end.
@@ -185,7 +188,9 @@ impl Niche {
     /// How much it is about at an hour of the day, 0 to 1.
     pub fn about(&self, when: f32) -> f32 {
         let day = sky::daylight(when);
-        match self.hours {
+        // Only the depth of winter thins it: by early spring everything is back.
+        let season = self.cold + (1.0 - self.cold) * ((sky::warmth(when) + 0.9) / 0.6).clamp(0.0, 1.0);
+        season * match self.hours {
             Hours::Any => 1.0,
             Hours::Day => day,
             Hours::Night => 1.0 - day,
@@ -225,15 +230,15 @@ pub fn ambience(p: &Place, when: f32) -> Ambience {
 }
 
 /// The small life the game draws, that the simulation does not know one by one.
-pub const BUTTERFLY: Niche = Niche { name: "butterfly", biomes: &[(Biome::Meadow, 1.0), (Biome::Shore, 0.4), (Biome::Forest, 0.3)], water: Water::Any, cover: Cover::Open, hours: Hours::Day };
-pub const SONGBIRD: Niche = Niche { name: "songbird", biomes: &[(Biome::Forest, 1.0), (Biome::Meadow, 0.8)], water: Water::Any, cover: Cover::Edge, hours: Hours::Day };
-pub const SWALLOW: Niche = Niche { name: "swallow", biomes: &[(Biome::Meadow, 1.0), (Biome::Shore, 1.0), (Biome::Water, 1.0)], water: Water::Near, cover: Cover::Open, hours: Hours::Day };
-pub const HAWK: Niche = Niche { name: "hawk", biomes: &[(Biome::Rock, 1.0), (Biome::Meadow, 0.7), (Biome::Snow, 0.5)], water: Water::Any, cover: Cover::Open, hours: Hours::Day };
-pub const DRAGONFLY: Niche = Niche { name: "dragonfly", biomes: &[(Biome::Water, 1.0), (Biome::Shore, 1.0)], water: Water::Edge, cover: Cover::Any, hours: Hours::Day };
-pub const FIREFLY: Niche = Niche { name: "firefly", biomes: &[(Biome::Forest, 1.0), (Biome::Meadow, 0.6), (Biome::Shore, 0.8)], water: Water::Near, cover: Cover::Edge, hours: Hours::Dusk };
-pub const FISH: Niche = Niche { name: "fish", biomes: &[(Biome::Water, 1.0)], water: Water::In, cover: Cover::Any, hours: Hours::Any };
-pub const FALLING_LEAF: Niche = Niche { name: "falling leaf", biomes: &[(Biome::Forest, 1.0), (Biome::Meadow, 0.6)], water: Water::Any, cover: Cover::Deep, hours: Hours::Any };
-pub const POLLEN: Niche = Niche { name: "pollen", biomes: &[(Biome::Meadow, 1.0), (Biome::Forest, 0.5), (Biome::Shore, 0.3)], water: Water::Any, cover: Cover::Any, hours: Hours::Day };
+pub const BUTTERFLY: Niche = Niche { name: "butterfly", biomes: &[(Biome::Meadow, 1.0), (Biome::Shore, 0.4), (Biome::Forest, 0.3)], water: Water::Any, cover: Cover::Open, hours: Hours::Day, cold: 0.0 };
+pub const SONGBIRD: Niche = Niche { name: "songbird", biomes: &[(Biome::Forest, 1.0), (Biome::Meadow, 0.8)], water: Water::Any, cover: Cover::Edge, hours: Hours::Day, cold: 0.4 };
+pub const SWALLOW: Niche = Niche { name: "swallow", biomes: &[(Biome::Meadow, 1.0), (Biome::Shore, 1.0), (Biome::Water, 1.0)], water: Water::Near, cover: Cover::Open, hours: Hours::Day, cold: 0.0 };
+pub const HAWK: Niche = Niche { name: "hawk", biomes: &[(Biome::Rock, 1.0), (Biome::Meadow, 0.7), (Biome::Snow, 0.5)], water: Water::Any, cover: Cover::Open, hours: Hours::Day, cold: 0.7 };
+pub const DRAGONFLY: Niche = Niche { name: "dragonfly", biomes: &[(Biome::Water, 1.0), (Biome::Shore, 1.0)], water: Water::Edge, cover: Cover::Any, hours: Hours::Day, cold: 0.0 };
+pub const FIREFLY: Niche = Niche { name: "firefly", biomes: &[(Biome::Forest, 1.0), (Biome::Meadow, 0.6), (Biome::Shore, 0.8)], water: Water::Near, cover: Cover::Edge, hours: Hours::Dusk, cold: 0.0 };
+pub const FISH: Niche = Niche { name: "fish", biomes: &[(Biome::Water, 1.0)], water: Water::In, cover: Cover::Any, hours: Hours::Any, cold: 0.6 };
+pub const FALLING_LEAF: Niche = Niche { name: "falling leaf", biomes: &[(Biome::Forest, 1.0), (Biome::Meadow, 0.6)], water: Water::Any, cover: Cover::Deep, hours: Hours::Any, cold: 1.0 };
+pub const POLLEN: Niche = Niche { name: "pollen", biomes: &[(Biome::Meadow, 1.0), (Biome::Forest, 0.5), (Biome::Shore, 0.3)], water: Water::Any, cover: Cover::Any, hours: Hours::Day, cold: 0.0 };
 
 pub const SMALL_LIFE: [Niche; 9] = [BUTTERFLY, SONGBIRD, SWALLOW, HAWK, DRAGONFLY, FIREFLY, FISH, FALLING_LEAF, POLLEN];
 
@@ -254,6 +259,10 @@ mod tests {
         assert!(BUTTERFLY.fit(&dry_meadow, sky::at(3, 12.0)) > 0.9 && BUTTERFLY.fit(&deep_wood, sky::at(3, 12.0)) < 0.05 && BUTTERFLY.fit(&dry_meadow, sky::at(3, 0.0)) < 0.05);
         // Fish: in the lake at any hour, nowhere else.
         assert!(FISH.fit(&lake, sky::at(3, 3.0)) > 0.9 && FISH.fit(&glade, sky::at(3, 12.0)) == 0.0);
+        // In the depth of winter: no butterflies, no fireflies; fish still, and fewer birds.
+        let winter = sky::at(24, 12.0);
+        assert!(BUTTERFLY.fit(&dry_meadow, winter) < 0.05 && FIREFLY.fit(&glade, sky::at(24, 22.0)) < 0.05 && FISH.fit(&lake, winter) > 0.5);
+        assert!(SONGBIRD.about(winter) < SONGBIRD.about(sky::at(10, 12.0)) && SONGBIRD.about(winter) > 0.2);
         // Leaves fall under trees, not in the open.
         assert!(FALLING_LEAF.suits(&deep_wood) > 0.9 && FALLING_LEAF.suits(&dry_meadow) < 0.05);
     }

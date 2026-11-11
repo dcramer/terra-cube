@@ -8,6 +8,7 @@ height = 0.15
 temper = "timid"
 voice = "rabbit"
 habitat = "meadow"
+winter = 0.05
 cover = "edge"
 hours = "night"
 group = 1
