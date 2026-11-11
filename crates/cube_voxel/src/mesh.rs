@@ -787,7 +787,7 @@ fn blade(m: &mut MeshData, cell: IVec3, lo: IVec3, hi: IVec3, colour: [f32; 3]) 
             let turn = roll(2) * std::f32::consts::PI + plane as f32 * 1.3;
             let across = Vec3::new(turn.cos(), 0.0, turn.sin());
             let lean = Vec3::new(roll(3 + plane) - 0.5, 0.0, roll(5 + plane) - 0.5) * tall * 0.9;
-            let (wide, tip) = (unit * (0.7 + 0.7 * roll(7 + plane)), unit * 0.1);
+            let (wide, tip) = (unit * (0.28 + 0.3 * roll(7 + plane)), unit * 0.04);
             let start = m.positions.len() as u32;
             for (side, up) in [(-1.0f32, 0.0f32), (1.0, 0.0), (1.0, 1.0), (-1.0, 1.0)] {
                 let at = foot + across * side * (wide + (tip - wide) * up) + (Vec3::Y * tall + lean) * up;
@@ -857,7 +857,7 @@ fn sprig(cell: IVec3, block: Block, m: &mut MeshData) {
         return;
     }
     // A tuft is a clump, not three sticks: five to eight blades.
-    let blades = if block == Block::Flower { 4 } else { 6 + (roll(0) * 4.0) as i32 };
+    let blades = if block == Block::Flower { 5 } else { 11 + (roll(0) * 6.0) as i32 };
     for i in 0..blades {
         let (x, z) = ((roll(i * 3 + 1) * SPLIT as f32) as i32 % SPLIT, (roll(i * 3 + 2) * SPLIT as f32) as i32 % SPLIT);
         let tall = match block {
