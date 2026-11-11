@@ -17,15 +17,16 @@ pub struct AirPlugin;
 
 impl Plugin for AirPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup).add_systems(Update, (motes, leaves, butterflies, birds, glow, heavens, songbirds, dragonflies));
+        app.add_systems(Startup, setup).add_systems(Update, (motes, leaves, butterflies, birds, glow, heavens, songbirds, dragonflies, fireflies));
     }
 }
 
 /// How many of each there are round the camera.
-const MOTES: usize = 170;
+const MOTES: usize = 70;
+const FIREFLIES: usize = 60;
 const SONGBIRDS: usize = 18;
 const DRAGONFLIES: usize = 12;
-const LEAVES: usize = 36;
+const LEAVES: usize = 56;
 const BUTTERFLIES: usize = 14;
 const FLOCKS: usize = 3;
 
@@ -46,9 +47,12 @@ fn roll(state: &mut u32) -> f32 {
 #[derive(Resource)]
 struct Pale(Handle<StandardMaterial>, Handle<StandardMaterial>);
 
-/// A mote that is a firefly, and how big it is by day.
+/// A firefly: the spot it keeps to, and its own number.
 #[derive(Component)]
-struct Firefly(f32);
+struct Firefly {
+    home: Vec3,
+    own: f32,
+}
 
 /// A star: which way it lies from anywhere.
 #[derive(Component)]
@@ -128,19 +132,21 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     let far = Vec3::new(0.0, -500.0, 0.0);
     // Pollen: lit like anything else, so it flares crossing a shaft of sun and dims in shade,
     // with a little light of its own so it is not lost there.
-    let speck = meshes.add(Sphere::new(0.011).mesh().ico(1).unwrap());
-    let pale = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.96, 0.78), emissive: LinearRgba::rgb(120.0, 108.0, 70.0), perceptual_roughness: 1.0, ..default() });
+    let speck = meshes.add(Sphere::new(0.007).mesh().ico(1).unwrap());
+    let pale = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.96, 0.78), emissive: LinearRgba::rgb(40.0, 36.0, 24.0), perceptual_roughness: 1.0, ..default() });
     // One in six is a firefly: by day a speck like the rest, by night a slow green lamp.
     let lamp = materials.add(StandardMaterial { base_color: Color::srgb(0.9, 1.0, 0.6), perceptual_roughness: 1.0, ..default() });
     commands.insert_resource(Pale(pale.clone(), lamp.clone()));
-    for i in 0..MOTES {
+    for _ in 0..MOTES {
         let size = 0.6 + roll(&mut state) * 1.2;
         let mut mote = commands.spawn((Mote(roll(&mut state) * 100.0), Mesh3d(speck.clone()), Transform::from_translation(far).with_scale(Vec3::splat(size)), NotShadowCaster));
-        if i % 6 == 0 {
-            mote.insert((Firefly(size), MeshMaterial3d(lamp.clone())));
-        } else {
-            mote.insert(MeshMaterial3d(pale.clone()));
-        }
+        mote.insert(MeshMaterial3d(pale.clone()));
+    }
+    // Fireflies: out from dusk, a few together at the edge of a wood or over long grass, each
+    // drifting about its own spot and lighting for a moment every few seconds.
+    let spark = meshes.add(Sphere::new(0.045).mesh().ico(1).unwrap());
+    for _ in 0..FIREFLIES {
+        commands.spawn((Firefly { home: far, own: roll(&mut state) * 100.0 }, Mesh3d(spark.clone()), MeshMaterial3d(lamp.clone()), Transform::from_translation(far), NotShadowCaster));
     }
     // The night sky: stars on a dome round the camera, and a moon. Their own light only, not
     // dimmed by haze; `heavens` turns them up as the day goes.
@@ -157,8 +163,8 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     commands.spawn((MoonDisc, Mesh3d(meshes.add(Sphere::new(1.0).mesh().ico(3).unwrap())), MeshMaterial3d(moonlight.clone()), Transform::from_translation(far).with_scale(Vec3::splat(16.0)), NotShadowCaster));
     commands.insert_resource(Heavens(starlight, moonlight));
     // Leaves: a flat chip of one of four autumn-turning greens and browns.
-    let chip = meshes.add(Cuboid::new(0.07, 0.008, 0.05));
-    let tones = [Color::srgb(0.30, 0.42, 0.12), Color::srgb(0.52, 0.44, 0.12), Color::srgb(0.50, 0.26, 0.08), Color::srgb(0.22, 0.34, 0.10)].map(|c| materials.add(StandardMaterial { base_color: c, perceptual_roughness: 0.9, double_sided: true, ..default() }));
+    let chip = meshes.add(Cuboid::new(0.17, 0.008, 0.12));
+    let tones = [Color::srgb(0.62, 0.55, 0.14), Color::srgb(0.72, 0.5, 0.12), Color::srgb(0.62, 0.3, 0.08), Color::srgb(0.4, 0.5, 0.14)].map(|c| materials.add(StandardMaterial { base_color: c, perceptual_roughness: 0.9, double_sided: true, ..default() }));
     for i in 0..LEAVES {
         let spin = Vec3::new(roll(&mut state) - 0.5, roll(&mut state) - 0.5, roll(&mut state) - 0.5) * 6.0;
         commands.spawn((Leaf(spin, roll(&mut state) * 100.0), Mesh3d(chip.clone()), MeshMaterial3d(tones[i % 4].clone()), Transform::from_translation(far), NotShadowCaster));
@@ -257,19 +263,30 @@ fn leaves(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>, ter
     for (leaf, mut at) in &mut leaves {
         let own = leaf.1;
         let swing = Vec3::new((t * 1.9 + own).sin(), 0.0, (t * 1.6 + own * 1.3).cos()) * 0.5;
-        at.translation += (WIND * DRIFT * 1.4 + swing + Vec3::NEG_Y * (0.55 + 0.25 * (t * 2.3 + own).sin())) * dt;
+        at.translation += (WIND * DRIFT * 1.4 + swing + Vec3::NEG_Y * (0.8 + 0.3 * (t * 2.3 + own).sin())) * dt;
         at.rotation *= Quat::from_scaled_axis(leaf.0 * dt);
         let ground = terrain.ground(at.translation.x, at.translation.z);
         if at.translation.y < ground + 0.03 || at.translation.distance(eye) > 45.0 {
-            // A few tries for a spot under trees; with none, it waits out of sight.
+            // It waits out of sight until a tree near the camera lets some go: now and then a
+            // gust takes a flurry from one crown, and between gusts one comes down alone.
             at.translation = Vec3::new(0.0, -500.0, 0.0);
-            for _ in 0..6 {
-                let (turn, out) = (roll(&mut state) * TAU, 3.0 + roll(&mut state) * 22.0);
-                let (x, z) = (eye.x + turn.cos() * out, eye.z + turn.sin() * out);
-                if terrain.1.biome((x / CELL).floor() as i32, (z / CELL).floor() as i32) == Biome::Forest {
-                    at.translation = Vec3::new(x, terrain.ground(x, z) + 4.0 + roll(&mut state) * 9.0, z);
-                    break;
-                }
+            let gusting = (t * 0.11).fract() < 0.18;
+            if roll(&mut state) > if gusting { 0.25 } else { 0.012 } {
+                continue;
+            }
+            let trees = &terrain.1.trees;
+            if trees.is_empty() {
+                continue;
+            }
+            // In a gust every leaf looks to the same few trees.
+            let first = if gusting { ((t * 0.11).floor() as usize).wrapping_mul(2_654_435_761) } else { (roll(&mut state) * 65_535.0) as usize * 7919 };
+            // One of the trees near the camera, by its place in the list.
+            let near: Vec<usize> = (0..trees.len()).filter(|&i| (Vec3::new(trees[i].x as f32, 0.0, trees[i].z as f32) * CELL - eye.with_y(0.0)).length() < 14.0).collect();
+            if let Some(&i) = near.get(first % near.len().max(1)) {
+                let foot = Vec3::new(trees[i].x as f32 + 0.5, trees[i].y as f32, trees[i].z as f32 + 0.5) * CELL;
+                let tall = terrain.1.grown.get(i).copied().unwrap_or(12.0);
+                let (turn, out) = (roll(&mut state) * TAU, roll(&mut state) * tall * 0.25);
+                at.translation = foot + Vec3::new(turn.cos() * out, tall * (0.3 + 0.35 * roll(&mut state)), turn.sin() * out);
             }
         }
     }
@@ -328,28 +345,72 @@ fn birds(time: Res<Time>, mut birds: Query<(&Bird, &mut Transform)>) {
 }
 
 /// Pollen's own light is set for day. As the camera opens up for night it is turned down by
-/// as much, or every speck would blaze like a lamp; the fireflies among it are turned up
-/// instead, and each one swells and fades in its own time.
-fn glow(time: Res<Time>, pale: Option<Res<Pale>>, cameras: Query<&bevy::camera::Exposure, With<Camera3d>>, mut materials: ResMut<Assets<StandardMaterial>>, mut flies: Query<(&Firefly, &Mote, &mut Transform)>, mut was: Local<f32>) {
+/// as much, or every speck would blaze like a lamp; the fireflies' is turned up instead.
+fn glow(pale: Option<Res<Pale>>, cameras: Query<&bevy::camera::Exposure, With<Camera3d>>, mut materials: ResMut<Assets<StandardMaterial>>, mut was: Local<Option<f32>>) {
     let (Some(pale), Some(exposure)) = (pale, cameras.iter().next()) else { return };
-    let night = 1.0 - ((exposure.ev100 - 1.0) / 7.0).clamp(0.0, 1.0);
-    let t = time.elapsed_secs();
-    for (fly, mote, mut at) in &mut flies {
-        let pulse = (0.5 + 0.5 * (t * 1.1 + mote.0 * 3.0).sin()).powi(3);
-        at.scale = Vec3::splat(fly.0 * (1.0 + night * (0.2 + 2.2 * pulse)) * (1.0 - night * (1.0 - pulse).powi(6)));
-    }
-    if (exposure.ev100 - *was).abs() < 0.05 {
+    // (`was` starts at nothing, not at 0: full night is an exposure of 0.)
+    if was.is_some_and(|w: f32| (exposure.ev100 - w).abs() < 0.05) {
         return;
     }
-    *was = exposure.ev100;
-    // Dimmer still by night: pollen is not fireflies.
-    let dim = 2.0f32.powf(exposure.ev100 - 13.4) * (0.25 + 0.75 * ((exposure.ev100 - 6.0) / 7.0).clamp(0.0, 1.0));
+    *was = Some(exposure.ev100);
+    let night = 1.0 - ((exposure.ev100 - 1.0) / 8.0).clamp(0.0, 1.0);
+    let dim = 2.0f32.powf(exposure.ev100 - 13.4) * (0.1 + 0.9 * ((exposure.ev100 - 6.0) / 7.0).clamp(0.0, 1.0));
     if let Some(mut material) = materials.get_mut(&pale.0) {
-        material.emissive = LinearRgba::rgb(120.0 * dim, 108.0 * dim, 70.0 * dim);
+        material.emissive = LinearRgba::rgb(40.0 * dim, 36.0 * dim, 24.0 * dim);
     }
     if let Some(mut material) = materials.get_mut(&pale.1) {
-        let day = 2.0f32.powf(exposure.ev100 - 13.4);
-        material.emissive = LinearRgba::rgb(120.0 * day + 9.0 * night, 108.0 * day + 16.0 * night, 70.0 * day + 2.0 * night);
+        // Bright for the exposure it is seen at: dusk needs more than full night.
+        let lit = 2.4 * night;
+        material.emissive = LinearRgba::rgb(0.55 * lit, 1.0 * lit, 0.12 * lit);
+    }
+}
+
+/// Fireflies come out as the light goes: each keeps to a spot near the camera in a wood, a
+/// meadow or by water, a few sharing one place, wanders slowly about it at knee to head
+/// height, and lights for half a second every few. Dark, it is not drawn.
+fn fireflies(time: Res<Time>, live: Option<Res<crate::motion::Live>>, cameras: Query<&GlobalTransform, With<Camera3d>>, terrain: Option<Res<Terrain>>, mut flies: Query<(&mut Firefly, &mut Transform)>, mut state: Local<u32>, mut gather: Local<Vec3>) {
+    let (Some(eye), Some(terrain)) = (eye(&cameras), terrain) else { return };
+    if *state == 0 {
+        *state = 0xF12E_F1E5;
+    }
+    let hour = live.map_or(cube_sim::sky::START, |l| l.0.hour);
+    let out = 1.0 - cube_sim::sky::daylight(hour);
+    let t = time.elapsed_secs();
+    let hidden = Vec3::new(0.0, -500.0, 0.0);
+    for (mut fly, mut at) in &mut flies {
+        if out < 0.25 {
+            (fly.home, at.translation) = (hidden, hidden);
+            continue;
+        }
+        if fly.home.distance(eye) > 26.0 {
+            fly.home = hidden;
+            // Three in four settle beside the last one that found a place: clusters.
+            let near_last = gather.distance(eye) < 30.0 && roll(&mut state) < 0.75;
+            for _ in 0..6 {
+                let (turn, far) = (roll(&mut state) * TAU, if near_last { roll(&mut state) * 3.5 } else { 4.0 + roll(&mut state) * 16.0 });
+                let middle = if near_last { *gather } else { eye };
+                let (x, z) = (middle.x + turn.cos() * far, middle.z + turn.sin() * far);
+                if terrain.1.biome((x / CELL).floor() as i32, (z / CELL).floor() as i32) != Biome::Water {
+                    fly.home = Vec3::new(x, terrain.ground(x, z), z);
+                    if !near_last {
+                        *gather = fly.home;
+                    }
+                    break;
+                }
+            }
+        }
+        if fly.home.y < -100.0 {
+            at.translation = hidden;
+            continue;
+        }
+        let own = fly.own;
+        let wander = Vec3::new((t * 0.31 + own).sin() * 1.3 + (t * 0.83 + own * 2.0).sin() * 0.4, 0.9 + 0.5 * (t * 0.23 + own * 1.7).sin() + 0.12 * (t * 1.9 + own).sin(), (t * 0.27 + own * 1.3).cos() * 1.3 + (t * 0.71 + own).cos() * 0.4);
+        at.translation = fly.home + wander;
+        // Lit for a moment in every few seconds, each to its own time, swelling and fading.
+        let every = 2.6 + (own * 1.7).fract() * 2.4;
+        let phase = ((t + own * 3.1) / every).fract();
+        let lit = if phase < 0.3 { (phase / 0.3 * std::f32::consts::PI).sin() } else { 0.0 };
+        at.scale = Vec3::splat(lit * (0.6 + 0.4 * out));
     }
 }
 
