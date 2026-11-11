@@ -526,12 +526,14 @@ impl Sim {
             }
             agent.swing = None;
             let (me, ahead) = (Vec2::new(agent.body.pos.x, agent.body.pos.z), Vec2::new(agent.facing.sin(), agent.facing.cos()));
-            let reach = agent.body.half + agent.body.long.length() + REACH;
+            // By what is in hand: a blade's step and sweep, or a bow's long narrow line.
+            let (far, arc) = agent.pack.as_ref().and_then(|p| p.held()).map_or((REACH, ARC), |i| i.reach());
+            let reach = agent.body.half + agent.body.long.length() + far;
             let struck = seen
                 .iter()
                 .filter(|s| s.id != id && (s.pos.y - agent.body.pos.y).abs() < 2.5)
                 .map(|s| (s, Vec2::new(s.pos.x, s.pos.z) - me))
-                .filter(|(s, to)| to.length() - s.reach < reach && (to.length() < 0.3 || to.normalize().dot(ahead) > ARC.cos()))
+                .filter(|(s, to)| to.length() - s.reach < reach && (to.length() < 0.3 || to.normalize().dot(ahead) > arc.cos()))
                 .min_by(|a, b| a.1.length().total_cmp(&b.1.length()));
             if let Some((s, to)) = struck {
                 let away = to.try_normalize().unwrap_or(ahead);
@@ -912,6 +914,28 @@ mod tests {
         assert_eq!(sim.use_held(person), Used::Ate);
         let p = &sim.agents[&person];
         assert_eq!((p.health, p.pack.as_ref().unwrap().count(Item::Berries)), (55.0, 5));
+    }
+
+    #[test]
+    fn a_bow_hits_what_is_far_off_in_line_and_nothing_to_the_side() {
+        use crate::items::Item;
+        let (world, mut sim) = stage();
+        let person = sim.add(&world, 4, at(0.0, 0.0), 0.0, Driver::Outside);
+        let (ahead, aside) = (sim.add(&world, 2, at(0.0, 18.0), 0.0, Driver::Stand), sim.add(&world, 2, at(8.0, 10.0), 0.0, Driver::Stand));
+        let full = sim.agents[&ahead].health;
+        let hold = |sim: &mut Sim, item: Item| {
+            let pack = sim.agents.get_mut(&person).unwrap().pack.as_mut().unwrap();
+            pack.hold(pack.slots.iter().position(|s| s.is_some_and(|s| s.0 == item)).unwrap());
+        };
+        // The sword reaches neither.
+        sim.use_held(person);
+        run(&mut sim, &world, 1.2);
+        assert_eq!(sim.agents[&ahead].health, full);
+        hold(&mut sim, Item::Bow);
+        sim.use_held(person);
+        run(&mut sim, &world, 1.2);
+        assert_eq!(sim.agents[&ahead].health, full - Item::Bow.power().unwrap());
+        assert_eq!(sim.agents[&aside].health, full);
     }
 
     #[test]

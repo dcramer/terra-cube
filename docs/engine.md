@@ -149,7 +149,8 @@ Built 2026-11-11, in the simulation (`cube_sim::life`, `items`) and tested there
 - **`make fight`** runs it all in the real game with no window: a script puts a goblin down in front of the player (`spawn=goblin`) and swings; the trace must show the player hurt, the goblin killed, and the swing and the goblin heard.
 - **Tested without a window**: the rules in `cube_sim` tests; from the game, a scripted `--play --scene` prints `health=`, `held=` and `kills=` in its trace. The bar, the pack and the admin panel are drawn into a scene with `--hud bar|pack|admin`, and two of them are in `make slice`.
 - **A kill gives meat** to a killer who carries a pack, by the size of what was killed; eaten, it mends 35. **A guard** (the right button held, with anything but the shovel in hand) turns seven tenths of a blow that comes from in front.
-- **Not done**: armour, ranged weapons, hit shapes per limb, anything lying on the ground to be picked up.
+- **A bow** is in the pack from the start: its blow reaches thirty metres in a line five degrees either side, where a blade's reaches a step and sweeps wide (`Item::reach`); it takes 16. No arrow is drawn or flies: what is in line when the shot lands is hit.
+- **Not done**: armour, an arrow to see, hit shapes per limb, anything lying on the ground to be picked up.
 
 ## Sound
 

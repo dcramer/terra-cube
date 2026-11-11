@@ -48,6 +48,7 @@ fn tint(item: Item) -> egui::Color32 {
         Item::Shovel => egui::Color32::from_rgb(150, 110, 70),
         Item::Berries => egui::Color32::from_rgb(170, 40, 70),
         Item::Meat => egui::Color32::from_rgb(200, 110, 100),
+        Item::Bow => egui::Color32::from_rgb(120, 150, 90),
     }
 }
 

@@ -11,10 +11,12 @@ pub enum Item {
     Berries,
     /// Cut from what was killed.
     Meat,
+    /// Shoots: what it hits is whatever is nearest in a narrow line ahead, a good way off.
+    Bow,
 }
 
 impl Item {
-    pub const ALL: [Item; 5] = [Item::Torch, Item::Sword, Item::Shovel, Item::Berries, Item::Meat];
+    pub const ALL: [Item; 6] = [Item::Torch, Item::Sword, Item::Shovel, Item::Berries, Item::Meat, Item::Bow];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -23,6 +25,7 @@ impl Item {
             Item::Shovel => "Shovel",
             Item::Berries => "Berries",
             Item::Meat => "Meat",
+            Item::Bow => "Bow",
         }
     }
 
@@ -41,8 +44,15 @@ impl Item {
             Item::Sword => Some(28.0),
             Item::Shovel => Some(12.0),
             Item::Torch => Some(9.0),
+            Item::Bow => Some(16.0),
             Item::Berries | Item::Meat => None,
         }
+    }
+
+    /// How far its blow reaches past the body, metres, and to how far either side of straight
+    /// ahead (radians): a blade a step and a wide sweep, a bow thirty metres and a narrow line.
+    pub fn reach(self) -> (f32, f32) {
+        if self == Item::Bow { (30.0, 0.09) } else { (1.5, 1.0) }
     }
 
     /// Whether it lights the way while it is held.
@@ -91,10 +101,10 @@ impl Default for Pack {
 }
 
 impl Pack {
-    /// What a person sets out with: a torch, a short sword, a shovel and a handful of berries.
+    /// What a person sets out with: a torch, a short sword, a shovel, a handful of berries and a bow.
     pub fn starting() -> Self {
         let mut pack = Pack::default();
-        for (item, count) in [(Item::Sword, 1), (Item::Torch, 1), (Item::Shovel, 1), (Item::Berries, 6)] {
+        for (item, count) in [(Item::Sword, 1), (Item::Torch, 1), (Item::Shovel, 1), (Item::Berries, 6), (Item::Bow, 1)] {
             pack.add(item, count);
         }
         pack
