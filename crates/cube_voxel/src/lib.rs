@@ -58,11 +58,21 @@ pub enum Block {
     Needles,
     /// A cell broken into bits: what is in it is in [`World::bits`].
     Broken,
+    /// A birch's pale bark.
+    Birch,
+    /// Ground cover, drawn as blades and stems and walked through: long grass, a flower, reeds.
+    Tuft,
+    Flower,
+    Reed,
 }
 
 impl Block {
     pub fn solid(self) -> bool {
-        !matches!(self, Block::Air | Block::Water)
+        !matches!(self, Block::Air | Block::Water | Block::Tuft | Block::Flower | Block::Reed)
+    }
+    /// Whether it is ground cover: drawn as a few blades, not as a cube.
+    pub fn sprig(self) -> bool {
+        matches!(self, Block::Tuft | Block::Flower | Block::Reed)
     }
     /// Hides the faces of neighbours behind it. A broken cell may have gaps, so it does not.
     pub fn opaque(self) -> bool {
@@ -83,6 +93,10 @@ impl Block {
             Block::Wood => ([0.30, 0.20, 0.11], [0.22, 0.14, 0.08]),
             Block::Leaves => ([0.16, 0.38, 0.10], [0.12, 0.31, 0.08]),
             Block::Needles => ([0.07, 0.24, 0.13], [0.05, 0.19, 0.11]),
+            Block::Birch => ([0.62, 0.60, 0.54], [0.66, 0.64, 0.58]),
+            Block::Tuft => ([0.30, 0.50, 0.12], [0.22, 0.42, 0.10]),
+            Block::Flower => ([0.85, 0.70, 0.12], [0.22, 0.42, 0.10]),
+            Block::Reed => ([0.55, 0.50, 0.24], [0.42, 0.44, 0.18]),
         }
     }
 }

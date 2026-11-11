@@ -1,10 +1,12 @@
 //! Making a world from a seed: an island of meadow, forest, rock and snow, cut by a river,
-//! with trees, bushes and boulders on it. The same seed always makes the same world.
+//! with trees, undergrowth, boulders and ground cover on it (the shapes are in `plants`). The same seed always makes the same world.
 //!
 //! Two passes. [`Land::new`] works out every column (its height and what grows there) from
 //! layered noise; [`generate`] fills the cells and plants things. `Land` is kept beside the
 //! world: it is how creatures are placed and how the world is measured (`survey`).
 
+use crate::plants::{self, Tree};
+use crate::rng::Rng;
 use cube_voxel::{Block, CELL, CHUNK, World, cells};
 use glam::{IVec3, Vec3};
 
@@ -222,9 +224,10 @@ pub fn generate(seed: u32, radius: i32) -> (World, Land) {
 /// How far from the start the first tree may stand, metres.
 const CLEARING: f32 = 10.0;
 
-/// Trees, bushes and boulders. One may stand in each square of a coarse grid, at a spot and
-/// with a chance that come from the seed, so they never crowd and never line up. Sizes are in
-/// metres.
+/// What grows and lies on the land. One thing may stand in each square of a coarse grid, at a
+/// spot and with a chance that come from the seed, so nothing crowds and nothing lines up:
+/// a tree of the kind that suits the place, or under and between the trees a young one, a
+/// bush, a fallen log, a stump or a boulder. Then the ground cover, a column at a time.
 fn plant(world: &mut World, land: &mut Land) {
     // A grown tree wants four metres to itself.
     let grid = cells(4.0);
@@ -239,33 +242,69 @@ fn plant(world: &mut World, land: &mut Land) {
             if land.slope(x, z) >= 2 || near_start || land.index(x, z).is_none() {
                 continue;
             }
+            let mut rng = Rng::new((seed as u64) << 40 ^ ((gx as u32 as u64) << 20) ^ gz as u32 as u64);
             let high = h > SEA + cells(10.0);
-            let (tree, bush, boulder) = match biome {
-                Biome::Forest => (0.62, 0.12, 0.03),
-                Biome::Meadow => (0.06, 0.12, 0.03),
-                Biome::Rock => (0.08, 0.0, 0.16),
+            // By water: within six metres of it and little above it.
+            let wet = h <= SEA + cells(1.5) && (-3..=3).any(|dz| (-3..=3).any(|dx| land.biome(x + dx * cells(2.0), z + dz * cells(2.0)) == Biome::Water));
+            let (tree, under, boulder) = match biome {
+                Biome::Forest => (0.62, 0.3, 0.02),
+                Biome::Meadow => (0.07, 0.1, 0.03),
+                Biome::Rock => (0.08, 0.02, 0.16),
                 Biome::Snow => (0.03, 0.0, 0.1),
                 Biome::Shore => (0.0, 0.0, 0.03),
                 Biome::Water => (0.0, 0.0, 0.0),
             };
             let pick = roll(2);
-            // Trees are the size of trees: a young one is 9 m to its top, an old oak 18, a tall
-            // pine 24, on a trunk half a metre to a metre through.
-            let age = roll(4);
-            let on = foot.as_vec3() + Vec3::new(0.5, 0.0, 0.5);
+            let conifers = high || matches!(biome, Biome::Rock | Biome::Snow);
             if pick < tree {
-                if high || biome == Biome::Rock || biome == Biome::Snow || roll(3) < 0.2 {
-                    pine(world, foot, 12.0 + age * 12.0, 2.2 + age * 1.6 + roll(5) * 0.4, 0.5 + age * 0.25);
-                } else {
-                    broadleaf(world, foot, 6.0 + age * 6.0, 2.6 + age * 2.2 + roll(5) * 0.5, 0.5 + age * 0.5, seed);
-                }
+                let kind = match roll(3) {
+                    _ if wet && !conifers => Tree::Willow,
+                    r if r < 0.06 => Tree::Snag,
+                    r if conifers => if r < 0.9 { Tree::Pine } else { Tree::Birch },
+                    r if r < 0.5 => Tree::Oak,
+                    r if r < 0.78 => Tree::Birch,
+                    _ => Tree::Pine,
+                };
+                plants::tree(world, foot, kind, roll(4), &mut rng);
                 land.trees.push(foot);
-            } else if pick < tree + bush {
-                let size = Vec3::new(0.6 + roll(4) * 0.5, 0.45 + roll(5) * 0.3, 0.6 + roll(6) * 0.5);
-                blob(world, on + Vec3::Y * 0.2 / CELL, size / CELL, Block::Leaves, seed);
-            } else if pick < tree + bush + boulder {
+            } else if pick < tree + under {
+                match roll(3) {
+                    r if r < 0.42 => plants::young(world, foot, conifers || roll(5) < 0.25, &mut rng),
+                    r if r < 0.78 => plants::bush(world, foot, &mut rng),
+                    r if r < 0.92 => plants::log(world, foot, &mut rng),
+                    _ => plants::stump(world, foot, &mut rng),
+                }
+            } else if pick < tree + under + boulder {
+                let on = foot.as_vec3() + Vec3::new(0.5, 0.0, 0.5);
                 let r = 0.6 + roll(4) * 1.1;
                 blob(world, on + Vec3::Y * r * 0.25 / CELL, Vec3::new(r, r * (0.6 + roll(5) * 0.4), r * (0.7 + roll(6) * 0.5)) / CELL, Block::Stone, seed);
+            }
+        }
+    }
+    // Ground cover: long grass and flowers in the open, ferns under trees, reeds at the
+    // water's edge. In patches, not sprinkled: a slow noise says where it is thick.
+    for z in -span..span {
+        for x in -span..span {
+            let (h, biome) = (land.height(x, z), land.biome(x, z));
+            let on = IVec3::new(x, h, z);
+            if world.get(on) != Block::Air || !world.get(on - IVec3::Y).solid() {
+                continue;
+            }
+            let (thick, lot) = (fbm(x as f32 * CELL / 9.0, z as f32 * CELL / 9.0, seed + 70), hash2(x, z, seed + 71));
+            let cover = match biome {
+                Biome::Meadow if lot < (thick - 0.35) * 0.9 => Some(if hash2(x, z, seed + 72) < 0.14 { Block::Flower } else { Block::Tuft }),
+                Biome::Forest if lot < (thick - 0.42) * 0.5 => Some(Block::Tuft),
+                Biome::Shore if lot < 0.22 && land.height(x, z) <= SEA => Some(Block::Reed),
+                _ => None,
+            };
+            if let Some(block) = cover {
+                world.set(on, block);
+                // Reeds stand two or three cells tall.
+                if block == Block::Reed {
+                    for up in 1..2 + (lot * 9.0) as i32 % 2 {
+                        world.set(on + IVec3::Y * up, Block::Reed);
+                    }
+                }
             }
         }
     }
@@ -285,61 +324,6 @@ fn blob(world: &mut World, middle: Vec3, radii: Vec3, block: Block, seed: u32) {
             }
         }
     }
-}
-
-/// A trunk `thick` metres through, `tall` cells to its top.
-fn trunk(world: &mut World, foot: IVec3, tall: i32, thick: f32) {
-    let thick = cells(thick).max(1);
-    for y in 0..=tall {
-        for z in 0..thick {
-            for x in 0..thick {
-                world.set(foot + IVec3::new(x, y, z), Block::Wood);
-            }
-        }
-    }
-}
-
-/// A trunk with a rounded crown that starts four metres up: a troll walks under it with room.
-fn broadleaf(world: &mut World, foot: IVec3, tall: f32, crown: f32, thick: f32, seed: u32) {
-    let (tall, reach, crown, clear) = (cells(tall), cells(crown + 1.0), crown / CELL, cells(4.0));
-    let top = foot + IVec3::Y * tall;
-    let middle = top.as_vec3() + Vec3::new(0.5, crown * 0.35, 0.5);
-    blob(world, middle, Vec3::new(crown, crown * 0.8, crown), Block::Leaves, seed);
-    // Nothing hangs lower than the crown's start.
-    for y in foot.y..foot.y + clear {
-        for z in -reach..=reach {
-            for x in -reach..=reach {
-                let cell = IVec3::new(foot.x + x, y, foot.z + z);
-                if world.get(cell) == Block::Leaves {
-                    world.set(cell, Block::Air);
-                }
-            }
-        }
-    }
-    trunk(world, foot, tall, thick);
-}
-
-/// A tall trunk, bare for its lowest quarter, with tiers of needles two metres apart narrowing
-/// to a point.
-fn pine(world: &mut World, foot: IVec3, tall: f32, spread: f32, thick: f32) {
-    let (first, tall, tier) = (cells((tall * 0.25).max(3.5)), cells(tall), cells(2.0).max(2));
-    for y in first..=tall + cells(0.5) {
-        let up = (y - first) as f32 / (tall + cells(0.5) - first) as f32;
-        // The lower half of each tier is drawn in.
-        let drawn_in = if (y - first) % tier < tier / 2 { 0.9 } else { 0.0 };
-        let r = (spread * (1.0 - up) + 0.5 - drawn_in).max(0.3) / CELL;
-        let reach = r.ceil() as i32;
-        for z in -reach..=reach {
-            for x in -reach..=reach {
-                let cell = foot + IVec3::new(x, y, z);
-                if ((x * x + z * z) as f32) < r * r && world.get(cell) == Block::Air {
-                    world.set(cell, Block::Needles);
-                }
-            }
-        }
-    }
-    // The trunk stops short of the tip, inside the needles.
-    trunk(world, foot, tall - cells(1.0), thick);
 }
 
 #[cfg(test)]

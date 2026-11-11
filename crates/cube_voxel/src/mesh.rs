@@ -85,6 +85,10 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                     bits(world, cell, &mut m);
                     continue;
                 }
+                if block.sprig() {
+                    sprig(cell, block, &mut m);
+                    continue;
+                }
                 let (top, side) = block.colors();
                 let mut tint = 0.9 + 0.2 * hash(cell);
                 let mut warm = 0.0;
@@ -173,6 +177,51 @@ fn bits(world: &World, cell: IVec3, m: &mut MeshData) {
             } else {
                 m.indices.extend([start + 1, start + 2, start + 3, start + 1, start + 3, start]);
             }
+        }
+    }
+}
+
+/// One box, in bits from a cell's corner: five faces (not its underside), one colour.
+fn blade(m: &mut MeshData, cell: IVec3, lo: IVec3, hi: IVec3, colour: [f32; 3]) {
+    let at = |p: IVec3| ((cell * SPLIT + p).as_vec3() * CELL / SPLIT as f32).to_array();
+    for (n, u, v) in FACES {
+        if n == IVec3::NEG_Y {
+            continue;
+        }
+        let size = hi - lo;
+        // The face's corner on this side of the box, then along its two axes.
+        let from = lo + n.max(IVec3::ZERO) * size;
+        let start = m.positions.len() as u32;
+        let shade = if n == IVec3::Y { 1.0 } else { 0.78 + 0.12 * (n.x + n.z) as f32 };
+        for (su, sv) in [(0, 0), (1, 0), (1, 1), (0, 1)] {
+            m.positions.push(at(from + u * size * su + v * size * sv));
+            m.normals.push(n.as_vec3().to_array());
+            m.colors.push([colour[0] * shade, colour[1] * shade, colour[2] * shade, 1.0]);
+        }
+        m.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
+    }
+}
+
+/// Ground cover in one cell: a few thin blades a bit across, of heights and places that
+/// come from where the cell is. A flower is a stem with a head; reeds stand the cell's
+/// height.
+fn sprig(cell: IVec3, block: Block, m: &mut MeshData) {
+    let (top, side) = block.colors();
+    let roll = |n: i32| hash(cell * 7 + IVec3::splat(n));
+    let blades = if block == Block::Flower { 2 } else { 3 + (roll(0) * 3.0) as i32 };
+    for i in 0..blades {
+        let (x, z) = ((roll(i * 3 + 1) * SPLIT as f32) as i32 % SPLIT, (roll(i * 3 + 2) * SPLIT as f32) as i32 % SPLIT);
+        let tall = match block {
+            Block::Reed => SPLIT,
+            Block::Flower if i == 0 => 3,
+            _ => 2 + (roll(i * 3 + 3) * 3.0) as i32,
+        };
+        let tint = 0.85 + 0.3 * roll(i + 20);
+        blade(m, cell, IVec3::new(x, 0, z), IVec3::new(x + 1, tall, z + 1), side.map(|c| c * tint));
+        if block == Block::Flower && i == 0 {
+            // Its head: white, yellow or violet by where it grows.
+            let head = [[0.85, 0.82, 0.74], top, [0.48, 0.30, 0.62]][(roll(40) * 3.0) as usize % 3];
+            blade(m, cell, IVec3::new(x - 1, tall, z - 1).max(IVec3::ZERO), IVec3::new(x + 2, tall + 1, z + 2).min(IVec3::splat(SPLIT)), head);
         }
     }
 }

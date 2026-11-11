@@ -13,7 +13,7 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 | Path | What it is |
 |---|---|
 | `crates/cube_voxel` | Voxel data (cells, and the bits a cell breaks into) and chunk meshing. No engine types, so the simulation can use it headless. |
-| `crates/cube_sim` | The simulation, at a fixed 60 ticks a second, no engine types: the world from a seed (`terrain`), bodies moving through voxels (`body`), every creature and its mind (`life`, `mind`). |
+| `crates/cube_sim` | The simulation, at a fixed 60 ticks a second, no engine types: the world from a seed (`terrain`), bodies moving through voxels (`body`), what grows on it (`plants`), every creature and its mind (`life`, `mind`). |
 | `crates/cube_game` | The Bevy app: draws what the simulation holds, takes the player's keys. Also the sandbox panel, contact sheets, scene pictures. |
 | `crates/world` | `cargo world`: the land and its creatures judged headless (`survey`, `run`, `map`, `who`, `dig`). |
 | `crates/forge` | The creature pipeline CLI. Each file's header says what it holds; `main.rs` has the map. |
