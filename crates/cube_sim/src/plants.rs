@@ -91,6 +91,18 @@ fn bole(world: &mut World, foot: Vec3, top: Vec3, base: f32, tip: f32, bark: Blo
     }
 }
 
+/// How tall a tree of a kind and age stands, metres: what [`tree`] builds.
+pub fn height(kind: Tree, age: f32) -> f32 {
+    match kind {
+        Tree::Oak => scale::OAK,
+        Tree::Birch => scale::BIRCH,
+        Tree::Pine => scale::PINE,
+        Tree::Willow => scale::WILLOW,
+        Tree::Snag => scale::SNAG,
+    }
+    .at(age)
+}
+
 /// Grows a tree with its foot on the cell `foot`. `age` is 0 for one just grown, 1 for an
 /// old one. Says how tall it stands, metres.
 pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng) -> f32 {

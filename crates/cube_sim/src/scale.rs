@@ -39,9 +39,9 @@ pub const LOWLAND: Landform = Landform { across: 200.0, tall: 22.0, detail: 2 };
 pub const HILL: Landform = Landform { across: 80.0, tall: 7.0, detail: 2 };
 /// The mountain: one to an island, how far across its foot and how high its top. A bell, so
 /// its outer third is foothills a person walks and its middle is climbing.
-pub const MASSIF: Landform = Landform { across: 280.0, tall: 64.0, detail: 1 };
+pub const MASSIF: Landform = Landform { across: 480.0, tall: 170.0, detail: 1 };
 /// The lesser high ground, somewhere else on the island: downs, not peaks.
-pub const HEIGHTS: Landform = Landform { across: 170.0, tall: 26.0, detail: 1 };
+pub const HEIGHTS: Landform = Landform { across: 260.0, tall: 60.0, detail: 1 };
 /// Ridges on the high ground: how far from one to the next, and how deep the creases between.
 pub const RIDGE: Landform = Landform { across: 110.0, tall: 26.0, detail: 2 };
 /// A mountain breaks into ledges this high: a cliff of three people, with a shelf over it.
@@ -51,10 +51,13 @@ pub const LEDGE: f32 = 5.0;
 pub const RIVER: f32 = 130.0;
 
 /// Heights over the sea where the land changes.
-pub const CONIFER_LINE: f32 = 17.0;
-pub const ROCK_LINE: f32 = 20.0;
-pub const MOSS_LINE: f32 = 34.0;
-pub const SNOW_LINE: f32 = 44.0;
+pub const CONIFER_LINE: f32 = 30.0;
+pub const ROCK_LINE: f32 = 55.0;
+/// No tree grows above this, and they thin out for the last twenty metres under it: a peak
+/// is bare.
+pub const TREE_LINE: f32 = 70.0;
+pub const MOSS_LINE: f32 = 60.0;
+pub const SNOW_LINE: f32 = 105.0;
 
 /// From the smallest to the largest of a thing, metres.
 #[derive(Clone, Copy)]

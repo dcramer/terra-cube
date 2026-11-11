@@ -23,7 +23,7 @@ pub struct WorldPlugin;
 
 /// The voxel world, and the lie of the land it was made from (heights, biomes, trees).
 #[derive(Resource)]
-pub struct Terrain(pub Voxels, pub Land, pub cube_sim::ecology::Ecology);
+pub struct Terrain(pub Voxels, pub Land, pub cube_sim::ecology::Ecology, pub HashSet<(i32, i32)>);
 
 /// The land's material: Bevy's own, with wind in what grows. The wind is in the two vertex
 /// shaders (`assets/shaders/wind.wesl` for the picture, `wind_prepass.wesl` for depth and
@@ -54,11 +54,40 @@ pub struct Faces(pub u32);
 #[derive(Resource, Default)]
 pub struct Dirty(pub HashSet<IVec3>);
 
+/// The regions of the world whose cells are made (`terrain::REGION` a side), and those that
+/// someone has dug or built in, which are kept however far off the player goes: nothing is
+/// saved yet, and a hole must not heal behind its digger.
+#[derive(Resource, Default)]
+pub struct Regions {
+    made: HashSet<(i32, i32)>,
+    pub kept: HashSet<(i32, i32)>,
+    /// Regions wanted and not yet made.
+    pub waiting: usize,
+}
+
+/// A region's cells are made when the camera comes within this of its middle, metres, and
+/// dropped when it is further than the other. Creatures are lived to 110 m
+/// (`cube_sim::life::AWAKE`), well inside.
+const MAKE: f32 = 176.0;
+const DROP: f32 = 240.0;
+
+impl Regions {
+    pub fn is_made(&self, region: (i32, i32)) -> bool {
+        self.made.contains(&region)
+    }
+}
+
+fn region_of(cell: IVec3) -> (i32, i32) {
+    (cell.x.div_euclid(terrain::REGION), cell.z.div_euclid(terrain::REGION))
+}
+
 /// The two materials every chunk is drawn with.
 #[derive(Resource)]
-struct Look {
-    solid: Handle<Windy>,
+pub struct Look {
+    pub solid: Handle<Windy>,
     water: Handle<StandardMaterial>,
+    /// The sea, and far water: not seen through.
+    pub sea: Handle<StandardMaterial>,
 }
 
 impl Terrain {
@@ -70,6 +99,7 @@ impl Terrain {
     /// Digs (with air) or builds a ball in the world, to the bit, and marks what to redraw.
     pub fn ball(&mut self, dirty: &mut Dirty, middle: Vec3, radius: f32, block: Block) {
         self.0.ball(middle, radius, block);
+        self.3.insert(region_of((middle / CELL).floor().as_ivec3()));
         // Every chunk the ball reaches, and a cell beyond: a neighbour's faces change too.
         let reach = Vec3::splat(radius + CELL);
         let (lo, hi) = (((middle - reach) / CELL).floor().as_ivec3().div_euclid(IVec3::splat(CHUNK)), ((middle + reach) / CELL).floor().as_ivec3().div_euclid(IVec3::splat(CHUNK)));
@@ -124,7 +154,7 @@ pub fn look() -> impl Bundle {
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<Windy>::default()).insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().add_systems(Startup, setup).add_systems(Update, (stream, sky, ripple, seasons));
+        app.add_plugins(MaterialPlugin::<Windy>::default()).insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().add_systems(Startup, setup).add_systems(Update, (regions, stream).chain()).add_systems(Update, (sky, ripple, seasons));
     }
 }
 
@@ -342,7 +372,20 @@ pub fn spawn_lights(commands: &mut Commands, shadows: bool) {
 }
 
 fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, mut images: ResMut<Assets<Image>>, mut mediums: ResMut<Assets<ScatteringMedium>>, mut windy: ResMut<Assets<Windy>>) {
-    let (voxels, land) = terrain::generate(args.seed, terrain::RADIUS);
+    // The lie of the whole island; its cells are made a region at a time as the camera
+    // comes near (`regions`), starting here with the ground under the start.
+    let land = Land::new(args.seed, terrain::RADIUS);
+    let mut voxels = Voxels::default();
+    let start = ((args.at.0 / CELL) as i32, (args.at.1 / CELL) as i32);
+    let mut first = Regions::default();
+    for rz in -1..=1 {
+        for rx in -1..=1 {
+            let r = (start.0.div_euclid(terrain::REGION) + rx, start.1.div_euclid(terrain::REGION) + rz);
+            terrain::fill(&mut voxels, &land, (r.0 * terrain::REGION, r.1 * terrain::REGION), ((r.0 + 1) * terrain::REGION, (r.1 + 1) * terrain::REGION));
+            first.made.insert(r);
+        }
+    }
+    commands.insert_resource(first);
     // The paint: grain for every surface, made in code (`cube_voxel::texture`). Drawn smooth,
     // so it reads as paint and not as pixels; far off the smaller copies take over, so distant
     // ground does not sparkle.
@@ -382,7 +425,6 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     // `ripple`. Smooth enough to throw the sun back as a glitter path.
     let waves = images.add(ripples());
     let water = materials.add(StandardMaterial { base_color: Color::WHITE, alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.3, reflectance: 0.4, normal_map_texture: Some(waves.clone()), ..default() });
-    let mut voxels = voxels;
     for &(x, z, across, build) in &args.dug {
         let ground = land.height((x / CELL).floor() as i32, (z / CELL).floor() as i32) as f32 * CELL;
         // A hole is a bowl with its rim at the ground; a stone sits two thirds out of it.
@@ -390,19 +432,20 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
         voxels.ball(Vec3::new(x, ground + lift, z), across / 2.0, block);
     }
     // The chunks are meshed as the camera comes near them (`stream`), not here.
-    commands.insert_resource(Look { solid: material, water: water.clone() });
+
     // The sea beyond the world's edge: four sheets round it at the water's level, out past the fog.
     let (edge, far, level) = (land.span as f32 * CELL, 1500.0, SEA as f32 * CELL - 0.01);
     let [r, g, b] = cube_voxel::Block::Water.colors().0;
     let sea = materials.add(StandardMaterial { base_color: Color::linear_rgb(r, g, b), perceptual_roughness: 0.09, reflectance: 0.6, normal_map_texture: Some(waves), uv_transform: bevy::math::Affine2::from_scale(Vec2::splat(far * 2.0 / cube_voxel::mesh::WATER_TILE)), ..default() });
     commands.insert_resource(Waters(vec![water.clone()]));
+    commands.insert_resource(Look { solid: material, water: water.clone(), sea: sea.clone() });
     for (x, z, w, d) in [(0.0, -(edge + far) / 2.0, far, (far - edge) / 2.0), (0.0, (edge + far) / 2.0, far, (far - edge) / 2.0), (-(edge + far) / 2.0, 0.0, (far - edge) / 2.0, edge), ((edge + far) / 2.0, 0.0, (far - edge) / 2.0, edge)] {
         commands.spawn((Mesh3d(meshes.add(Plane3d::default().mesh().size(w * 2.0, d * 2.0))), MeshMaterial3d(sea.clone()), Transform::from_xyz(x, level, z)));
     }
     // The island measured for living in (`cube_sim::ecology`): what the small life the game
     // draws is placed by.
     let ecology = cube_sim::ecology::Ecology::new(&land);
-    commands.insert_resource(Terrain(voxels, land, ecology));
+    commands.insert_resource(Terrain(voxels, land, ecology, HashSet::new()));
     spawn_sun(&mut commands, &mut mediums, &mut images);
 }
 
@@ -470,7 +513,7 @@ fn draw_level(commands: &mut Commands, meshes: &mut Assets<Mesh>, look: &Look, v
 /// frame), and its mesh is dropped when the camera is well outside it. A chunk that changed
 /// loses its meshes and is made again. So what is meshed and held is what can be seen, and
 /// the world can be bigger than that.
-fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, mut meshes: ResMut<Assets<Mesh>>, mut drawn: ResMut<Drawn>, mut dirty: ResMut<Dirty>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
+fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, mut meshes: ResMut<Assets<Mesh>>, mut drawn: ResMut<Drawn>, mut dirty: ResMut<Dirty>, regions: Res<Regions>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
     let (Some(terrain), Some(look), Some(eye)) = (terrain, look, cameras.iter().next().map(|t| t.translation())) else { return };
     for chunk in dirty.0.drain() {
         for level in 0..LEVELS.len() {
@@ -494,7 +537,7 @@ fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, terra
         }
     }
     wanted.sort_by(|a, b| a.0.total_cmp(&b.0));
-    drawn.waiting = wanted.len();
+    drawn.waiting = wanted.len() + regions.waiting;
     // A picture waits for the world, so it may take as long as it likes; a window gets a long
     // slice while it first fills in, then a few milliseconds a frame.
     let slice = if args.scene.is_some() || time.elapsed_secs() < 3.0 { 0.05 } else { 0.004 };
@@ -502,7 +545,7 @@ fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, terra
     for (_, chunk, level) in wanted {
         let spawned = draw_level(&mut commands, &mut meshes, &look, &terrain.0, chunk, level);
         drawn.made.insert((chunk, level), spawned);
-        drawn.waiting -= 1;
+        drawn.waiting = drawn.waiting.saturating_sub(1);
         if started.elapsed().as_secs_f32() > slice {
             break;
         }
@@ -532,4 +575,51 @@ fn seasons(live: Option<Res<crate::motion::Live>>, look: Option<Res<Look>>, mut 
     if let Some(mut material) = windy.get_mut(&look.solid) {
         material.extension.season = now;
     }
+}
+
+/// Makes the cells of the regions the camera has come near, nearest first, a few
+/// milliseconds' worth a frame; drops those it has left well behind, unless someone dug or
+/// built there. So what is held in cells is what is near, and the island can be a kilometre
+/// across (or ten) for the price of the ground underfoot.
+fn regions(time: Res<Time>, args: Res<crate::Args>, terrain: Option<ResMut<Terrain>>, mut regions: ResMut<Regions>, mut dirty: ResMut<Dirty>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
+    let (Some(mut terrain), Some(eye)) = (terrain, cameras.iter().next().map(|t| t.translation())) else { return };
+    let size = terrain::REGION as f32 * CELL;
+    let away = |r: (i32, i32)| Vec2::new((r.0 as f32 + 0.5) * size - eye.x, (r.1 as f32 + 0.5) * size - eye.z).length();
+    let edge = terrain.1.span.div_euclid(terrain::REGION);
+    let (here, reach) = (region_of((eye / CELL).floor().as_ivec3()), (MAKE / size).ceil() as i32);
+    let mut wanted: Vec<(f32, (i32, i32))> = (-reach..=reach)
+        .flat_map(|rz| (-reach..=reach).map(move |rx| (here.0 + rx, here.1 + rz)))
+        .filter(|r| r.0 >= -edge && r.0 < edge && r.1 >= -edge && r.1 < edge && !regions.made.contains(r))
+        .map(|r| (away(r), r))
+        .filter(|w| w.0 < MAKE)
+        .collect();
+    wanted.sort_by(|a, b| a.0.total_cmp(&b.0));
+    regions.waiting = wanted.len();
+    // Every chunk of a region and the ring round it is drawn again: faces at its edge that
+    // were open to nothing now have a neighbour, and the other way about.
+    let redraw = |voxels: &Voxels, r: (i32, i32), dirty: &mut Dirty| {
+        let per = terrain::REGION / CHUNK;
+        let (lo, hi) = ((r.0 * per - 1, r.1 * per - 1), ((r.0 + 1) * per, (r.1 + 1) * per));
+        dirty.0.extend(voxels.chunks.keys().filter(|c| c.x >= lo.0 && c.x <= hi.0 && c.z >= lo.1 && c.z <= hi.1));
+    };
+    let slice = if args.scene.is_some() || time.elapsed_secs() < 3.0 { 0.06 } else { 0.006 };
+    let started = std::time::Instant::now();
+    for (_, r) in wanted {
+        let Terrain(voxels, land, ..) = &mut *terrain;
+        terrain::fill(voxels, land, (r.0 * terrain::REGION, r.1 * terrain::REGION), ((r.0 + 1) * terrain::REGION, (r.1 + 1) * terrain::REGION));
+        regions.made.insert(r);
+        regions.waiting -= 1;
+        redraw(&terrain.0, r, &mut dirty);
+        if started.elapsed().as_secs_f32() > slice {
+            break;
+        }
+    }
+    let gone: Vec<(i32, i32)> = regions.made.iter().copied().filter(|r| away(*r) > DROP && !terrain.3.contains(r)).collect();
+    for r in gone {
+        redraw(&terrain.0, r, &mut dirty);
+        terrain.0.chunks.retain(|c, _| (c.x.div_euclid(terrain::REGION / CHUNK), c.z.div_euclid(terrain::REGION / CHUNK)) != r);
+        terrain.0.bits.retain(|cell, _| region_of(*cell) != r);
+        regions.made.remove(&r);
+    }
+    regions.kept = terrain.3.clone();
 }

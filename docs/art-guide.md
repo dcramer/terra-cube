@@ -105,7 +105,8 @@ The measure is a person, 1.75 m. The world reads as full size when things keep t
 | Thing | Size | Against a person |
 |---|---|---|
 | Hills | 80 m from one to the next, 7 m high, smooth | a slope walked, never lumps |
-| The mountain | 280 m across its foot, 64 m high, in 5 m ledges | foothills walked, the middle climbed |
+| Mountains | 480 m across the foot and 170 m high (lesser heights 260 m and 60 m), in 5 m ledges; the highest on the island about 200 m | six times the tallest tree: a mountain, not a hill. At 64 m high they 'did not feel all that big' |
+| Tree line | none above 70 m, thinning from 50 m; rock from 55 m, snow from 105 m | a peak is bare |
 | Grown trees | oak 13 to 24 m, birch 11 to 19, pine 17 to 34, willow 9 to 14 | 6 to 19 people tall; the middle one at least 8 (bar) |
 | Room for a tree | 6.5 m; small things 3.5 m | |
 | Under a crown | 4.5 m clear | the golem (3.6 m) walks under |

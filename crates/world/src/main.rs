@@ -80,17 +80,27 @@ fn kinds() -> Vec<Kind> {
 
 /// The world with its creatures and a person at the start who wanders, to be fled and chased.
 fn living(args: &Args) -> (World, Land, Sim) {
-    let (world, land) = terrain::generate(args.seed, args.radius);
+    let (world, land) = made(args);
     let mut sim = Sim::new(kinds(), args.seed as u64);
     sim.populate(&world, &land);
+    // As in the game: only what is near the person at the start is lived, the rest sleeps.
+    sim.focus = Some(Vec3::new(0.25, land.height(0, 0) as f32 * CELL, 0.25));
     if let Some(person) = sim.kind("player") {
         sim.add(&world, person, Vec3::new(0.25, land.height(0, 0) as f32 * CELL, 0.25), 0.0, Driver::Mind);
     }
     (world, land, sim)
 }
 
+/// The lie of the whole island, and the cells of the part round the start that the game would
+/// have made standing there: an island a kilometre across is not held whole in cells.
+fn made(args: &Args) -> (World, Land) {
+    let land = Land::new(args.seed, args.radius);
+    let world = terrain::part(&land, (0, 0), terrain::NEAR.min(args.radius));
+    (world, land)
+}
+
 fn survey_command(args: &Args) -> ! {
-    let (world, land) = terrain::generate(args.seed, args.radius);
+    let (world, land) = made(args);
     let s = survey::survey(&land);
     // What the game draws standing at the start: each chunk meshed at the level its distance
     // gives it, as the game does. (All of the world at full detail is never drawn.)
@@ -161,9 +171,10 @@ fn run_command(args: &Args) -> ! {
         }
     }
     let mut checks = Checks(Vec::new());
-    println!("life seed={} creatures={} seconds={}", args.seed, sim.agents.len(), args.seconds);
+    println!("life seed={} creatures={} (lived, near the start: {}) seconds={}", args.seed, sim.agents.len(), sim.agents.values().filter(|a| a.awake).count(), args.seconds);
     for (k, kind) in sim.kinds.iter().enumerate() {
-        let of: Vec<_> = sim.agents.values().filter(|a| a.kind == k).collect();
+        // Of those that were lived at all: the rest of the island slept.
+        let of: Vec<_> = sim.agents.values().filter(|a| a.kind == k && a.log.acts.iter().sum::<f32>() > args.seconds * 0.5).collect();
         if of.is_empty() {
             continue;
         }

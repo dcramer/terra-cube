@@ -13,6 +13,7 @@ mod air;
 mod audio;
 mod camera;
 mod creatures;
+mod far;
 mod hud;
 mod motion;
 mod player;
@@ -271,11 +272,11 @@ fn main() {
     .insert_resource(args)
     .add_plugins(creatures::CreaturesPlugin);
     if scene {
-        app.add_plugins((world::WorldPlugin, air::AirPlugin, audio::SoundPlugin, motion::MotionPlugin, player::PlayPlugin, shot::ScenePlugin));
+        app.add_plugins((world::WorldPlugin, far::FarPlugin, air::AirPlugin, audio::SoundPlugin, motion::MotionPlugin, player::PlayPlugin, shot::ScenePlugin));
     } else if shot {
         app.add_plugins(shot::ShotPlugin);
     } else {
-        app.add_plugins((world::WorldPlugin, air::AirPlugin, audio::SoundPlugin, camera::CameraPlugin, motion::MotionPlugin, player::PlayPlugin, ui::UiPlugin, hud::HudPlugin));
+        app.add_plugins((world::WorldPlugin, far::FarPlugin, air::AirPlugin, audio::SoundPlugin, camera::CameraPlugin, motion::MotionPlugin, player::PlayPlugin, ui::UiPlugin, hud::HudPlugin));
     }
     app.run();
 }

@@ -156,6 +156,19 @@ Built 2026-11-11. One system decides what life a place has (`cube_sim::ecology`)
 - **Why in the simulation:** where things live is a rule of the world, and the same answer must hold for a deer that can be hunted and a butterfly that is only seen.
 - **Not done:** an animal's `hours` are recorded and reported but do not yet change what it does (a badger does not sleep by day); nothing eats or drinks, so a deer keeps near water only because it was put there; no seasons or weather; the ogre has no home on this island (it wants level snow, and there is almost none since the mountain moved north).
 
+## A big world
+
+Built 2026-11-11: the island is a kilometre across (`terrain::RADIUS`), and only the part round the player is held in cells.
+
+- **The lie of the land is known for all of it, always** (`Land::new`, a second or two on every core): each column's height and biome, and, decided from the land alone, where every tree stands, of what kind and how tall, and how big each rock is. So the ecology, the far land and the tools can speak of the whole island though almost none of it is made.
+- **Cells are made a region at a time** (`terrain::fill`; a region is 32 m square): the ground, what stands on it, the ground cover. The same call makes the same cells whenever and in whatever order it is asked, which is what lets a region be dropped and made again. A tree whose crown reaches in from outside is built with the region, so no crown is cut at an edge.
+- **The game makes regions within 176 m of the camera and drops them beyond 240 m** (`world::regions`), nearest first, a few milliseconds a frame; a region someone has dug or built in is kept, since nothing is saved yet. About 1.3 GB held, as the whole of the old 384 m island was.
+- **Beyond the cells, the far land** (`cube_game::far`): the whole island as a light mesh from the height map, a region to a piece and four metres between points, with a plain shape of the right kind and height for each tree and a sheet of water over what is wet. A piece is hidden when its region's real ground is there and near. A mountain two valleys off is there to be walked to.
+- **Creatures are lived only near the watcher** (`Sim::focus`, `life::AWAKE` = 110 m): the island has some two thousand, a couple of hundred awake at a time; the rest are as they were left, and are stood clear of whatever is there when they wake. The game gives a model only to the ones awake (`motion::mirror`).
+- **A bigger island has more mountains**: two near the start as before, and two more for every 384 m square of island, placed and sized by the seed.
+- **The tools judge what the game has**: `cargo world` makes the whole island's land and the cells within 160 m of the start, and lives the creatures near a person there.
+- **Not done**: saving (so dropped regions forget nothing only because edited ones are kept); the far land has no rocks or undergrowth and its trees are plain shapes; the land itself is still one island held as one array (64 MB), not made as it is come to: ten kilometres wants `Land` in pieces too.
+
 ## Seeing far
 
 Started 2026-11-10, when the island was drawn whole at full detail and hazed out from 80 m.

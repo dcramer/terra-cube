@@ -1,8 +1,9 @@
 //! Making a world from a seed: an island of meadow, forest, rock and snow, cut by a river,
 //! with trees, undergrowth, boulders and ground cover on it (the shapes are in `plants`). The same seed always makes the same world.
 //!
-//! Two passes. [`Land::new`] works out every column (its height and what grows there) from
-//! layered noise; [`generate`] fills the cells and plants things. `Land` is kept beside the
+//! Two halves. [`Land::new`] works out the lie of the whole island from layered noise: every
+//! column's height and biome, and where every tree and rock stands. [`fill`] makes the cells
+//! of any part of it, the same whenever and in whatever order it is asked. `Land` is kept beside the
 //! world: it is how creatures are placed and how the world is measured (`survey`).
 
 use crate::plants::{self, Tree};
@@ -59,10 +60,16 @@ fn mix(a: f32, b: f32, t: f32) -> f32 {
 /// Water level: metres over the bottom of the world, and the same in cells.
 pub const SEA_LEVEL: f32 = 8.0;
 pub const SEA: i32 = (SEA_LEVEL / CELL) as i32;
-/// The world the game starts in, and the one `cargo world` judges: its seed, and how many
-/// chunks it runs out from the origin (192 m each way).
+/// The world the game starts in: its seed, and how many chunks it runs out from the origin
+/// (512 m each way: an island a kilometre across).
 pub const SEED: u32 = 6;
-pub const RADIUS: i32 = (192.0 / (CELL * CHUNK as f32)) as i32;
+pub const RADIUS: i32 = (512.0 / (CELL * CHUNK as f32)) as i32;
+/// How much of the island is made into cells at once, chunks from the middle of a part each
+/// way: what the game keeps round the player, and what `cargo world` judges round the start
+/// (160 m each way). The lie of the land is known for all of it always; its cells are not.
+pub const NEAR: i32 = (160.0 / (CELL * CHUNK as f32)) as i32;
+/// A region: the piece of the world made and dropped as one, cells a side (32 m).
+pub const REGION: i32 = CHUNK * 4;
 /// What grows on a column, and so who lives there.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
 pub enum Biome {
@@ -85,6 +92,27 @@ impl Biome {
     }
 }
 
+/// Something that stands on the land: where its foot is, what it is, and the seed it is built
+/// from, so it is the same thing whoever builds it and however often.
+struct Thing {
+    foot: IVec3,
+    what: What,
+    seed: u64,
+}
+
+#[derive(Clone, Copy)]
+enum What {
+    /// A grown tree: its kind, and its age from 0 to 1.
+    Tree(Tree, f32),
+    /// A young tree; whether it is a conifer.
+    Young(bool),
+    Bush,
+    Log,
+    Stump,
+    /// A rock, so many metres across.
+    Rock(f32),
+}
+
 /// The lie of the land: every column's height and biome, and where the trees stand.
 pub struct Land {
     pub seed: u32,
@@ -94,8 +122,9 @@ pub struct Land {
     biomes: Vec<Biome>,
     /// The foot of each tree's trunk.
     pub trees: Vec<IVec3>,
-    /// How tall each of those trees stands, metres.
+    /// How tall each of those trees stands, metres, and what kind it is.
     pub grown: Vec<f32>,
+    pub sorts: Vec<Tree>,
     /// How far across each rock is, metres.
     pub rocks: Vec<f32>,
 }
@@ -104,22 +133,112 @@ impl Land {
     pub fn new(seed: u32, radius: i32) -> Self {
         let span = radius * CHUNK;
         let side = (span * 2) as usize;
-        let mut heights = vec![0; side * side];
-        for z in -span..span {
-            for x in -span..span {
-                let metres = column((x as f32 + 0.5) * CELL, (z as f32 + 0.5) * CELL, seed, span as f32 * CELL);
-                heights[((x + span) + (z + span) * span * 2) as usize] = cells(metres).max(cells(1.0));
+        // A row at a time, on every core: a kilometre of island is seventeen million columns.
+        let rows = |f: &(dyn Fn(i32, i32) -> i32 + Sync)| -> Vec<i32> {
+            let mut out = vec![0; side * side];
+            let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+            let per = side.div_ceil(threads).max(1);
+            std::thread::scope(|scope| {
+                for (band, part) in out.chunks_mut(per * side).enumerate() {
+                    scope.spawn(move || {
+                        for (i, v) in part.iter_mut().enumerate() {
+                            *v = f((i % side) as i32 - span, (band * per + i / side) as i32 - span);
+                        }
+                    });
+                }
+            });
+            out
+        };
+        let heights = rows(&|x, z| cells(column((x as f32 + 0.5) * CELL, (z as f32 + 0.5) * CELL, seed, span as f32 * CELL)).max(cells(1.0)));
+        let mut land = Land { seed, span, heights, biomes: Vec::new(), trees: Vec::new(), grown: Vec::new(), sorts: Vec::new(), rocks: Vec::new() };
+        let biomes = rows(&|x, z| land.biome_of(x, z) as i32);
+        land.biomes = biomes.into_iter().map(|b| Biome::ALL[b as usize]).collect();
+        // What stands on it is decided here, from the land alone, so it is known for all the
+        // island whether or not its cells have been made: where the trees are and how tall,
+        // how big the rocks.
+        for (pass, room) in [scale::TREE_ROOM, scale::SMALL_ROOM].into_iter().enumerate() {
+            let grid = cells(room);
+            for gz in -span / grid..span / grid {
+                for gx in -span / grid..span / grid {
+                    match land.thing(pass, gx, gz).map(|t| (t.foot, t.what)) {
+                        Some((foot, What::Tree(kind, age))) => {
+                            land.trees.push(foot);
+                            land.grown.push(plants::height(kind, age));
+                            land.sorts.push(kind);
+                        }
+                        Some((_, What::Rock(across))) => land.rocks.push(across),
+                        _ => {}
+                    }
+                }
             }
         }
-        let mut land = Land { seed, span, heights, biomes: Vec::new(), trees: Vec::new(), grown: Vec::new(), rocks: Vec::new() };
-        let mut biomes = Vec::with_capacity(side * side);
-        for z in -span..span {
-            for x in -span..span {
-                biomes.push(land.biome_of(x, z));
-            }
-        }
-        land.biomes = biomes;
         land
+    }
+
+    /// What stands in a square of the planting grid, if anything: trees on the coarse grid
+    /// (`pass` 0), one to a square at a spot and with a chance that come from the seed, so
+    /// nothing crowds and nothing lines up; on the finer grid (`pass` 1) the small things under
+    /// and between them. How much room each has, and how big it grows, is in `scale`.
+    fn thing(&self, pass: usize, gx: i32, gz: i32) -> Option<Thing> {
+        let (land, seed) = (self, self.seed);
+        let grid = cells([scale::TREE_ROOM, scale::SMALL_ROOM][pass]);
+        let roll = |n: u32| hash2(gx, gz, seed + 40 + pass as u32 * 10 + n);
+        let (x, z) = (gx * grid + (roll(0) * grid as f32) as i32, gz * grid + (roll(1) * grid as f32) as i32);
+        let (h, biome) = (land.height(x, z), land.biome(x, z));
+        let foot = IVec3::new(x, h, z);
+        let near_start = Vec3::new(x as f32, 0.0, z as f32).length() * CELL < CLEARING;
+        if land.slope(x, z) >= 2 || near_start || land.index(x, z).is_none() {
+            return None;
+        }
+        let high = h > SEA + cells(scale::CONIFER_LINE);
+        let conifers = high || matches!(biome, Biome::Rock | Biome::Snow);
+        let (tree, under, rock) = match biome {
+            Biome::Forest => (0.8, 0.3, 0.02),
+            Biome::Meadow => (0.09, 0.08, 0.03),
+            Biome::Rock => (0.1, 0.02, 0.14),
+            Biome::Snow => (0.04, 0.0, 0.09),
+            Biome::Shore => (0.0, 0.0, 0.04),
+            Biome::Water => (0.0, 0.0, 0.0),
+        };
+        let pick = roll(2);
+        // Up a mountain the trees thin and stop: nothing stands on a peak.
+        let over = (h - SEA) as f32 * CELL;
+        let tree = tree * ((scale::TREE_LINE - over) / 20.0).clamp(0.0, 1.0);
+        let what = if pass == 0 {
+            if pick >= tree {
+                return None;
+            }
+            // By water: within six metres of it and little above it.
+            let wet = h <= SEA + cells(1.5) && (-3..=3).any(|dz| (-3..=3).any(|dx| land.biome(x + dx * cells(2.0), z + dz * cells(2.0)) == Biome::Water));
+            let kind = match roll(3) {
+                _ if wet && !conifers => Tree::Willow,
+                r if r < 0.06 => Tree::Snag,
+                r if conifers => if r < 0.9 { Tree::Pine } else { Tree::Birch },
+                r if r < 0.5 => Tree::Oak,
+                r if r < 0.78 => Tree::Birch,
+                _ => Tree::Pine,
+            };
+            What::Tree(kind, roll(4))
+        } else if pick < under {
+            match roll(3) {
+                r if r < 0.42 => What::Young(conifers || roll(5) < 0.25),
+                r if r < 0.78 => What::Bush,
+                r if r < 0.92 => What::Log,
+                _ => What::Stump,
+            }
+        } else if pick < under + rock {
+            // Which class of rock: the shares are in `scale`, and bare rock and snow lean
+            // toward the larger.
+            let mut class = if matches!(biome, Biome::Rock | Biome::Snow) { 0.3 + roll(4) * 0.7 } else { roll(4) };
+            let rocks = scale::ROCKS.iter().find(|r| {
+                class -= r.share;
+                class < 0.0
+            });
+            What::Rock(rocks.unwrap_or(&scale::ROCKS[2]).across.at(roll(5)))
+        } else {
+            return None;
+        };
+        Some(Thing { foot, what, seed: (seed as u64) << 40 ^ ((gx as u32 as u64) << 20) ^ gz as u32 as u64 ^ (pass as u64) << 60 })
     }
 
     fn index(&self, x: i32, z: i32) -> Option<usize> {
@@ -190,16 +309,29 @@ fn column(x: f32, z: f32, seed: u32, span: f32) -> f32 {
     // anywhere, seed 6 had it due west, and the start was in its shadow from mid afternoon.
     let turn = -std::f32::consts::FRAC_PI_2 + (hash2(1, 2, seed + 7) - 0.5) * 1.4;
     let mut bell = 0.0f32;
-    for (i, massif) in [&scale::MASSIF, &scale::HEIGHTS].into_iter().enumerate() {
-        let way = turn + i as f32 * (2.2 + hash2(3, 4, seed + 7) * 1.4);
-        let (cx, cz) = (way.cos() * span * 0.43, way.sin() * span * 0.43);
-        let d = ((wx - cx).powi(2) + (wz - cz).powi(2)).sqrt() / (massif.across * 0.5);
+    // The first two stand near the start, the mountain to its north; a bigger island has
+    // more of them, about one for every 384 m square of it, wherever the seed puts them and of
+    // their own sizes.
+    let count = 2 + (0.55 * ((span / 192.0).powi(2) - 1.0)).round().max(0.0) as i32;
+    // Where two stand together the land is the higher of them, not one piled on the other.
+    let mut lifted = 0.0f32;
+    for i in 0..count {
+        let massif = [&scale::MASSIF, &scale::HEIGHTS][(i % 2) as usize];
+        let (way, out, size) = if i < 2 {
+            (turn + i as f32 * (2.2 + hash2(3, 4, seed + 7) * 1.4), massif.across * 0.6, 1.0)
+        } else {
+            (hash2(i, 5, seed + 7) * std::f32::consts::TAU, span * (0.35 + 0.45 * hash2(i, 6, seed + 7)), 0.45 + 0.6 * hash2(i, 7, seed + 7))
+        };
+        let (cx, cz) = (way.cos() * out, way.sin() * out);
+        let d = ((wx - cx).powi(2) + (wz - cz).powi(2)).sqrt() / (massif.across * size * 0.5);
         let rise = (1.0 - d * d).max(0.0).powi(2) * smooth(40.0, 110.0, from_origin);
         // Ridges and the creases between them, deepest where the mountain is highest.
-        let crease = scale::RIDGE.tall.min(massif.tall * 0.4);
-        h += rise * (massif.tall - crease * (1.0 - ridge)) * (1.0 + 0.25 * (1.0 - d).max(0.0));
-        bell = bell.max(rise * massif.tall / scale::MASSIF.tall);
+        let tall = massif.tall * size.min(1.15);
+        let crease = scale::RIDGE.tall.min(tall * 0.4);
+        lifted = lifted.max(rise * (tall - crease * (1.0 - ridge)) * (1.0 + 0.25 * (1.0 - d).max(0.0)));
+        bell = bell.max(rise * tall / scale::MASSIF.tall);
     }
+    h += lifted;
     // Ledges: the height rounded to steps, only well up the mountain.
     // Not in rings round it: the shelves rise and dip along their length, and whole faces of
     // the mountain have none.
@@ -223,17 +355,44 @@ fn column(x: f32, z: f32, seed: u32, span: f32) -> f32 {
     mix(h, sea - 7.6, smooth(0.78, 0.99, out))
 }
 
-/// A world `radius` chunks out from the origin in x and z, and the land it was made from.
+/// A whole world `radius` chunks out from the origin in x and z, and the land it was made
+/// from: for tests and for small worlds. The game's island is too big to hold whole; it and
+/// `cargo world` make the land, and then cells for the part they need ([`fill`]).
 pub fn generate(seed: u32, radius: i32) -> (World, Land) {
-    let mut land = Land::new(seed, radius);
+    let land = Land::new(seed, radius);
     let mut world = World::default();
-    let span = land.span;
+    fill(&mut world, &land, (-land.span, -land.span), (land.span, land.span));
+    (world, land)
+}
+
+/// The cells of the part of the land round a spot (cells), `radius` chunks each way, kept
+/// inside the island: what `cargo world` judges.
+pub fn part(land: &Land, middle: (i32, i32), radius: i32) -> World {
+    let mut world = World::default();
+    let reach = radius * CHUNK;
+    let clamp = |v: i32| v.clamp(-land.span, land.span).div_euclid(REGION) * REGION;
+    fill(&mut world, land, (clamp(middle.0 - reach), clamp(middle.1 - reach)), (clamp(middle.0 + reach), clamp(middle.1 + reach)));
+    world
+}
+
+/// How far from the start the first tree may stand, metres.
+const CLEARING: f32 = 10.0;
+
+/// How far a tree reaches from its foot, cells: one whose foot is this near a part being
+/// made is built with it, so no crown is cut off at the part's edge.
+const CROWN: i32 = (13.0 / CELL) as i32;
+
+/// Makes the cells of the columns from `lo` to `hi` (cells, x and z; `hi` not included):
+/// the ground, what stands on it, and the ground cover. The same call makes the same cells
+/// whatever has been made round it and in whatever order, so the world can be made and
+/// dropped a region at a time.
+pub fn fill(world: &mut World, land: &Land, lo: (i32, i32), hi: (i32, i32)) {
     // Snow lies half a metre deep, soil two metres, and the river's bed is gravel where it is
     // over half a metre down.
     let (snow, soil, deep) = (cells(0.5), cells(2.0), cells(1.0));
     let seed = land.seed;
-    for z in -span..span {
-        for x in -span..span {
+    for z in lo.1..hi.1 {
+        for x in lo.0..hi.0 {
             let (h, biome) = (land.height(x, z), land.biome(x, z));
             let (xm, zm) = (x as f32 * CELL, z as f32 * CELL);
             // Stone lies in beds a metre or two thick that dip and roll: a dark band, a pale
@@ -281,88 +440,37 @@ pub fn generate(seed: u32, radius: i32) -> (World, Land) {
             });
         }
     }
-    plant(&mut world, &mut land);
-    (world, land)
-}
-
-/// How far from the start the first tree may stand, metres.
-const CLEARING: f32 = 10.0;
-
-/// What grows and lies on the land. Trees first, one to a square of a coarse grid, at a
-/// spot and with a chance that come from the seed, so nothing crowds and nothing lines up;
-/// then on a finer grid the small things under and between them: a young tree, a bush, a
-/// fallen log, a stump or a rock. Then the ground cover, a column at a time. How much room
-/// each has, and how big it grows, is in `scale`.
-fn plant(world: &mut World, land: &mut Land) {
-    let (span, seed) = (land.span, land.seed);
+    // What stands on it. Trees whose crowns reach in from outside are built too; the small
+    // things only where their own ground has been made.
     for (pass, room) in [scale::TREE_ROOM, scale::SMALL_ROOM].into_iter().enumerate() {
-        let grid = cells(room);
-        for gz in -span / grid..span / grid {
-            for gx in -span / grid..span / grid {
-                let roll = |n: u32| hash2(gx, gz, seed + 40 + pass as u32 * 10 + n);
-                let (x, z) = (gx * grid + (roll(0) * grid as f32) as i32, gz * grid + (roll(1) * grid as f32) as i32);
-                let (h, biome) = (land.height(x, z), land.biome(x, z));
-                let foot = IVec3::new(x, h, z);
-                let near_start = Vec3::new(x as f32, 0.0, z as f32).length() * CELL < CLEARING;
-                if land.slope(x, z) >= 2 || near_start || land.index(x, z).is_none() {
+        let (grid, reach) = (cells(room), if pass == 0 { CROWN } else { 0 });
+        for gz in (lo.1 - reach).div_euclid(grid)..=(hi.1 + reach).div_euclid(grid) {
+            for gx in (lo.0 - reach).div_euclid(grid)..=(hi.0 + reach).div_euclid(grid) {
+                let Some(thing) = land.thing(pass, gx, gz) else { continue };
+                let (foot, inside) = (thing.foot, |m: i32| thing.foot.x >= lo.0 - m && thing.foot.x < hi.0 + m && thing.foot.z >= lo.1 - m && thing.foot.z < hi.1 + m);
+                if !inside(reach) {
                     continue;
                 }
-                let mut rng = Rng::new((seed as u64) << 40 ^ ((gx as u32 as u64) << 20) ^ gz as u32 as u64 ^ (pass as u64) << 60);
-                let high = h > SEA + cells(scale::CONIFER_LINE);
-                let conifers = high || matches!(biome, Biome::Rock | Biome::Snow);
-                let (tree, under, rock) = match biome {
-                    Biome::Forest => (0.8, 0.3, 0.02),
-                    Biome::Meadow => (0.09, 0.08, 0.03),
-                    Biome::Rock => (0.1, 0.02, 0.14),
-                    Biome::Snow => (0.04, 0.0, 0.09),
-                    Biome::Shore => (0.0, 0.0, 0.04),
-                    Biome::Water => (0.0, 0.0, 0.0),
-                };
-                let pick = roll(2);
-                if pass == 0 {
-                    if pick >= tree {
-                        continue;
+                let mut rng = Rng::new(thing.seed);
+                match thing.what {
+                    What::Tree(kind, age) => {
+                        plants::tree(world, foot, kind, age, &mut rng);
                     }
-                    // By water: within six metres of it and little above it.
-                    let wet = h <= SEA + cells(1.5) && (-3..=3).any(|dz| (-3..=3).any(|dx| land.biome(x + dx * cells(2.0), z + dz * cells(2.0)) == Biome::Water));
-                    let kind = match roll(3) {
-                        _ if wet && !conifers => Tree::Willow,
-                        r if r < 0.06 => Tree::Snag,
-                        r if conifers => if r < 0.9 { Tree::Pine } else { Tree::Birch },
-                        r if r < 0.5 => Tree::Oak,
-                        r if r < 0.78 => Tree::Birch,
-                        _ => Tree::Pine,
-                    };
-                    land.grown.push(plants::tree(world, foot, kind, roll(4), &mut rng));
-                    land.trees.push(foot);
-                } else if world.get(foot) != Block::Air {
                     // A trunk or a root is already here.
-                } else if pick < under {
-                    match roll(3) {
-                        r if r < 0.42 => plants::young(world, foot, conifers || roll(5) < 0.25, &mut rng),
-                        r if r < 0.78 => plants::bush(world, foot, &mut rng),
-                        r if r < 0.92 => plants::log(world, foot, &mut rng),
-                        _ => plants::stump(world, foot, &mut rng),
-                    }
-                } else if pick < under + rock {
-                    // Which class of rock: the shares are in `scale`, and bare rock and snow
-                    // lean toward the larger.
-                    let mut class = if matches!(biome, Biome::Rock | Biome::Snow) { 0.3 + roll(4) * 0.7 } else { roll(4) };
-                    let rocks = scale::ROCKS.iter().find(|r| {
-                        class -= r.share;
-                        class < 0.0
-                    });
-                    let across = rocks.unwrap_or(&scale::ROCKS[2]).across.at(roll(5));
-                    plants::rock(world, foot, across, &mut rng);
-                    land.rocks.push(across);
+                    _ if world.get(foot) != Block::Air => {}
+                    What::Young(needles) => plants::young(world, foot, needles, &mut rng),
+                    What::Bush => plants::bush(world, foot, &mut rng),
+                    What::Log => plants::log(world, foot, &mut rng),
+                    What::Stump => plants::stump(world, foot, &mut rng),
+                    What::Rock(across) => plants::rock(world, foot, across, &mut rng),
                 }
             }
         }
     }
     // Ground cover: long grass and flowers in the open, ferns under trees, reeds at the
     // water's edge. In patches, not sprinkled: a slow noise says where it is thick.
-    for z in -span..span {
-        for x in -span..span {
+    for z in lo.1..hi.1 {
+        for x in lo.0..hi.0 {
             let (h, biome) = (land.height(x, z), land.biome(x, z));
             let on = IVec3::new(x, h, z);
             if world.get(on) != Block::Air || !world.get(on - IVec3::Y).solid() {

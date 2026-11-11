@@ -70,7 +70,7 @@ impl Plugin for MotionPlugin {
                 sim
             }))
             .add_systems(FixedUpdate, tick)
-            .add_systems(Update, (populate, enrol, drivers, show, far_off).chain())
+            .add_systems(Update, (populate, mirror, enrol, drivers, show, far_off).chain())
             .add_systems(Update, bodies);
     }
 }
@@ -80,7 +80,25 @@ fn populate(mut commands: Commands, args: Res<crate::Args>, registry: Res<Regist
     let Some(terrain) = terrain.filter(|_| args.wild && !*done) else { return };
     *done = true;
     live.0.populate(&terrain.0, &terrain.1);
-    for (&id, agent) in &live.0.agents {
+    let _ = (&mut commands, &registry);
+}
+
+/// The wild creatures that are drawn are the ones being lived: one that wakes (the player
+/// has come near) gets its model, one that sleeps or is gone loses it. The island holds
+/// thousands; a couple of hundred are ever on screen.
+fn mirror(mut commands: Commands, registry: Res<Registry>, mut live: ResMut<Live>, cameras: Query<&GlobalTransform, With<Camera3d>>, controlled: Query<&Mover, With<Controlled>>, wild: Query<(Entity, &Mover), With<Wild>>) {
+    // Whoever is watching: the creature being played, or the camera.
+    let watcher = controlled.iter().next().and_then(|m| live.agent(m)).map(|a| a.body.pos).or(cameras.iter().next().map(|c| c.translation()));
+    live.0.focus = watcher;
+    let mut drawn = std::collections::HashSet::new();
+    for (entity, mover) in &wild {
+        if live.agent(mover).is_some_and(|a| a.awake) {
+            drawn.insert(mover.id);
+        } else {
+            commands.entity(entity).despawn();
+        }
+    }
+    for (&id, agent) in live.0.agents.iter().filter(|(id, a)| a.awake && a.driver == Driver::Mind && !drawn.contains(id)) {
         let Some(def) = registry.index(&live.0.kinds[agent.kind].id) else { continue };
         let at = Transform::from_translation(agent.body.pos).with_rotation(Quat::from_rotation_y(agent.facing));
         commands.spawn((Creature::new(def), at, Visibility::default(), Mover::new(id), Wild));
@@ -97,16 +115,16 @@ fn enrol(mut commands: Commands, registry: Res<Registry>, terrain: Option<Res<Te
         at.translation = live.0.agents[&id].body.pos;
         commands.entity(entity).insert(Mover::new(id));
     }
-    if live.0.agents.len() != movers.iter().count() + new.iter().count() {
-        let kept: std::collections::HashSet<u32> = movers.iter().map(|m| m.id).collect();
-        // Ones just enrolled have no `Mover` to be found by until the commands are applied.
-        let fresh = live.0.agents.len() - new.iter().count();
-        let mut n = 0;
-        live.0.agents.retain(|id, _| {
-            n += 1;
-            kept.contains(id) || n > fresh
-        });
-    }
+    // One put down by the panel or played, whose creature has gone, goes too. (The wild are
+    // the simulation's to keep or let go, drawn or not: `mirror`. Ones just enrolled have no
+    // `Mover` to be found by until the commands are applied; they are the last in the list.)
+    let kept: std::collections::HashSet<u32> = movers.iter().map(|m| m.id).collect();
+    let fresh = live.0.agents.len() - new.iter().count();
+    let mut n = 0;
+    live.0.agents.retain(|id, agent| {
+        n += 1;
+        kept.contains(id) || n > fresh || agent.driver == Driver::Mind
+    });
 }
 
 /// Who drives each creature: the keys or a wander (set from outside each frame), its own

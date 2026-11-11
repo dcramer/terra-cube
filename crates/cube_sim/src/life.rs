@@ -334,6 +334,9 @@ pub struct Agent {
     pub power: f32,
     /// Seconds since it was last hurt: left in peace, it mends.
     pub calm: f32,
+    /// Whether it is being lived this tick: near enough to whoever is watching, and with
+    /// ground made under it. Asleep, it is as it was left.
+    pub awake: bool,
     /// What it carries, if it is a person (`items`).
     pub pack: Option<crate::items::Pack>,
     landing: f32,
@@ -356,6 +359,8 @@ pub struct Hit {
 const LIES: f32 = 25.0;
 const RETURNS: f32 = 150.0;
 const WAKES: f32 = 5.0;
+/// How far from the watcher a creature is still lived, metres.
+pub const AWAKE: f32 = 110.0;
 /// A blow lands this long into a swing, reaches this far past the body, and to this far
 /// either side of straight ahead (radians).
 const SWING: f32 = 0.35;
@@ -370,6 +375,9 @@ pub struct Sim {
     /// By id, in order, so a tick visits them the same way every run.
     pub agents: BTreeMap<u32, Agent>,
     pub tick: u64,
+    /// Where whoever is watching is. Only what is within [`AWAKE`] of it is lived; with
+    /// none, everything is. A big island has thousands of creatures and one person.
+    pub focus: Option<Vec3>,
     /// The dead not yet replaced: kind, where it lived, and the tick it died.
     graves: Vec<(usize, Vec2, u64)>,
     /// The time: days since the world began, the hour its fraction (`sky`).
@@ -387,7 +395,7 @@ fn turn_between(from: f32, to: f32) -> f32 {
 
 impl Sim {
     pub fn new(kinds: Vec<Kind>, seed: u64) -> Self {
-        Self { kinds, agents: BTreeMap::new(), tick: 0, graves: Vec::new(), when: crate::sky::START, rng: Rng::new(seed), next: 1 }
+        Self { kinds, agents: BTreeMap::new(), tick: 0, focus: None, graves: Vec::new(), when: crate::sky::START, rng: Rng::new(seed), next: 1 }
     }
 
     /// A person uses what is in their hand: a blade swings, berries are eaten, a shovel asks
@@ -448,7 +456,7 @@ impl Sim {
         let mind = Mind::new(Vec2::new(pos.x, pos.z), &mut self.rng);
         self.agents.insert(
             id,
-            Agent { kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), calm: 0.0, pack: (k.temper == Temper::Person).then(crate::items::Pack::starting), stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
+            Agent { kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), calm: 0.0, awake: true, pack: (k.temper == Temper::Person).then(crate::items::Pack::starting), stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
         );
         id
     }
@@ -457,15 +465,32 @@ impl Sim {
     pub fn step(&mut self, world: &World) {
         self.tick += 1;
         self.when = crate::sky::later(self.when, DT);
+        // Who is lived this tick: what is near the watcher and has ground made under it. One
+        // just woken is stood clear of whatever its place turned out to hold.
+        let focus = self.focus;
+        for agent in self.agents.values_mut() {
+            let made = world.chunks.contains_key(&(agent.body.pos / (CELL * cube_voxel::CHUNK as f32)).floor().as_ivec3().with_y(0)) || focus.is_none();
+            let awake = made && focus.is_none_or(|f| f.distance(agent.body.pos) < AWAKE);
+            if awake && !agent.awake {
+                for _ in 0..200 {
+                    if !agent.body.blocked(world, agent.body.pos) {
+                        break;
+                    }
+                    agent.body.pos.y += cube_voxel::BIT;
+                }
+                agent.before = agent.body.pos;
+            }
+            agent.awake = awake;
+        }
         // Minds see the world as it was at the start of the tick.
-        let seen: Vec<mind::Seen> = self.agents.iter().filter(|(_, a)| a.dead.is_none()).map(|(&id, a)| mind::Seen { id, pos: a.body.pos, vel: a.body.vel, temper: self.kinds[a.kind].temper, reach: a.body.half + a.body.long.length() }).collect();
+        let seen: Vec<mind::Seen> = self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.awake).map(|(&id, a)| mind::Seen { id, pos: a.body.pos, vel: a.body.vel, temper: self.kinds[a.kind].temper, reach: a.body.half + a.body.long.length() }).collect();
         let mut hits = Vec::new();
-        for (&id, agent) in self.agents.iter_mut().filter(|(_, a)| a.driver == Driver::Mind && a.dead.is_none()) {
+        for (&id, agent) in self.agents.iter_mut().filter(|(_, a)| a.driver == Driver::Mind && a.dead.is_none() && a.awake) {
             hits.extend(mind::think(id, agent, &self.kinds[agent.kind], &seen, world, &mut self.rng));
         }
         // A driven creature's blow: it lands part way through the swing on the nearest thing
         // in reach in front of it.
-        for (&id, agent) in self.agents.iter_mut().filter(|(_, a)| a.dead.is_none()) {
+        for (&id, agent) in self.agents.iter_mut().filter(|(_, a)| a.dead.is_none() && a.awake) {
             // What a person's blow takes is what is in their hand.
             if let Some(pack) = &agent.pack {
                 agent.power = pack.held().and_then(|i| i.power()).unwrap_or(FISTS);
@@ -523,6 +548,13 @@ impl Sim {
                 if *lain >= WAKES {
                     let home = agent.mind.home;
                     agent.body.pos = Vec3::new(home.x, world.ground_height(home.x, home.y), home.y);
+                    // Clear of whatever has grown or been built where it lives.
+                    for _ in 0..200 {
+                        if !agent.body.blocked(world, agent.body.pos) {
+                            break;
+                        }
+                        agent.body.pos.y += cube_voxel::BIT;
+                    }
                     (agent.body.vel, agent.before, agent.dead, agent.health, agent.hurt) = (Vec3::ZERO, agent.body.pos, None, self.kinds[agent.kind].health(), 0.0);
                 }
             } else if *lain >= LIES {
@@ -548,14 +580,14 @@ impl Sim {
         let mut pillars = Vec::new();
         for agent in self.agents.values_mut() {
             agent.body.long = along(agent, &self.kinds);
-            if agent.driver == Driver::Stand {
+            if agent.driver == Driver::Stand && agent.awake {
                 pillars.push(Pillar { pos: agent.body.pos, half: agent.body.half, height: agent.body.height, long: agent.body.long });
             }
         }
-        let mut bodies: Vec<Body> = self.agents.values().filter(|a| a.driver != Driver::Stand).map(|a| a.body).collect();
+        let mut bodies: Vec<Body> = self.agents.values().filter(|a| a.driver != Driver::Stand && a.awake).map(|a| a.body).collect();
         body::separate(world, &mut bodies, &pillars);
 
-        for (agent, pushed) in self.agents.values_mut().filter(|a| a.driver != Driver::Stand).zip(bodies) {
+        for (agent, pushed) in self.agents.values_mut().filter(|a| a.driver != Driver::Stand && a.awake).zip(bodies) {
             let (was, was_grounded) = (agent.body.pos, agent.body.grounded || agent.body.swimming);
             agent.body = pushed;
             let mut intent = if agent.dead.is_some() { Intent::default() } else { agent.intent };
@@ -887,7 +919,7 @@ mod tests {
 
     #[test]
     fn the_same_seed_lives_the_same_life_and_nothing_leaves_the_world() {
-        let (world, land) = terrain::generate(6, terrain::RADIUS / 2);
+        let (world, land) = terrain::generate(6, 12);
         let live = || {
             let (_, mut sim) = stage();
             let placed = sim.populate(&world, &land);

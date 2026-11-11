@@ -4,8 +4,8 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 
 ## Where things stand
 
-- **Works:** the creature pipeline (`cargo forge`): one line of text to an animated model the game loads, checked by numbers and by one picture. The world (`make play`): an island made from a seed, with eight kinds of creature living in it by their own minds (grazing, roaming, fleeing, hunting), walked as the player. `cargo world` judges both land and life with no window. The sandbox (`make run`) poses any creature.
-- **Baseline only:** the world is 0.25 m cells (each able to break into 5 cm bits), painted with grain made in code and drawn in blocks sized to the slope, under a scattering sky. Digging and building are a first cut: a click cuts or raises a ball. Nothing dies, nothing is saved, no networking.
+- **Works:** the creature pipeline (`cargo forge`): one line of text to an animated model the game loads, checked by numbers and by one picture. The world (`make play`): an island a kilometre across made from a seed and held in cells only near the player, with a calendar (day, seasons, a moon), an ecology that places some two thousand creatures and the small life round the camera, sound, and a player with health, a pack, a sword and a torch. `cargo world` judges both land and life with no window. The sandbox (`make run`) poses any creature.
+- **Baseline only:** the world is 0.25 m cells (each able to break into 5 cm bits), painted with grain made in code and drawn in blocks sized to the slope, under a scattering sky. Digging and building are a first cut: a click cuts or raises a ball. Nothing is saved, no networking.
 - **Next:** [docs/engine.md](docs/engine.md#order-of-work).
 
 ## Layout
