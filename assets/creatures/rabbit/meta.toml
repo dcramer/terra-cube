@@ -1,10 +1,10 @@
 # Measured by `cargo forge finish`; do not edit.
 height = 0.3
-length = 0.3003853
+length = 0.30015022
 width = 0.10156862
-walk_speed = 0.54171044
-run_speed = 1.0336239
-sprint_speed = 1.8490382
+walk_speed = 0.5146249
+run_speed = 1.1455998
+sprint_speed = 2.0493505
 triangles = 7306
 joints = 23
 
@@ -49,12 +49,12 @@ looping = false
 source = "made"
 
 [clips.run]
-seconds = 0.23333333
+seconds = 0.2
 looping = true
 source = "made"
 
 [clips.sprint]
-seconds = 0.23333333
+seconds = 0.2
 looping = true
 source = "made"
 

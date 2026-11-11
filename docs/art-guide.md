@@ -44,7 +44,7 @@ Each of these was built and looked at, not argued. Do not try them again without
 
 **Style** (shared, in `style.toml`), in short: stylised low-poly; proportions true to the real animal with a head and eyes of natural size; lean and angular, alert and wary, never cute; a dangerous creature looks dangerous; chunky faceted planar forms; bold readable silhouette; simple large shapes; hand-painted flat colour in a few muted natural hues with one accent; soft stepped shading; not cute, not chibi, not a toy, not a mascot, no big round eyes, no smile; no noise, grain, photorealism or fur strands; no pure black or white; one character, full body, plain light grey background, even light, no ground shadow.
 
-The seven creatures built before 2026-11-10 (bear, boar beast, deer, goblin, rabbit, troll, wolf) and the player are in the older, cuter proportions. They are to be rebuilt as their turn comes; the player first.
+Nothing in the game is in the older, cuter proportions any more: the seven creatures built before the change (bear, boar beast, deer, goblin, rabbit, troll, wolf) were drawn and built again on 2026-11-10, and the player became a castaway (chosen from six subjects drawn with `cargo forge ideas player`; the first was a stock medieval adventurer).
 
 ### Sizes
 

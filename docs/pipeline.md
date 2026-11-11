@@ -64,8 +64,8 @@ A gait is right when a foot that is down stays where it was put while the body g
 
 | | Creatures |
 |---|---|
-| In the world, passing | bear, boar beast, deer, goblin, rabbit, troll, wolf (the first seven); badger, beaver, bullfrog, fox, goat, golem, hedgehog, monitor lizard, moose, ogre, pony, squirrel, tortoise |
-| In the world, one check failing | lynx (`eat` lifts its feet), shambler (Tripo's idle floats it 11% off the floor; a made idle left it in a T-pose, which is worse), bog toad (`die` stretches 71%) |
+| In the world, passing | bear, boar beast, deer, goblin, rabbit, troll (six of the first seven, all rebuilt in the style that is not cute); badger, beaver, bullfrog, fox, goat, golem, hedgehog, lynx, monitor lizard, moose, ogre, pony, squirrel, tortoise; the player, now a castaway |
+| In the world, failing | wolf (rebuilt: `run` stretches its skin 70% and `sprint` 77% against 60%, whatever its stride and after a second rig; the leaner model's weights are the cause), shambler (Tripo's idle floats it 11% off the floor; a made idle left it in a T-pose, which is worse), bog toad (`die` stretches 71%) |
 | Bought, kept out of the world (`groups = 0`) | crow, crab |
 | Concept only | the other five birds and six crawlers |
 

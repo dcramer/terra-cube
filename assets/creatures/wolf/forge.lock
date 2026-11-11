@@ -6,4 +6,4 @@ steps = ["concept", "model", "rig", "export"]
 concept = 4.0
 export = 0.0
 model = 90.0
-rig = 40.0
+rig = 60.0
