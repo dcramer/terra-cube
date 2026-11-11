@@ -401,6 +401,9 @@ pub struct Sim {
     pub when: f32,
     pub rng: Rng,
     next: u32,
+    /// The seed of the land its creatures were put on, by which they know its trails
+    /// (`terrain::worn`); none, and they know of none.
+    pub trails: Option<u32>,
 }
 
 /// The fastest anything turns, radians a second: a full turn about in a third of a second.
@@ -412,7 +415,7 @@ fn turn_between(from: f32, to: f32) -> f32 {
 
 impl Sim {
     pub fn new(kinds: Vec<Kind>, seed: u64) -> Self {
-        Self { kinds, agents: BTreeMap::new(), tick: 0, focus: None, graves: Vec::new(), when: crate::sky::START, rng: Rng::new(seed), next: 1 }
+        Self { kinds, agents: BTreeMap::new(), tick: 0, focus: None, graves: Vec::new(), when: crate::sky::START, rng: Rng::new(seed), next: 1, trails: None }
     }
 
     /// A person's state as text, a thing a line: when it is, where they are, their health,
@@ -558,7 +561,7 @@ impl Sim {
             if k.hours == crate::ecology::Hours::Dusk {
                 agent.mind.about = agent.mind.about.max(0.35);
             }
-            hits.extend(mind::think(id, agent, &self.kinds[agent.kind], &seen, world, &mut self.rng));
+            hits.extend(mind::think(id, agent, &self.kinds[agent.kind], &seen, world, self.trails, &mut self.rng));
         }
         // A driven creature's blow: it lands part way through the swing on the nearest thing
         // in reach in front of it.
@@ -759,6 +762,7 @@ impl Sim {
     /// Anything that might hurt the player starts well away from the start. Returns how many.
     pub fn populate(&mut self, world: &World, land: &Land) -> usize {
         let mut placed = 0;
+        self.trails = Some(land.seed);
         // Where each kind's groups make their home is the ecology's to say: the biome it
         // lives in, how near water, under how much cover.
         let ecology = crate::ecology::Ecology::new(land);

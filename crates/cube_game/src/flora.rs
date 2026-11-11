@@ -596,7 +596,8 @@ impl Shape {
             // (Three boxes near to; farther off, one.)
             for k in 0..if level == 0 { 3u32 } else { 1 } {
                 let off = Vec3::new(hash(n, 100 + k) - 0.5, hash(n, 110 + k) - 0.5, hash(n, 120 + k) - 0.5) * radii * 0.5;
-                let half = snap(radii * if k == 0 { 0.6 } else { 0.42 }, 0.25).max(Vec3::splat(0.25));
+                // (Away from the camera the heart is smaller: with few boxes over it, a bush was one cube.)
+                let half = snap(radii * if level > 0 { 0.45 } else if k == 0 { 0.6 } else { 0.42 }, 0.25).max(Vec3::splat(0.25));
                 let at = snap(middle + if k == 0 { Vec3::ZERO } else { off }, 0.25);
                 let dark = under.map(|c| c * 0.5);
                 self.boxed(at - half, at + half, dark.map(|c| c * 1.3), dark, dark.map(|c| c * 0.8), grain, Vec3::ZERO, 0.2, n * 7 + k);
@@ -613,7 +614,7 @@ impl Shape {
         }
         let area = 4.0 * std::f32::consts::PI * ((radii.x * radii.y).powf(1.6) + (radii.x * radii.z).powf(1.6) + (radii.y * radii.z).powf(1.6)).powf(1.0 / 1.6) / 3.0f32.powf(1.0 / 1.6);
         let unit = [0.45f32, 0.9, 1.4][level as usize].min(radii.x.min(radii.z) * 0.9).max(0.15);
-        let count = ((area * [0.17, 0.15, 0.08][level as usize] / (unit * unit)) as u32).clamp([4, 1, if n.is_multiple_of(2) { 1 } else { 0 }][level as usize], 120);
+        let count = ((area * [0.17, 0.15, 0.08][level as usize] / (unit * unit)) as u32).clamp([4, 3, if n.is_multiple_of(2) { 1 } else { 0 }][level as usize], 120);
         for i in 0..count {
             let roll = |k: u32| hash(n.wrapping_mul(977).wrapping_add(i), k);
             let (turn, up) = (roll(1) * std::f32::consts::TAU, roll(2) * 2.0 - 1.0);
@@ -641,6 +642,8 @@ impl Shape {
             0 if big > 2.4 => 0.2,
             0 if big < 0.3 => 0.05,
             0 => 0.1,
+            // (A boulder a few steps off, in the next region, is still seen close.)
+            1 if big <= 2.4 => 0.15,
             1 => 0.25,
             _ => 0.5,
         };

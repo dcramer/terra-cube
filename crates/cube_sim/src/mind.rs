@@ -245,7 +245,7 @@ fn steer(world: &World, agent: &Agent, speed: f32, want: Vec2, nerve: Nerve, vee
 
 /// One tick of one mind: sets the agent's `intent`, `gait`, `turn_to` and `doing`, and gives
 /// back the blow it lands this tick, if any.
-pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &World, rng: &mut Rng) -> Option<Hit> {
+pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &World, trails: Option<u32>, rng: &mut Rng) -> Option<Hit> {
     let me = flat(agent.body.pos);
     let mut m = agent.mind.clone();
     m.left -= DT;
@@ -317,8 +317,18 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
                     m.left = rng.between(8.0, 16.0);
                     // Somewhere dry near home that it can walk most of the way to; else it stays.
                     m.goal = me;
-                    for _ in 0..8 {
+                    // The larger animals go by the trails when one is in reach: of the places
+                    // it thinks of first, it takes only one that lies on a trail. That is
+                    // what a trail is; before this they were drawn and nothing walked them.
+                    let by_trail = trails.filter(|_| kind.height > 0.5);
+                    for n in 0..24 {
                         let to = m.home + Vec2::from_angle(rng.between(0.0, std::f32::consts::TAU)) * rng.between(2.0, range(kind));
+                        if n < 16 && by_trail.is_some_and(|seed| crate::terrain::worn(to.x, to.y, seed) < 0.3) {
+                            continue;
+                        }
+                        if by_trail.is_none() && n >= 8 {
+                            break;
+                        }
                         if !dry_ground(world, to, agent.body.pos.y, kind.height) {
                             continue;
                         }

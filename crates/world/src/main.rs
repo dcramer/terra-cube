@@ -139,7 +139,7 @@ fn survey_command(args: &Args) -> ! {
 }
 
 fn run_command(args: &Args) -> ! {
-    let (world, _, mut sim) = living(args);
+    let (world, land, mut sim) = living(args);
     // WORLD_TRACE=wolf: a line a second for one of that kind, the one that ends up stuck most.
     let traced = std::env::var("WORLD_TRACE").ok().and_then(|id| {
         let mut ahead = Sim::clone(&sim);
@@ -176,6 +176,20 @@ fn run_command(args: &Args) -> ! {
     }
     let mut checks = Checks(Vec::new());
     println!("life seed={} creatures={} (lived, near the start: {}) seconds={}", args.seed, sim.agents.len(), sim.agents.values().filter(|a| a.awake).count(), args.seconds);
+    // Whether the larger animals keep to the trails: the share of them standing on one now,
+    // against the share of meadow and forest that is trail at all.
+    let big: Vec<_> = sim.agents.values().filter(|a| a.awake && a.dead.is_none() && sim.kinds[a.kind].height > 0.5 && sim.kinds[a.kind].temper != cube_sim::life::Temper::Person).collect();
+    let on = big.iter().filter(|a| land.trail((a.body.pos.x / CELL).floor() as i32, (a.body.pos.z / CELL).floor() as i32) > 0.0).count();
+    let (mut ground, mut trail) = (0, 0);
+    for z in (-land.span..land.span).step_by(7) {
+        for x in (-land.span..land.span).step_by(7) {
+            if matches!(land.biome(x, z), Biome::Meadow | Biome::Forest) {
+                ground += 1;
+                trail += (land.trail(x, z) > 0.0) as usize;
+            }
+        }
+    }
+    println!("trails: {} of {} larger animals on one ({:.0}%) · trails are {:.1}% of meadow and forest", on, big.len(), on as f32 * 100.0 / big.len().max(1) as f32, trail as f32 * 100.0 / ground.max(1) as f32);
     for (k, kind) in sim.kinds.iter().enumerate() {
         // Of those that were lived at all: the rest of the island slept.
         let of: Vec<_> = sim.agents.values().filter(|a| a.kind == k && a.log.acts.iter().sum::<f32>() > args.seconds * 0.5).collect();

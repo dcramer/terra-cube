@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -79,6 +79,10 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 	@$(MAKE) --no-print-directory fight
 	@$(MAKE) --no-print-directory swim
 	@$(MAKE) --no-print-directory window
+	@tools/seasons.sh
+
+seasons: ## no window: the meadow in summer and winter, judged by the ground's colour: green, then snow
+	@tools/seasons.sh
 
 swim: ## no window: the player is put in deep water in the real game; passes if he floats, swims and is heard
 	@tools/xkeys/swim.sh
