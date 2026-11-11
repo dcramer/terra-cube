@@ -92,6 +92,19 @@ Added 2026-11-11, each the loudest stretch of its recording, for animals that ha
 | toad_1.ogg | 1.40 | A common toad's mating call (7.05 to 8.45 s of 10 s); the giant toad has it played low | https://commons.wikimedia.org/wiki/File:Erdkr%C3%B6te_Paarungsruf.OGG | Erdkröte Paarungsruf.OGG | Public domain | Licensing section: released to the public domain, not copyrighted |
 | ogre_1.ogg | 1.80 | Monster growls, a voice (0.30 to 2.10 s of 54 s), from pdsounds.org | https://commons.wikimedia.org/wiki/File:Monster_growls.ogg | Monster growls.ogg | Public domain | Licensing section: public domain, not copyrighted |
 
+Added 2026-11-11 from a pack of voiced creature sounds already used here (wolf_2), chosen by length and pitch as measured, for the last four animals that had another's voice. They are a person's imitations, not the animals:
+
+| File | Seconds | What it is | Source page | Original file | Licence | Where the licence is stated |
+|---|---|---|---|---|---|---|
+| fox_1.ogg | 0.46 | A sharp bark | https://opengameart.org/content/80-cc0-creature-sfx | 80-CC0-creature-SFX_0.zip: barking_02.ogg | CC0 | "License(s): CC0" box on the page |
+| fox_2.ogg | 0.40 | A bark | https://opengameart.org/content/80-cc0-creature-sfx | 80-CC0-creature-SFX_0.zip: barking_01.ogg | CC0 | "License(s): CC0" box on the page |
+| lynx_1.ogg | 0.90 | A growl | https://opengameart.org/content/80-cc0-creature-sfx | 80-CC0-creature-SFX_0.zip: roar_02.ogg | CC0 | "License(s): CC0" box on the page |
+| lynx_2.ogg | 0.69 | A spit, as a cat gives | https://opengameart.org/content/80-cc0-creature-sfx | 80-CC0-creature-SFX_0.zip: spit_02.ogg | CC0 | "License(s): CC0" box on the page |
+| badger_1.ogg | 0.53 | A low grunt | https://opengameart.org/content/80-cc0-creature-sfx | 80-CC0-creature-SFX_0.zip: grunt_02.ogg | CC0 | "License(s): CC0" box on the page |
+| badger_2.ogg | 0.67 | A grunt | https://opengameart.org/content/80-cc0-creature-sfx | 80-CC0-creature-SFX_0.zip: grunt_03.ogg | CC0 | "License(s): CC0" box on the page |
+| squirrel_1.ogg | 0.57 | A high chitter | https://opengameart.org/content/80-cc0-creature-sfx | 80-CC0-creature-SFX_0.zip: bug_02.ogg | CC0 | "License(s): CC0" box on the page |
+| squirrel_2.ogg | 0.45 | A high chitter | https://opengameart.org/content/80-cc0-creature-sfx | 80-CC0-creature-SFX_0.zip: bug_04.ogg | CC0 | "License(s): CC0" box on the page |
+
 Made here, not recorded (2026-11-11), for creatures that had no sound of their own:
 
 | File | Seconds | What it is | Source | Original | Licence | Stated |

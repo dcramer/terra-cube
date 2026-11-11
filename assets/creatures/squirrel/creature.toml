@@ -7,7 +7,7 @@ gait_gain = 0.9
 
 [life]
 temper = "timid"
-voice = "rabbit"
+voice = "squirrel"
 habitat = "forest"
 winter = 0.5
 cover = "deep"
