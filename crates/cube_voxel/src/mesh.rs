@@ -44,6 +44,9 @@ fn uv(grain: Grain, n: IVec3, cube: IVec3, corner: IVec3, per: i32) -> [f32; 2] 
     }
 }
 
+/// How free a leaf is to move in the wind, of the 1 that the tip of a blade of grass is.
+const LEAF: f32 = 0.4;
+
 /// The tangent of a face that looks along `n`, to match [`uv`]: `u` runs along x on tops and
 /// on faces that look along z, along z on faces that look along x; `v` runs down a side.
 fn tangent(n: IVec3) -> [f32; 4] {
@@ -331,7 +334,8 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                 // Water hides what is under it by how much of it there is: a ford shows its
                 // bed, the sea does not.
                 let depth = if liquid { (1..=crate::cells(4.0)).take_while(|d| near.get(local - IVec3::Y * *d) == Block::Water).count() } else { 0 };
-                let alpha = if liquid { 0.42 + depth as f32 * CELL * 0.14 } else { 1.0 };
+                // Of what is solid, alpha is how fast it is held against the wind: leaves give.
+                let alpha = if liquid { 0.42 + depth as f32 * CELL * 0.14 } else if block.foliage() { 1.0 - LEAF } else { 1.0 };
                 if matches!(block, Block::Grass | Block::Turf | Block::Moss | Block::Litter) || block.foliage() {
                     // Patches: lighter and yellower here, deeper there.
                     let drift = patch(cell) - 0.5;
@@ -530,11 +534,13 @@ fn blade(m: &mut MeshData, cell: IVec3, lo: IVec3, hi: IVec3, colour: [f32; 3]) 
         let start = m.positions.len() as u32;
         let shade = if n == IVec3::Y { 1.0 } else { 0.78 + 0.12 * (n.x + n.z) as f32 };
         for (su, sv) in [(0, 0), (1, 0), (1, 1), (0, 1)] {
-            m.positions.push(at(from + u * size * su + v * size * sv));
+            let corner = from + u * size * su + v * size * sv;
+            m.positions.push(at(corner));
             m.normals.push(n.as_vec3().to_array());
             m.tangents.push(tangent(n));
             m.uvs.push(Grain::Plain.uv(SPAN as f32 * 0.5, SPAN as f32 * 0.5));
-            m.colors.push([colour[0] * shade / MEAN, colour[1] * shade / MEAN, colour[2] * shade / MEAN, 1.0]);
+            // How free it is to move in the wind is in the alpha: the foot is held, the tip is not.
+            m.colors.push([colour[0] * shade / MEAN, colour[1] * shade / MEAN, colour[2] * shade / MEAN, 1.0 - (corner.y as f32 / SPLIT as f32).min(1.0)]);
         }
         m.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
     }
@@ -682,7 +688,7 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
                         m.tangents.push(tangent(normal));
                         m.uvs.push(uv(grain, normal, cell, corner, 1));
                         let base = if eases(block) && normal == IVec3::Y { eased.corner(corner - origin).1 } else { base };
-                        m.colors.push([base[0] * k * (1.0 + warm), base[1] * k, base[2] * k * (1.0 - warm), if liquid { 0.8 } else { 1.0 }]);
+                        m.colors.push([base[0] * k * (1.0 + warm), base[1] * k, base[2] * k * (1.0 - warm), if liquid { 0.8 } else if block.foliage() { 1.0 - LEAF } else { 1.0 }]);
                     }
                     if (at[2] - at[0]).cross(at[3] - at[1]).length_squared() < 1e-10 {
                         m.positions.truncate(start as usize);

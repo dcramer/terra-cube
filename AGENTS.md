@@ -14,10 +14,11 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 |---|---|
 | `crates/cube_voxel` | Voxel data (cells, and the bits a cell breaks into) and chunk meshing. No engine types, so the simulation can use it headless. |
 | `crates/cube_sim` | The simulation, at a fixed 60 ticks a second, no engine types: how big everything is (`scale`: the one place sizes live), the world from a seed (`terrain`), bodies moving through voxels (`body`), what grows on it (`plants`), every creature and its mind (`life`, `mind`). |
-| `crates/cube_game` | The Bevy app: draws what the simulation holds, takes the player's keys. Also the sandbox panel, contact sheets, scene pictures. |
+| `crates/cube_game` | The Bevy app: draws what the simulation holds, takes the player's keys. Sky, light, wind and what drifts in the air (`world`, `air`). Also the sandbox panel, contact sheets, scene pictures. |
 | `crates/world` | `cargo world`: the land and its creatures judged headless (`survey`, `run`, `map`, `grade`, `who`, `dig`). |
 | `crates/forge` | The creature pipeline CLI. Each file's header says what it holds; `main.rs` has the map. |
 | `tools/tripo` | Tripo Studio CLI (TypeScript, Node ≥ 22.18, no dependencies). Forge drives it; see its README before calling it by hand. |
+| `assets/shaders/` | Wind in what grows: two vertex shaders that must be changed together ([engine.md](docs/engine.md#wind-and-the-air)). |
 | `assets/creatures/style.toml` | The art style and body plans, as forge sends them. Change the look here, not per creature. |
 | `assets/creatures/<id>/` | `creature.toml` (written by hand; `[life]` is how it behaves and where it lives), `forge.lock` (what Tripo made), `meta.toml` and `model.glb` (made by forge; never edit). |
 | `docs/` | [engine.md](docs/engine.md) design and order of work · [pipeline.md](docs/pipeline.md) making creatures · [art-guide.md](docs/art-guide.md) how creatures and the land should look, and what was tried and dropped · [development.md](docs/development.md) setup and commands · `research/` dated notes with sources. |

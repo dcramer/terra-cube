@@ -9,6 +9,7 @@
 //! one with the keys, the follow and first-person cameras) · `ui` (the egui panel, skeleton
 //! overlay) · `camera` (free orbit) · `shot` (contact sheets and scene pictures).
 
+mod air;
 mod camera;
 mod creatures;
 mod motion;
@@ -247,11 +248,11 @@ fn main() {
     .insert_resource(args)
     .add_plugins(creatures::CreaturesPlugin);
     if scene {
-        app.add_plugins((world::WorldPlugin, motion::MotionPlugin, player::PlayPlugin, shot::ScenePlugin));
+        app.add_plugins((world::WorldPlugin, air::AirPlugin, motion::MotionPlugin, player::PlayPlugin, shot::ScenePlugin));
     } else if shot {
         app.add_plugins(shot::ShotPlugin);
     } else {
-        app.add_plugins((world::WorldPlugin, camera::CameraPlugin, motion::MotionPlugin, player::PlayPlugin, ui::UiPlugin));
+        app.add_plugins((world::WorldPlugin, air::AirPlugin, camera::CameraPlugin, motion::MotionPlugin, player::PlayPlugin, ui::UiPlugin));
     }
     app.run();
 }

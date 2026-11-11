@@ -6,7 +6,9 @@ use cube_sim::terrain::{self, Land, SEA};
 use bevy::camera::{Exposure, visibility::VisibilityRange};
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::light::{Atmosphere, AtmosphereEnvironmentMapLight, SunDisk, atmosphere::ScatteringMedium, light_consts::lux};
-use bevy::pbr::{AtmosphereSettings, ScreenSpaceAmbientOcclusion};
+use bevy::pbr::{AtmosphereSettings, ExtendedMaterial, MaterialExtension, ScreenSpaceAmbientOcclusion};
+use bevy::render::render_resource::AsBindGroup;
+use bevy::shader::ShaderRef;
 use bevy::render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection};
 use bevy::post_process::bloom::Bloom;
 use bevy::image::{ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
@@ -23,6 +25,23 @@ pub struct WorldPlugin;
 #[derive(Resource)]
 pub struct Terrain(pub Voxels, pub Land);
 
+/// The land's material: Bevy's own, with wind in what grows. The wind is in the two vertex
+/// shaders (`assets/shaders/wind.wesl` for the picture, `wind_prepass.wesl` for depth and
+/// shadows), which move each corner by how free the mesher said it is.
+pub type Windy = ExtendedMaterial<StandardMaterial, Wind>;
+
+#[derive(Asset, AsBindGroup, TypePath, Clone, Default)]
+pub struct Wind {}
+
+impl MaterialExtension for Wind {
+    fn vertex_shader() -> ShaderRef {
+        "shaders/wind.wesl".into()
+    }
+    fn prepass_vertex_shader() -> ShaderRef {
+        "shaders/wind_prepass.wesl".into()
+    }
+}
+
 /// How many faces a chunk's mesh has: what a scene's `pace` adds up for the ones in view.
 #[derive(Component)]
 pub struct Faces(pub u32);
@@ -34,7 +53,7 @@ pub struct Dirty(pub HashSet<IVec3>);
 /// The two materials every chunk is drawn with.
 #[derive(Resource)]
 struct Look {
-    solid: Handle<StandardMaterial>,
+    solid: Handle<Windy>,
     water: Handle<StandardMaterial>,
 }
 
@@ -94,7 +113,7 @@ pub fn look() -> impl Bundle {
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().add_systems(Startup, setup).add_systems(Update, stream);
+        app.add_plugins(MaterialPlugin::<Windy>::default()).insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().add_systems(Startup, setup).add_systems(Update, stream);
     }
 }
 
@@ -122,7 +141,7 @@ pub fn spawn_lights(commands: &mut Commands, shadows: bool) {
     ));
 }
 
-fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, mut images: ResMut<Assets<Image>>, mut mediums: ResMut<Assets<ScatteringMedium>>) {
+fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, mut images: ResMut<Assets<Image>>, mut mediums: ResMut<Assets<ScatteringMedium>>, mut windy: ResMut<Assets<Windy>>) {
     let (voxels, land) = terrain::generate(args.seed, terrain::RADIUS);
     // The paint: grain for every surface, made in code (`cube_voxel::texture`). Drawn smooth,
     // so it reads as paint and not as pixels; far off the smaller copies take over, so distant
@@ -138,7 +157,7 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     };
     // The paint, and the relief that goes with it: which way each point of a surface faces.
     let (paint, relief) = (picture(atlas.rgba, TextureFormat::Rgba8UnormSrgb), picture(atlas.relief, TextureFormat::Rgba8Unorm));
-    let material = materials.add(StandardMaterial { base_color: Color::WHITE, base_color_texture: Some(paint), normal_map_texture: Some(relief), perceptual_roughness: 0.95, reflectance: 0.2, ..default() });
+    let material = windy.add(ExtendedMaterial { base: StandardMaterial { base_color: Color::WHITE, base_color_texture: Some(paint), normal_map_texture: Some(relief), perceptual_roughness: 0.95, reflectance: 0.2, ..default() }, extension: Wind {} });
     // Water is its own mesh and material: it is blended over what is under it.
     let water = materials.add(StandardMaterial { base_color: Color::WHITE, alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.25, reflectance: 0.5, ..default() });
     let mut voxels = voxels;
@@ -193,7 +212,7 @@ fn draw_level(commands: &mut Commands, meshes: &mut Assets<Mesh>, look: &Look, v
     let (step, from, to) = LEVELS[level];
     let range = VisibilityRange { start_margin: (from - FADE).max(0.0)..from, end_margin: if to == f32::MAX { 1.0e9..1.1e9 } else { to - FADE..to }, use_aabb: false };
     let mut spawned = Vec::new();
-    for (liquid, material) in [(false, &look.solid), (true, &look.water)] {
+    for liquid in [false, true] {
         let mut data = if step == 1 { mesh_chunk(voxels, chunk, liquid) } else { mesh_chunk_far(voxels, chunk, liquid, step) };
         if data.indices.is_empty() {
             continue;
@@ -207,7 +226,13 @@ fn draw_level(commands: &mut Commands, meshes: &mut Assets<Mesh>, look: &Look, v
             .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs)
             .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, data.tangents)
             .with_inserted_indices(Indices::U32(data.indices));
-        spawned.push(commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material.clone()), Transform::from_translation(middle), range.clone(), faces)).id());
+        let mut drawn = commands.spawn((Mesh3d(meshes.add(mesh)), Transform::from_translation(middle), range.clone(), faces));
+        if liquid {
+            drawn.insert(MeshMaterial3d(look.water.clone()));
+        } else {
+            drawn.insert(MeshMaterial3d(look.solid.clone()));
+        }
+        spawned.push(drawn.id());
     }
     spawned
 }

@@ -143,8 +143,8 @@ fn hue(grain: Grain, x: f32, y: f32) -> [f32; 3] {
         Grain::Leaves => warm(lump((8, 8), 1) * 0.6 + lump((4, 4), 2) * 0.3),
         Grain::Needles => warm(lump((8, 8), 1) * 0.3 - 0.04),
         Grain::Litter => {
-            let russet = blend([0.95, 0.95, 1.0], [1.5, 0.95, 0.45], patch((8, 4), 1, 0.05, 0.1));
-            blend(russet, [1.6, 1.35, 0.5], patch((4, 8), 2, 0.22, 0.05) * 0.9)
+            let russet = blend([0.97, 0.97, 1.0], [1.3, 0.97, 0.6], patch((8, 4), 1, 0.08, 0.12));
+            blend(russet, [1.45, 1.25, 0.6], patch((4, 8), 2, 0.24, 0.05) * 0.8)
         }
         Grain::Moss => warm(lump((8, 8), 1) * 0.6),
     }

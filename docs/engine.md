@@ -54,7 +54,14 @@ The rule this protects: **the simulation never needs a window.** A big sandbox w
 - **The sun stands at 35 degrees**: everything throws a shadow longer than itself.
 - **On every camera that looks at the world** (`world::look`): exposure for full sun, a filmic roll-off (TonyMcMapface), a little more saturation and contrast, bloom, screen-space ambient occlusion for the depth between one thing and another, and haze that warms toward the sun.
 - **Tried and backed out the same hour**: lit air (volumetric fog) over the whole island turned the sky purple and the grass yellow; a stronger grade made shade black. Light shafts want a volume placed where they are wanted (a wood, a morning), not one over everything.
-- **Not done**: a time of day, weather, wind, anything in the air.
+- **Not done**: a time of day, weather.
+
+### Wind and the air
+
+- **What grows moves in the wind** (2026-11-11). The mesher says how free each corner is to move, in the alpha of its colour: ground and wood are held, a leaf gives two fifths, a blade of grass is held at its foot and free at its tip. Two vertex shaders push each corner downwind by that much (`assets/shaders/wind.wesl` for the picture, `wind_prepass.wesl` for depth and shadows, so a leaf's shadow sways with it): long gusts rolling downwind with a quick flutter under them. The push depends only on where a corner is and the time, so corners that meet move together and nothing tears. The land's material is Bevy's own with those two shaders swapped in (`world::Windy`); nothing else about how it is lit changes.
+- **The two shaders hold the same push written twice.** The prepass keeps the time in a different binding from the forward pass, and a shared file imported by both was not tried. Change both together.
+- **Things in the air are dressing, not creatures** (`cube_game::air`): pollen that drifts on the same wind and flares crossing a shaft of sun, leaves coming down in the woods, butterflies over the meadows, birds wheeling in flocks high up. They are kept in a box round the camera, the simulation does not know of them, and nothing reacts to them; a bird that can be hunted is a creature and belongs to `cube_sim`. About 330 small meshes in all.
+- **Not done**: wind that changes (it is one direction and strength, written in the shaders and in `air.rs`), water that moves, sound.
 
 ### Paint
 
