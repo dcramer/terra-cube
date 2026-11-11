@@ -281,6 +281,10 @@ pub fn atlas_with(photo: impl Fn(Grain) -> Option<Photo>) -> Atlas {
                 }).collect()
             }
         };
+        // Sand, gravel and snow lie nearly flat: at their scanned relief a low sun rakes every
+        // grain, and a lake bed of them was white speckle through the water.
+        let flat = if matches!(grain, Grain::Sand | Grain::Pebbles | Grain::Snow) { 0.3 } else { 1.0 };
+        let lean: Vec<[f32; 3]> = lean.into_iter().map(|n| { let v = glam::Vec3::new(n[0] * flat, n[1] * flat, n[2]).normalize(); [v.x, v.y, v.z] }).collect();
         // The tile with its border: the border is the tile carried round from its far side.
         let (ox, oy) = (i % ACROSS * ROOM, i / ACROSS * ROOM);
         for t in 0..ROOM * ROOM {

@@ -160,7 +160,7 @@ Two rules that the numbers come from:
 
 `make slice` renders the same six views every time (the start meadow at noon, dawn and night; a forest clearing by day; a lake shore in the evening; the island from the air) into `shots/slice/`. It is the vertical slice: these six are what must look finished, and a change that makes one of them worse is a regression even if it makes another better. Look at all six after any change to light, texture, terrain or what grows. Add a view when a kind of place is missing from it; do not swap one out to hide a fault.
 
-A fault found through it, to remember: a lake in evening light was white speckle for an hour of work spent on the water (its ripples, its shadows, its shine). It was the lake bed: scanned sand is harsh, and the water was too clear. Look at what is behind the thing that looks wrong.
+A fault found through it, to remember: a lake in evening light was white speckle. Three fixes went into the water (its ripples, its shadows, its shine) and one into the bed's colour before two test pictures, one with code-made textures and one at noon, showed the cause in ten minutes: the relief of the scanned sand on the lake bed, raked by a low sun. When a guess fails twice, stop guessing and change one thing at a time.
 
 ### Judging the land
 
