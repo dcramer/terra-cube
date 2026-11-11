@@ -11,6 +11,7 @@ pub mod life;
 pub mod mind;
 pub mod plants;
 pub mod rng;
+pub mod scale;
 pub mod survey;
 pub mod terrain;
 

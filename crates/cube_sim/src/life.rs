@@ -463,9 +463,19 @@ impl Sim {
                     let at = middle + Vec2::new(self.rng.between(-1.0, 1.0), self.rng.between(-1.0, 1.0)) * (1.0 + k.group as f32 * k.length.max(k.width));
                     let (cx, cz) = ((at.x / CELL).floor() as i32, (at.y / CELL).floor() as i32);
                     let pos = Vec3::new(at.x, land.height(cx, cz) as f32 * CELL, at.y);
-                    let probe = Body::new(pos, k.shape().0, k.height);
+                    // The same body `add` gives it: a squirrel is not put where only a shorter one fits.
+                    let probe = Body::new(pos, k.shape().0, k.height.max(0.3));
                     let crowded = self.agents.values().any(|a| a.body.pos.distance(pos) < a.body.half + k.length.max(k.width));
-                    if matches!(land.biome(cx, cz), Biome::Water) || probe.blocked(world, pos) || crowded {
+                    // Room to leave: a body's length off, on the ground there, it fits in at least
+                    // three of four directions. A deer put down in a thicket stood there for good.
+                    let reach = k.length.max(k.width).max(0.5);
+                    let ways = [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)].into_iter().filter(|(dx, dz)| {
+                        let (x, z) = (at.x + dx * reach, at.y + dz * reach);
+                        let ground = land.height((x / CELL).floor() as i32, (z / CELL).floor() as i32) as f32 * CELL;
+                        !probe.blocked(world, Vec3::new(x, ground, z))
+                    });
+                    let hemmed = ways.count() < 3;
+                    if matches!(land.biome(cx, cz), Biome::Water) || probe.blocked(world, pos) || crowded || hemmed {
                         continue;
                     }
                     let facing = self.rng.between(0.0, std::f32::consts::TAU);

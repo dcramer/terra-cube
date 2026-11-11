@@ -25,6 +25,9 @@ Each of these was built and looked at, not argued. Do not try them again without
 | Bulky cartoony proportions, oversized head | to 2026-11-10 | Replaced. It was the house style's own wording and it made a shelf of toys. |
 | Trees as a square column and one blob | to 2026-11-10 | Replaced: from the ground a forest was a field of sticks. |
 | Boulders of whole 0.25 m cubes | to 2026-11-10 | Replaced: a pile of crates, worse than a stone the player can build. |
+| Boulders as rounded lumps, all about a metre | to 2026-11-10 | Replaced: uniform orbs. |
+| Sizes scaled up a number at a time (trees, then the island, then the hills) | to 2026-11-10 | Replaced by one table of sizes that is measured: each time something was left behind and the person stood like a giant on a model. |
+| Mountains wherever a noise ran high | to 2026-11-10 | Replaced: flat-topped walls round most of the island's rim, straight up from the plain. |
 
 ## Creatures
 
@@ -87,6 +90,26 @@ Numbers, then one picture, then a person: `cargo forge check ID` (skin stretch, 
 
 Made by `cube_sim::terrain` and `plants`; judged by `cargo world survey` and `map`, then looked at with `cargo sandbox --scene`.
 
+### Scale
+
+The measure is a person, 1.75 m. The world reads as full size when things keep the ratios to a person that they have outside, and as a model when any one is off, however good it looks alone. So every size is in one table, `crates/cube_sim/src/scale.rs`, and nothing else carries a size: change the world's scale there. `cargo world survey` measures what was made against it.
+
+| Thing | Size | Against a person |
+|---|---|---|
+| Hills | 80 m from one to the next, 7 m high, smooth | a slope walked, never lumps |
+| The mountain | 280 m across its foot, 64 m high, in 5 m ledges | foothills walked, the middle climbed |
+| Grown trees | oak 13 to 24 m, birch 11 to 19, pine 17 to 34, willow 9 to 14 | 6 to 19 people tall; the middle one at least 8 (bar) |
+| Room for a tree | 6.5 m; small things 3.5 m | |
+| Under a crown | 4.5 m clear | the golem (3.6 m) walks under |
+| Young trees, bushes | 3 to 7.5 m; knee to head high | what is at eye level |
+| Rocks | stones 0.3 to 0.8 m (58 in 100), boulders 1 to 2.6 m (34), great ones 3.2 to 6 m (8) | stepped over, walked round, a landmark; largest at least 10 times smallest (bar) |
+| Easy ground | no more than 0.75 m up or down over 2 m | at least 65% of lowland meadow and forest (bar) |
+
+Two rules that the numbers come from:
+
+- **Roughness is what makes a model.** Each finer layer of noise makes the ground as steep again. Lowland gets two layers and no lumps smaller than 40 m; roughness belongs to mountains.
+- **A thing's parts follow its height.** A tree's trunk, limbs and crown are parts of how tall it stands, so a taller oak is a bigger oak and not a longer pole.
+
 ### Cubes
 
 - **A cube is 0.25 m; a bit is 5 cm.** Almost everything is whole cubes. A cube breaks into 125 bits where something smaller than a cube is wanted: a hole dug, a stone built, a boulder's surface. Nothing in the world is smaller than a bit.
@@ -106,19 +129,21 @@ Made by `cube_sim::terrain` and `plants`; judged by `cargo world survey` and `ma
 ### Trees and what grows
 
 - **A tree is a tree.** A trunk that flares into roots and tapers with a lean; limbs that leave it, bend and fork; foliage in separate clumps at the ends of the limbs, so sky shows through and no two are alike.
-- **Five kinds**, each with its own silhouette: oak (broad, heavy-limbed, 9 to 17 m), birch (slender, pale, light and high, 8 to 13 m), pine (whorls of drooping boughs under a point, dead stubs below, 12 to 24 m), willow (short and thick by water, hanging in curtains), snag (dead and bare).
-- **Where each grows follows the land**: conifers high and on rock, willows within a few metres of water, the rest mixed. A grown tree has four metres to itself.
-- **A wood has an understory**: young trees two to five metres tall, bushes, fallen logs, stumps. Something green is always at eye level.
-- **Foliage starts 3.5 m up** on grown trees, so the largest creature walks under.
+- **Five kinds**, each with its own silhouette: oak (broad, heavy-limbed), birch (slender, pale, light and high), pine (whorls of drooping boughs under a point, dead stubs below), willow (short and thick by water, hanging in curtains), snag (dead and bare). Sizes are in Scale.
+- **Where each grows follows the land**: conifers high and on rock, willows within a few metres of water, the rest mixed. A grown tree has six and a half metres to itself.
+- **A wood has an understory**: young trees, bushes, fallen logs, stumps. Something green is always at eye level.
+- **Foliage starts 4.5 m up** on grown trees, so the largest creature walks under.
 - **Ground cover grows in patches**, not sprinkled: long grass and flowers (white, yellow, violet) in meadow, sparser under trees, reeds at the water's edge.
-- **Boulders** are three or four rounded lumps run together, half a metre to a metre and a half across, sunk a little into the ground.
+- **Rocks vary in size and in form.** Stone with flat faces struck off it, never a ball: a block, a slab lying flat, a tooth standing up, or a hump mostly buried, in slate, chalk or grey stone, with smaller pieces against it and stones fallen round a large one.
 
 ### Distance
 
-- **Three levels of detail.** Within 48 m every cube is drawn, with ground cover and the bits of broken cubes. To 112 m the cubes are taken two a side (half a metre), beyond that four a side (a metre). A far group of cubes is solid if any of it is, so distant ground has no holes and trees keep their bulk. Each level fades into the next across 8 m.
+- **Three levels of detail.** Within 40 m every cube is drawn, with ground cover and the bits of broken cubes. To 104 m the cubes are taken two a side (half a metre), beyond that four a side (a metre). A far group of cubes is solid if any of it is, so distant ground has no holes and trees keep their bulk. Each level fades into the next across 8 m.
 - **Haze starts at 180 m and is full at 700 m**: the whole island is clear from anywhere on it, and the sea fades into the sky without an edge.
-- The island is 192 m across, small beside real-size trees. It grows when chunks are made and drawn as they are needed ([engine.md](engine.md#seeing-far)).
+- The island is 384 m across and a stand-in: the world is to be procedural and far larger ([engine.md](engine.md#the-world)).
 
 ### Judging the land
 
-`cargo world survey` (water, biomes, trees, cliffs, what can be walked to, and the faces it costs to draw, in full and from the start), then `cargo world map` (one picture from above), then `cargo sandbox --scene FILE --at X,Z` for any place at eye level and `--view high` from the air. Look at it from where the player stands: a forest that reads from the air can still be sticks from the ground.
+`cargo world survey` (water, biomes, trees, cliffs, what can be walked to, the faces it costs to draw, and scale), `cargo world grade FILE` when the ground is wrong (easy, steep and cliff by height, and a picture of where), then `cargo world map` (one picture from above), then `cargo sandbox --scene FILE --at X,Z` for any place at eye level and `--view high` from the air. Look at it from where the player stands: a forest that reads from the air can still be sticks from the ground.
+
+Always judge scale with a person in the picture (`--play --view three`): a tree alone has no size.

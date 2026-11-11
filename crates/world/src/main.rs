@@ -8,6 +8,7 @@ use cube_sim::{
     survey,
     terrain::{self, Biome, Land, SEA},
 };
+use cube_sim::scale;
 use cube_voxel::{Block, CELL, World, cells};
 use glam::{IVec3, Vec3};
 use std::path::Path;
@@ -23,6 +24,9 @@ cargo world who [--seed N]                        where each group of creatures 
 cargo world dig [--holes 120]                     HOLES (120) holes and stones cut to the 5 cm bit all
                                                   over the land: what broken cells cost, and whether
                                                   creatures still live among them
+cargo world grade [FILE] [--seed N]                where the ground is easy, steep and cliff, a line
+                                                  for each band of height; with FILE, a picture of
+                                                  it from above (green easy, yellow steep, red cliff)
 cargo world map FILE [--seconds 60] [--seed N]    a picture from above, with where each creature
                                                   went (dots: white person, yellow timid, red
                                                   hunter and hostile, orange wary)
@@ -103,7 +107,12 @@ fn survey_command(args: &Args) -> ! {
     for biome in [Biome::Meadow, Biome::Forest, Biome::Rock] {
         checks.bar(biome.name(), share(biome), share(biome) >= 0.06, "at least 0.06");
     }
-    checks.bar("trees", s.trees as f32, s.trees >= 600, "at least 600");
+    checks.bar("trees", s.trees as f32, s.trees >= 400, "at least 400");
+    // Scale: the bars are in cube_sim::scale, with the sizes they judge.
+    println!("scale: a person is {}m · the middle tree {:.1} people tall, the tallest {:.0}m · {} rocks, the largest {:.0} times the smallest · easy ground {:.0}% of lowland meadow and forest", scale::PERSON, s.tree, s.tallest, land.rocks.len(), s.rocks, s.easy * 100.0);
+    checks.bar("tree-height", s.tree, s.tree >= scale::BAR_TREE, "the middle tree at least 8 people tall");
+    checks.bar("rock-sizes", s.rocks, s.rocks >= scale::BAR_ROCKS, "the largest rock at least 10 times the smallest");
+    checks.bar("easy-ground", s.easy, s.easy >= scale::BAR_EASY, "at least 0.65 of lowland meadow and forest within 0.75 m over two");
     checks.bar("highest", s.highest, s.highest >= 40.0, "at least 40 m");
     checks.bar("cliffs", s.cliffs, (0.03..=0.35).contains(&s.cliffs), "0.03 to 0.35 of the land");
     checks.bar("drawn", drawn as f32 / 1e6, drawn <= 2_000_000, "at most 2 million faces from the start, with levels of detail");
@@ -303,6 +312,38 @@ fn dig_command(args: &Args) -> ! {
     checks.finish()
 }
 
+/// Where the ground is easy, steep and cliff: a line for each band of height, and with a
+/// file, a picture from above (green easy, yellow steep, red cliff).
+fn grade_command(args: &Args) -> ! {
+    let land = Land::new(args.seed, args.radius);
+    let bands = [4.0, 8.0, 12.0, scale::CONIFER_LINE, scale::ROCK_LINE, scale::SNOW_LINE, f32::MAX];
+    let mut from = 0.0;
+    for (top, (n, [easy, steep, cliff])) in bands.iter().zip(survey::grades(&land, &bands)) {
+        let name = if *top == f32::MAX { format!("over {from:.0}m") } else { format!("{from:.0} to {top:.0}m") };
+        println!("{name}: {:.0}% of dry land · easy {:.0}% steep {:.0}% cliff {:.0}%", n as f32 / ((land.span * land.span * 4) as f32 * (1.0 - survey::survey(&land).share[0])) * 100.0, easy * 100.0, steep * 100.0, cliff * 100.0);
+        from = *top;
+    }
+    if let Some(file) = &args.file {
+        let side = (land.span * 2) as u32;
+        let mut picture = image::RgbImage::new(side, side);
+        for (x, z, pixel) in picture.enumerate_pixels_mut() {
+            let (cx, cz) = (x as i32 - land.span, z as i32 - land.span);
+            let lift = (((land.height(cx, cz) - SEA) as f32 * CELL) * 1.6).clamp(0.0, 110.0) as u8;
+            *pixel = image::Rgb(match (land.biome(cx, cz), survey::grade(&land, cx, cz)) {
+                (Biome::Water, _) => [20, 40, 90],
+                (_, 0) => [lift / 2, 110 + lift, lift / 2],
+                (_, 1) => [225, 200, 60],
+                _ => [220, 50, 40],
+            });
+        }
+        if let Err(e) = picture.save(file) {
+            fail(&format!("could not write {file}: {e}"));
+        }
+        println!("{file}");
+    }
+    std::process::exit(0)
+}
+
 fn main() {
     let mut it = std::env::args().skip(1);
     let command = it.next().unwrap_or_default();
@@ -322,6 +363,7 @@ fn main() {
         "run" => run_command(&args),
         "map" => map_command(&args),
         "dig" => dig_command(&args),
+        "grade" => grade_command(&args),
         "who" => {
             let (_, land, sim) = living(&args);
             let mut groups: std::collections::BTreeMap<(usize, i32, i32), usize> = Default::default();

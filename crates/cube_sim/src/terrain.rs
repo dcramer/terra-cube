@@ -7,6 +7,7 @@
 
 use crate::plants::{self, Tree};
 use crate::rng::Rng;
+use crate::scale::{self, Landform};
 use cube_voxel::{Block, CELL, CHUNK, World, cells};
 use glam::{IVec3, Vec3};
 
@@ -33,7 +34,17 @@ fn value_noise(x: f32, z: f32, seed: u32) -> f32 {
 
 /// Four layers of noise, each twice as fine and half as strong: 0 to 1, mostly near 0.5.
 fn fbm(x: f32, z: f32, seed: u32) -> f32 {
-    (0..4).map(|o| value_noise(x * (1 << o) as f32, z * (1 << o) as f32, seed + o) / (1 << o) as f32).sum::<f32>() / 1.875
+    layers(x, z, seed, 4)
+}
+
+/// The same with `n` layers: one is a smooth swell, each more adds roughness half the size.
+fn layers(x: f32, z: f32, seed: u32, n: u32) -> f32 {
+    (0..n).map(|o| value_noise(x * (1 << o) as f32, z * (1 << o) as f32, seed + o) / (1 << o) as f32).sum::<f32>() / (2.0 - 1.0 / (1 << (n - 1)) as f32)
+}
+
+/// A landform's noise at a point in metres: 0 to 1, mostly near 0.5.
+fn form(f: &Landform, x: f32, z: f32, seed: u32) -> f32 {
+    layers(x / f.across, z / f.across, seed, f.detail)
 }
 
 fn smooth(lo: f32, hi: f32, v: f32) -> f32 {
@@ -52,12 +63,6 @@ pub const SEA: i32 = (SEA_LEVEL / CELL) as i32;
 /// chunks it runs out from the origin (192 m each way).
 pub const SEED: u32 = 6;
 pub const RADIUS: i32 = (192.0 / (CELL * CHUNK as f32)) as i32;
-/// How big the land's shapes are: 1 is as they were first tuned, on an island 192 m across,
-/// where a hill was ten metres over and a mountain 38 m high and a person stood on it like a
-/// giant on a model. `SPREAD` widens every shape, `RISE` heightens it.
-pub const SPREAD: f32 = 2.0;
-pub const RISE: f32 = 1.7;
-
 /// What grows on a column, and so who lives there.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
 pub enum Biome {
@@ -89,6 +94,10 @@ pub struct Land {
     biomes: Vec<Biome>,
     /// The foot of each tree's trunk.
     pub trees: Vec<IVec3>,
+    /// How tall each of those trees stands, metres.
+    pub grown: Vec<f32>,
+    /// How far across each rock is, metres.
+    pub rocks: Vec<f32>,
 }
 
 impl Land {
@@ -102,7 +111,7 @@ impl Land {
                 heights[((x + span) + (z + span) * span * 2) as usize] = cells(metres).max(cells(1.0));
             }
         }
-        let mut land = Land { seed, span, heights, biomes: Vec::new(), trees: Vec::new() };
+        let mut land = Land { seed, span, heights, biomes: Vec::new(), trees: Vec::new(), grown: Vec::new(), rocks: Vec::new() };
         let mut biomes = Vec::with_capacity(side * side);
         for z in -span..span {
             for x in -span..span {
@@ -138,14 +147,14 @@ impl Land {
     fn biome_of(&self, x: i32, z: i32) -> Biome {
         let h = self.height(x, z);
         let over_sea = (h - SEA) as f32 * CELL;
-        let moist = fbm(x as f32 * CELL / (35.0 * SPREAD), z as f32 * CELL / (35.0 * SPREAD), self.seed + 21);
+        let moist = fbm(x as f32 * CELL / DAMP, z as f32 * CELL / DAMP, self.seed + 21);
         if h < SEA {
             Biome::Water
         } else if over_sea <= 0.6 {
             Biome::Shore
-        } else if over_sea > 28.0 * RISE {
+        } else if over_sea > scale::SNOW_LINE {
             Biome::Snow
-        } else if over_sea > 17.0 * RISE || self.slope(x, z) >= 3 {
+        } else if over_sea > scale::ROCK_LINE || self.slope(x, z) >= 3 {
             Biome::Rock
         } else if moist > 0.5 {
             Biome::Forest
@@ -155,44 +164,60 @@ impl Land {
     }
 }
 
-/// The ground's height at a point, both in metres. Lowland rolls a few metres over the sea; a
-/// mountain mask raises ridges in part of the island, stepped into ledges; a river winds
-/// through where a slow noise crosses its middle; the edge falls away into the sea; the origin
-/// is a clearing. Nothing here knows the size of a cell.
+/// How far apart damp ground and dry are, metres: forest grows on the damp.
+const DAMP: f32 = 70.0;
+
+/// The ground's height at a point, both in metres. Every size in it is a [`Landform`] from
+/// `scale`: the lowland rolls a few metres over the sea in smooth hills; a mountain mask
+/// raises rough ridges in part of the island, stepped into ledges; a river winds through
+/// where a slow noise crosses its middle; the edge falls away into the sea; the origin is a
+/// clearing. Nothing here knows the size of a cell.
 fn column(x: f32, z: f32, seed: u32, span: f32) -> f32 {
-    // The shapes were tuned in half metres on a smaller island, and are kept so: the point is
-    // brought into that space, and the height taken back out.
-    let (x, z, span, sea) = (x * 2.0 / SPREAD, z * 2.0 / SPREAD, span * 2.0 / SPREAD, SEA_LEVEL * 2.0);
+    let sea = SEA_LEVEL;
     // Bent coordinates, so nothing runs straight.
-    let (wx, wz) = (x + (fbm(x / 70.0, z / 70.0, seed + 11) - 0.5) * 44.0, z + (fbm(x / 70.0, z / 70.0, seed + 12) - 0.5) * 44.0);
-    let base = fbm(wx / 120.0, wz / 120.0, seed);
-    let hills = (fbm(wx / 38.0, wz / 38.0, seed + 3) - 0.5) * 12.0;
-    let mut h = sea + 5.0 + (base - 0.45) * 30.0 + hills;
+    let (wx, wz) = (x + (layers(x / 90.0, z / 90.0, seed + 11, 2) - 0.5) * 44.0, z + (layers(x / 90.0, z / 90.0, seed + 12, 2) - 0.5) * 44.0);
+    let hills = (form(&scale::HILL, wx, wz, seed + 3) - 0.5) * scale::HILL.tall;
+    let mut h = sea + 4.0 + (form(&scale::LOWLAND, wx, wz, seed) - 0.45) * scale::LOWLAND.tall + hills;
 
     let from_origin = (x * x + z * z).sqrt();
-    // Mountains keep off the start: they are what is seen from it, not where it is.
-    let mask = smooth(0.50, 0.66, fbm(wx / 150.0, wz / 150.0, seed + 7)) * smooth(50.0, 120.0, from_origin);
-    let ridge = 1.0 - (2.0 * fbm(wx / 64.0, wz / 64.0, seed + 5) - 1.0).abs();
-    let high = h + mask * (14.0 + ridge * ridge * 52.0);
-    // Ledges: the height rounded to steps of three metres, most strongly where the mountain is.
-    let ledged = (high / 6.0).round() * 6.0;
-    h = mix(high, ledged, mask * 0.65);
+    // Mountains are placed, not found: each massif stands at a spot the seed picks, well out
+    // from the start, and rises as a bell from broad foothills to its top. So there is always
+    // open lowland, always a mountain to see from it, and the ground steepens toward the
+    // mountain instead of standing up from the plain like a wall.
+    let ridge = 1.0 - (2.0 * form(&scale::RIDGE, wx, wz, seed + 5) - 1.0).abs();
+    let turn = hash2(1, 2, seed + 7) * std::f32::consts::TAU;
+    let mut bell = 0.0f32;
+    for (i, massif) in [&scale::MASSIF, &scale::HEIGHTS].into_iter().enumerate() {
+        let way = turn + i as f32 * (2.2 + hash2(3, 4, seed + 7) * 1.4);
+        let (cx, cz) = (way.cos() * span * 0.43, way.sin() * span * 0.43);
+        let d = ((wx - cx).powi(2) + (wz - cz).powi(2)).sqrt() / (massif.across * 0.5);
+        let rise = (1.0 - d * d).max(0.0).powi(2) * smooth(40.0, 110.0, from_origin);
+        // Ridges and the creases between them, deepest where the mountain is highest.
+        let crease = scale::RIDGE.tall.min(massif.tall * 0.4);
+        h += rise * (massif.tall - crease * (1.0 - ridge)) * (1.0 + 0.25 * (1.0 - d).max(0.0));
+        bell = bell.max(rise * massif.tall / scale::MASSIF.tall);
+    }
+    // Ledges: the height rounded to steps, only well up the mountain.
+    // Not in rings round it: the shelves rise and dip along their length, and whole faces of
+    // the mountain have none.
+    let wobble = (fbm(x / 40.0, z / 40.0, seed + 17) - 0.5) * scale::LEDGE * 2.5;
+    let ledged = ((h - sea + wobble) / scale::LEDGE).round() * scale::LEDGE + sea - wobble;
+    let faces = smooth(0.38, 0.6, fbm(x / 80.0, z / 80.0, seed + 18));
+    h = mix(h, ledged, smooth(0.3, 0.7, bell) * faces * 0.6);
 
-    let wind = (fbm(wx / 130.0, wz / 130.0, seed + 9) - 0.5).abs();
-    let valley = 1.0 - smooth(0.0, 0.085, wind);
-    let channel = 1.0 - smooth(0.006, 0.03, wind);
-    h = mix(h, h.min(sea + 2.0), valley * 0.85);
+    let wind = (fbm(wx / scale::RIVER, wz / scale::RIVER, seed + 9) - 0.5).abs();
+    let valley = 1.0 - smooth(0.012, 0.13, wind);
+    let channel = 1.0 - smooth(0.005, 0.04, wind);
+    h = mix(h, h.min(sea + 1.2), valley);
     // The river is deep in places and a ford in others.
-    let bed = mix(1.0, 4.5, smooth(0.42, 0.58, fbm(x / 45.0, z / 45.0, seed + 10)));
-    // Its depth is not heightened with the land: a ford stays a ford.
-    h = mix(h, sea - bed / RISE, channel);
+    let bed = mix(0.5, 2.25, smooth(0.42, 0.58, fbm(x / 45.0, z / 45.0, seed + 10)));
+    h = mix(h, sea - bed, channel);
 
     let clearing = 1.0 - smooth(14.0, 40.0, from_origin);
-    h = mix(h, sea + 4.0 + hills * 0.15, clearing);
+    h = mix(h, sea + 3.4 + hills * 0.15, clearing);
 
     let out = from_origin / span + (fbm(x / 50.0, z / 50.0, seed + 15) - 0.5) * 0.25;
-    h = mix(h, sea - 9.0, smooth(0.68, 0.95, out));
-    SEA_LEVEL + (h * 0.5 - SEA_LEVEL) * RISE
+    mix(h, sea - 7.6, smooth(0.78, 0.99, out))
 }
 
 /// A world `radius` chunks out from the origin in x and z, and the land it was made from.
@@ -218,13 +243,13 @@ pub fn generate(seed: u32, radius: i32) -> (World, Land) {
             };
             // On rock that is not steep: moss where it is low and damp, loose stone under a
             // cliff, bare stone elsewhere.
-            let damp = fbm(xm / (35.0 * SPREAD), zm / (35.0 * SPREAD), seed + 21);
+            let damp = fbm(xm / DAMP, zm / DAMP, seed + 21);
             let under_cliff = (-2..=2).any(|dz| (-2..=2).any(|dx| land.height(x + dx, z + dz) >= h + cells(1.5)));
             let cap = if biome != Biome::Rock || land.slope(x, z) > 1 {
                 None
             } else if under_cliff {
                 Some(Block::Gravel)
-            } else if damp > 0.47 && h < SEA + cells(22.0 * RISE) && hash2(x, z, seed + 81) < 0.8 {
+            } else if damp > 0.47 && h < SEA + cells(scale::MOSS_LINE) && hash2(x, z, seed + 81) < 0.8 {
                 Some(Block::Moss)
             } else {
                 None
@@ -258,58 +283,74 @@ pub fn generate(seed: u32, radius: i32) -> (World, Land) {
 /// How far from the start the first tree may stand, metres.
 const CLEARING: f32 = 10.0;
 
-/// What grows and lies on the land. One thing may stand in each square of a coarse grid, at a
-/// spot and with a chance that come from the seed, so nothing crowds and nothing lines up:
-/// a tree of the kind that suits the place, or under and between the trees a young one, a
-/// bush, a fallen log, a stump or a boulder. Then the ground cover, a column at a time.
+/// What grows and lies on the land. Trees first, one to a square of a coarse grid, at a
+/// spot and with a chance that come from the seed, so nothing crowds and nothing lines up;
+/// then on a finer grid the small things under and between them: a young tree, a bush, a
+/// fallen log, a stump or a rock. Then the ground cover, a column at a time. How much room
+/// each has, and how big it grows, is in `scale`.
 fn plant(world: &mut World, land: &mut Land) {
-    // A grown tree wants four metres to itself.
-    let grid = cells(4.0);
     let (span, seed) = (land.span, land.seed);
-    for gz in -span / grid..span / grid {
-        for gx in -span / grid..span / grid {
-            let roll = |n: u32| hash2(gx, gz, seed + 40 + n);
-            let (x, z) = (gx * grid + (roll(0) * grid as f32) as i32, gz * grid + (roll(1) * grid as f32) as i32);
-            let (h, biome) = (land.height(x, z), land.biome(x, z));
-            let foot = IVec3::new(x, h, z);
-            let near_start = Vec3::new(x as f32, 0.0, z as f32).length() * CELL < CLEARING;
-            if land.slope(x, z) >= 2 || near_start || land.index(x, z).is_none() {
-                continue;
-            }
-            let mut rng = Rng::new((seed as u64) << 40 ^ ((gx as u32 as u64) << 20) ^ gz as u32 as u64);
-            let high = h > SEA + cells(10.0 * RISE);
-            // By water: within six metres of it and little above it.
-            let wet = h <= SEA + cells(1.5) && (-3..=3).any(|dz| (-3..=3).any(|dx| land.biome(x + dx * cells(2.0), z + dz * cells(2.0)) == Biome::Water));
-            let (tree, under, boulder) = match biome {
-                Biome::Forest => (0.62, 0.3, 0.02),
-                Biome::Meadow => (0.07, 0.1, 0.03),
-                Biome::Rock => (0.08, 0.02, 0.16),
-                Biome::Snow => (0.03, 0.0, 0.1),
-                Biome::Shore => (0.0, 0.0, 0.03),
-                Biome::Water => (0.0, 0.0, 0.0),
-            };
-            let pick = roll(2);
-            let conifers = high || matches!(biome, Biome::Rock | Biome::Snow);
-            if pick < tree {
-                let kind = match roll(3) {
-                    _ if wet && !conifers => Tree::Willow,
-                    r if r < 0.06 => Tree::Snag,
-                    r if conifers => if r < 0.9 { Tree::Pine } else { Tree::Birch },
-                    r if r < 0.5 => Tree::Oak,
-                    r if r < 0.78 => Tree::Birch,
-                    _ => Tree::Pine,
-                };
-                plants::tree(world, foot, kind, roll(4), &mut rng);
-                land.trees.push(foot);
-            } else if pick < tree + under {
-                match roll(3) {
-                    r if r < 0.42 => plants::young(world, foot, conifers || roll(5) < 0.25, &mut rng),
-                    r if r < 0.78 => plants::bush(world, foot, &mut rng),
-                    r if r < 0.92 => plants::log(world, foot, &mut rng),
-                    _ => plants::stump(world, foot, &mut rng),
+    for (pass, room) in [scale::TREE_ROOM, scale::SMALL_ROOM].into_iter().enumerate() {
+        let grid = cells(room);
+        for gz in -span / grid..span / grid {
+            for gx in -span / grid..span / grid {
+                let roll = |n: u32| hash2(gx, gz, seed + 40 + pass as u32 * 10 + n);
+                let (x, z) = (gx * grid + (roll(0) * grid as f32) as i32, gz * grid + (roll(1) * grid as f32) as i32);
+                let (h, biome) = (land.height(x, z), land.biome(x, z));
+                let foot = IVec3::new(x, h, z);
+                let near_start = Vec3::new(x as f32, 0.0, z as f32).length() * CELL < CLEARING;
+                if land.slope(x, z) >= 2 || near_start || land.index(x, z).is_none() {
+                    continue;
                 }
-            } else if pick < tree + under + boulder {
-                plants::boulder(world, foot, 0.5 + roll(4) * 1.0, &mut rng);
+                let mut rng = Rng::new((seed as u64) << 40 ^ ((gx as u32 as u64) << 20) ^ gz as u32 as u64 ^ (pass as u64) << 60);
+                let high = h > SEA + cells(scale::CONIFER_LINE);
+                let conifers = high || matches!(biome, Biome::Rock | Biome::Snow);
+                let (tree, under, rock) = match biome {
+                    Biome::Forest => (0.8, 0.3, 0.02),
+                    Biome::Meadow => (0.09, 0.08, 0.03),
+                    Biome::Rock => (0.1, 0.02, 0.14),
+                    Biome::Snow => (0.04, 0.0, 0.09),
+                    Biome::Shore => (0.0, 0.0, 0.04),
+                    Biome::Water => (0.0, 0.0, 0.0),
+                };
+                let pick = roll(2);
+                if pass == 0 {
+                    if pick >= tree {
+                        continue;
+                    }
+                    // By water: within six metres of it and little above it.
+                    let wet = h <= SEA + cells(1.5) && (-3..=3).any(|dz| (-3..=3).any(|dx| land.biome(x + dx * cells(2.0), z + dz * cells(2.0)) == Biome::Water));
+                    let kind = match roll(3) {
+                        _ if wet && !conifers => Tree::Willow,
+                        r if r < 0.06 => Tree::Snag,
+                        r if conifers => if r < 0.9 { Tree::Pine } else { Tree::Birch },
+                        r if r < 0.5 => Tree::Oak,
+                        r if r < 0.78 => Tree::Birch,
+                        _ => Tree::Pine,
+                    };
+                    land.grown.push(plants::tree(world, foot, kind, roll(4), &mut rng));
+                    land.trees.push(foot);
+                } else if world.get(foot) != Block::Air {
+                    // A trunk or a root is already here.
+                } else if pick < under {
+                    match roll(3) {
+                        r if r < 0.42 => plants::young(world, foot, conifers || roll(5) < 0.25, &mut rng),
+                        r if r < 0.78 => plants::bush(world, foot, &mut rng),
+                        r if r < 0.92 => plants::log(world, foot, &mut rng),
+                        _ => plants::stump(world, foot, &mut rng),
+                    }
+                } else if pick < under + rock {
+                    // Which class of rock: the shares are in `scale`, and bare rock and snow
+                    // lean toward the larger.
+                    let mut class = if matches!(biome, Biome::Rock | Biome::Snow) { 0.3 + roll(4) * 0.7 } else { roll(4) };
+                    let rocks = scale::ROCKS.iter().find(|r| {
+                        class -= r.share;
+                        class < 0.0
+                    });
+                    let across = rocks.unwrap_or(&scale::ROCKS[2]).across.at(roll(5));
+                    plants::rock(world, foot, across, &mut rng);
+                    land.rocks.push(across);
+                }
             }
         }
     }

@@ -13,9 +13,9 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 | Path | What it is |
 |---|---|
 | `crates/cube_voxel` | Voxel data (cells, and the bits a cell breaks into) and chunk meshing. No engine types, so the simulation can use it headless. |
-| `crates/cube_sim` | The simulation, at a fixed 60 ticks a second, no engine types: the world from a seed (`terrain`), bodies moving through voxels (`body`), what grows on it (`plants`), every creature and its mind (`life`, `mind`). |
+| `crates/cube_sim` | The simulation, at a fixed 60 ticks a second, no engine types: how big everything is (`scale`: the one place sizes live), the world from a seed (`terrain`), bodies moving through voxels (`body`), what grows on it (`plants`), every creature and its mind (`life`, `mind`). |
 | `crates/cube_game` | The Bevy app: draws what the simulation holds, takes the player's keys. Also the sandbox panel, contact sheets, scene pictures. |
-| `crates/world` | `cargo world`: the land and its creatures judged headless (`survey`, `run`, `map`, `who`, `dig`). |
+| `crates/world` | `cargo world`: the land and its creatures judged headless (`survey`, `run`, `map`, `grade`, `who`, `dig`). |
 | `crates/forge` | The creature pipeline CLI. Each file's header says what it holds; `main.rs` has the map. |
 | `tools/tripo` | Tripo Studio CLI (TypeScript, Node ≥ 22.18, no dependencies). Forge drives it; see its README before calling it by hand. |
 | `assets/creatures/style.toml` | The art style and body plans, as forge sends them. Change the look here, not per creature. |
@@ -36,6 +36,7 @@ cargo forge finish --all           # the free local half again, after changing c
 cargo forge sheet wolf             # shots/wolf.png: every clip at six moments, one image
 cargo world survey                 # the land in numbers; `cargo world run`: its creatures living, in numbers
 cargo world map shots/map.png      # one picture from above with where every creature went
+cargo world grade shots/grade.png  # where the ground is easy, steep and cliff, by height and in a picture
 cargo sandbox --spawn all          # the interactive sandbox (needs a real screen)
 cargo sandbox --play --wild        # the living world, as the player (make play)
 cargo sandbox --scene shots/herd.png --wild --at 47,28   # no window: a picture of any place (`cargo world who` says where things live)
@@ -51,6 +52,7 @@ A machine with no screen needs `DISPLAY=:1` (an Xvfb) for `sheet` and `sandbox`;
 
 - **Bevy 0.20, pinned.** Its API changes every release and your memory of it is probably older. Before writing engine code, read the matching example in `~/.cargo/registry/src/*/bevy-0.20.0/examples/` rather than guessing; grep the source for a signature. Same for `bevy_egui` 0.43.
 - **Repeatable work is code.** If you did something by hand twice (a Tripo call, a GLB fix, a render), it becomes a forge command or a step of one. Never hand-edit a generated file (`model.glb`, `meta.toml`); change the code or `style.toml` and run `cargo forge finish`.
+- **What you measure with becomes a tool.** A probe written to find out why something is wrong (a histogram, a map, a trace) will be wanted again: make it a `cargo world` or `cargo forge` command with a line of help, not a script thrown away.
 - **Tools answer in a few lines.** A command prints a verdict and numbers, `ok` or `FAIL name value (bar)`, and names a file for details. Passing checks stay quiet. Keep new tools that way: output is read by an agent on every later turn.
 - **Numbers first, then one picture.** `cargo forge check` judges a model before anyone looks. Then look at one contact sheet (`cargo forge sheet`), not a run of screenshots. If you catch a defect by eye that the checks missed, add a check for it. Movement is judged the same way: forge's `slide` number, then one `--strip`. So are the world and behaviour: `cargo world survey` and `run`, then one `map`. Change terrain or minds against those, not by playing.
 - **Credits are real money.** `forge.lock` makes a build spend once. Look at the concept (`cargo forge build ID --to concept`, then `cargo forge concepts`) before paying for a model. Never delete a lock step to retry without a reason you can state.
