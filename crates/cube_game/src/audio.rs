@@ -72,6 +72,11 @@ impl Bank {
 
     /// One of a set, at a place in the world (heard from where it is) or in the head (None).
     pub fn play(&mut self, commands: &mut Commands, name: &str, at: Option<Vec3>, volume: f32) {
+        self.pitched(commands, name, at, volume, 1.0);
+    }
+
+    /// The same, played higher or lower: `pitch` times as fast.
+    pub fn pitched(&mut self, commands: &mut Commands, name: &str, at: Option<Vec3>, volume: f32, pitch: f32) {
         let Some(count) = self.sets.get(name).map(Vec::len).filter(|n| *n > 0) else { return };
         let pick = (self.roll() * count as f32) as usize % count;
         let handle = self.sets[name][pick].clone();
@@ -86,7 +91,7 @@ impl Bank {
         } else {
             self.mix.voices
         };
-        let settings = PlaybackSettings::DESPAWN.with_volume(Volume::Linear(volume * kind * self.loud)).with_speed(0.93 + self.roll() * 0.14);
+        let settings = PlaybackSettings::DESPAWN.with_volume(Volume::Linear(volume * kind * self.loud)).with_speed((0.93 + self.roll() * 0.14) * pitch);
         match at {
             Some(at) => commands.spawn((AudioPlayer::new(handle), settings.with_spatial(true), Transform::from_translation(at))),
             None => commands.spawn((AudioPlayer::new(handle), settings)),
@@ -162,6 +167,27 @@ fn creatures(mut commands: Commands, time: Res<Time>, mut bank: ResMut<Bank>, li
         }
         let person = kind.temper == Temper::Person;
         let voice = kind.voice.as_ref().map(|v| v.name().to_owned());
+        // Several kinds share one recording (a fox and a lynx the wolf's, a moose the deer's,
+        // an ogre the troll's): each is played at the pitch of its own size, against the size
+        // of the animal recorded, since a larger throat is a lower voice. So no two kinds
+        // sound the same, and none sounds like an animal three times its weight.
+        let pitch = voice.as_deref().map_or(1.0, |v| {
+            let recorded = match v {
+                "wolf" => 0.85,
+                "boar" | "bear" => 1.3,
+                "deer" => 1.9,
+                "troll" => 3.0,
+                "rabbit" => 0.3,
+                "frog" => 0.15,
+                "goat" => 1.1,
+                "horse" => 1.6,
+                "goblin" => 1.2,
+                "golem" => 3.6,
+                "crow" => 0.35,
+                _ => kind.height,
+            };
+            (recorded / kind.height.max(0.05)).powf(0.35).clamp(0.7, 1.5)
+        });
         // A big thing is louder.
         let loud = (0.5 + kind.height * 0.35).min(1.6);
         let first = !heard.contains_key(&mover.id);
@@ -174,7 +200,7 @@ fn creatures(mut commands: Commands, time: Res<Time>, mut bank: ResMut<Bank>, li
                 Act::Attack if person => bank.play(&mut commands, "swing", Some(at), 0.7),
                 Act::Attack => {
                     if let Some(voice) = &voice {
-                        bank.play(&mut commands, voice, Some(at), loud);
+                        bank.pitched(&mut commands, voice, Some(at), loud, pitch);
                     }
                 }
                 Act::Hurt => {
@@ -193,7 +219,7 @@ fn creatures(mut commands: Commands, time: Res<Time>, mut bank: ResMut<Bank>, li
             mine.calls = t + 35.0 + bank.roll() * 80.0;
             let about = kind.niche().about(live.0.when);
             if let Some(voice) = voice.filter(|_| !person && about > 0.4 && matches!(agent.act, Act::Idle | Act::Walk | Act::Eat)) {
-                bank.play(&mut commands, &voice, Some(at), loud * 0.7);
+                bank.pitched(&mut commands, &voice, Some(at), loud * 0.7, pitch);
             }
         }
     }
