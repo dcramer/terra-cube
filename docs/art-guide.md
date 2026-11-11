@@ -7,7 +7,7 @@ Status: the developer ruled on the look on 2026-11-10. What follows is decided u
 ## Pillars
 
 1. **The world is cubes; what lives in it is not.** The land is 0.25 m cubes that break into 5 cm bits. Creatures are stylised low-poly meshes that belong to it by style, not by being made of cubes. Never ask the generator for "voxel", "blocky" or "Minecraft".
-2. **Real sizes.** A tree is the size of a tree, a moose of a moose, beside a player of 1.75 m. Things are drawn in cubes; they are not shrunk to suit them.
+2. **Real sizes.** A tree is the size of a tree, a moose of a moose, beside a player of 1.75 m. Things are drawn in cubes; they are not shrunk to suit them. This holds for the smallest things too: a butterfly is 9 cm across and a songbird 12 cm long, and they are not enlarged to show up in a picture (tried 2026-11-11, and ruled out).
 3. **Wild, not cute.** Proportions true to the animal, a head and eyes of natural size, lean and wary. A dangerous thing looks dangerous. Appealing is fine; a mascot is not.
 4. **Shape before detail.** Recognisable as a black silhouette. A few large faceted forms, nothing fiddly.
 5. **Few colours, strong values.** A few muted natural hues and one accent, with clear light and dark. Painted, never photographic.

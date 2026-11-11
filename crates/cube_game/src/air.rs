@@ -180,26 +180,26 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
         commands.spawn((Leaf(spin, roll(&mut state) * 100.0), Mesh3d(chip.clone()), MeshMaterial3d(tones[i % 4].clone()), Transform::from_translation(far), NotShadowCaster));
     }
     // Butterflies: a body with two wings hinged along it, white, yellow or blue.
-    let wing = meshes.add(Cuboid::new(0.13, 0.004, 0.14));
+    let wing = meshes.add(Cuboid::new(0.04, 0.002, 0.045));
     let coats = [Color::srgb(0.95, 0.93, 0.85), Color::srgb(0.95, 0.78, 0.2), Color::srgb(0.35, 0.5, 0.9)].map(|c| materials.add(StandardMaterial { base_color: c, perceptual_roughness: 0.8, double_sided: true, cull_mode: None, ..default() }));
     for i in 0..BUTTERFLIES {
         let own = roll(&mut state) * 100.0;
         commands.spawn((Butterfly { home: far, own }, Transform::from_translation(far), Visibility::default())).with_children(|body| {
             for side in [-1.0f32, 1.0] {
                 // Hinged at the body: the wing's mesh sits out from the hinge.
-                body.spawn((Wing { side, beat: 26.0 + own * 0.05, sweep: 1.1 }, Transform::default(), Visibility::default())).with_child((Mesh3d(wing.clone()), MeshMaterial3d(coats[i % 3].clone()), Transform::from_xyz(side * 0.068, 0.0, 0.0), NotShadowCaster));
+                body.spawn((Wing { side, beat: 26.0 + own * 0.05, sweep: 1.1 }, Transform::default(), Visibility::default())).with_child((Mesh3d(wing.clone()), MeshMaterial3d(coats[i % 3].clone()), Transform::from_xyz(side * 0.022, 0.0, 0.0), NotShadowCaster));
             }
         });
     }
     // Small birds: a round body, a head, and two short wings that fold when it is down.
-    let (breast, crown, pinion) = (meshes.add(Cuboid::new(0.12, 0.12, 0.19)), meshes.add(Cuboid::new(0.085, 0.085, 0.085)), meshes.add(Cuboid::new(0.18, 0.02, 0.12)));
+    let (breast, crown, pinion) = (meshes.add(Cuboid::new(0.06, 0.06, 0.12)), meshes.add(Cuboid::new(0.04, 0.04, 0.04)), meshes.add(Cuboid::new(0.09, 0.01, 0.06)));
     let plumage = [Color::srgb(0.45, 0.33, 0.22), Color::srgb(0.62, 0.3, 0.16), Color::srgb(0.3, 0.34, 0.4)].map(|c| materials.add(StandardMaterial { base_color: c, perceptual_roughness: 0.9, double_sided: true, cull_mode: None, ..default() }));
     for i in 0..SONGBIRDS {
         let coat = plumage[i % 3].clone();
         commands.spawn((Songbird { from: far, to: far, since: -100.0, flight: 0.0, own: roll(&mut state) * 100.0, facing: 0.0 }, Mesh3d(breast.clone()), MeshMaterial3d(coat.clone()), Transform::from_translation(far))).with_children(|body| {
-            body.spawn((Mesh3d(crown.clone()), MeshMaterial3d(coat.clone()), Transform::from_xyz(0.0, 0.085, -0.11)));
+            body.spawn((Mesh3d(crown.clone()), MeshMaterial3d(coat.clone()), Transform::from_xyz(0.0, 0.045, -0.065)));
             for side in [-1.0f32, 1.0] {
-                body.spawn((Wing { side, beat: 34.0, sweep: 1.0 }, Folds, Transform::from_xyz(side * 0.05, 0.035, 0.0), Visibility::default())).with_child((Mesh3d(pinion.clone()), MeshMaterial3d(coat.clone()), Transform::from_xyz(side * 0.09, 0.0, 0.0), NotShadowCaster));
+                body.spawn((Wing { side, beat: 34.0, sweep: 1.0 }, Folds, Transform::from_xyz(side * 0.028, 0.02, 0.0), Visibility::default())).with_child((Mesh3d(pinion.clone()), MeshMaterial3d(coat.clone()), Transform::from_xyz(side * 0.045, 0.0, 0.0), NotShadowCaster));
             }
         });
     }
@@ -215,19 +215,18 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
         });
     }
     // Swallows: always a few on the wing near the camera, low and fast in long loops, so the
-    // sky in any view has something crossing it. Larger than life: a true swallow at fifteen
-    // metres is four pixels.
-    let (dart, blade) = (meshes.add(Cuboid::new(0.09, 0.07, 0.32)), meshes.add(Cuboid::new(0.4, 0.014, 0.12)));
+    // sky in any view has something crossing it. True to size, 17 cm long and 33 across.
+    let (dart, blade) = (meshes.add(Cuboid::new(0.045, 0.04, 0.17)), meshes.add(Cuboid::new(0.15, 0.008, 0.05)));
     let slate = materials.add(StandardMaterial { base_color: Color::srgb(0.1, 0.12, 0.2), perceptual_roughness: 0.6, double_sided: true, cull_mode: None, ..default() });
     for _ in 0..SWALLOWS {
         commands.spawn((Swallow { home: far, own: roll(&mut state) * 100.0, out: 6.0 + roll(&mut state) * 9.0, high: 2.5 + roll(&mut state) * 6.0 }, Mesh3d(dart.clone()), MeshMaterial3d(slate.clone()), Transform::from_translation(far))).with_children(|body| {
             for side in [-1.0f32, 1.0] {
-                body.spawn((Wing { side, beat: 13.0, sweep: 0.7 }, Transform::default(), Visibility::default())).with_child((Mesh3d(blade.clone()), MeshMaterial3d(slate.clone()), Transform::from_xyz(side * 0.22, 0.0, 0.0)));
+                body.spawn((Wing { side, beat: 13.0, sweep: 0.7 }, Transform::default(), Visibility::default())).with_child((Mesh3d(blade.clone()), MeshMaterial3d(slate.clone()), Transform::from_xyz(side * 0.09, 0.0, 0.0)));
             }
         });
     }
     // Birds: dark, a body and two long wings, seen from below against the sky.
-    let (trunk, span) = (meshes.add(Cuboid::new(0.2, 0.13, 0.7)), meshes.add(Cuboid::new(0.95, 0.03, 0.34)));
+    let (trunk, span) = (meshes.add(Cuboid::new(0.14, 0.1, 0.5)), meshes.add(Cuboid::new(0.55, 0.02, 0.22)));
     let dark = materials.add(StandardMaterial { base_color: Color::srgb(0.07, 0.07, 0.08), perceptual_roughness: 0.9, double_sided: true, cull_mode: None, ..default() });
     for _ in 0..FLOCKS {
         let turn = roll(&mut state) * TAU;
@@ -237,7 +236,7 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
             let bird = Bird { middle: middle + Vec3::Y * (roll(&mut state) - 0.5) * 6.0, out: out + (roll(&mut state) - 0.5) * 9.0, speed, at: b as f32 * 0.22 + roll(&mut state) * 0.2 };
             commands.spawn((bird, Mesh3d(trunk.clone()), MeshMaterial3d(dark.clone()), Transform::from_translation(far), NotShadowCaster)).with_children(|body| {
                 for side in [-1.0f32, 1.0] {
-                    body.spawn((Wing { side, beat: 5.5, sweep: 0.55 }, Transform::default(), Visibility::default())).with_child((Mesh3d(span.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(side * 0.52, 0.0, 0.0), NotShadowCaster));
+                    body.spawn((Wing { side, beat: 5.5, sweep: 0.55 }, Transform::default(), Visibility::default())).with_child((Mesh3d(span.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(side * 0.32, 0.0, 0.0), NotShadowCaster));
                 }
             });
         }
@@ -529,7 +528,7 @@ fn songbirds(
                 bird.to = Vec3::new(next.x, terrain.ground(next.x, next.z) + 0.04, next.z);
             }
             let peck = if !hopping && (beat.floor() * 0.61 + bird.own).fract() < 0.4 { (beat.fract() * TAU * 2.0).sin().max(0.0) * 0.7 } else { 0.0 };
-            *at = Transform::from_translation(bird.to + Vec3::Y * (0.06 + hop * 0.08)).with_rotation(Quat::from_rotation_y(bird.facing) * Quat::from_rotation_x(-peck));
+            *at = Transform::from_translation(bird.to + Vec3::Y * (0.03 + hop * 0.05)).with_rotation(Quat::from_rotation_y(bird.facing) * Quat::from_rotation_x(-peck));
         }
         for &child in children {
             if let Ok((wing, mut hinge)) = wings.get_mut(child) {
