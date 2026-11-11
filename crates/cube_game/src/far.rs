@@ -71,6 +71,44 @@ impl Shape {
     }
 }
 
+impl Shape {
+    /// A rounded crown: a ball of a few dozen faces, squashed to its reach.
+    fn crown(&mut self, middle: Vec3, radii: Vec3, colour: [f32; 3], ball: &[[Vec3; 3]]) {
+        for corners in ball {
+            let start = self.positions.len() as u32;
+            for d in corners {
+                // Lit from above more than below, as a crown is: its underside is in its own shade.
+                let shade = 0.62 + 0.45 * (d.y * 0.5 + 0.5);
+                self.point(middle + *d * radii, (*d / radii).normalize_or(Vec3::Y), colour.map(|c| c * shade));
+            }
+            self.indices.extend([start, start + 1, start + 2]);
+        }
+    }
+
+    /// A cone standing on `foot`: a conifer's crown.
+    fn cone(&mut self, foot: Vec3, wide: f32, tall: f32, colour: [f32; 3]) {
+        const SIDES: usize = 7;
+        let tip = self.point(foot + Vec3::Y * tall, Vec3::Y, colour);
+        let ring: Vec<u32> = (0..SIDES)
+            .map(|k| {
+                let turn = k as f32 / SIDES as f32 * std::f32::consts::TAU;
+                let out = Vec3::new(turn.cos(), 0.0, turn.sin());
+                self.point(foot + out * wide, (out + Vec3::Y * 0.5).normalize(), colour.map(|c| c * 0.7))
+            })
+            .collect();
+        for k in 0..SIDES {
+            self.indices.extend([tip, ring[(k + 1) % SIDES], ring[k]]);
+        }
+    }
+}
+
+fn ball() -> Vec<[Vec3; 3]> {
+    let mesh = Sphere::new(1.0).mesh().ico(1).unwrap();
+    let Some(bevy::mesh::VertexAttributeValues::Float32x3(at)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) else { return Vec::new() };
+    let Some(Indices::U32(index)) = mesh.indices() else { return Vec::new() };
+    index.chunks(3).map(|t| [Vec3::from(at[t[0] as usize]).normalize(), Vec3::from(at[t[1] as usize]).normalize(), Vec3::from(at[t[2] as usize]).normalize()]).collect()
+}
+
 /// Makes every piece once the land is there.
 fn build(mut commands: Commands, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, mut meshes: ResMut<Assets<Mesh>>, mut done: Local<bool>) {
     let (Some(terrain), Some(look)) = (terrain, look) else { return };
@@ -86,6 +124,7 @@ fn build(mut commands: Commands, terrain: Option<Res<Terrain>>, look: Option<Res
         trees.entry((foot.x.div_euclid(terrain::REGION), foot.z.div_euclid(terrain::REGION))).or_default().push(i);
     }
     let n = (size / STEP) as i32;
+    let crowns = ball();
     for rz in -edge..edge {
         for rx in -edge..edge {
             let (ox, oz) = (rx as f32 * size, rz as f32 * size);
@@ -131,25 +170,24 @@ fn build(mut commands: Commands, terrain: Option<Res<Terrain>>, look: Option<Res
                 let bark = if sort == Tree::Birch { Block::Birch } else { Block::Wood }.colors().1;
                 let trunk = tall * 0.028;
                 let block = |shape: &mut Shape, from: f32, to: f32, wide: f32, colour: [f32; 3]| shape.block(at + Vec3::new(-wide, from * tall, -wide), at + Vec3::new(wide, to * tall, wide), colour);
+                let up = |part: f32| at + Vec3::Y * tall * part;
                 match sort {
-                    // A point of three tiers.
+                    // A point of two tiers of cone.
                     Tree::Pine => {
                         block(&mut shape, 0.0, 0.3, trunk, bark);
-                        for (from, to, wide) in [(0.28, 0.55, 0.15), (0.55, 0.8, 0.1), (0.8, 1.0, 0.045)] {
-                            block(&mut shape, from, to, tall * wide, Block::Needles.colors().0);
-                        }
+                        shape.cone(up(0.26), tall * 0.17, tall * 0.5, Block::Needles.colors().0);
+                        shape.cone(up(0.55), tall * 0.11, tall * 0.45, Block::Needles.colors().0);
                     }
                     Tree::Snag => block(&mut shape, 0.0, 1.0, trunk * 1.2, bark),
-                    // A trunk and a crown as wide as it is tall, or for a birch a narrow one.
+                    // A trunk and a rounded crown as wide as it is tall, or for a birch a narrow one.
                     _ => {
                         let (leaf, wide, from) = match sort {
-                            Tree::Birch => (Block::LeavesPale, 0.14, 0.45),
-                            Tree::Willow => (Block::LeavesPale, 0.36, 0.18),
-                            _ => (Block::Leaves, 0.3, 0.36),
+                            Tree::Birch => (Block::LeavesPale, 0.15, 0.45),
+                            Tree::Willow => (Block::LeavesPale, 0.38, 0.2),
+                            _ => (Block::Leaves, 0.33, 0.36),
                         };
-                        block(&mut shape, 0.0, from + 0.05, trunk, bark);
-                        block(&mut shape, from, 0.88, tall * wide, leaf.colors().0);
-                        block(&mut shape, 0.85, 1.0, tall * wide * 0.55, leaf.colors().0);
+                        block(&mut shape, 0.0, from + 0.1, trunk, bark);
+                        shape.crown(up((from + 1.0) / 2.0), Vec3::new(tall * wide, tall * (1.0 - from) / 2.0, tall * wide), leaf.colors().0, &crowns);
                     }
                 }
             }

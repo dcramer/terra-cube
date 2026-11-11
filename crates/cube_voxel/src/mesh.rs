@@ -705,7 +705,8 @@ fn sprig(cell: IVec3, block: Block, m: &mut MeshData) {
         if block == Block::Flower && i == 0 {
             // Its head: white, yellow or violet by where it grows.
             let head = [[0.85, 0.82, 0.74], top, [0.48, 0.30, 0.62]][(roll(40) * 3.0) as usize % 3];
-            blade(m, cell, IVec3::new(x - 1, tall, z - 1).max(IVec3::ZERO), IVec3::new(x + 2, tall + 1, z + 2).min(IVec3::splat(SPLIT)), head);
+            // A bloom the size of a bloom: one bit, as crossed petals, not a box three across.
+            blade(m, cell, IVec3::new(x, tall, z), IVec3::new(x + 1, tall + 1, z + 1), head.map(|c| c * 1.5));
         }
     }
 }
