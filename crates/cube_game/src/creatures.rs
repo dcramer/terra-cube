@@ -199,8 +199,8 @@ fn bind_players(
     }
 }
 
-fn drive(registry: Res<Registry>, mut creatures: Query<(&mut Creature, &Rig)>, mut players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>) {
-    for (mut creature, rig) in &mut creatures {
+fn drive(registry: Res<Registry>, mut creatures: Query<(Entity, &mut Creature, &Rig, Has<crate::player::Controlled>)>, mut players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>) {
+    for (entity, mut creature, rig, controlled) in &mut creatures {
         let Ok((mut player, mut transitions)) = players.get_mut(rig.0) else { continue };
         let def = &registry.0[creature.def];
         let clips = &def.clips;
@@ -219,6 +219,12 @@ fn drive(registry: Res<Registry>, mut creatures: Query<(&mut Creature, &Rig)>, m
                 active.repeat();
             }
             creature.playing = Some(index);
+        }
+        // `ANIM_TRACE=ID`: what that creature's clip is doing, a line every half second or so
+        // (every frame with `ANIM_ALL=1`): which entity, which clip is asked for, whether it is
+        // playing, where in it, how fast, paused or not.
+        if std::env::var("ANIM_TRACE").is_ok_and(|id| id == def.id) && (std::env::var_os("ANIM_ALL").is_some() || (player.animation(node).map_or(0.0, |a| a.elapsed()) * 2.0).fract() < 0.04) {
+            println!("anim {} {entity} rig={} controlled={controlled} clip={} playing={:?} {}", def.id, rig.0, clips[index].0, creature.playing, player.animation(node).map_or("not in the player".into(), |a| format!("at={:.2} speed={:.2} paused={} weight={:.2}", a.seek_time(), a.speed(), a.is_paused(), a.weight())));
         }
         if let Some(active) = player.animation_mut(node) {
             match creature.hold {

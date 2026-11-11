@@ -197,11 +197,12 @@ pub const ROUTE: &str = "0.5 fwd walk; 2 run; 3 jump; 5 sprint; 6 jump";
 /// With no window there are no keys: `--script` stands in for them. It is steps split by `;`,
 /// each a time in seconds and what changes then: `fwd back left right stop` (direction),
 /// `walk run sprint` (gait), `jump` (held, a full jump), `hop` (tapped), `dive surface` (in water), `dig put` (a hole or a lump where it looks), `first third` (view).
-fn script(time: Res<Time>, args: Res<Args>, mut controls: ResMut<Controls>, mut controlled: Query<&mut Controlled>, mut clock: Local<(f32, f32)>) {
+fn script(time: Res<Time>, args: Res<Args>, stage: Option<Res<crate::shot::Stage>>, mut controls: ResMut<Controls>, mut controlled: Query<&mut Controlled>, mut clock: Local<(f32, f32)>) {
     if args.scene.is_none() || !args.play || controlled.is_empty() {
         return;
     }
-    let (before, now) = (clock.0, clock.0 + time.delta_secs());
+    // A script's times are on the picture's clock: seconds since the scene was ready.
+    let (before, now) = (clock.0, stage.map_or(clock.0 + time.delta_secs(), |s| s.ready_for));
     clock.0 = now;
     controls.jump = now < clock.1;
     for step in args.script.split(';') {

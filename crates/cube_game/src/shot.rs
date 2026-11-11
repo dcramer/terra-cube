@@ -28,7 +28,12 @@ impl Plugin for ShotPlugin {
 }
 
 #[derive(Resource, Default)]
-struct Stage {
+pub struct Stage {
+    /// Seconds since the scene was ready to be pictured (every model in, every mesh made):
+    /// the clock a picture's `--after` counts on, and a script's times too (`player::script`).
+    /// Counted from the start of the program, a script was over before the world had been
+    /// made, and every strip and moving picture was of someone standing still.
+    pub ready_for: f32,
     laid_out: bool,
     expected: usize,
     settled: u32,
@@ -152,6 +157,7 @@ fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, ti
     }
     stage.settled += 1;
     *waited += time.delta_secs();
+    stage.ready_for = *waited;
     if !stage.asked {
         pace.0.push(real.delta_secs());
         if pace.0.len() > 60 {

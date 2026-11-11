@@ -303,6 +303,8 @@ Built 2026-11-10. The rules are `cube_sim::body`; the game only feeds it keys an
 
 ## The sandbox and agent tooling
 
+- **A script's times are on the picture's clock** (`shot::Stage::ready_for`, 2026-11-11): seconds since the scene was ready to be pictured, not since the program started. As the world grew (more ground, trees as cubes, a hundred models in the air) it took longer to be ready than a script took to run, so every `--strip` and `--gif` was of someone standing still after the script was over, and an hour went on a walk animation that was not broken. `ANIM_TRACE=player` (with any `--scene --play`) prints what a creature's clip is doing.
+
 - `cargo world` judges the world and its creatures with no window, in under two seconds: `survey` (the land), `run` (five minutes of life, a line a kind, then `ok` or `FAIL` lines), `map` (one picture from above with where everything went), `who` (where each group lives). `WORLD_TRACE=deer cargo world run` follows the deer that ends up most stuck, a line a second, with the ground round it when it is caught. This is where behaviour and terrain are changed and checked; the window is for how it looks.
 - `cargo sandbox` is the debug level: spawn any creature, play any clip, scrub, wander, give it its own mind, show skeletons. `--wild` starts the living world instead.
 - `--scene FILE --wild --at X,Z` pictures any place on the island (`--view high` from the air), so a herd or a hillside can be looked at without walking there.

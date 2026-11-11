@@ -59,7 +59,7 @@ cargo test --workspace             # must pass before a commit
 cargo clippy --workspace -- -D warnings
 ```
 
-`FLORA_TRACE=1` with any `--scene` prints what each region's trees and rocks cost in faces, by level and part: add it up before guessing where a slow frame comes from.
+`ANIM_TRACE=player` with any `--scene --play` prints what that creature's clip is doing (which, where in it, how fast); `FLORA_TRACE=1` with any `--scene` prints what each region's trees and rocks cost in faces, by level and part: add it up before guessing where a slow frame comes from.
 
 A machine with no screen needs `DISPLAY=:1` (an Xvfb) for `sheet` and `sandbox`; see [docs/development.md](docs/development.md).
 
