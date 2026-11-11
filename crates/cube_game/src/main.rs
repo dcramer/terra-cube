@@ -277,6 +277,13 @@ fn main() {
     }).set(bevy::asset::AssetPlugin { file_path: assets, ..default() }))
     .insert_resource(args)
     .add_plugins(creatures::CreaturesPlugin);
+    if shot {
+        // With no window the loop would idle at sixty a second, and every `pace` would read
+        // 17 ms whatever the frame cost: run flat out, so the number is the work.
+        // (Not `Continuous`: with no window that never ticks at all. An idle wait of nothing.)
+        let at_once = bevy::winit::UpdateMode::reactive_low_power(std::time::Duration::from_micros(200));
+        app.insert_resource(bevy::winit::WinitSettings { focused_mode: at_once, unfocused_mode: at_once });
+    }
     if scene {
         app.add_plugins((world::WorldPlugin, far::FarPlugin, air::AirPlugin, audio::SoundPlugin, motion::MotionPlugin, player::PlayPlugin, shot::ScenePlugin));
         if app.world().resource::<Args>().hud.is_some() {
