@@ -143,6 +143,7 @@ fn admin(
     mut live: Option<ResMut<Live>>,
     terrain: Option<Res<Terrain>>,
     mut bodies: ResMut<crate::motion::ShowBodies>,
+    mut bank: ResMut<crate::audio::Bank>,
     controlled: Query<&Mover, With<Controlled>>,
 ) -> Result {
     if !menus.admin {
@@ -176,6 +177,10 @@ fn admin(
         if ui.add(egui::Slider::new(&mut admin.speed, 0.0..=60.0).logarithmic(true).text("speed ×")).changed() {
             time.set_relative_speed(admin.speed.max(0.01));
         }
+        ui.heading("Sound");
+        ui.add(egui::Slider::new(&mut bank.mix.air, 0.0..=1.5).text("air: wind, birdsong, water"));
+        ui.add(egui::Slider::new(&mut bank.mix.voices, 0.0..=1.5).text("creatures' voices"));
+        ui.add(egui::Slider::new(&mut bank.mix.steps, 0.0..=1.5).text("footfalls"));
         ui.label(format!("{:?} · moon {:.0}% lit · daylight {:.0}%", sky::season(live.0.when), sky::moon_lit(live.0.when) * 100.0, sky::daylight(live.0.when) * 100.0));
 
         ui.separator();

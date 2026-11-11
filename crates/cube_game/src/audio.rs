@@ -43,6 +43,23 @@ pub struct Bank {
     turn: u32,
     loud: f32,
     said: bool,
+    /// How loud each kind of sound is, of 1, set by ear in the admin panel: the air of the
+    /// place (wind, birdsong, insects, water), creatures' voices, and footfalls. Nobody who
+    /// wrote this could listen to it; the developer could, and found all three too much.
+    pub mix: Mix,
+}
+
+#[derive(Clone, Copy)]
+pub struct Mix {
+    pub air: f32,
+    pub voices: f32,
+    pub steps: f32,
+}
+
+impl Default for Mix {
+    fn default() -> Self {
+        Mix { air: 0.45, voices: 0.6, steps: 0.4 }
+    }
 }
 
 impl Bank {
@@ -62,7 +79,14 @@ impl Bank {
             println!("sound {name}_{} vol={volume:.2}{}", pick + 1, at.map_or(String::new(), |p| format!(" at {:.0},{:.0},{:.0}", p.x, p.y, p.z)));
         }
         // A little off its pitch each time, so the same file is not the same sound.
-        let settings = PlaybackSettings::DESPAWN.with_volume(Volume::Linear(volume * self.loud)).with_speed(0.93 + self.roll() * 0.14);
+        let kind = if name.starts_with("step_") || name == "splash" || name == "swim" {
+            self.mix.steps
+        } else if ["swing", "hit", "hurt", "torch_ignite"].contains(&name) || name.starts_with("ui_") {
+            1.0
+        } else {
+            self.mix.voices
+        };
+        let settings = PlaybackSettings::DESPAWN.with_volume(Volume::Linear(volume * kind * self.loud)).with_speed(0.93 + self.roll() * 0.14);
         match at {
             Some(at) => commands.spawn((AudioPlayer::new(handle), settings.with_spatial(true), Transform::from_translation(at))),
             None => commands.spawn((AudioPlayer::new(handle), settings)),
@@ -104,13 +128,13 @@ fn ears(mut commands: Commands, cameras: Query<Entity, (With<Camera3d>, Without<
 fn air(time: Res<Time>, bank: Res<Bank>, live: Option<Res<Live>>, terrain: Option<Res<Terrain>>, cameras: Query<&GlobalTransform, With<Camera3d>>, torches: Query<(), With<Torch>>, mut loops: Query<(&Loop, &mut AudioSink)>, mut now: Local<[f32; 5]>) {
     let (Some(live), Some(terrain), Some(eye)) = (live, terrain, cameras.iter().next().map(|c| c.translation())) else { return };
     let a = ecology::ambience(&terrain.2.place(&terrain.1, eye.x, eye.z), live.0.when);
-    let want = [a.wind * 0.35, a.birds * 0.5, a.night * 0.45, a.water * 0.5, if torches.is_empty() { 0.0 } else { 0.35 }];
+    let want = [a.wind * 0.35, a.birds * 0.3, a.night * 0.4, a.water * 0.3, if torches.is_empty() { 0.0 } else { 0.35 }];
     let ease = 1.0 - (-1.5 * time.delta_secs()).exp();
     for (i, name) in ["amb_wind", "amb_birds", "amb_night", "amb_water", "torch_loop"].into_iter().enumerate() {
         now[i] += (want[i] - now[i]) * ease;
         for (which, mut sink) in &mut loops {
             if which.0 == name {
-                sink.set_volume(Volume::Linear(now[i] * bank.loud));
+                sink.set_volume(Volume::Linear(now[i] * bank.loud * if name == "torch_loop" { 1.0 } else { bank.mix.air }));
             }
         }
     }
@@ -239,8 +263,11 @@ fn singers(mut commands: Commands, time: Res<Time>, mut bank: ResMut<Bank>, came
     let Some(eye) = cameras.iter().next().map(|c| c.translation()) else { return };
     for (sings, at) in &singers {
         let away = at.translation.distance(eye);
-        if at.translation.y > -100.0 && away < 70.0 && bank.roll() < time.delta_secs() / 25.0 {
-            bank.play(&mut commands, sings.0, Some(at.translation), if sings.0 == "crow" { 1.4 } else { 0.6 });
+        if at.translation.y > -100.0 && away < 70.0 && bank.roll() < time.delta_secs() / 40.0 {
+            // Never from nearer than a dozen metres, however near the bird: a call from a
+            // bird at arm's length was a call in the ear.
+            let from = eye + (at.translation - eye).normalize_or(Vec3::Y) * away.max(12.0);
+            bank.play(&mut commands, sings.0, Some(from), if sings.0 == "crow" { 0.8 } else { 0.4 });
         }
     }
 }

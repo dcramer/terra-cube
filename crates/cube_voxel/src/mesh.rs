@@ -552,11 +552,11 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                         let (from, lift) = (m.positions.len(), eased.under(local) * CELL);
                         let (tint, warm) = sward(Block::Grass, cell - IVec3::Y, 1.0, 0.0);
                         let green = Block::Grass.colors().0;
-                        for i in 0..4 + (thick * 3.0) as i32 {
+                        for i in 0..if bits_grass() { 2 + (thick * 1.6) as i32 } else { 4 + (thick * 3.0) as i32 } {
                             let roll = |k: i32| hash(cell + IVec3::new(k * 7 + 13, i * 5 + 400, k * 3));
                             let (x, z) = ((roll(1) * SPLIT as f32) as i32 % SPLIT, (roll(2) * SPLIT as f32) as i32 % SPLIT);
                             let k = tint * (0.9 + 0.35 * roll(4));
-                            blade(&mut m, cell, IVec3::new(x, 0, z), IVec3::new(x + 1, 1 + (roll(3) * 2.2) as i32, z + 1), [green[0] * k * (1.0 + warm), green[1] * k, green[2] * k * (1.0 - warm)]);
+                            blade(&mut m, cell, IVec3::new(x, 0, z), IVec3::new(x + 1, 2 + (roll(3) * 1.6) as i32, z + 1), [green[0] * k * (1.0 + warm), green[1] * k, green[2] * k * (1.0 - warm)]);
                         }
                         m.positions[from..].iter_mut().for_each(|p| p[1] += lift);
                     }
@@ -802,12 +802,30 @@ fn bits(world: &World, cell: IVec3, m: &mut MeshData) {
 }
 
 /// One box, in bits from a cell's corner: five faces (not its underside), one colour.
+/// Whether grass, ferns and flowers are drawn as thin pointed blades (`--blades`) and not
+/// as the small cubes everything else is made of. Blades were the look until the land went
+/// back to cubes of many sizes: sharp planes standing on stepped blocks were two styles in
+/// one picture. Kept to compare.
+pub static BLADES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn blades() -> bool {
+    BLADES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Whether a blade of grass is a whole column of bits (`--bits`): five faces each, and a
+/// meadow of them chunky underfoot. The default is a slat (see [`blade`]).
+pub static BITS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn bits_grass() -> bool {
+    BITS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 fn blade(m: &mut MeshData, cell: IVec3, lo: IVec3, hi: IVec3, colour: [f32; 3]) {
     let at = |p: IVec3| ((cell * SPLIT + p).as_vec3() * CELL / SPLIT as f32).to_array();
     // A single blade (one bit across) is two planes crossed on its diagonals, seen from both
     // sides: two faces where a box is five, and finer to look at. A meadow of boxes was more
     // faces than all the land under it.
-    if hi.x - lo.x == 1 && hi.z - lo.z == 1 {
+    if blades() && hi.x - lo.x == 1 && hi.z - lo.z == 1 {
         // Each plane a blade: broad at the foot, drawn to a point, leaning its own way, a
         // little taller or shorter than the next. Upright strips of one width were sticks.
         let unit = CELL / SPLIT as f32;
@@ -828,6 +846,40 @@ fn blade(m: &mut MeshData, cell: IVec3, lo: IVec3, hi: IVec3, colour: [f32; 3]) 
                 m.tangents.push([1.0, 0.0, 0.0, 1.0]);
                 let along = |c: i32, p: f32| (c.rem_euclid(SPAN) as f32 + p).clamp(0.01, SPAN as f32 - 0.01);
                 m.uvs.push(Grain::Grass.uv(along(cell.x, 0.5 + side * 0.2 + up * 0.5), along(cell.z, 0.5 + up * 0.6)));
+                // Dark at the foot among its neighbours, pale and a little yellow at the tip.
+                let shade = 0.45 + 0.8 * up;
+                m.colors.push([colour[0] * shade * (1.0 + 0.12 * up) / MEAN, colour[1] * shade / MEAN, colour[2] * shade * (1.0 - 0.2 * up) / MEAN, 1.0 - up]);
+            }
+            m.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
+        }
+        return;
+    }
+    if !bits_grass() && hi.x - lo.x == 1 && hi.z - lo.z == 1 && hi.y - lo.y > 1 {
+        // A slat: a blade in the world's own shapes. Square-cut, upright, lying along the
+        // grid one way or the other, a bit wide for most of its height and half that above:
+        // a stepped outline and no point. Two faces, where a column of bits is five; in the
+        // art's style, where a pointed plane was not.
+        let unit = CELL / SPLIT as f32;
+        let roll = |k: i32| hash(cell * 13 + lo * 5 + IVec3::splat(k));
+        let along_x = roll(1) < 0.5;
+        let (across, off) = (if along_x { Vec3::X } else { Vec3::Z }, if along_x { Vec3::Z } else { Vec3::X });
+        let foot = (cell * SPLIT + lo).as_vec3() * unit + off * unit * (0.15 + 0.7 * roll(2));
+        let tall = (hi.y - lo.y) as f32 * unit;
+        // Its upper part to one side or the other, and where it begins a bit of the way up.
+        let (step, left) = (((hi.y - lo.y) as f32 * (0.45 + 0.3 * roll(3))).round().max(1.0) * unit, roll(4) < 0.5);
+        for (from, to, a, b) in [(0.0, step, 0.0, 1.0), (step, tall, if left { 0.0 } else { 0.5 }, if left { 0.5 } else { 1.0 })] {
+            if to <= from {
+                continue;
+            }
+            let start = m.positions.len() as u32;
+            for (side, high) in [(a, from), (b, from), (b, to), (a, to)] {
+                let up = high / tall;
+                m.positions.push((foot + across * unit * side + Vec3::Y * high).to_array());
+                // Lit as the ground it grows from, not as a wall.
+                m.normals.push([0.0, 1.0, 0.0]);
+                m.tangents.push([1.0, 0.0, 0.0, 1.0]);
+                let along = |c: i32, p: f32| (c.rem_euclid(SPAN) as f32 + p).clamp(0.01, SPAN as f32 - 0.01);
+                m.uvs.push(Grain::Grass.uv(along(cell.x, 0.3 + side * 0.2), along(cell.z, 0.2 + up * 0.6)));
                 // Dark at the foot among its neighbours, pale and a little yellow at the tip.
                 let shade = 0.45 + 0.8 * up;
                 m.colors.push([colour[0] * shade * (1.0 + 0.12 * up) / MEAN, colour[1] * shade / MEAN, colour[2] * shade * (1.0 - 0.2 * up) / MEAN, 1.0 - up]);
@@ -878,6 +930,23 @@ fn sprig(cell: IVec3, block: Block, m: &mut MeshData) {
         }
         return;
     }
+    if block == Block::Fern && !blades() {
+        // A fern in cubes: a short crown, and five or six fronds each an arc of bits that
+        // steps out and up from it and comes down at its end, every frond its own green.
+        blade(m, cell, IVec3::new(2, 0, 2), IVec3::new(3, 2, 3), side);
+        for i in 0..4 + (roll(1) * 2.0) as i32 {
+            let way = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)][((roll(i * 3 + 2) * 8.0) as usize + i as usize * 3) % 8];
+            let tint = 0.8 + 0.4 * roll(i + 20);
+            let long = 2 + (roll(i + 9) * 2.0) as i32;
+            for k in 1..=long {
+                // Up over the first steps, down at the last.
+                let high = (1 + k.min(long - k + 1)).min(3) + (roll(i + 30) * 1.5) as i32;
+                let at = IVec3::new(2 + way.0 * k, high, 2 + way.1 * k);
+                blade(m, cell, at, at + IVec3::ONE, top.map(|c| c * tint * (0.85 + 0.1 * k as f32)));
+            }
+        }
+        return;
+    }
     if block == Block::Fern {
         // Fronds: five or six long blades from one crown, each leaning out its own way.
         for i in 0..5 + (roll(1) * 2.0) as i32 {
@@ -888,8 +957,9 @@ fn sprig(cell: IVec3, block: Block, m: &mut MeshData) {
         return;
     }
     // A tuft is a clump, not three sticks: five to eight blades.
-    let blades = if block == Block::Flower { 5 } else { 11 + (roll(0) * 6.0) as i32 };
-    for i in 0..blades {
+    // (As cubes, half as many: a column of bits is five faces where a blade is two.)
+    let count = if block == Block::Flower { if bits_grass() { 3 } else { 5 } } else if bits_grass() { 6 + (roll(0) * 4.0) as i32 } else { 11 + (roll(0) * 6.0) as i32 };
+    for i in 0..count {
         let (x, z) = ((roll(i * 3 + 1) * SPLIT as f32) as i32 % SPLIT, (roll(i * 3 + 2) * SPLIT as f32) as i32 % SPLIT);
         let tall = match block {
             Block::Reed => SPLIT,
@@ -901,6 +971,11 @@ fn sprig(cell: IVec3, block: Block, m: &mut MeshData) {
         if block == Block::Flower && i == 0 {
             // Its head: white, yellow or violet by where it grows.
             let head = [[0.85, 0.82, 0.74], top, [0.48, 0.30, 0.62]][(roll(40) * 3.0) as usize % 3];
+            if !blades() {
+                // In cubes: one bit of colour on its stem.
+                blade(m, cell, IVec3::new(x, tall, z), IVec3::new(x + 1, tall + 1, z + 1), head.map(|c| c * 1.2));
+                continue;
+            }
             // A bloom the size of a bloom: one bit, as crossed petals, not a box three across.
             // A bloom the size of a bloom: six centimetres of petals lying open to the sky.
             let unit = CELL / SPLIT as f32;

@@ -5,8 +5,8 @@
 //! `cube_sim::plants` says, as it grows each thing, what shape it grew (`plants::Form`: its
 //! limbs and its clumps of leaf), and that is drawn here in place of the cells.
 //!
-//! Why: a world whose trees are cubes is Minecraft, whatever its light and paint. The ground
-//! is voxels; what grows on it is low poly, as Eco's is.
+//! That is `--shapes` now, kept to compare. The default is the same forms as small cubes
+//! of many sizes (the end of this file): the world is cuboids, all of it.
 
 use crate::world::{Look, Terrain};
 use bevy::{asset::RenderAssetUsages, mesh::Indices, prelude::*, render::render_resource::PrimitiveTopology};
@@ -15,7 +15,7 @@ use cube_voxel::{
     Block, CELL,
     texture::{Grain, MEAN, SPAN},
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub struct FloraPlugin;
 
@@ -45,9 +45,9 @@ impl Grown {
 const COVER: f32 = 1.3;
 const CARD: f32 = 0.8;
 /// Metres from the camera within which leaf is drawn as sprigs.
-const FINE: f32 = 36.0;
+const FINE: f32 = 5.0;
 /// And beyond this, as a few broad cards and the largest masses' bodies: a tenth of the points.
-const MID: f32 = 88.0;
+const MID: f32 = 46.0;
 
 fn hash(a: u32, b: u32) -> f32 {
     let mut h = a.wrapping_mul(0x9E3779B1) ^ b.wrapping_mul(0x85EBCA77);
@@ -327,7 +327,7 @@ fn ball_of(times: u32) -> Vec<[Vec3; 3]> {
 }
 
 /// Keeps the meshes in step with the regions that are made.
-fn grow(mut commands: Commands, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, forms: Res<Forms>, mut grown: ResMut<Grown>, mut meshes: ResMut<Assets<Mesh>>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
+fn grow(mut commands: Commands, args: Res<crate::Args>, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, forms: Res<Forms>, mut grown: ResMut<Grown>, mut meshes: ResMut<Assets<Mesh>>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
     let (Some(_), Some(look)) = (terrain, look) else { return };
     grown.0.retain(|region, (entity, _)| {
         let keep = forms.0.contains_key(region);
@@ -340,7 +340,9 @@ fn grow(mut commands: Commands, terrain: Option<Res<Terrain>>, look: Option<Res<
     // Near the camera every leaf mass is sprigs of leaflets; farther off, plain cards, a
     // fifth of the points; far off, a few broad ones. Three levels, as the ground has.
     let eye = cameras.iter().next().map(|t| t.translation()).unwrap_or_default();
-    let away = |r: &(i32, i32)| Vec2::new((r.0 as f32 + 0.5) * size - eye.x, (r.1 as f32 + 0.5) * size - eye.z).length();
+    // (How far the camera is from the nearest of a region's ground, nothing if it is over it:
+    // measured to a region's middle, a rock at a person's feet could be the far kind.)
+    let away = |r: &(i32, i32)| Vec2::new((eye.x - (r.0 as f32 + 0.5) * size).abs() - size / 2.0, (eye.z - (r.1 as f32 + 0.5) * size).abs() - size / 2.0).max(Vec2::ZERO).length();
     let level = |r: &(i32, i32)| {
         let far = away(r);
         let now = if far < FINE { 0u8 } else if far < MID { 1 } else { 2 };
@@ -367,19 +369,35 @@ fn grow(mut commands: Commands, terrain: Option<Res<Terrain>>, look: Option<Res<
             *ends.entry(key(limb.a)).or_default() += 1;
             *ends.entry(key(limb.b)).or_default() += 1;
         }
-        for (n, limb) in form.limbs.iter().enumerate() {
-            shape.limb(limb.a - origin, limb.b - origin, limb.ra, limb.rb, limb.bark, n as u32, [ends[&key(limb.a)] == 1, ends[&key(limb.b)] == 1], limb.roots);
+        if args.shapes {
+            for (n, limb) in form.limbs.iter().enumerate() {
+                shape.limb(limb.a - origin, limb.b - origin, limb.ra, limb.rb, limb.bark, n as u32, [ends[&key(limb.a)] == 1, ends[&key(limb.b)] == 1], limb.roots);
+            }
+            let facets = ball();
+            let coarse = ball_of(0);
+            for (n, stone) in form.stones.iter().enumerate() {
+                let mut stone = stone.clone();
+                stone.middle -= origin;
+                shape.stone(&stone, &facets, n as u32);
+            }
+            for (n, clump) in form.clumps.iter().enumerate() {
+                shape.clump(clump.middle - origin, clump.radii, clump.leaf, n as u32 + 100_000, &coarse, level);
+            }
+        } else {
+            for (n, limb) in form.limbs.iter().enumerate() {
+                shape.limb_cubes(limb.a - origin, limb.b - origin, limb.ra, limb.rb, limb.bark, n as u32, [ends[&key(limb.a)] == 1, ends[&key(limb.b)] == 1], limb.roots, level);
+            }
+            for (n, stone) in form.stones.iter().enumerate() {
+                let mut stone = stone.clone();
+                stone.middle -= origin;
+                shape.stone_cubes(&stone, n as u32, level);
+            }
+            for (n, clump) in form.clumps.iter().enumerate() {
+                shape.clump_cubes(clump.middle - origin, clump.radii, clump.leaf, n as u32 + 100_000, level);
+            }
         }
-        let facets = ball();
-        let coarse = ball_of(0);
-        for (n, stone) in form.stones.iter().enumerate() {
-            let mut stone = stone.clone();
-            stone.middle -= origin;
-            shape.stone(&stone, &facets, n as u32);
-        }
-        for (n, clump) in form.clumps.iter().enumerate() {
-            shape.clump(clump.middle - origin, clump.radii, clump.leaf, n as u32 + 100_000, &coarse, level);
-        }
+        // Counted with the ground's faces in a picture's `pace`.
+        let faces = crate::world::Faces((shape.indices.len() / 6) as u32);
         let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, shape.positions)
             .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, shape.normals)
@@ -387,7 +405,282 @@ fn grow(mut commands: Commands, terrain: Option<Res<Terrain>>, look: Option<Res<
             .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, shape.uvs)
             .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, shape.tangents)
             .with_inserted_indices(Indices::U32(shape.indices));
-        let entity = commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(look.solid.clone()), Transform::from_translation(origin))).id();
+        let entity = commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(look.solid.clone()), Transform::from_translation(origin), faces)).id();
+        // (What is far off throws no shadow of its own: its shadow would be a few texels.)
+        if level == 2 {
+            commands.entity(entity).insert(bevy::light::NotShadowCaster);
+        }
         grown.0.insert(region, (entity, level));
+    }
+}
+
+/// The faces of a cube: which way each looks, and the two ways along it.
+const SIDES: [(IVec3, IVec3, IVec3); 6] = [
+    (IVec3::X, IVec3::Y, IVec3::Z),
+    (IVec3::NEG_X, IVec3::Z, IVec3::Y),
+    (IVec3::Y, IVec3::Z, IVec3::X),
+    (IVec3::NEG_Y, IVec3::X, IVec3::Z),
+    (IVec3::Z, IVec3::X, IVec3::Y),
+    (IVec3::NEG_Z, IVec3::Y, IVec3::X),
+];
+
+fn hashed(c: IVec3, k: u32) -> f32 {
+    hash((c.x.wrapping_mul(73_856_093) ^ c.y.wrapping_mul(19_349_663) ^ c.z.wrapping_mul(83_492_791)) as u32, k)
+}
+
+/// What grows, as cubes (the default: `--shapes` draws the low-poly forms above instead).
+///
+/// The world is cubes and so is what grows on it; what kept cube trees from being
+/// Minecraft's is how small the cubes are and that no two are alike. Wood is cubes of 5 and
+/// 10 cm up close (the bit, and two of them), so a trunk is round, swells into its roots and
+/// has furrows a cube deep; each cube is its own shade of bark, darker down the furrows.
+/// Leaf is boxes of many sizes, a hand to half a metre, each its own green, lit on top and
+/// dark beneath, over a dark heart. Stone is cubes in beds of differing shade, mossed on top.
+/// Farther off the cubes are the world's cells (25 cm), and far off twice that.
+impl Shape {
+    /// The cubes of `set`, each `g` metres a side: every face that no other cube of the set
+    /// covers, painted as `paint` says for that cube and face.
+    fn cubes(&mut self, set: &HashSet<IVec3>, g: f32, free: f32, paint: impl Fn(IVec3, IVec3) -> ([f32; 3], Grain)) {
+        let span = g / CELL;
+        let room = SPAN as f32 - span - 0.04;
+        for &c in set {
+            for (n, u, v) in SIDES {
+                if set.contains(&(c + n)) {
+                    continue;
+                }
+                let (colour, grain) = paint(c, n);
+                let corner = (c + n.max(IVec3::ZERO)).as_vec3() * g;
+                // The grain by where the cube is, each face a piece of the tile its own size.
+                let (u0, v0) = ((c.dot(u) as f32 * span).rem_euclid(room) + 0.02, (c.dot(v) as f32 * span).rem_euclid(room) + 0.02);
+                let start = self.positions.len() as u32;
+                for (su, sv) in [(0.0f32, 0.0f32), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
+                    self.point(corner + (u.as_vec3() * su + v.as_vec3() * sv) * g, n.as_vec3(), colour, grain.uv(u0 + su * span, v0 + sv * span), free);
+                }
+                self.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
+            }
+        }
+    }
+
+    /// One box from `lo` to `hi`, its top, sides and underside each a colour; the face that
+    /// looks most nearly along `hidden` is left out (it is against something).
+    #[allow(clippy::too_many_arguments)]
+    fn boxed(&mut self, lo: Vec3, hi: Vec3, top: [f32; 3], side: [f32; 3], under: [f32; 3], grain: Grain, hidden: Vec3, free: f32, n: u32) {
+        let size = hi - lo;
+        for (f, (face, u, v)) in SIDES.into_iter().enumerate() {
+            if face.as_vec3().dot(hidden) > 0.75 {
+                continue;
+            }
+            let colour = if face == IVec3::Y { top } else if face == IVec3::NEG_Y { under } else { side.map(|c| c * (0.9 + 0.1 * (face.x + face.z) as f32)) };
+            let corner = lo + face.max(IVec3::ZERO).as_vec3() * size;
+            let (wide, tall) = ((u.as_vec3() * size).length(), (v.as_vec3() * size).length());
+            let (su, sv) = ((wide / CELL).min(SPAN as f32 - 0.1), (tall / CELL).min(SPAN as f32 - 0.1));
+            let (u0, v0) = (hash(n, 50 + f as u32) * (SPAN as f32 - su - 0.04) + 0.02, hash(n, 60 + f as u32) * (SPAN as f32 - sv - 0.04) + 0.02);
+            let start = self.positions.len() as u32;
+            for (a, b) in [(0.0f32, 0.0f32), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
+                self.point(corner + u.as_vec3() * size * a + v.as_vec3() * size * b, face.as_vec3(), colour, grain.uv(u0 + a * su, v0 + b * sv), free);
+            }
+            self.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
+        }
+    }
+
+    /// A limb as cubes: round, tapering, wandering a little, ridged along its grain, and a
+    /// rooted trunk swelling into buttresses at the ground, all to the cube.
+    #[allow(clippy::too_many_arguments)]
+    fn limb_cubes(&mut self, a: Vec3, b: Vec3, ra: f32, rb: f32, bark: Block, n: u32, cut: [bool; 2], roots: u8, level: u8) {
+        let thick = ra.max(rb);
+        if (level == 1 && thick < 0.2) || (level == 2 && thick < 0.25) {
+            return;
+        }
+        // Up close a trunk or a heavy limb is cubes of 10 cm, round to the cube. A lesser
+        // limb is one line of cubes as thick as it is: a hundred boughs of a pine drawn
+        // round were more faces than the rest of the wood, and unseen under their needles.
+        let g = match level {
+            0 if thick < 0.16 => ((thick * 2.0 / 0.05).round() * 0.05).clamp(0.05, 0.3),
+            0 => 0.1,
+            1 => 0.25,
+            _ => 0.5,
+        };
+        let along = (b - a).normalize_or(Vec3::Y);
+        let side = along.any_orthonormal_vector();
+        let other = along.cross(side);
+        let length = a.distance(b);
+        let (lobes, phase) = (if roots > 0 { roots as u32 } else { 3 + (hash(n, 2) * 3.0) as u32 }, hash(n, 3) * std::f32::consts::TAU);
+        const UNDER: f32 = 0.5;
+        let slight = (ra / 0.35).clamp(0.3, 1.0);
+        let high = |t: f32| ((t * length - UNDER + 0.12) / ra.max(0.05)).max(0.0);
+        let radius = |t: f32, turn: f32| {
+            let r = (ra + (rb - ra) * t).max(g * 0.56);
+            let mut ridge = 1.0 + 0.07 * (thick / 0.2).min(1.0) * (turn * lobes as f32 + phase).cos();
+            if roots > 0 {
+                let wave = (turn * lobes as f32 + phase + 0.5 * (turn * 2.0 + phase).sin()).cos();
+                let back = wave.max(0.0).powf(2.2);
+                let which = ((turn * lobes as f32 + phase) / std::f32::consts::TAU).round() as i32;
+                let reach = (1.5 + 1.6 * hash(n, 300 + which.rem_euclid(lobes as i32) as u32)) * slight;
+                ridge = 1.0 + 0.45 * (-high(t) / 1.6).exp() + reach * back * (-high(t) / 0.75).exp() - 0.1 * (1.0 - back) * (-high(t) / 2.0).exp();
+            }
+            r * ridge
+        };
+        let most = |t: f32| (ra + (rb - ra) * t).max(g * 0.56) * if roots > 0 { 1.45 + 3.1 * slight * (-high(t) / 0.75).exp() } else { 1.1 };
+        let wander = |t: f32| (side * (t * 4.0 + hash(n, 20) * 6.0).sin() + other * (t * 3.1 + hash(n, 40) * 6.0).sin()) * thick.min(0.35) * 0.3 * (t * std::f32::consts::PI).sin();
+        let upright = along.y > 0.95;
+        let mut set = HashSet::new();
+        let steps = ((length / (g * 0.5)).ceil() as i32).max(1);
+        for i in 0..=steps {
+            let t = i as f32 / steps as f32;
+            // (What is under the ground is not drawn.)
+            if roots > 0 && t * length < UNDER - 0.15 {
+                continue;
+            }
+            let centre = a.lerp(b, t) + wander(t);
+            let k = (most(t) / g).ceil() as i32 + 1;
+            let m = (centre / g).floor().as_ivec3();
+            let deep = if upright { 1 } else { k };
+            for dy in -deep..=deep {
+                for dz in -k..=k {
+                    for dx in -k..=k {
+                        let c = m + IVec3::new(dx, dy, dz);
+                        let p = (c.as_vec3() + 0.5) * g - centre;
+                        let axial = p.dot(along);
+                        if axial.abs() > g * 0.8 {
+                            continue;
+                        }
+                        let flat = p - along * axial;
+                        if flat.length() <= radius(t, flat.dot(other).atan2(flat.dot(side))) {
+                            set.insert(c);
+                        }
+                    }
+                }
+            }
+        }
+        let (colour, pale) = (bark.colors().1, bark.colors().0.map(|c| c * 1.5));
+        let grain = if bark == Block::Birch { Grain::BirchBark } else { Grain::Bark };
+        let moss = Block::Moss.colors().0;
+        let free = ((0.16 - thick) / 0.16).clamp(0.0, 1.0) * 0.25;
+        self.cubes(&set, g, free, |c, face| {
+            let p = (c.as_vec3() + 0.5) * g;
+            let axial = (p - a).dot(along);
+            let end = face.as_vec3().dot(along);
+            // Cut wood, where nothing grows on from an end.
+            if thick > 0.12 && ((end > 0.9 && cut[1] && axial > length - g * 1.5) || (end < -0.9 && cut[0] && axial < g * 1.5)) {
+                return (pale.map(|v| v * (0.9 + 0.2 * hashed(c, 4))), Grain::EndGrain);
+            }
+            // Every cube its own shade, and a line of them along the grain shares one: furrows.
+            let line = ((p - a - along * axial) / g).round().as_ivec3();
+            let shade = (0.74 + 0.38 * hashed(line, n)) * (0.9 + 0.2 * hashed(c, 7)) * if face == IVec3::Y { 1.12 } else { 1.0 };
+            if bark == Block::Birch {
+                // Pale, with a birch's dark dashes lying across it.
+                let dash = face.y == 0 && hashed(c, 5) < 0.035;
+                return (if dash { [0.16, 0.15, 0.14] } else { colour.map(|v| v * (0.92 + 0.14 * hashed(c, 7))) }, grain);
+            }
+            // Moss on the roots and the foot of an old trunk, on what looks up and some of what does not.
+            let low = roots > 0 && axial < UNDER + 1.4;
+            if low && hashed(c.div_euclid(IVec3::splat(3)), 11) > 0.5 && (face == IVec3::Y || hashed(c, 9) > 0.7) {
+                return (moss.map(|v| v * (0.8 + 0.4 * hashed(c, 7))), Grain::Moss);
+            }
+            (colour.map(|v| v * shade), grain)
+        });
+    }
+
+    /// A mass of leaf as boxes: many, of many sizes, each its own green, over a dark heart.
+    /// A conifer's spray is thin plates lying one over another.
+    fn clump_cubes(&mut self, middle: Vec3, radii: Vec3, leaf: Block, n: u32, level: u8) {
+        let (top, under) = leaf.colors();
+        let warm = hash(n, 90) - 0.5;
+        let tint = |c: [f32; 3], w: f32| [c[0] * (1.0 + 0.5 * w), c[1] * (1.0 + 0.16 * w), c[2] * (1.0 - 0.4 * w)];
+        let (top, under) = (tint(top, warm), tint(under, warm));
+        let spray = radii.y < radii.x.min(radii.z) * 0.6;
+        let grain = if leaf == Block::Needles { Grain::Needles } else { Grain::Leaves };
+        let snap = |v: Vec3, to: f32| (v / to).round() * to;
+        // The heart: what is seen between the outer boxes is leaf in shade, not sky.
+        if radii.min_element() > if level == 2 { 1.1 } else { 0.45 } {
+            // (Three boxes near to; farther off, one.)
+            for k in 0..if level == 0 { 3u32 } else { 1 } {
+                let off = Vec3::new(hash(n, 100 + k) - 0.5, hash(n, 110 + k) - 0.5, hash(n, 120 + k) - 0.5) * radii * 0.5;
+                let half = snap(radii * if k == 0 { 0.6 } else { 0.42 }, 0.25).max(Vec3::splat(0.25));
+                let at = snap(middle + if k == 0 { Vec3::ZERO } else { off }, 0.25);
+                let dark = under.map(|c| c * 0.5);
+                self.boxed(at - half, at + half, dark.map(|c| c * 1.3), dark, dark.map(|c| c * 0.8), grain, Vec3::ZERO, 0.2, n * 7 + k);
+            }
+        }
+        // A spray away from the camera is one plate, as wide as the spray: a few small
+        // boxes for each left a far pine bare.
+        if spray && level > 0 {
+            let half = snap(Vec3::new(radii.x * 0.8, 0.125, radii.z * 0.8), 0.25).max(Vec3::new(0.25, 0.125, 0.25));
+            let at = snap(middle, 0.25);
+            let shade = 0.8 + 0.3 * hash(n, 8);
+            self.boxed(at - half, at + half, top.map(|c| c * shade), top.map(|c| c * shade * 0.75), under.map(|c| c * 0.55), grain, Vec3::ZERO, 0.3, n);
+            return;
+        }
+        let area = 4.0 * std::f32::consts::PI * ((radii.x * radii.y).powf(1.6) + (radii.x * radii.z).powf(1.6) + (radii.y * radii.z).powf(1.6)).powf(1.0 / 1.6) / 3.0f32.powf(1.0 / 1.6);
+        let unit = [0.45f32, 0.9, 1.4][level as usize].min(radii.x.min(radii.z) * 0.9).max(0.15);
+        let count = ((area * [0.17, 0.15, 0.08][level as usize] / (unit * unit)) as u32).clamp([4, 1, if n.is_multiple_of(2) { 1 } else { 0 }][level as usize], 120);
+        for i in 0..count {
+            let roll = |k: u32| hash(n.wrapping_mul(977).wrapping_add(i), k);
+            let (turn, up) = (roll(1) * std::f32::consts::TAU, roll(2) * 2.0 - 1.0);
+            let round = (1.0 - up * up).sqrt();
+            let out = Vec3::new(turn.cos() * round, up, turn.sin() * round);
+            let deep = 0.7 + 0.3 * roll(3).sqrt();
+            let at = middle + out * radii * deep;
+            // Sizes from a hand to the unit and half again, more small than large.
+            let size = unit * (0.3 + 1.2 * roll(4) * roll(4));
+            let dims = snap(Vec3::new(size * (0.8 + 0.5 * roll(5)), size * if spray { 0.3 } else { 0.55 + 0.5 * roll(6) }, size * (0.8 + 0.5 * roll(7))), 0.05).max(Vec3::splat(0.1));
+            let lo = snap(at - dims / 2.0, 0.05);
+            // Deeper in and lower down is in the crown's own shade; no two boxes the one green.
+            let shade = (0.55 + 0.55 * (deep - 0.7) / 0.3) * (0.8 + 0.25 * (up * 0.5 + 0.5)) * (0.88 + 0.24 * roll(8));
+            let own = (roll(12) - 0.5) * 0.8;
+            let lit = tint(if up > -0.3 { top } else { under }, own).map(|c| c * shade);
+            self.boxed(lo, lo + dims, lit.map(|c| c * 1.18), lit.map(|c| c * 0.86), tint(under, own).map(|c| c * shade * 0.62), grain, -out, 0.4, n.wrapping_mul(31).wrapping_add(i));
+        }
+    }
+
+    /// A stone as cubes: its true shape to the cube, lying in beds of differing shade, with
+    /// moss and lichen on what looks up.
+    fn stone_cubes(&mut self, stone: &cube_sim::plants::Stone, n: u32, level: u8) {
+        let big = stone.radii.max_element();
+        let g = match level {
+            0 if big > 2.4 => 0.2,
+            0 if big < 0.3 => 0.05,
+            0 => 0.1,
+            1 => 0.25,
+            _ => 0.5,
+        };
+        if level == 2 && big < 0.5 {
+            return;
+        }
+        let (sin, cos) = stone.turn.sin_cos();
+        let reach = Vec3::new(stone.radii.x.max(stone.radii.z), stone.radii.y, stone.radii.x.max(stone.radii.z));
+        let (lo, hi) = (((stone.middle - reach) / g).floor().as_ivec3(), ((stone.middle + reach) / g).ceil().as_ivec3());
+        let mut set = HashSet::new();
+        for y in lo.y..=hi.y {
+            for z in lo.z..=hi.z {
+                for x in lo.x..=hi.x {
+                    let c = IVec3::new(x, y, z);
+                    let d = (c.as_vec3() + 0.5) * g - stone.middle;
+                    let q = Vec3::new((d.x * cos + d.z * sin) / stone.radii.x, d.y / stone.radii.y, (d.z * cos - d.x * sin) / stone.radii.z);
+                    if q.length_squared() < 1.0 && stone.faces.iter().all(|(normal, far)| q.dot(*normal) < *far) {
+                        set.insert(c);
+                    }
+                }
+            }
+        }
+        let (top, side) = stone.kind.colors();
+        let (moss, mossy) = (Block::Moss.colors().0, hash(n, 5) < 0.6);
+        self.cubes(&set, g, 0.0, |c, face| {
+            // Beds a hand or two thick, each its own shade and tipped a little.
+            let bed = ((c.y as f32 * g + (c.x as f32 * 0.12 + c.z as f32 * 0.07) * g) / 0.3).floor() as i32;
+            let shade = (0.8 + 0.34 * hash(bed as u32, n)) * (0.92 + 0.16 * hashed(c, 7));
+            if face == IVec3::Y {
+                let patch = hashed(IVec3::new((c.x as f32 * g / 0.4) as i32, 0, (c.z as f32 * g / 0.4) as i32), n);
+                if mossy && patch > 0.5 {
+                    return (moss.map(|v| v * (0.8 + 0.4 * hashed(c, 9))), Grain::Moss);
+                }
+                // Lichen: pale flecks.
+                if hashed(c, 13) < 0.06 {
+                    return ([0.42, 0.44, 0.3], Grain::Rock);
+                }
+                return (top.map(|v| v * shade), Grain::Rock);
+            }
+            (side.map(|v| v * shade), Grain::Strata)
+        });
     }
 }

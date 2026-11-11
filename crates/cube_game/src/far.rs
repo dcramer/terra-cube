@@ -72,32 +72,26 @@ impl Shape {
 }
 
 impl Shape {
-    /// A rounded crown: a ball of a few dozen faces, squashed to its reach.
-    fn crown(&mut self, middle: Vec3, radii: Vec3, colour: [f32; 3], ball: &[[Vec3; 3]]) {
-        for corners in ball {
-            let start = self.positions.len() as u32;
-            for d in corners {
-                // Lit from above more than below, as a crown is: its underside is in its own shade.
-                let shade = 0.62 + 0.45 * (d.y * 0.5 + 0.5);
-                self.point(middle + *d * radii, (*d / radii).normalize_or(Vec3::Y), colour.map(|c| c * shade));
-            }
-            self.indices.extend([start, start + 1, start + 2]);
-        }
+    /// A crown as boxes, as the tree it stands for is cubes: a broad one, a lesser one on
+    /// top and one to a side.
+    fn crown(&mut self, middle: Vec3, radii: Vec3, colour: [f32; 3], _ball: &[[Vec3; 3]]) {
+        let wide = Vec3::new(radii.x * 0.78, radii.y * 0.55, radii.z * 0.78);
+        self.block(middle - wide, middle + wide, colour.map(|c| c * 0.92));
+        let top = Vec3::new(radii.x * 0.5, radii.y * 0.35, radii.z * 0.5);
+        let over = middle + Vec3::Y * radii.y * 0.62;
+        self.block(over - top, over + top, colour);
+        let side = Vec3::new(radii.x * 0.45, radii.y * 0.4, radii.z * 0.45);
+        let by = middle + Vec3::new(radii.x * 0.5, -radii.y * 0.1, -radii.z * 0.35);
+        self.block(by - side, by + side, colour.map(|c| c * 0.85));
     }
 
-    /// A cone standing on `foot`: a conifer's crown.
+    /// A conifer's crown standing on `foot`: square tiers, each smaller than the one under.
     fn cone(&mut self, foot: Vec3, wide: f32, tall: f32, colour: [f32; 3]) {
-        const SIDES: usize = 7;
-        let tip = self.point(foot + Vec3::Y * tall, Vec3::Y, colour);
-        let ring: Vec<u32> = (0..SIDES)
-            .map(|k| {
-                let turn = k as f32 / SIDES as f32 * std::f32::consts::TAU;
-                let out = Vec3::new(turn.cos(), 0.0, turn.sin());
-                self.point(foot + out * wide, (out + Vec3::Y * 0.5).normalize(), colour.map(|c| c * 0.7))
-            })
-            .collect();
-        for k in 0..SIDES {
-            self.indices.extend([tip, ring[(k + 1) % SIDES], ring[k]]);
+        const TIERS: usize = 4;
+        for k in 0..TIERS {
+            let (from, to) = (k as f32 / TIERS as f32, (k as f32 + 0.8) / TIERS as f32);
+            let half = wide * (1.0 - from * 0.85);
+            self.block(foot + Vec3::new(-half, from * tall, -half), foot + Vec3::new(half, to * tall, half), colour.map(|c| c * (0.8 + 0.2 * from)));
         }
     }
 }

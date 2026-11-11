@@ -40,6 +40,8 @@ pub struct Mover {
     pub id: u32,
     /// How far the drawn model still is from the body after a step up or down, eased out.
     lift: f32,
+    /// How high its feet were last drawn while it stood on the ground, if it did.
+    shown: Option<f32>,
     /// The model tipped into its turns and its starts and stops: roll and pitch, radians.
     tilt: Vec2,
     was_speed: f32,
@@ -47,7 +49,7 @@ pub struct Mover {
 
 impl Mover {
     pub fn new(id: u32) -> Self {
-        Self { id, lift: 0.0, tilt: Vec2::ZERO, was_speed: 0.0 }
+        Self { id, lift: 0.0, shown: None, tilt: Vec2::ZERO, was_speed: 0.0 }
     }
 }
 
@@ -187,9 +189,21 @@ fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, terra
         if let (true, true, Some(terrain)) = (near, agent.body.grounded, &terrain) {
             let at = Vec3::new(transform.translation.x, agent.body.pos.y, transform.translation.z);
             if let Some(y) = cube_voxel::mesh::eased_under(&terrain.0, at) {
-                transform.translation.y = y;
+                // The ground is drawn in blocks, and from one to the next is a step of a
+                // hand or of half a metre: the model (and the eyes that ride on it) come up
+                // or down to the new level over a tenth of a second and are never more than
+                // a third of a metre behind it. Put straight on each block as it was
+                // reached, walking was a string of jolts.
+                let from = m.shown.unwrap_or(y);
+                let eased = y + (from - y).clamp(-0.35, 0.35) * (-16.0 * dt).exp();
+                transform.translation.y = eased;
+                m.shown = Some(eased);
                 m.lift = 0.0;
+            } else {
+                m.shown = None;
             }
+        } else {
+            m.shown = None;
         }
 
         let speed = agent.body.ground_speed();

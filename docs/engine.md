@@ -46,6 +46,13 @@ The rule this protects: **the simulation never needs a window.** A big sandbox w
 - **Cost**: frames went from 11 ms to 8 in the meadow; cube crowns were more faces than the cards that replaced them.
 - **Smooth ground is one surface** (`mesh::Heights`): where each column's ground ends is found from the cells, the surface at a corner is the mean of the sixteen columns round it, and a quad is drawn a column with its corners on that surface and its colour the mean of what tops those columns; steep, it shows earth and then stone. No risers are drawn at all. The first smooth ground eased each cube's own corners, which left a stretched riser on every steep face (sawteeth up a cliff) and a zigzag wherever two materials met. The far levels draw the same surface a quad to two or four columns.
 - **The ground was smooth by default for a few hours** (`Ground::Smooth`, now `--smooth`; the default is blocks again, see below), now that nothing natural beside it is cubes; and the water's surface runs two cells on under the bank, so a shoreline is where smooth ground meets it and not a sawn edge.
+- **What grows is cubes by default** (`flora::Shape::limb_cubes`, `clump_cubes`, `stone_cubes`, 2026-11-11; `--shapes` for the low-poly forms). Made from the same `plants::Form`, at three levels:
+  - Near (a region within 5 m): trunks and heavy limbs in cubes of 10 cm, round to the cube, swelling into stepped roots; a lesser limb is one line of cubes as thick as it is (a hundred pine boughs drawn round were more faces than the rest of the wood, unseen under their needles). Each cube its own shade of bark and a line of them along the grain shares one, so furrows; moss on roots and foot; cut wood on an end nothing grows from. Leaf is boxes from a hand to 60 cm, each its own green, lit on top and dark under, over a dark heart. Stone is cubes in tipped beds of differing shade, moss and lichen on top.
+  - To 46 m: the world's 25 cm cells for wood thicker than 20 cm, larger and fewer leaf boxes, a conifer's spray one plate.
+  - Beyond: 50 cm, the largest masses only, and no shadow cast.
+  - Cost: the first try was 4.2 million faces in a forest view and 27 ms. With the levels above it is 1.7 million and 16 ms; meadow 13 ms. A flora mesh carries `world::Faces`, so a picture's `pace` counts it.
+- **Grass is slats; ferns and flowers are bits** (`mesh::blade`; `--bits` for grass as columns of bits, `--blades` for the pointed planes). A slat is a blade in the world's own shapes: square-cut, upright, lying along the grid one way or the other, a bit wide for most of its height and half that above, so a stepped outline and no point. Two faces. Columns of bits were tried first (five faces each, so half as many of them): true to the style, chunky underfoot, and the developer's word was that grass "can still be done efficiently, it just needs to use the right art style". A fern is a short crown and arcs of bits stepping out, up and down; a flower one bit of colour on a stem.
+- **The far stand-ins are boxes too** (`far::Shape::crown`, `cone`): three boxes to a broadleaf, four square tiers to a conifer.
 - **Limbs are wood, not pipes** (`flora::Shape::limb`): rings along their length that wander a little, ridged along the grain, an end rounded over where another limb goes on and cut wood (end grain) where none does. `plants::bole` notes how many roots a trunk has and the trunk is drawn swelling into them as one piece.
 - **Bark is its true size along a limb** (`flora::Shape::limb`): each stretch between two rings takes its own piece of the tile, every ring but the ends laid twice. One tile pulled the length of a pine was bark drawn out five times too long, which read as a plain brown pole.
 - **Short grass over a meadow is drawn, not held** (`mesh_chunk`, near level only): most cells of grass with nothing taller on them carry four to six short blades, thick in some patches and thin in others, tinted dry or lush as the ground under them is. The ground was a painted floor with tufts stood on it. A quarter of a million more faces in a meadow view; the frame stayed 13 ms.
@@ -144,6 +151,8 @@ Built 2026-11-10. `cube_sim::terrain` makes it; `cargo world survey` and `map` j
 
 ## What lives in it
 
+- **A kind keeps its own ground** (`Sim::populate`): no group settles within 80 m of another of its kind (30 m for those that live alone). Herds went wherever suited them and three of ponies stood within a stone's throw: one cluster, to the developer. The pony is 1.6 m tall, not 1.45.
+
 Built 2026-11-10. `cube_sim::life` and `mind`; `cargo world run` judges it.
 
 - **The simulation owns every creature.** `Sim` holds an agent for each: its body, who drives it (the keys, its own mind, nobody) and what it is doing (`Act`, which is a clip's name). The game keeps a model in step with each agent and never moves one itself. So the same tick runs in the window, in a test and in `cargo world run`, and a server later.
@@ -174,6 +183,8 @@ Built 2026-11-11, in the simulation (`cube_sim::life`, `items`) and tested there
 - **Not done**: hit shapes per limb, anything lying on the ground to be picked up, saving what was dug.
 
 ## Sound
+
+- **Mixed by ear, in the admin panel** (`audio::Mix`, F1: air, creatures' voices, footfalls). Nothing here can listen; the developer did, and found the birds in his face, the ambience and footfalls bad and the river like a drain. What was done without ears: all three kinds turned down by default; a bird's call is never played from nearer than twelve metres and comes less often; running water is heard within nine metres of it, not twenty-two. **Not done**: the samples themselves (the water loop, the footfalls) want replacing by someone who can hear them.
 
 Built 2026-11-11 (`cube_game::audio`); the files are CC0, in `assets/audio`, whose README gives each one's source.
 
@@ -235,6 +246,8 @@ Full detail in [pipeline.md](pipeline.md). The design choices:
 - **Player customisation, in order of cost** (none built yet): tint and texture swaps on the one base body; rigid gear (helmet, pauldrons, weapons) parented to a single bone, which needs no skin weights and so suits generated meshes; body-part swaps on the shared skeleton only if those are not enough. Generated *skinned* clothing is avoided: fitting it to a body is the hard problem terra spent weeks on.
 
 ## Moving through the world
+
+- **The model comes up a block's step, it is not put on it** (`motion::mirror`): where the ground is drawn in blocks, feet (and the eyes that ride on them) ease to each new level over a tenth of a second, never more than 35 cm behind. Put straight on each block as it was reached, walking was a string of jolts.
 
 Built 2026-11-10. The rules are `cube_sim::body`; the game only feeds it keys and draws the result.
 

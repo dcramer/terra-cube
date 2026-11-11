@@ -807,6 +807,12 @@ impl Sim {
                 if uneasy {
                     continue;
                 }
+                // A kind keeps its own ground: herds were put down wherever suited them, three
+                // of ponies within a stone's throw, and the developer met one great cluster.
+                let apart = if k.group > 1 { 80.0 } else { 30.0 };
+                if self.agents.values().any(|a| a.kind == kind && a.mind.home.distance(middle) < apart) {
+                    continue;
+                }
                 let mut members = 0;
                 for _ in 0..k.group * 12 {
                     if members == k.group {

@@ -225,7 +225,8 @@ pub fn ambience(p: &Place, when: f32) -> Ambience {
         birds: day * land * (0.25 + 0.75 * (p.cover / 0.6).min(1.0)) * (0.2 + 0.8 * warm),
         // After dark, in the warm half of the year.
         night: (1.0 - day) * land * ((warm - 0.25) / 0.4).clamp(0.0, 1.0),
-        water: band(p.water, 0.0, 4.0, 22.0),
+        // Running water is heard beside it, not across a meadow.
+        water: band(p.water, 0.0, 2.0, 9.0),
     }
 }
 

@@ -182,8 +182,8 @@ fn bind_players(
         loop {
             if let Ok(creature) = creatures.get(at) {
                 if let Some(graph) = &registry.0[creature.def].graph {
-                    commands.entity(player).insert((AnimationGraphHandle(graph.clone()), AnimationTransitions::new()));
-                    commands.entity(at).insert(Rig(player));
+                    commands.entity(player).try_insert((AnimationGraphHandle(graph.clone()), AnimationTransitions::new()));
+                    commands.entity(at).try_insert(Rig(player));
                 }
                 break;
             }

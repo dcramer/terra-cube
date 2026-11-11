@@ -69,6 +69,8 @@ pub struct Args {
     pub quiet: bool,
     /// The player starts with a torch lit.
     pub torch: bool,
+    /// What grows drawn as low-poly shapes, not as cubes (`flora`): for comparison.
+    pub shapes: bool,
     /// One thing that grows, stood alone at the start to be looked at (`plants::specimen`).
     pub specimen: Option<String>,
     /// The hour the world starts at, if not the usual mid afternoon.
@@ -126,7 +128,9 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
                                         oak birch pine willow snag young sapling bush log stump rock
         … --plain                       every surface's grain made in code, none from a photograph
         … --cubes | --smooth            the ground as plain cubes, or eased smooth, not in blocks sized
-                                        by its slope; --blocky: trees as their cubes
+                                        by its slope; --shapes: trees and rocks as
+                                        low-poly shapes, not fine cubes; --blades: grass as pointed
+                                        blades, --bits: as columns of bits, not slats; --blocky: as the world's cells
         … --wild --at 47,28 [--dist 12] [--pitch 0.3] [--yaw 1.0] [--view high]
                                         a scene somewhere else: metres east and south of the start
                                         (`cargo world who` says where creatures live), the camera
@@ -213,6 +217,9 @@ fn parse_args() -> Args {
             "--hud" => args.hud = Some(it.next().unwrap_or_else(|| "bar".into())),
             "--quiet" => args.quiet = true,
             "--torch" => args.torch = true,
+            "--shapes" => args.shapes = true,
+            "--bits" => cube_voxel::mesh::BITS.store(true, std::sync::atomic::Ordering::Relaxed),
+            "--blades" => cube_voxel::mesh::BLADES.store(true, std::sync::atomic::Ordering::Relaxed),
             "--specimen" => args.specimen = it.next(),
             "--cubes" => cube_voxel::mesh::GROUND.store(cube_voxel::mesh::Ground::Cubes as u8, std::sync::atomic::Ordering::Relaxed),
             "--smooth" => cube_voxel::mesh::GROUND.store(cube_voxel::mesh::Ground::Smooth as u8, std::sync::atomic::Ordering::Relaxed),

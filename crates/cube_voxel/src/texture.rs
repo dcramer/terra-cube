@@ -193,7 +193,7 @@ fn texel(grain: Grain, x: f32, y: f32) -> f32 {
         // blotches it was a cow.
         Grain::BirchBark => {
             let dash = ((lump((8, 1), 2) - 0.2) / 0.08).clamp(0.0, 1.0);
-            let scar = ((lump((16, 8), 4) - 0.3) / 0.05).clamp(0.0, 1.0);
+            let scar = ((lump((4, 4), 4) - 0.36) / 0.05).clamp(0.0, 1.0);
             1.0 + lump((32, 16), 1) * 0.06 + lump((32, 2), 5) * 0.12 - dash * 0.55 - scar * 0.8
         }
         // Rings.

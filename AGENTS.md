@@ -5,7 +5,7 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 ## Where things stand
 
 - **Works:** the creature pipeline (`cargo forge`): one line of text to an animated model the game loads, checked by numbers and by one picture. The world (`make play`): an island a kilometre across made from a seed and held in cells only near the player, with a calendar (day, seasons, a moon), an ecology that places some two thousand creatures and the small life round the camera, sound, and a player with health, a pack, a sword and a torch. `cargo world` judges both land and life with no window. The sandbox (`make run`) poses any creature.
-- **Baseline only:** the world is 0.25 m cells (each able to break into 5 cm bits), drawn in blocks sized to the slope with low-poly trees and rocks on it, under a scattering sky. Digging and building are a first cut: a click cuts or raises a ball. Nothing is saved, no networking.
+- **Baseline only:** the world is 0.25 m cells (each able to break into 5 cm bits), drawn in blocks sized to the slope; trees, rocks, grass and flowers are small cubes of many sizes on it, under a scattering sky. Digging and building are a first cut: a click cuts or raises a ball. Nothing is saved, no networking.
 - **Next:** [docs/engine.md](docs/engine.md#order-of-work).
 
 ## Layout
@@ -81,6 +81,7 @@ A machine with no screen needs `DISPLAY=:1` (an Xvfb) for `sheet` and `sandbox`;
 - **Where and when anything lives:** its niche. For an animal, `habitat`, `water`, `cover` and `hours` in `[life]`; for small life the game draws, a `Niche` in `crates/cube_sim/src/ecology.rs`. Never a placement rule in the code that draws it. Then `cargo world life`.
 - **How a creature behaves:** `[life]` in its `creature.toml`; a new temper or state in `crates/cube_sim/src/mind.rs` with a test beside the others in `life.rs`, then `cargo world run`.
 - **A creature:** [docs/pipeline.md](docs/pipeline.md). Four commands, about 67 credits.
+- **The world is cuboids, all of it** ([art-guide.md](docs/art-guide.md)): detail comes from small cubes of many sizes and shades, never from smooth shapes or flat planes. `--shapes` and `--blades` show what was set aside.
 - **Creatures are not made of cubes.** That was tried and parked (`cargo forge cubes`, [docs/pipeline.md](docs/pipeline.md#cubes)); They fit the world by style, and the style is the house style in `style.toml`: other looks were tried and it was kept.
 - **A clip for a body plan:** a recipe in `crates/forge/src/clips.rs`, its name in the plan's `clips` in `style.toml`, then `cargo forge finish --all`.
 - **A body plan (bird, spider, snake):** a `[plans.x]` in `style.toml`; the role reader and recipes are plan-agnostic, so check `cargo forge inspect ID` reads the new shape sensibly first.
