@@ -41,6 +41,7 @@ cargo world survey                 # the land in numbers; `cargo world run`: its
 cargo world life                   # the ecology: how much of the island suits each kind of life, when it is about, where each animal settled
 cargo world map shots/map.png      # one picture from above with where every creature went
 make window                        # the real window on an Xvfb, driven by real key presses (tools/xkeys), judged from the trace
+make swim                          # the player put in deep water in the real game: floats, swims, is heard (`cargo world find deep` finds it)
 make fight                         # the player fights a goblin in the real game, judged from the trace: hit, kill, sounds
 make slice                         # shots/slice/*.png: six fixed views (meadow at noon, dawn and night, forest, shore, from the air); look at all six after any change to the world's look
 cargo world grade shots/grade.png  # where the ground is easy, steep and cliff, by height and in a picture

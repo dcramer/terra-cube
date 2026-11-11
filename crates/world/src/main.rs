@@ -30,6 +30,8 @@ cargo world grade [FILE] [--seed N]                where the ground is easy, ste
 cargo world life [--seed N]                       the ecology: how much of the island suits each
                                                   kind of small life and when it is about; where
                                                   each animal's groups live against what it wants
+cargo world find deep|BIOME                       the nearest places to the start with water deep
+                                                  enough to swim, or of a biome (for `--at X,Z`)
 cargo world map FILE [--seconds 60] [--seed N]    a picture from above, with where each creature
                                                   went (dots: white person, yellow timid, red
                                                   hunter and hostile, orange wary)
@@ -407,6 +409,32 @@ fn main() {
         "dig" => dig_command(&args),
         "grade" => grade_command(&args),
         "life" => life_command(&args),
+        "find" => {
+            // The nearest places to the start of a kind: `deep` water to swim in, or a biome.
+            let what = args.file.clone().unwrap_or_default();
+            let land = Land::new(args.seed, args.radius);
+            let mut found = Vec::new();
+            for ring in 1..(land.span as f32 * CELL / 4.0) as i32 {
+                for turn in 0..32 {
+                    let (out, way) = (ring as f32 * 4.0, turn as f32 * std::f32::consts::TAU / 32.0);
+                    let (x, z) = (way.cos() * out, way.sin() * out);
+                    let (cx, cz) = ((x / CELL).floor() as i32, (z / CELL).floor() as i32);
+                    let depth = (SEA - land.height(cx, cz)) as f32 * CELL;
+                    // Deep, and open water for ten metres each way: somewhere to swim, not a pothole.
+                    let open = [(10.0, 0.0), (-10.0, 0.0), (0.0, 10.0), (0.0, -10.0)].iter().all(|(dx, dz)| (SEA - land.height(((x + dx) / CELL).floor() as i32, ((z + dz) / CELL).floor() as i32)) as f32 * CELL > 1.2);
+                    let hit = if what == "deep" { depth > 2.0 && open } else { Biome::named(&what) == Some(land.biome(cx, cz)) };
+                    if hit && found.len() < 3 && found.iter().all(|f: &(f32, f32, f32)| (f.0 - x).hypot(f.1 - z) > 30.0) {
+                        found.push((x, z, depth));
+                    }
+                }
+            }
+            if found.is_empty() {
+                fail(&format!("no `{what}` on this island (deep, or one of water shore meadow forest rock snow)"));
+            }
+            for (x, z, depth) in found {
+                println!("{what} at {x:.0},{z:.0} · {:.0}m from the start{}", x.hypot(z), if depth > 0.0 { format!(" · {depth:.1}m of water") } else { String::new() });
+            }
+        }
         "who" => {
             let (_, land, sim) = living(&args);
             let mut groups: std::collections::BTreeMap<(usize, i32, i32), usize> = Default::default();

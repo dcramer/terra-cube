@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -68,6 +68,9 @@ slice: ## no window: shots/slice/*.png, seven fixed views and two moving ones, t
 	$(SLICE)/far-high.png --at 0,0 --view high --dist 420 --pitch 0.4 --hour 13
 	$(SLICE)/forest-moving.gif --at 19,34 --dist 10 --pitch 0.1 --hour 15 --gif 6
 	$(SLICE)/meadow-walk.gif --play --script '1 fwd walk; 3 fwd run; 5 stop' --gif 7 --view three --hour 13
+
+swim: ## no window: the player is put in deep water in the real game; passes if he floats, swims and is heard
+	@tools/xkeys/swim.sh
 
 window: ## the real window on a screenless display, driven by real key presses: W walks, 2 takes the torch, I opens the pack
 	@cargo build -q --release -p cube_game && tools/xkeys/window.sh target/release/cube_game
