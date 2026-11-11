@@ -54,7 +54,9 @@ A gait is right when a foot that is down stays where it was put while the body g
 - **A recorded gait can be given a longer stride** (`[plans.biped.stride]`: run 1.25, sprint 1.12): its feet are locked to a line that much faster, so they travel further while down at the cadence recorded. Tripo's run is a 3.2 m/s jog; this makes it 4.0, and the sprint 5.6. Making a gait faster by only quickening it spins the legs without covering ground, which is how the first sprint read.
 - **Two legs, where that is not enough: made.** A preset is fitted to other proportions, and on a short or bulky body the feet wander too much to lock (the troll's walk slid at 140%, the goblin's at 111%). A recorded gait still over the bar after locking is replaced by a made stride: the same planted-foot generator on two legs, carried on the ankles with the feet flat, the arms swinging against the legs and the trunk leaning in. Today that is every biped's walk and all the troll's gaits.
 - **`meta.toml` speeds are the speeds the game moves at**, so a clip always plays at its own rate. To make a creature faster, change the gait, not a number in the game.
-- `gait_gain` in `creature.toml` (under 1) shortens stride, lift, rock and arm swing for a body whose skin tears at full reach: bear 0.6, boar 0.7, deer 0.4, troll 0.6.
+- `gait_gain` in `creature.toml` (under 1) shortens stride, lift, rock and arm swing for a body whose skin tears at full reach: bear 0.6, boar 0.7, deer 0.4, troll 0.6. A made gait uses the average of it and 1, so 0 is half a stride and it may go below 0 for less (the bog toad -0.4, the bullfrog -0.6): a number that wants renaming when the gaits are next worked on.
+- `ease` (under 1) does the same for the made clips that are not gaits (idle, jump, swim, attack, eat…): every joint's turn from rest, and the root's travel, scaled. Fox 0.4, tortoise 0.3, toad 0.35, bullfrog 0.3, lizard 0.7. Not `die`, which has to finish on the floor.
+- `without = ["sprint"]` leaves out a clip of the plan a creature would not do, and the checks do not ask for it: the tortoise and the frog-types do not sprint, the stone golem does not swim. The game plays the next thing down.
 
 ## The roster
 
@@ -62,9 +64,9 @@ A gait is right when a foot that is down stays where it was put while the body g
 
 | | Creatures |
 |---|---|
-| In the world, passing | bear, boar beast, deer, goblin, rabbit, troll, wolf (the first seven); badger, beaver, hedgehog, moose, ogre, pony, squirrel |
-| In the world, one check failing | golem and monitor lizard (`swim` stretches the skin), lynx (`eat`), shambler (Tripo's idle floats it 11% off the floor; a made idle left it in a T-pose, which is worse) |
-| Bought, kept out of the world (`groups = 0`) | fox (seven clips tear: its head chain is an ear), tortoise (nine fail), bog toad and bullfrog (toes read as legs; the toad crashes the gait), mountain goat (rigged twice, a hind leg missing both times), crow, crab |
+| In the world, passing | bear, boar beast, deer, goblin, rabbit, troll, wolf (the first seven); badger, beaver, bullfrog, fox, goat, golem, hedgehog, monitor lizard, moose, ogre, pony, squirrel, tortoise |
+| In the world, one check failing | lynx (`eat` lifts its feet), shambler (Tripo's idle floats it 11% off the floor; a made idle left it in a T-pose, which is worse), bog toad (`die` stretches 71%) |
+| Bought, kept out of the world (`groups = 0`) | crow, crab |
 | Concept only | the other five birds and six crawlers |
 
 What the batch of sixteen taught, all now in forge:
@@ -75,7 +77,12 @@ What the batch of sixteen taught, all now in forge:
 - **A leg must come down**: its tip low and a good drop from its root, so a tail lying on the ground is not one. And a limb that ends at the ground is not an arm.
 - **A leg of two bones has no knee**: the reach solve let its bounds cross and crashed.
 - **A crash in the clip maker is that creature's failure**, said in a line; `finish --all` goes on to the next.
-- **The head is still the highest chain**, which on a fox or a rabbit is an ear. Taking the joint the ears grow from instead was tried and made the fox, bear and deer worse, so it was backed out; it wants doing with the eat and attack recipes in hand.
+- **A plate of shell was a head** (the tortoise): a lone joint hung straight off the root is a piece of the body, whatever its height, and is not the head.
+- **A knee was a foot** (toad, bullfrog): toes are three joints at most, so a low joint with a shin and a foot below it is not one. Frog toes are long: up to 0.6 of the body's height.
+- **Twigs**: Tripo's rigs carry leaf joints sat exactly on a sibling, moving nothing. They are not a fork in a limb and not a chain. Of two leaves on one spot the later is the twig (calling both twigs lost the goat its head).
+- **A flat drawing makes a model short of a leg.** The goat's first concept was a flat illustration with its far hind leg faint: three models from it all came back with that leg missing from the rig. A concept redrawn as a solid figure with four plain legs rigged at once. Look at the concept for that before buying.
+- **The frog-types pass, and barely move.** Their hind legs are folded in four and the gaits are written for a dog's; at full stride the skin tears 150% to 220%. They are turned right down (below) until there is a hop.
+- **The head is still the highest chain**, which on a fox or a rabbit is an ear, and on the squirrel its curled tail. A rule that took the muzzle when the highest chain was one of a pair was tried twice more and backed out: with the true head the fox's `eat` tore 180% to 350% on two different rigs, and the moose's head changed too. Taking the joint the ears grow from instead was tried and made the fox, bear and deer worse, so it was backed out; it wants doing with the eat and attack recipes in hand.
 
 **Birds and crawlers do not work yet.** The crow's skeleton reads as two legs now, with a wing taken for an arm, and its clips still tear by up to 460%: the recipes do not know a body that lies level on two legs. The crab has no legs the reader will take (they go sideways and do not come down), and there is no gait for more than four. No more of either are bought until one of each passes. Nothing flies in the simulation either.
 

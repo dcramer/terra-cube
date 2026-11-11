@@ -112,8 +112,18 @@ pub struct Creature {
     pub gait_gain: f32,
     /// Clips to make for this creature where its plan would take Tripo's preset: for a body
     /// the preset tears (the stretch check says so).
+    /// Scales how far the made clips that are not gaits (idle, jump, swim, attack, eat…) turn
+    /// the joints from rest; under 1 for a body whose skin tears in them (the stretch check
+    /// says so). The gaits have `gait_gain`.
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub ease: f32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub made: Vec<String>,
+    /// Clips of its plan this creature does not have, because it would not do them: a
+    /// tortoise does not sprint, a golem of stone does not swim. The game plays the next
+    /// thing down (a run for a sprint, a walk for a swim).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub without: Vec<String>,
     /// A look from `looks.toml` to draw this creature in, where the house style would be:
     /// for building one creature in a look that is being tried.
     #[serde(default, skip_serializing_if = "Option::is_none")]

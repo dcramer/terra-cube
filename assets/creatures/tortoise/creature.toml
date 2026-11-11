@@ -3,10 +3,12 @@ kind = "wildlife"
 plan = "quadruped"
 subject = "a tortoise with a high domed shell of olive plates and stumpy grey legs"
 height = 0.3
+without = ["sprint"]
+ease = 0.3
+gait_gain = 0.45
 
 [life]
 temper = "timid"
 habitat = "shore"
 group = 1
-# 0 until its skeleton is read right and its clips pass: bought, not yet fit to be seen.
-groups = 0
+groups = 3

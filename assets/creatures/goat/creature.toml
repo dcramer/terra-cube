@@ -8,5 +8,4 @@ height = 1.1
 temper = "timid"
 habitat = "rock"
 group = 3
-# 0 until its skeleton is read right and its clips pass: bought, not yet fit to be seen.
-groups = 0
+groups = 2

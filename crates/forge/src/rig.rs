@@ -201,12 +201,17 @@ impl Facing {
 impl Roles {
     pub fn read(sk: &Skeleton, facing: Facing) -> Self {
         // Chains: from each leaf up to, not including, the first bone that branches.
+        // Tripo's rigs carry twigs: a leaf joint sat exactly on a sibling, moving nothing. They
+        // are not a fork in the limb they hang from. Of two leaves on one spot the later is the twig.
+        let size = sk.joints.iter().map(|j| j.world.w_axis.truncate().length()).fold(1e-4, f32::max);
+        let twig = |j: usize| sk.joints[j].children.is_empty() && sk.joints[j].parent.is_some_and(|p| sk.joints[p].children.iter().any(|&c| c < j && sk.position(c).distance(sk.position(j)) < 0.005 * size));
+        let forks = |j: usize| sk.joints[j].children.iter().filter(|&&c| !twig(c)).count();
         let mut chains: Vec<Vec<usize>> = Vec::new();
-        for leaf in (0..sk.joints.len()).filter(|&i| sk.joints[i].children.is_empty() && i != sk.root) {
+        for leaf in (0..sk.joints.len()).filter(|&i| sk.joints[i].children.is_empty() && i != sk.root && !twig(i)) {
             let mut chain = vec![leaf];
             let mut at = leaf;
             while let Some(p) = sk.joints[at].parent {
-                if p == sk.root || sk.joints[p].children.len() != 1 {
+                if p == sk.root || forks(p) != 1 {
                     break;
                 }
                 chain.push(p);
@@ -235,14 +240,15 @@ impl Roles {
         }
         for foot in 0..sk.joints.len() {
             let j = &sk.joints[foot];
-            let toes = j.children.iter().map(|&c| below(sk, c, sk.position(foot)));
-            if foot == sk.root || j.children.len() < 2 || sk.position(foot).y - floor > 0.35 * height || toes.clone().any(|(deep, far)| deep > 4 || far > 0.45 * height) {
+            // Toes are short: three joints at most. A knee has a shin and a foot below it.
+            let toes = j.children.iter().filter(|&&c| !twig(c)).map(|&c| below(sk, c, sk.position(foot)));
+            if foot == sk.root || forks(foot) < 2 || sk.position(foot).y - floor > 0.35 * height || toes.clone().any(|(deep, far)| deep > 3 || far > 0.6 * height) {
                 continue;
             }
             let mut chain = vec![foot];
             let mut at = foot;
             while let Some(p) = sk.joints[at].parent {
-                if p == sk.root || sk.joints[p].children.len() != 1 {
+                if p == sk.root || forks(p) != 1 {
                     break;
                 }
                 chain.push(p);
@@ -271,7 +277,13 @@ impl Roles {
         let feet = legs.iter().map(&tip).sum::<Vec3>() / legs.len().max(1) as f32;
         let centre = if legs.is_empty() { sk.position(sk.root) } else { feet };
 
-        let head_at = rest.iter().enumerate().max_by(|a, b| tip(a.1).y.total_cmp(&tip(b.1).y)).map(|(i, _)| i);
+        // The head is the highest chain, but not a lone joint hung straight off the root: that is
+        // a piece of the body (the plates of a tortoise's shell), whatever its height.
+        let of_body = |c: &Vec<usize>| c.len() == 1 && sk.joints[c[0]].parent == Some(sk.root);
+        let mut head_at = rest.iter().enumerate().filter(|(_, c)| !of_body(c)).max_by(|a, b| tip(a.1).y.total_cmp(&tip(b.1).y)).map(|(i, _)| i);
+        if head_at.is_none() {
+            head_at = rest.iter().enumerate().max_by(|a, b| tip(a.1).y.total_cmp(&tip(b.1).y)).map(|(i, _)| i);
+        }
         let forward = match facing {
             Facing::Told(v) => v,
             Facing::Auto => {

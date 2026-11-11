@@ -82,7 +82,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -
     // Clips: Tripo's under our names, then the made ones the plan asks for.
     let theirs = clips::read(&glb, &skeleton)?;
     let mut out: Vec<Clip> = Vec::new();
-    for name in &plan.clips {
+    for name in plan.clips.iter().filter(|c| !creature.without.contains(c)) {
         let preset = plan.presets.get(name).filter(|_| !creature.made.contains(name));
         let found = preset.and_then(|p| theirs.iter().position(|c| c.name.rsplit(':').next() == Some(p.as_str())));
         let clip = match found {
@@ -102,7 +102,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -
             }
             None => {
                 let stand = out.iter().find(|c| c.name == "idle" && c.source == "tripo").map(|c| &c.frames[0]);
-                clips::make(name, &skeleton, &roles, &out, stand, plan.upright, scale, (1.0 + creature.gait_gain) / 2.0).with_context(|| format!("no preset and no recipe for the clip `{name}` (clips.rs `make`)"))?
+                clips::make(name, &skeleton, &roles, &out, stand, plan.upright, scale, (1.0 + creature.gait_gain) / 2.0, creature.ease).with_context(|| format!("no preset and no recipe for the clip `{name}` (clips.rs `make`)"))?
             }
         };
         let mut clip = clip;
@@ -125,7 +125,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -
             if slid > max_slide {
                 let stand = out.iter().find(|c| c.name == "idle" && c.source == "tripo").map(|c| &c.frames[0]);
                 let made: Vec<Clip> = out.iter().filter(|c| c.source == "made").map(|c| Clip { name: c.name.clone(), looping: c.looping, frames: Vec::new(), source: "made", speed: c.speed }).collect();
-                if let Some(better) = clips::make(name, &skeleton, &roles, &made, stand, plan.upright, scale, (1.0 + creature.gait_gain) / 2.0).filter(|c| c.speed.is_some()) {
+                if let Some(better) = clips::make(name, &skeleton, &roles, &made, stand, plan.upright, scale, (1.0 + creature.gait_gain) / 2.0, creature.ease).filter(|c| c.speed.is_some()) {
                     clip = better;
                 }
             }

@@ -3,6 +3,7 @@ kind = "wildlife"
 plan = "quadruped"
 subject = "a monitor lizard with a long whip tail and a forked blue tongue, sandy with dark bands"
 height = 0.3
+ease = 0.7
 gait_gain = 0.6
 
 [life]

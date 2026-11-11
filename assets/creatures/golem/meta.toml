@@ -53,11 +53,6 @@ seconds = 0.7
 looping = true
 source = "made"
 
-[clips.swim]
-seconds = 1.6
-looping = true
-source = "made"
-
 [clips.walk]
 seconds = 1.0666667
 looping = true

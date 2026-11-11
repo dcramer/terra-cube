@@ -149,8 +149,17 @@ pub fn write(glb: &mut Glb, sk: &Skeleton, clips: &[Clip]) {
 /// Recipes are written from the rest pose. `stand` is how the creature really stands (the first
 /// frame of its idle, where Tripo gave one): a figure rigged in a T-pose rests with its arms
 /// out, so each recipe's turns are laid over `stand` instead.
-pub fn make(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option<&Pose>, upright: bool, metres: f32, gain: f32) -> Option<Clip> {
+pub fn make(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option<&Pose>, upright: bool, metres: f32, gain: f32, ease: f32) -> Option<Clip> {
     let mut clip = recipe(name, sk, roles, have, stand, upright, metres, gain)?;
+    // A body whose skin tears is moved less: every joint's turn from rest, and the root's
+    // travel, scaled down. Not the gaits, whose feet would slide, nor the fall, which must land.
+    if ease != 1.0 && !matches!(name, "run" | "walk" | "sprint" | "die") {
+        let rest = sk.rest();
+        gained(sk, &mut clip.frames, ease);
+        for pose in &mut clip.frames {
+            pose.root_t = rest.root_t + (pose.root_t - rest.root_t) * ease;
+        }
+    }
     if let Some(stand) = stand.filter(|_| !matches!(name, "run" | "walk" | "sprint")) {
         let rest = sk.rest();
         for pose in &mut clip.frames {
