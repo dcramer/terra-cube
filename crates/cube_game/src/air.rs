@@ -17,7 +17,7 @@ pub struct AirPlugin;
 
 impl Plugin for AirPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup).add_systems(Update, (motes, leaves, butterflies, birds, glow, heavens, songbirds, dragonflies, fireflies, swallows));
+        app.add_systems(Startup, setup).add_systems(Update, (motes, leaves, butterflies, birds, glow, heavens, songbirds, dragonflies, fireflies, swallows, fish));
     }
 }
 
@@ -27,6 +27,9 @@ const FIREFLIES: usize = 60;
 const SONGBIRDS: usize = 18;
 const DRAGONFLIES: usize = 12;
 const SWALLOWS: usize = 5;
+/// Schools of fish near the camera, and how many swim in each.
+const SCHOOLS: usize = 4;
+const SCHOOL: usize = 7;
 const LEAVES: usize = 56;
 const BUTTERFLIES: usize = 20;
 const FLOCKS: usize = 3;
@@ -127,6 +130,30 @@ struct Swallow {
     high: f32,
 }
 
+/// A fish: which school it swims with, its own number, how long it is beside the usual, and
+/// when it last leapt.
+#[derive(Component)]
+struct Fish {
+    school: usize,
+    own: f32,
+    long: f32,
+    leapt: f32,
+}
+
+#[derive(Component)]
+struct Tail;
+
+/// The ring left on the water by a leap.
+#[derive(Component)]
+struct Ring {
+    school: usize,
+    since: f32,
+}
+
+/// Where each school keeps to.
+#[derive(Resource)]
+struct Schools(Vec<Vec3>);
+
 /// A bird in a flock that wheels round a point: how far out, how high, how fast, where in
 /// the circle.
 #[derive(Component)]
@@ -225,6 +252,23 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
             }
         });
     }
+    // Fish: a body the length of a hand to a forearm, a tail that beats, dark on the back.
+    // They keep just under the surface where they can be seen, a school together.
+    let (flank, fin) = (meshes.add(Cuboid::new(0.035, 0.05, 0.16)), meshes.add(Cuboid::new(0.008, 0.055, 0.06)));
+    let scales = [Color::srgb(0.22, 0.26, 0.2), Color::srgb(0.3, 0.3, 0.26), Color::srgb(0.42, 0.3, 0.16)].map(|c| materials.add(StandardMaterial { base_color: c, perceptual_roughness: 0.35, reflectance: 0.6, ..default() }));
+    let ring = meshes.add(Annulus::new(0.9, 1.0).mesh().resolution(24));
+    let ripple = materials.add(StandardMaterial { base_color: Color::srgba(0.9, 0.95, 1.0, 0.5), alpha_mode: AlphaMode::Blend, unlit: true, double_sided: true, cull_mode: None, ..default() });
+    for school in 0..SCHOOLS {
+        for _ in 0..SCHOOL {
+            let long = 0.8 + roll(&mut state) * 1.4;
+            commands.spawn((Fish { school, own: roll(&mut state) * 100.0, long, leapt: -100.0 }, Mesh3d(flank.clone()), MeshMaterial3d(scales[school % 3].clone()), Transform::from_translation(far), NotShadowCaster)).with_children(|body| {
+                body.spawn((Tail, Mesh3d(fin.clone()), MeshMaterial3d(scales[school % 3].clone()), Transform::from_xyz(0.0, 0.0, 0.1), NotShadowCaster));
+            });
+        }
+        // The ring a leaping fish leaves, one to a school.
+        commands.spawn((Ring { school, since: -100.0 }, Mesh3d(ring.clone()), MeshMaterial3d(ripple.clone()), Transform::from_translation(far), NotShadowCaster));
+    }
+    commands.insert_resource(Schools(vec![far; SCHOOLS]));
     // Birds: dark, a body and two long wings, seen from below against the sky.
     let (trunk, span) = (meshes.add(Cuboid::new(0.14, 0.1, 0.5)), meshes.add(Cuboid::new(0.55, 0.02, 0.22)));
     let dark = materials.add(StandardMaterial { base_color: Color::srgb(0.07, 0.07, 0.08), perceptual_roughness: 0.9, double_sided: true, cull_mode: None, ..default() });
@@ -604,5 +648,87 @@ fn swallows(time: Res<Time>, live: Option<Res<crate::motion::Live>>, cameras: Qu
         let ahead = (now - at.translation).normalize_or(Vec3::X);
         *at = Transform::from_translation(now).looking_to(ahead, Vec3::Y);
         at.rotate_local_z(-0.5 * (round * 1.0).cos());
+    }
+}
+
+/// Fish keep to water near the camera that is deep enough to swim in. A school circles its
+/// place a hand's depth under the surface, each fish a little off the others' line, tails
+/// beating; now and then one leaps clear and falls back, and a ring spreads from where it did.
+#[allow(clippy::type_complexity)]
+fn fish(
+    time: Res<Time>,
+    cameras: Query<&GlobalTransform, With<Camera3d>>,
+    terrain: Option<Res<Terrain>>,
+    schools: Option<ResMut<Schools>>,
+    mut fishes: Query<(&mut Fish, &mut Transform, &Children), (Without<Tail>, Without<Ring>)>,
+    mut tails: Query<&mut Transform, (With<Tail>, Without<Ring>)>,
+    mut rings: Query<(&mut Ring, &mut Transform), Without<Tail>>,
+    mut state: Local<u32>,
+) {
+    let (Some(eye), Some(terrain), Some(mut schools)) = (eye(&cameras), terrain, schools) else { return };
+    if *state == 0 {
+        *state = 0xF15C_A7E5;
+    }
+    let t = time.elapsed_secs();
+    let surface = cube_sim::terrain::SEA_LEVEL;
+    let hidden = Vec3::new(0.0, -500.0, 0.0);
+    let deep = |x: f32, z: f32| terrain.ground(x, z) < surface - 0.5;
+    for home in schools.0.iter_mut() {
+        if home.distance(eye) > 42.0 {
+            *home = hidden;
+            for _ in 0..10 {
+                let (turn, out) = (roll(&mut state) * TAU, 4.0 + roll(&mut state) * 30.0);
+                let (x, z) = (eye.x + turn.cos() * out, eye.z + turn.sin() * out);
+                // Room to circle: deep here and a couple of metres each way.
+                if deep(x, z) && deep(x + 2.0, z) && deep(x - 2.0, z) && deep(x, z + 2.0) && deep(x, z - 2.0) {
+                    *home = Vec3::new(x, surface, z);
+                    break;
+                }
+            }
+        }
+    }
+    for (mut one, mut at, children) in &mut fishes {
+        let home = schools.0[one.school];
+        if home.y < -100.0 {
+            at.translation = hidden;
+            continue;
+        }
+        let own = one.own;
+        // Round the school's place, each on its own line and at its own depth.
+        let round = t * 0.5 + own * 0.3 + one.school as f32;
+        let wide = 1.2 + (own * 1.3).fract() * 1.2;
+        let path = |a: f32| home + Vec3::new(a.cos() * wide + (a * 2.3 + own).sin() * 0.3, 0.0, (a * 1.0).sin() * wide * 0.8 + (a * 1.7 + own).cos() * 0.3);
+        let (now, soon) = (path(round), path(round + 0.05));
+        let mut height = -0.07 - 0.12 * (0.5 + 0.5 * (t * 0.4 + own).sin());
+        // A leap: seldom, a third of a second up and a third down.
+        if t - one.leapt > 9.0 && roll(&mut state) < 0.0006 {
+            one.leapt = t;
+            if let Some((mut ring, _)) = rings.iter_mut().find(|(r, _)| r.school == one.school) {
+                ring.since = t + 0.55;
+            }
+        }
+        let leap = ((t - one.leapt) / 0.6).clamp(0.0, 1.0);
+        let mut nose = 0.0;
+        if leap < 1.0 {
+            height += 0.42 * (4.0 * leap * (1.0 - leap));
+            nose = 0.9 * (1.0 - 2.0 * leap);
+        }
+        *at = Transform::from_translation(now.with_y(surface + height)).looking_to((soon - now).normalize_or(Vec3::X), Vec3::Y).with_scale(Vec3::splat(one.long));
+        at.rotate_local_x(nose);
+        for &child in children {
+            if let Ok(mut tail) = tails.get_mut(child) {
+                tail.rotation = Quat::from_rotation_y(0.5 * (t * 9.0 + own).sin());
+            }
+        }
+    }
+    for (ring, mut at) in &mut rings {
+        // Spreads to a metre across in a second and a half, thinning, then is gone.
+        let age = (t - ring.since) / 1.5;
+        let home = schools.0[ring.school];
+        *at = if (0.0..1.0).contains(&age) && home.y > -100.0 {
+            Transform::from_translation(home.with_y(surface + 0.01)).with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)).with_scale(Vec3::splat(0.1 + 0.5 * age))
+        } else {
+            Transform::from_translation(hidden)
+        };
     }
 }
