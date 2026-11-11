@@ -633,18 +633,29 @@ fn blade(m: &mut MeshData, cell: IVec3, lo: IVec3, hi: IVec3, colour: [f32; 3]) 
     // sides: two faces where a box is five, and finer to look at. A meadow of boxes was more
     // faces than all the land under it.
     if hi.x - lo.x == 1 && hi.z - lo.z == 1 {
-        for (a, b) in [(IVec3::new(lo.x, 0, lo.z), IVec3::new(hi.x, 0, hi.z)), (IVec3::new(hi.x, 0, lo.z), IVec3::new(lo.x, 0, hi.z))] {
+        // Each plane a blade: broad at the foot, drawn to a point, leaning its own way, a
+        // little taller or shorter than the next. Upright strips of one width were sticks.
+        let unit = CELL / SPLIT as f32;
+        let roll = |k: i32| hash(cell * 13 + lo * 5 + IVec3::splat(k));
+        let foot = (cell * SPLIT).as_vec3() * unit + Vec3::new(lo.x as f32 + 0.5, lo.y as f32, lo.z as f32 + 0.5) * unit;
+        let tall = (hi.y - lo.y) as f32 * unit * (0.8 + 0.7 * roll(1));
+        for plane in 0..2 {
+            let turn = roll(2) * std::f32::consts::PI + plane as f32 * 1.3;
+            let across = Vec3::new(turn.cos(), 0.0, turn.sin());
+            let lean = Vec3::new(roll(3 + plane) - 0.5, 0.0, roll(5 + plane) - 0.5) * tall * 0.9;
+            let (wide, tip) = (unit * (0.7 + 0.7 * roll(7 + plane)), unit * 0.1);
             let start = m.positions.len() as u32;
-            for (foot, y) in [(a, lo.y), (b, lo.y), (b, hi.y), (a, hi.y)] {
-                let corner = IVec3::new(foot.x, y, foot.z);
-                m.positions.push(at(corner));
+            for (side, up) in [(-1.0f32, 0.0f32), (1.0, 0.0), (1.0, 1.0), (-1.0, 1.0)] {
+                let at = foot + across * side * (wide + (tip - wide) * up) + (Vec3::Y * tall + lean) * up;
+                m.positions.push(at.to_array());
                 // Lit as the ground it grows from, not as a wall.
                 m.normals.push([0.0, 1.0, 0.0]);
                 m.tangents.push([1.0, 0.0, 0.0, 1.0]);
-                let along = |c: i32, p: i32| (c.rem_euclid(SPAN) as f32 + p as f32 / SPLIT as f32).min(SPAN as f32 - 0.01);
-                m.uvs.push(Grain::Grass.uv(along(cell.x, corner.x + corner.y), along(cell.z, corner.z + corner.y)));
-                let shade = if corner.y == 0 { 0.5 } else { 0.85 + 0.3 * (corner.y as f32 / SPLIT as f32).min(1.0) };
-                m.colors.push([colour[0] * shade / MEAN, colour[1] * shade / MEAN, colour[2] * shade / MEAN, 1.0 - (corner.y as f32 / SPLIT as f32).min(1.0)]);
+                let along = |c: i32, p: f32| (c.rem_euclid(SPAN) as f32 + p).clamp(0.01, SPAN as f32 - 0.01);
+                m.uvs.push(Grain::Grass.uv(along(cell.x, 0.5 + side * 0.2 + up * 0.5), along(cell.z, 0.5 + up * 0.6)));
+                // Dark at the foot among its neighbours, pale and a little yellow at the tip.
+                let shade = 0.45 + 0.8 * up;
+                m.colors.push([colour[0] * shade * (1.0 + 0.12 * up) / MEAN, colour[1] * shade / MEAN, colour[2] * shade * (1.0 - 0.2 * up) / MEAN, 1.0 - up]);
             }
             m.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
         }
@@ -705,7 +716,7 @@ fn sprig(cell: IVec3, block: Block, m: &mut MeshData) {
         return;
     }
     // A tuft is a clump, not three sticks: five to eight blades.
-    let blades = if block == Block::Flower { 4 } else { 5 + (roll(0) * 4.0) as i32 };
+    let blades = if block == Block::Flower { 4 } else { 6 + (roll(0) * 4.0) as i32 };
     for i in 0..blades {
         let (x, z) = ((roll(i * 3 + 1) * SPLIT as f32) as i32 % SPLIT, (roll(i * 3 + 2) * SPLIT as f32) as i32 % SPLIT);
         let tall = match block {
