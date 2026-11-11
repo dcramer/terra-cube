@@ -658,7 +658,21 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                                     [flat[0], grain.uv(0.0, SPAN as f32 - inside.rem_euclid(SPAN as f32))[1]]
                                 });
                                 // A riser is in its own shade toward its foot.
-                                let k = tint * if foot && to - from > 0.3 { 0.7 } else { 1.0 };
+                                let mut k = tint * if foot && to - from > 0.3 { 0.7 } else { 1.0 };
+                                // And a top is in shade at a corner by how many of the three
+                                // columns round that corner stand over it by a hand or more:
+                                // the foot of every bank and step is darker, as it is in life,
+                                // and the land's blocks read as solid things and not as tiles.
+                                if n == IVec3::Y {
+                                    let (dx, dz) = (if corner.x > cell.x { 1 } else { -1 }, if corner.z > cell.z { 1 } else { -1 });
+                                    let mut over = 0;
+                                    for (ox, oz) in [(dx, 0), (0, dz), (dx, dz)] {
+                                        if eased.top(x + ox, level, z + oz) - level as f32 > high + 0.45 {
+                                            over += 1;
+                                        }
+                                    }
+                                    k *= [1.0, 0.84, 0.72, 0.62][over];
+                                }
                                 m.colors.push([base[0] * k * (1.0 + warm), base[1] * k, base[2] * k * (1.0 - warm), 1.0]);
                             }
                             m.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);

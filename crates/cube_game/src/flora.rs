@@ -598,7 +598,9 @@ impl Shape {
         let grain = if leaf == Block::Needles { Grain::Needles } else { Grain::Leaves };
         let snap = |v: Vec3, to: f32| (v / to).round() * to;
         // The heart: what is seen between the outer boxes is leaf in shade, not sky.
-        if radii.min_element() > if level == 2 { 1.1 } else { 0.45 } {
+        // (A bush away from the camera has none: its heart, cut to the world's cells, was the
+        // whole bush, one dark cube.)
+        if radii.min_element() > [0.45, 1.0, 1.1][level as usize] {
             // (Three boxes near to; farther off, one.)
             for k in 0..if level == 0 { 3u32 } else { 1 } {
                 let off = Vec3::new(hash(n, 100 + k) - 0.5, hash(n, 110 + k) - 0.5, hash(n, 120 + k) - 0.5) * radii * 0.5;
@@ -620,7 +622,7 @@ impl Shape {
         }
         let area = 4.0 * std::f32::consts::PI * ((radii.x * radii.y).powf(1.6) + (radii.x * radii.z).powf(1.6) + (radii.y * radii.z).powf(1.6)).powf(1.0 / 1.6) / 3.0f32.powf(1.0 / 1.6);
         let unit = [0.45f32, 0.9, 1.4][level as usize].min(radii.x.min(radii.z) * 0.9).max(0.15);
-        let count = ((area * [0.17, 0.15, 0.08][level as usize] / (unit * unit)) as u32).clamp([4, 3, if n.is_multiple_of(2) { 1 } else { 0 }][level as usize], 120);
+        let count = ((area * [0.17, 0.15, 0.08][level as usize] / (unit * unit)) as u32).clamp([4, 5, if n.is_multiple_of(2) { 1 } else { 0 }][level as usize], 120);
         for i in 0..count {
             let roll = |k: u32| hash(n.wrapping_mul(977).wrapping_add(i), k);
             let (turn, up) = (roll(1) * std::f32::consts::TAU, roll(2) * 2.0 - 1.0);
