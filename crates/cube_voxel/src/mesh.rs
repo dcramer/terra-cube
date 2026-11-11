@@ -356,7 +356,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                 // bed, the sea does not.
                 let depth = if liquid { (1..=crate::cells(4.0)).take_while(|d| near.get(local - IVec3::Y * *d) == Block::Water).count() } else { 0 };
                 // Of what is solid, alpha is how fast it is held against the wind: leaves give.
-                let alpha = if liquid { 0.42 + depth as f32 * CELL * 0.14 } else if block.foliage() { 1.0 - LEAF } else { 1.0 };
+                let alpha = if liquid { 0.58 + depth as f32 * CELL * 0.2 } else if block.foliage() { 1.0 - LEAF } else { 1.0 };
                 if matches!(block, Block::Grass | Block::Turf | Block::Moss | Block::Litter) || block.foliage() {
                     // Patches: lighter and yellower here, deeper there.
                     let drift = patch(cell) - 0.5;
@@ -561,7 +561,11 @@ fn blade(m: &mut MeshData, cell: IVec3, lo: IVec3, hi: IVec3, colour: [f32; 3]) 
             m.positions.push(at(corner));
             m.normals.push(n.as_vec3().to_array());
             m.tangents.push(tangent(n));
-            m.uvs.push(Grain::Plain.uv(SPAN as f32 * 0.5, SPAN as f32 * 0.5));
+            // Painted with the grass's own grain, by where it stands, and dark at the foot where
+            // its neighbours shade it: a flat-coloured box reads as a toy brick.
+            let along = |c: i32, p: i32| (c.rem_euclid(SPAN) as f32 + p as f32 / SPLIT as f32).min(SPAN as f32 - 0.01);
+            m.uvs.push(Grain::Grass.uv(along(cell.x, corner.x + corner.y), along(cell.z, corner.z + corner.y)));
+            let shade = shade * if corner.y == 0 { 0.5 } else { 0.85 + 0.3 * (corner.y as f32 / SPLIT as f32).min(1.0) };
             // How free it is to move in the wind is in the alpha: the foot is held, the tip is not.
             m.colors.push([colour[0] * shade / MEAN, colour[1] * shade / MEAN, colour[2] * shade / MEAN, 1.0 - (corner.y as f32 / SPLIT as f32).min(1.0)]);
         }

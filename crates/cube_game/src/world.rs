@@ -136,9 +136,8 @@ struct Waters(Vec<Handle<StandardMaterial>>);
 fn ripples() -> Image {
     const SIDE: usize = 128;
     // Whole numbers of waves across the tile each way, how high, and where in its swing.
-    let trains: [(f32, f32, f32, f32); 6] = [(3.0, 1.0, 0.5, 0.0), (-2.0, 4.0, 0.35, 1.3), (5.0, -3.0, 0.22, 2.1), (7.0, 6.0, 0.14, 0.7), (-9.0, 4.0, 0.1, 4.0), (4.0, 11.0, 0.08, 5.2)];
-    let mut data = Vec::with_capacity(SIDE * SIDE * 4);
-    for i in 0..SIDE * SIDE {
+    let trains: [(f32, f32, f32, f32); 4] = [(3.0, 1.0, 0.5, 0.0), (-2.0, 4.0, 0.35, 1.3), (5.0, -3.0, 0.22, 2.1), (7.0, 6.0, 0.14, 0.7)];
+    let mut level: Vec<Vec3> = (0..SIDE * SIDE).map(|i| {
         let (u, v) = ((i % SIDE) as f32 / SIDE as f32, (i / SIDE) as f32 / SIDE as f32);
         let (mut dx, mut dy) = (0.0, 0.0);
         for (kx, ky, high, at) in trains {
@@ -146,19 +145,46 @@ fn ripples() -> Image {
             dx += slope * kx;
             dy += slope * ky;
         }
-        let n = Vec3::new(-dx * 0.05, -dy * 0.05, 1.0).normalize();
-        data.extend([n.x, n.y, n.z].map(|c| ((c * 0.5 + 0.5) * 255.0) as u8).into_iter().chain([255]));
+        Vec3::new(-dx * 0.022, -dy * 0.022, 1.0).normalize()
+    }).collect();
+    // Smaller copies, each four texels averaged, down to one: far off the ripples flatten to
+    // still water. With only the full picture, distant water took a different ripple at every
+    // pixel and the low sun made it a sheet of white sparkle.
+    let (mut data, mut side, mut levels) = (Vec::new(), SIDE, 0);
+    loop {
+        data.extend(level.iter().flat_map(|n| {
+            let n = n.normalize();
+            [n.x, n.y, n.z].map(|c| ((c * 0.5 + 0.5) * 255.0) as u8).into_iter().chain([255])
+        }));
+        levels += 1;
+        if side == 1 {
+            break;
+        }
+        let half = side / 2;
+        level = (0..half * half).map(|i| {
+            let (x, y) = (i % half * 2, i / half * 2);
+            (level[x + y * side] + level[x + 1 + y * side] + level[x + (y + 1) * side] + level[x + 1 + (y + 1) * side]) / 4.0
+        }).collect();
+        side = half;
     }
-    let mut image = Image::new(Extent3d { width: SIDE as u32, height: SIDE as u32, depth_or_array_layers: 1 }, TextureDimension::D2, data, TextureFormat::Rgba8Unorm, RenderAssetUsages::RENDER_WORLD);
-    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor { address_mode_u: ImageAddressMode::Repeat, address_mode_v: ImageAddressMode::Repeat, mag_filter: ImageFilterMode::Linear, min_filter: ImageFilterMode::Linear, mipmap_filter: ImageFilterMode::Linear, ..default() });
+    let mut image = Image::new_uninit(Extent3d { width: SIDE as u32, height: SIDE as u32, depth_or_array_layers: 1 }, TextureDimension::D2, TextureFormat::Rgba8Unorm, RenderAssetUsages::RENDER_WORLD);
+    image.texture_descriptor.mip_level_count = levels;
+    image.data = Some(data);
+    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor { address_mode_u: ImageAddressMode::Repeat, address_mode_v: ImageAddressMode::Repeat, mag_filter: ImageFilterMode::Linear, min_filter: ImageFilterMode::Linear, mipmap_filter: ImageFilterMode::Linear, anisotropy_clamp: 8, ..default() });
     image
 }
 
 /// The ripples run downwind.
-fn ripple(time: Res<Time>, waters: Option<Res<Waters>>, mut materials: ResMut<Assets<StandardMaterial>>) {
+fn ripple(time: Res<Time>, live: Option<Res<crate::motion::Live>>, waters: Option<Res<Waters>>, mut materials: ResMut<Assets<StandardMaterial>>) {
     let Some(waters) = waters else { return };
+    // A low sun glances off every ripple at once and the lake breaks into white speckle:
+    // the water is made duller as the sun drops, as haze over real water does.
+    let up = cube_sim::sky::sun(live.map_or(cube_sim::sky::START, |l| l.0.hour)).y;
+    let dull = 1.0 - ((up - 0.1) / 0.45).clamp(0.0, 1.0);
     for handle in &waters.0 {
         if let Some(mut water) = materials.get_mut(handle) {
+            water.perceptual_roughness = 0.3 + 0.55 * dull;
+            water.reflectance = 0.4 - 0.25 * dull;
             water.uv_transform = bevy::math::Affine2::from_translation(Vec2::new(-0.8, -0.6) * (time.elapsed_secs() * 0.07));
         }
     }
@@ -341,7 +367,7 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     // And it moves: ripples, as a picture of which way the surface faces, slid across it by
     // `ripple`. Smooth enough to throw the sun back as a glitter path.
     let waves = images.add(ripples());
-    let water = materials.add(StandardMaterial { base_color: Color::WHITE, alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.16, reflectance: 0.5, normal_map_texture: Some(waves.clone()), ..default() });
+    let water = materials.add(StandardMaterial { base_color: Color::WHITE, alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.3, reflectance: 0.4, normal_map_texture: Some(waves.clone()), ..default() });
     let mut voxels = voxels;
     for &(x, z, across, build) in &args.dug {
         let ground = land.height((x / CELL).floor() as i32, (z / CELL).floor() as i32) as f32 * CELL;
@@ -411,7 +437,9 @@ fn draw_level(commands: &mut Commands, meshes: &mut Assets<Mesh>, look: &Look, v
             .with_inserted_indices(Indices::U32(data.indices));
         let mut drawn = commands.spawn((Mesh3d(meshes.add(mesh)), Transform::from_translation(middle), range.clone(), faces));
         if liquid {
-            drawn.insert(MeshMaterial3d(look.water.clone()));
+            // Water takes no shadows: at a low sun the shadow map breaks up on a flat sheet
+            // and the whole lake was white speckle.
+            drawn.insert((MeshMaterial3d(look.water.clone()), bevy::light::NotShadowReceiver, bevy::light::NotShadowCaster));
         } else {
             drawn.insert(MeshMaterial3d(look.solid.clone()));
         }

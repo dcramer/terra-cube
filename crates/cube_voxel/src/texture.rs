@@ -241,7 +241,13 @@ pub fn atlas_with(photo: impl Fn(Grain) -> Option<Photo>) -> Atlas {
         // strength the developer saw no texture at all.
         let bright: Vec<f32> = if taken.is_some() { Vec::new() } else { (0..TILE * TILE).map(|t| (1.0 + (texel(grain, (t % TILE) as f32 * unit, (t / TILE) as f32 * unit) - 1.0) * DEPTH).max(0.05)).collect() };
         let mut tile: Vec<[f32; 3]> = match &taken {
-            Some(p) => p.colour.clone(),
+            // Sand, gravel and snow are fine and even in life; as scanned they are harsh, and
+            // a lake bed of them seen through water was white speckle. They keep half their grain.
+            Some(p) => {
+                let keep = if matches!(grain, Grain::Sand | Grain::Pebbles | Grain::Snow) { 0.45 } else { 1.0 };
+                let mean: [f32; 3] = std::array::from_fn(|c| p.colour.iter().map(|v| v[c]).sum::<f32>() / p.colour.len() as f32);
+                p.colour.iter().map(|v| std::array::from_fn(|c| mean[c] + (v[c] - mean[c]) * keep)).collect()
+            }
             None => (0..TILE * TILE).map(|t| hue(grain, (t % TILE) as f32 * unit, (t / TILE) as f32 * unit).map(|c| c * bright[t])).collect(),
         };
         // Every tile to the same mean in each colour, so far off it is its block's colour

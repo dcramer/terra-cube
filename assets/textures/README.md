@@ -18,6 +18,8 @@ convention), 512 px, shrunk from the 1K JPG set. `NAME` is a grain in
 | endgrain | TreeEnd003 |
 | litter | Ground106 |
 | moss | Moss002 |
+| leaves | ScatteredLeaves008 (fallen leaves, tinted green by the block: no scan of a crown was found) |
+| needles | Ground077 (a floor of pine needles, tinted likewise) |
 
 To add or swap one: download `ASSET_1K-JPG.zip`, take its `_Color` and `_NormalGL` images,
 resize to 512, save under the grain's name. The block's own colour still tints it.

@@ -38,6 +38,7 @@ cargo forge finish --all           # the free local half again, after changing c
 cargo forge sheet wolf             # shots/wolf.png: every clip at six moments, one image
 cargo world survey                 # the land in numbers; `cargo world run`: its creatures living, in numbers
 cargo world map shots/map.png      # one picture from above with where every creature went
+make slice                         # shots/slice/*.png: six fixed views (meadow at noon, dawn and night, forest, shore, from the air); look at all six after any change to the world's look
 cargo world grade shots/grade.png  # where the ground is easy, steep and cliff, by height and in a picture
 cargo sandbox --spawn all          # the interactive sandbox (needs a real screen)
 cargo sandbox --play --wild        # the living world, as the player (make play)

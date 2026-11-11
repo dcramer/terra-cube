@@ -156,6 +156,12 @@ Two rules that the numbers come from:
 - **Haze starts at 180 m and is full at 700 m**: the whole island is clear from anywhere on it, and the sea fades into the sky without an edge.
 - The island is 384 m across and a stand-in: the world is to be procedural and far larger ([engine.md](engine.md#the-world)).
 
+### The slice
+
+`make slice` renders the same six views every time (the start meadow at noon, dawn and night; a forest clearing by day; a lake shore in the evening; the island from the air) into `shots/slice/`. It is the vertical slice: these six are what must look finished, and a change that makes one of them worse is a regression even if it makes another better. Look at all six after any change to light, texture, terrain or what grows. Add a view when a kind of place is missing from it; do not swap one out to hide a fault.
+
+A fault found through it, to remember: a lake in evening light was white speckle for an hour of work spent on the water (its ripples, its shadows, its shine). It was the lake bed: scanned sand is harsh, and the water was too clear. Look at what is behind the thing that looks wrong.
+
 ### Judging the land
 
 `cargo world survey` (water, biomes, trees, cliffs, what can be walked to, the faces it costs to draw, and scale), `cargo world grade FILE` when the ground is wrong (easy, steep and cliff by height, and a picture of where), then `cargo world map` (one picture from above), then `cargo sandbox --scene FILE --at X,Z` for any place at eye level and `--view high` from the air. Look at it from where the player stands: a forest that reads from the air can still be sticks from the ground.
