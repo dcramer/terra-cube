@@ -706,7 +706,9 @@ fn fish(
         let (now, soon) = (path(round), path(round + 0.05));
         let mut height = -0.07 - 0.12 * (0.5 + 0.5 * (t * 0.4 + own).sin());
         // A leap: seldom, a third of a second up and a third down.
-        if t - one.leapt > 9.0 && roll(&mut state) < 0.0006 {
+        // (By the second and not by the frame: a chance a frame made fish leap, and splash,
+        // many times as often on a fast machine as on a slow one.)
+        if t - one.leapt > 9.0 && roll(&mut state) < 0.036 * time.delta_secs() {
             one.leapt = t;
             // And is heard to, one leap in four: a small splash from where it came out. (Every
             // leap of every fish was a splash every two seconds beside any water.)

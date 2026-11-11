@@ -333,7 +333,7 @@ fn ball_of(times: u32) -> Vec<[Vec3; 3]> {
 
 /// Keeps the meshes in step with the regions that are made.
 fn grow(mut commands: Commands, args: Res<crate::Args>, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, forms: Res<Forms>, mut grown: ResMut<Grown>, mut meshes: ResMut<Assets<Mesh>>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
-    let (Some(_), Some(look)) = (terrain, look) else { return };
+    let (Some(terrain), Some(look)) = (terrain, look) else { return };
     grown.0.retain(|region, (entity, _)| {
         let keep = forms.0.contains_key(region);
         if !keep {
@@ -390,15 +390,22 @@ fn grow(mut commands: Commands, args: Res<crate::Args>, terrain: Option<Res<Terr
             }
         } else {
             for (n, limb) in form.limbs.iter().enumerate() {
-                shape.limb_cubes(limb, origin, n as u32, [ends[&key(limb.a)] == 1, ends[&key(limb.b)] == 1], level);
+                shape.limb_cubes(limb, origin, terrain.ground(limb.a.x, limb.a.z), n as u32, [ends[&key(limb.a)] == 1, ends[&key(limb.b)] == 1], level);
             }
+            let wood = shape.indices.len() / 6;
             for (n, stone) in form.stones.iter().enumerate() {
                 let mut stone = stone.clone();
                 stone.middle -= origin;
                 shape.stone_cubes(&stone, n as u32, level);
             }
+            let stone = shape.indices.len() / 6 - wood;
             for (n, clump) in form.clumps.iter().enumerate() {
                 shape.clump_cubes(clump.middle - origin, clump.radii, clump.leaf, n as u32 + 100_000, level);
+            }
+            // `FLORA_TRACE=1`: what each region's trees and rocks cost, by level and part, a
+            // line a region as it is made: add them up to find where the faces are.
+            if std::env::var_os("FLORA_TRACE").is_some() {
+                println!("flora level={level} wood={wood} stone={stone} leaf={} limbs={} clumps={} stones={}", shape.indices.len() / 6 - wood - stone, form.limbs.len(), form.clumps.len(), form.stones.len());
             }
         }
         // Counted with the ground's faces in a picture's `pace`.
@@ -498,8 +505,8 @@ impl Shape {
     /// A limb as cubes: round, tapering, wandering a little, ridged along its grain, and a
     /// rooted trunk swelling into buttresses at the ground, all to the cube.
     #[allow(clippy::too_many_arguments)]
-    fn limb_cubes(&mut self, limb: &cube_sim::plants::Limb, origin: Vec3, n: u32, cut: [bool; 2], level: u8) {
-        let (a, b, ra, rb, bark, roots) = (limb.a, limb.b, limb.ra, limb.rb, limb.bark, limb.roots);
+    fn limb_cubes(&mut self, limb: &cube_sim::plants::Limb, origin: Vec3, floor: f32, n: u32, cut: [bool; 2], level: u8) {
+        let (a, b, ra, rb, bark) = (limb.a, limb.b, limb.ra, limb.rb, limb.bark);
         let thick = ra.max(rb);
         // What is dropped away from the camera: only what is hidden or is nothing at that
         // distance. A bough that droops (a conifer's) lies under its own needles; a twig far
@@ -507,7 +514,7 @@ impl Shape {
         // cubes if it is thinner than a cube: with the lesser limbs dropped, a young tree was
         // a crown in the air, and the developer saw floating leaves.
         let droops = (b - a).normalize_or(Vec3::Y).y < -0.05;
-        if (level >= 1 && droops && thick < 0.3) || (level == 1 && thick < 0.04) || (level == 2 && thick < 0.09) || (level == 3 && thick < 0.22) {
+        if (level >= 1 && droops && thick < 0.3) || (level == 1 && thick < 0.07) || (level == 2 && thick < 0.2) || (level == 3 && thick < 0.3) {
             return;
         }
         // Up close a trunk or a heavy limb is cubes of 10 cm, round to the cube. A lesser
@@ -525,17 +532,55 @@ impl Shape {
         // Its shape is the simulation's (`Limb::fill`), on the world's own grid and finer
         // than a cell: what is drawn is what a body is stopped by.
         let along = (b - a).normalize_or(Vec3::Y);
-        let length = a.distance(b);
         const UNDER: f32 = cube_sim::plants::Limb::UNDER;
+        // Far off a trunk is one box, as tall as it stands and as thick as its middle: its
+        // cubes there were three hundred faces a tree and half a million in a view.
+        if level == 3 {
+            if along.y > 0.8 {
+                let half = ((ra + rb) / 2.0).max(0.25);
+                let (lo, hi) = (a.min(b) - origin, a.max(b) - origin);
+                let shade = 0.85 + 0.2 * hash(n, 7);
+                let colour = bark.colors().1.map(|c| c * shade);
+                self.boxed(Vec3::new(lo.x - half, lo.y + UNDER, lo.z - half), Vec3::new(hi.x + half, hi.y, hi.z + half), colour, colour, colour, if bark == Block::Birch { Grain::BirchBark } else { Grain::Bark }, Vec3::NEG_Y, 0.0, n);
+            }
+            return;
+        }
+        // Up close, the fine cubes are for what is at hand: wood within reach of the ground
+        // is cut fine, and whatever is higher (a tall trunk's upper part, an oak's great
+        // limbs) in cubes twice the size, where no one is near enough to tell. Fine all the
+        // way up, the wood of one region was half a million faces.
+        // (And so a ring out, where the cubes are the world's cells: cells to six metres up, twice that above.)
+        let fine_to = if level == 0 && thick >= 0.16 { floor + 4.5 } else if level == 1 && thick >= 0.25 { floor + 6.0 } else { f32::MAX };
         let mut set = HashSet::new();
         limb.fill(g, |c| {
-            set.insert(c);
+            if (c.y as f32 + 0.5) * g < fine_to {
+                set.insert(c);
+            }
         });
+        if fine_to < f32::MAX && a.y.max(b.y) > fine_to {
+            let (wide, mut above) = (g * 2.0, HashSet::new());
+            limb.fill(wide, |c| {
+                if (c.y as f32 + 0.5) * wide >= fine_to {
+                    above.insert(c);
+                }
+            });
+            self.wood(&above, wide, origin, limb, n, cut, 0.0);
+        }
+        let free = ((0.16 - thick) / 0.16).clamp(0.0, 1.0) * 0.25;
+        self.wood(&set, g, origin, limb, n, cut, free);
+    }
+
+    /// The cubes of a limb, painted as wood: every cube its own shade of bark, a line of them
+    /// along the grain sharing one, moss at an old trunk's foot, cut wood on a free end.
+    #[allow(clippy::too_many_arguments)]
+    fn wood(&mut self, set: &HashSet<IVec3>, g: f32, origin: Vec3, limb: &cube_sim::plants::Limb, n: u32, cut: [bool; 2], free: f32) {
+        let (a, b, ra, rb, bark, roots) = (limb.a, limb.b, limb.ra, limb.rb, limb.bark, limb.roots);
+        let (thick, along, length) = (ra.max(rb), (b - a).normalize_or(Vec3::Y), a.distance(b));
+        const UNDER: f32 = cube_sim::plants::Limb::UNDER;
         let (colour, pale) = (bark.colors().1, bark.colors().0.map(|c| c * 1.5));
         let grain = if bark == Block::Birch { Grain::BirchBark } else { Grain::Bark };
         let moss = Block::Moss.colors().0;
-        let free = ((0.16 - thick) / 0.16).clamp(0.0, 1.0) * 0.25;
-        self.cubes(&set, g, origin, free, |c, face| {
+        self.cubes(set, g, origin, free, |c, face| {
             let p = (c.as_vec3() + 0.5) * g;
             let axial = (p - a).dot(along);
             let end = face.as_vec3().dot(along);
@@ -607,7 +652,7 @@ impl Shape {
         let unit = [0.45f32, 1.0, 1.6][level as usize].max(radii.min_element() * [0.2, 0.34, 0.5][level as usize]).min(radii.x.min(radii.z) * 0.9).max(0.15);
         // (Capped by level: a grown oak's masses are five metres through, and by area alone a
         // wood of them was three million faces.)
-        let count = ((area * [0.17, 0.1, 0.05][level as usize] / (unit * unit)) as u32).clamp([4, 5, if n.is_multiple_of(2) { 1 } else { 0 }][level as usize], [90, 26, 8][level as usize]);
+        let count = ((area * [0.17, 0.1, 0.05][level as usize] / (unit * unit)) as u32).clamp([4, 5, 0][level as usize], [90, 14, 0][level as usize]);
         for i in 0..count {
             let roll = |k: u32| hash(n.wrapping_mul(977).wrapping_add(i), k);
             let (turn, up) = (roll(1) * std::f32::consts::TAU, roll(2) * 2.0 - 1.0);
