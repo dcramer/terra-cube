@@ -405,7 +405,8 @@ fn grow(mut commands: Commands, args: Res<crate::Args>, terrain: Option<Res<Terr
             .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, shape.uvs)
             .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, shape.tangents)
             .with_inserted_indices(Indices::U32(shape.indices));
-        let entity = commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(look.solid.clone()), Transform::from_translation(origin), faces)).id();
+        // (As cubes, the whole paint; as shapes, leaf is cards with gaps cut in them.)
+        let entity = commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(if args.shapes { look.solid.clone() } else { look.whole.clone() }), Transform::from_translation(origin), faces)).id();
         // (What is far off throws no shadow of its own: its shadow would be a few texels.)
         if level == 2 {
             commands.entity(entity).insert(bevy::light::NotShadowCaster);
@@ -494,7 +495,7 @@ impl Shape {
     #[allow(clippy::too_many_arguments)]
     fn limb_cubes(&mut self, a: Vec3, b: Vec3, ra: f32, rb: f32, bark: Block, n: u32, cut: [bool; 2], roots: u8, level: u8) {
         let thick = ra.max(rb);
-        if (level == 1 && thick < 0.2) || (level == 2 && thick < 0.25) {
+        if (level == 1 && thick < 0.3) || (level == 2 && thick < 0.45) {
             return;
         }
         // Up close a trunk or a heavy limb is cubes of 10 cm, round to the cube. A lesser
@@ -502,6 +503,9 @@ impl Shape {
         // round were more faces than the rest of the wood, and unseen under their needles.
         let g = match level {
             0 if thick < 0.16 => ((thick * 2.0 / 0.05).round() * 0.05).clamp(0.05, 0.3),
+            // (The trunk of a great tree, a metre through, in cubes of 15: at 10 its foot alone
+            // was twenty thousand faces.)
+            0 if thick > 0.5 => 0.15,
             0 => 0.1,
             1 => 0.25,
             _ => 0.5,
@@ -621,8 +625,10 @@ impl Shape {
             return;
         }
         let area = 4.0 * std::f32::consts::PI * ((radii.x * radii.y).powf(1.6) + (radii.x * radii.z).powf(1.6) + (radii.y * radii.z).powf(1.6)).powf(1.0 / 1.6) / 3.0f32.powf(1.0 / 1.6);
-        let unit = [0.45f32, 0.9, 1.4][level as usize].min(radii.x.min(radii.z) * 0.9).max(0.15);
-        let count = ((area * [0.17, 0.15, 0.08][level as usize] / (unit * unit)) as u32).clamp([4, 5, if n.is_multiple_of(2) { 1 } else { 0 }][level as usize], 120);
+        let unit = [0.45f32, 1.0, 1.6][level as usize].max(radii.min_element() * [0.14, 0.3, 0.45][level as usize]).min(radii.x.min(radii.z) * 0.9).max(0.15);
+        // (Capped by level: a grown oak's masses are five metres through, and by area alone a
+        // wood of them was three million faces.)
+        let count = ((area * [0.17, 0.1, 0.05][level as usize] / (unit * unit)) as u32).clamp([4, 5, if n.is_multiple_of(2) { 1 } else { 0 }][level as usize], [90, 26, 8][level as usize]);
         for i in 0..count {
             let roll = |k: u32| hash(n.wrapping_mul(977).wrapping_add(i), k);
             let (turn, up) = (roll(1) * std::f32::consts::TAU, roll(2) * 2.0 - 1.0);

@@ -222,10 +222,14 @@ impl Land {
                 r if r < 0.78 => Tree::Birch,
                 _ => Tree::Pine,
             };
-            What::Tree(kind, roll(4))
+            // Most trees in a wood are grown ones: more stand near their kind's full height
+            // than near its least. And one oak or pine in twenty is a giant.
+            let giant = matches!(kind, Tree::Oak | Tree::Pine) && roll(6) < scale::GIANTS;
+            What::Tree(kind, if giant { scale::GIANT } else { roll(4).sqrt() })
         } else if pick < under {
             match roll(3) {
-                r if r < 0.42 => What::Young(conifers || roll(5) < 0.25),
+                // (Young trees in some spots, not everywhere: a quarter of what grows under.)
+                r if r < 0.25 => What::Young(conifers || roll(5) < 0.25),
                 r if r < 0.78 => What::Bush,
                 r if r < 0.92 => What::Log,
                 _ => What::Stump,
@@ -415,12 +419,12 @@ pub fn part(land: &Land, middle: (i32, i32), radius: i32) -> World {
     world
 }
 
-/// How far from the start the first tree may stand, metres.
-const CLEARING: f32 = 10.0;
+/// How far from the start the first tree may stand, metres: past the reach of a great oak, whose limbs and leaf would else be where a person is put down.
+const CLEARING: f32 = 22.0;
 
 /// How far a tree reaches from its foot, cells: one whose foot is this near a part being
 /// made is built with it, so no crown is cut off at the part's edge.
-const CROWN: i32 = (13.0 / CELL) as i32;
+const CROWN: i32 = (19.0 / CELL) as i32;
 
 /// Makes the cells of the columns from `lo` to `hi` (cells, x and z; `hi` not included):
 /// the ground, what stands on it, and the ground cover. The same call makes the same cells

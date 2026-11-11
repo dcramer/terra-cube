@@ -88,6 +88,10 @@ fn region_of(cell: IVec3) -> (i32, i32) {
 #[derive(Resource)]
 pub struct Look {
     pub solid: Handle<Windy>,
+    /// The same paint with nothing cut out of it and only its outsides drawn: for what is
+    /// made of whole cubes (trees and rocks as `flora` draws them). The cut-out one is far
+    /// dearer to draw where large faces lie over one another, as a crown's boxes do.
+    pub whole: Handle<Windy>,
     water: Handle<StandardMaterial>,
     /// The sea, and far water: not seen through.
     pub sea: Handle<StandardMaterial>,
@@ -438,6 +442,7 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     };
     // The paint, and the relief that goes with it: which way each point of a surface faces.
     let (paint, relief) = (picture(atlas.rgba, TextureFormat::Rgba8UnormSrgb), picture(atlas.relief, TextureFormat::Rgba8Unorm));
+    let whole = windy.add(ExtendedMaterial { base: StandardMaterial { base_color: Color::WHITE, base_color_texture: Some(paint.clone()), normal_map_texture: Some(relief.clone()), perceptual_roughness: 0.95, reflectance: 0.2, ..default() }, extension: Wind { season: Vec4::new(1.0, 1.0, 1.0, 0.0) } });
     let material = windy.add(ExtendedMaterial { base: StandardMaterial { base_color: Color::WHITE, base_color_texture: Some(paint), normal_map_texture: Some(relief), perceptual_roughness: 0.95, reflectance: 0.2,
         // Foliage has gaps cut in it (the atlas's alpha), and through a gap the inside of the
         // crown's far side is seen: so nothing is culled by which way it faces.
@@ -463,7 +468,7 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     let [r, g, b] = cube_voxel::Block::Water.colors().0;
     let sea = materials.add(StandardMaterial { base_color: Color::linear_rgb(r, g, b), perceptual_roughness: 0.09, reflectance: 0.6, normal_map_texture: Some(waves), uv_transform: bevy::math::Affine2::from_scale(Vec2::splat(far * 2.0 / cube_voxel::mesh::WATER_TILE)), ..default() });
     commands.insert_resource(Waters(vec![water.clone()]));
-    commands.insert_resource(Look { solid: material, water: water.clone(), sea: sea.clone() });
+    commands.insert_resource(Look { solid: material, whole, water: water.clone(), sea: sea.clone() });
     for (x, z, w, d) in [(0.0, -(edge + far) / 2.0, far, (far - edge) / 2.0), (0.0, (edge + far) / 2.0, far, (far - edge) / 2.0), (-(edge + far) / 2.0, 0.0, (far - edge) / 2.0, edge), ((edge + far) / 2.0, 0.0, (far - edge) / 2.0, edge)] {
         commands.spawn((Mesh3d(meshes.add(Plane3d::default().mesh().size(w * 2.0, d * 2.0))), MeshMaterial3d(sea.clone()), Transform::from_xyz(x, level, z)));
     }
@@ -597,8 +602,10 @@ fn seasons(live: Option<Res<crate::motion::Live>>, look: Option<Res<Look>>, mut 
         return;
     }
     *was = now;
-    if let Some(mut material) = windy.get_mut(&look.solid) {
-        material.extension.season = now;
+    for handle in [&look.solid, &look.whole] {
+        if let Some(mut material) = windy.get_mut(handle) {
+            material.extension.season = now;
+        }
     }
 }
 

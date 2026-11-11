@@ -72,11 +72,17 @@ impl Span {
 
 /// How tall each kind of tree stands, from one just grown to an old one. Every other measure
 /// of a tree (trunk, limbs, crown) is a part of its height, in `plants`.
-pub const OAK: Span = Span(13.0, 24.0);
-pub const BIRCH: Span = Span(11.0, 19.0);
-pub const PINE: Span = Span(17.0, 34.0);
-pub const WILLOW: Span = Span(9.0, 14.0);
-pub const SNAG: Span = Span(6.0, 15.0);
+/// (Raised 2026-11-11: the developer found the trees small. A grown tree is a big thing, and
+/// the kinds differ: a willow is low, a birch slender, an oak broad and tall, a pine half as
+/// tall again. An old oak or pine now and then stands a quarter over its kind's tallest.)
+pub const OAK: Span = Span(16.0, 30.0);
+pub const BIRCH: Span = Span(13.0, 24.0);
+pub const PINE: Span = Span(22.0, 46.0);
+pub const WILLOW: Span = Span(9.0, 15.0);
+pub const SNAG: Span = Span(7.0, 18.0);
+/// How far past its kind's tallest a giant stands (of the span), and how many are giants.
+pub const GIANT: f32 = 1.25;
+pub const GIANTS: f32 = 0.05;
 /// A young tree: what stands at eye level and just over in a wood.
 pub const YOUNG: Span = Span(3.0, 7.5);
 /// A grown tree has this much ground to itself; small things, this much.
