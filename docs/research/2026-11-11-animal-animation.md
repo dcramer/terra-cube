@@ -16,7 +16,10 @@ while every forge check passed. What is the source of a clip that looks right?
   Dropped.
 - **Tripo's other human presets:** `fall` is a good death (used); `slash` an attack (used,
   trimmed); `dive` a roll and `climb` a vault (not used yet); `jump` is skipping on the spot
-  and `hurt` is sitting wounded (no use). Jump, fall, land, swim and hurt are still made.
+  and `hurt` is sitting wounded (no use).
+- **Tripo's motions from a description are good for a person, some of them.** A jump and a
+  flinch came back as a person would do them and are used; a breaststroke came back lying
+  still. 20 credits each, once: the asset goes on any humanoid free. Swim is still made.
 - **Tripo has one animal clip, and it does not travel.** `quadruped:walk` on the wolf lifts
   its legs well but its feet cover 0.14 to 0.27 m/s: marching on the spot.
 - **Our made animal gaits are stiff, and tuning them did not help.** A longer stride with more

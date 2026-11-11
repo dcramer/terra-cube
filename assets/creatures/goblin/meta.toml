@@ -19,14 +19,14 @@ looping = false
 source = "tripo"
 
 [clips.fall]
-seconds = 0.9
+seconds = 0.3
 looping = true
-source = "made"
+source = "tripo"
 
 [clips.hurt]
-seconds = 0.5
+seconds = 0.6666667
 looping = false
-source = "made"
+source = "tripo"
 
 [clips.idle]
 seconds = 15.333333
@@ -34,14 +34,14 @@ looping = true
 source = "tripo"
 
 [clips.jump]
-seconds = 0.3
+seconds = 0.26666668
 looping = false
-source = "made"
+source = "tripo"
 
 [clips.land]
-seconds = 0.36666667
+seconds = 0.6666667
 looping = false
-source = "made"
+source = "tripo"
 
 [clips.run]
 seconds = 1.2666667

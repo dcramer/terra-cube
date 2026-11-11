@@ -132,10 +132,11 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
     let mut out: Vec<Clip> = Vec::new();
     for name in plan.clips.iter().filter(|c| !creature.without.contains(c)) {
         let preset = plan.presets.get(name).filter(|_| !creature.made.contains(name));
-        let found = preset.and_then(|p| theirs.iter().position(|c| c.name.rsplit(':').next() == Some(p.as_str())));
+        // (A described motion's clip is named by its description, cut short: the start is enough.)
+        let found = preset.and_then(|p| theirs.iter().position(|c| c.name.rsplit(':').next() == Some(p.as_str()) || (plan.motions.contains_key(p) && c.name.starts_with(p.as_str()))));
         let clip = match found {
             Some(i) => {
-                let looping = !matches!(name.as_str(), "attack" | "hurt" | "die" | "jump");
+                let looping = !matches!(name.as_str(), "attack" | "hurt" | "die" | "jump" | "land");
                 let mut frames = match plan.trim.get(name) {
                     Some(&[from, to, speed]) => clips::trimmed(&theirs[i], from, to, speed),
                     None => theirs[i].frames.clone(),
@@ -146,6 +147,11 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
                 if looping {
                     clips::close_loop(&mut frames);
                     clips::centred(&skeleton, &roles, &mut frames);
+                }
+                // A leap is recorded leaving the ground, and the game is what lifts the body:
+                // each moment of it is stood on its own lowest foot.
+                if matches!(name.as_str(), "jump" | "fall" | "land") {
+                    clips::footed(&skeleton, &roles, &mut frames);
                 }
                 Clip { name: name.clone(), looping, frames, source: "tripo", speed: None }
             }

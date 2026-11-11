@@ -28,17 +28,21 @@ async function animate(client: Studio, a: Args): Promise<void> {
   const v = a.values;
   const motions = a.positionals.slice(1);
   const prompts: string[] = v.prompt ?? [];
-  if (!motions.length && !prompts.length) throw new StudioError("name at least one motion (walk, run, idle…) or give --prompt");
+  const assets: string[] = v.motion ?? [];
+  if (!motions.length && !prompts.length && !assets.length) throw new StudioError("name at least one motion (walk, run, idle…) or give --prompt or --motion");
   await ready(client, pid);
   const rigging = (await client.project(pid)).operator.rigging;
   if (rigging?.status !== "success") throw new StudioError("the model is not rigged yet: run `tripo.ts rig` first");
-  if (prompts.length && rigging.type !== "biped") throw new StudioError(`motions made from a description need a humanoid rig; this one is ${rigging.type}`);
+  if ((prompts.length || assets.length) && rigging.type !== "biped") throw new StudioError(`motions made from a description need a humanoid rig; this one is ${rigging.type}`);
   const ids = [];
   for (const m of motions) ids.push(await retarget(client, pid, rigging.type, { animation: `preset:${rigging.type}:${m}` }));
+  // A motion made before from a description is an asset of its own: it goes on any humanoid, and is paid for once.
+  for (const m of assets) ids.push(await retarget(client, pid, rigging.type, { motion: m }));
   for (const p of prompts) ids.push(await retarget(client, pid, rigging.type, { motion: await aiMotion(client, p, int(v.seconds, "--seconds")) }));
   const size = v["texture-size"] ? int(v["texture-size"], "--texture-size") : textureSize((await client.project(pid)).operator);
   const path = await exportFile(client, pid, output(a, pid, "animated", `.${v.format}`), v.format, true, ids, Boolean(v["in-place"]), size);
-  report({ project: pid, credits: await client.charged(), files: [path] });
+  const made = ((await client.project(pid)).operator.retarget ?? []).filter((r) => r.status === "success" && r.motion_asset_id).map((r) => ({ name: r.name, asset: r.motion_asset_id }));
+  report({ project: pid, credits: await client.charged(), files: [path], motions: made });
 }
 
 async function unanimate(client: Studio, a: Args): Promise<void> {
@@ -74,10 +78,11 @@ export const rigging: Record<string, Command> = {
     run: rig,
   },
   animate: {
-    usage: 'animate PROJECT [MOTION …] [--prompt "TEXT" …] [-o out.glb]',
+    usage: 'animate PROJECT [MOTION …] [--prompt "TEXT" …] [--motion ASSET …] [-o out.glb]',
     help: "put preset animations (walk, run, idle, jump…) or ones made from a description on a rigged model, and export them in one file",
     options: {
       prompt: { type: "string", multiple: true, help: "a motion made from a description (repeatable; humanoids only)" },
+      motion: { type: "string", multiple: true, help: "a motion made before from a description, by its asset id (repeatable; free; the report lists the ones a model carries)" },
       seconds: { type: "string", default: "5", help: "length of a --prompt motion, 1 to 10" },
       format: { type: "string", default: "glb", choices: ["glb", "fbx"], help: "file format" },
       "texture-size": { type: "string", choices: ["512", "1024", "2048", "4096", "8192"], help: "texture size (default the model's own)" },

@@ -98,7 +98,12 @@ pub fn run(id: &str, creature: &Creature, plan: &Plan, style: &Style, until: &st
                     let mut presets: Vec<String> = plan.presets.values().cloned().collect();
                     presets.sort();
                     presets.dedup();
+                    // Described motions are not presets: they go on by their asset ids.
+                    presets.retain(|p| !plan.motions.contains_key(p));
                     let mut args = if presets.is_empty() { vec![s("export"), lock.project.clone()] } else { [vec![s("animate"), lock.project.clone()], presets].concat() };
+                    for asset in plan.motions.values() {
+                        args.extend([s("--motion"), asset.clone()]);
+                    }
                     args.extend([s("--in-place"), s("--texture-size"), s(style.tripo.texture_size), s("-o"), path("rigged.glb")]);
                     tripo(&args)?
                 }

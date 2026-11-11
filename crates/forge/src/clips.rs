@@ -261,6 +261,23 @@ pub fn centred(sk: &Skeleton, roles: &Roles, frames: &mut [Pose]) {
     }
 }
 
+/// Stands every frame on its own lowest foot, and over the creature's own place: for a clip
+/// recorded leaving the ground, which the game plays on a body it lifts itself.
+pub fn footed(sk: &Skeleton, roles: &Roles, frames: &mut [Pose]) {
+    if roles.legs.is_empty() {
+        return;
+    }
+    let rest = sk.rest().root_t;
+    let floor = roles.legs.iter().map(|l| sk.position(l.foot()).y).fold(f32::MAX, f32::min);
+    for pose in frames.iter_mut() {
+        let flat = sk.base.transform_vector3(pose.root_t - rest);
+        pose.root_t -= sk.base.inverse().transform_vector3(Vec3::new(flat.x, 0.0, flat.z));
+        let w = sk.pose_world(pose);
+        let lowest = roles.legs.iter().map(|l| w[l.foot()].w_axis.y).fold(f32::MAX, f32::min);
+        pose.root_t += sk.base.inverse().transform_vector3(Vec3::Y * (floor - lowest));
+    }
+}
+
 /// Makes a clip that should loop end where it began, by easing its last fifth into its first
 /// frame. Tripo's run does not close (19° on the biped).
 pub fn close_loop(frames: &mut [Pose]) {

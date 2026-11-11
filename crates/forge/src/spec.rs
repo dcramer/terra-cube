@@ -62,6 +62,10 @@ pub struct Plan {
     /// Our clip name → Tripo's preset for this rig.
     #[serde(default)]
     pub presets: BTreeMap<String, String>,
+    /// Motions Tripo made from a description, once: the name a preset knows it by (the start
+    /// of its description) → its asset id at Tripo. Each is put on every creature of the plan.
+    #[serde(default)]
+    pub motions: BTreeMap<String, String>,
     /// Every clip a creature of this plan must have; ones without a preset are made.
     pub clips: Vec<String>,
     /// Stands upright (falls backward, not onto its side).
