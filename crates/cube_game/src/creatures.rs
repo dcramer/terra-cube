@@ -92,6 +92,12 @@ impl Creature {
     }
 }
 
+/// A creature that is only a picture: its model and its clips, moved by whoever spawned it
+/// (the small life of the air and the water, `air`). The simulation has no body for it, and
+/// it is not something to be chosen, followed or controlled.
+#[derive(Component)]
+pub struct Picture;
+
 /// The entity under a creature that holds its `AnimationPlayer`.
 #[derive(Component)]
 pub struct Rig(pub Entity);

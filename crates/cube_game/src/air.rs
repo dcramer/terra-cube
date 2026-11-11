@@ -8,6 +8,7 @@
 //! to `cube_sim`; these are the ones only ever seen.
 
 use crate::world::Terrain;
+use crate::creatures::{Creature, Registry};
 use bevy::{light::NotShadowCaster, prelude::*};
 use cube_sim::ecology;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -58,38 +59,6 @@ const FLOCKS: usize = 3;
 const WIND: Vec3 = Vec3::new(0.8, 0.0, 0.6);
 const DRIFT: f32 = 0.45;
 
-/// A rounded body: a ball drawn out to its reach each way.
-fn ellipsoid(x: f32, y: f32, z: f32) -> Mesh {
-    Sphere::new(1.0).mesh().ico(2).unwrap().scaled_by(Vec3::new(x, y, z)).with_computed_normals()
-}
-
-/// A wing, a fin or a tail: a flat blade `span` long and `chord` deep at its widest, drawn to
-/// a point at each end and swept back, lying flat with its length along x.
-fn blade_mesh(span: f32, chord: f32) -> Mesh {
-    use bevy::{asset::RenderAssetUsages, mesh::Indices, render::render_resource::PrimitiveTopology};
-    const N: usize = 8;
-    let mut at: Vec<[f32; 3]> = Vec::new();
-    for i in 0..=N {
-        let t = i as f32 / N as f32;
-        // Fullest a third of the way along; the leading edge nearly straight, the trailing curved.
-        let deep = chord * (t * (1.0 - t)).sqrt() * 2.0 * (1.2 - 0.4 * t);
-        let sweep = chord * 0.35 * (t - 0.5).abs();
-        let x = (t - 0.5) * span;
-        at.push([x, 0.0, sweep - deep * 0.3]);
-        at.push([x, 0.0, sweep + deep * 0.7]);
-    }
-    let mut index = Vec::new();
-    for i in 0..N as u32 {
-        index.extend([i * 2, i * 2 + 1, i * 2 + 3, i * 2, i * 2 + 3, i * 2 + 2]);
-    }
-    let n = at.len();
-    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, at)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 1.0, 0.0]; n])
-        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.5, 0.5]; n])
-        .with_inserted_indices(Indices::U32(index))
-}
-
 /// 0 to 1, a different one each call.
 fn roll(state: &mut u32) -> f32 {
     *state ^= *state << 13;
@@ -139,14 +108,6 @@ struct Butterfly {
     own: f32,
 }
 
-/// A wing, of a butterfly or a bird: which side, and how fast and far it beats.
-#[derive(Component)]
-struct Wing {
-    side: f32,
-    beat: f32,
-    sweep: f32,
-}
-
 /// Something here that is heard now and then: the name of its sound (`audio`).
 #[derive(Component)]
 pub struct Sings(pub &'static str);
@@ -161,11 +122,9 @@ struct Songbird {
     flight: f32,
     own: f32,
     facing: f32,
+    /// Whether it was on the wing when last looked at: its clip changes when this does.
+    aloft: bool,
 }
-
-/// A wing that folds against the body when its bird is down.
-#[derive(Component)]
-struct Folds;
 
 /// A dragonfly: the water it keeps over, and the dart it is making or has made.
 #[derive(Component)]
@@ -196,9 +155,6 @@ struct Fish {
     leapt: f32,
 }
 
-#[derive(Component)]
-struct Tail;
-
 /// The ring left on the water by a leap.
 #[derive(Component)]
 struct Ring {
@@ -220,7 +176,19 @@ struct Bird {
     at: f32,
 }
 
-fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
+/// What a thing of the air or the water is drawn as: the model forge built for it
+/// (`assets/creatures/ID`, of boxes, rigged there), playing one of its clips. Until
+/// 2026-11-11 each was a shape made here and its wings turned by hand; now they come down
+/// the same pipeline as every other creature. A model faces +z and the things here move
+/// toward -z, so it is turned about.
+fn model(registry: &Registry, id: &str, clip: &str, speed: f32) -> impl Bundle {
+    let mut creature = Creature::new(registry.index(id).unwrap_or_else(|| panic!("assets/creatures/{id} has no model: cargo forge finish {id}")));
+    creature.clip_name = Some(clip.into());
+    creature.speed = speed;
+    (creature, crate::creatures::Picture, Transform::from_rotation(Quat::from_rotation_y(std::f32::consts::PI)), Visibility::default())
+}
+
+fn setup(mut commands: Commands, registry: Res<Registry>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
     let mut state = 0x9E37_79B9u32;
     let far = Vec3::new(0.0, -500.0, 0.0);
     // Pollen: lit like anything else, so it flares crossing a shaft of sun and dims in shade,
@@ -271,117 +239,46 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
         let spin = Vec3::new(roll(&mut state) - 0.5, roll(&mut state) - 0.5, roll(&mut state) - 0.5) * 6.0;
         commands.spawn((Leaf(spin, roll(&mut state) * 100.0), Mesh3d(chip.clone()), MeshMaterial3d(tones[i % 4].clone()), Transform::from_translation(far), NotShadowCaster));
     }
-    // Butterflies: a body with two wings hinged along it, white, yellow or blue.
-    let wing = meshes.add(blade_mesh(0.045, 0.06));
-    let (thorax, dusk) = (meshes.add(ellipsoid(0.004, 0.004, 0.022)), materials.add(StandardMaterial { base_color: Color::srgb(0.08, 0.07, 0.06), perceptual_roughness: 0.9, ..default() }));
-    let coats = [Color::srgb(0.95, 0.93, 0.85), Color::srgb(0.95, 0.78, 0.2), Color::srgb(0.35, 0.5, 0.9)].map(|c| materials.add(StandardMaterial { base_color: c, perceptual_roughness: 0.8, double_sided: true, cull_mode: None, ..default() }));
-    for i in 0..BUTTERFLIES {
+    // Butterflies.
+    for _ in 0..BUTTERFLIES {
         let own = roll(&mut state) * 100.0;
-        commands.spawn((Butterfly { home: far, own }, Transform::from_translation(far), Visibility::default())).with_children(|body| {
-            body.spawn((Mesh3d(thorax.clone()), MeshMaterial3d(dusk.clone()), Transform::default(), NotShadowCaster));
-            for side in [-1.0f32, 1.0] {
-                // Hinged at the body: the wing's mesh sits out from the hinge.
-                body.spawn((Wing { side, beat: 26.0 + own * 0.05, sweep: 1.1 }, Transform::default(), Visibility::default())).with_child((Mesh3d(wing.clone()), MeshMaterial3d(coats[i % 3].clone()), Transform::from_xyz(side * 0.022, 0.0, 0.0), NotShadowCaster));
-            }
-        });
+        commands.spawn((Butterfly { home: far, own }, Transform::from_translation(far), Visibility::default())).with_child(model(&registry, "flutterby", "flutter", 1.5 + own * 0.003));
     }
-    let (beak, horn) = (meshes.add(ellipsoid(0.005, 0.005, 0.014)), materials.add(StandardMaterial { base_color: Color::srgb(0.75, 0.6, 0.2), perceptual_roughness: 0.6, ..default() }));
-    // Small birds: a round body, a head, and two short wings that fold when it is down.
-    let (breast, crown, pinion) = (meshes.add(ellipsoid(0.032, 0.034, 0.06)), meshes.add(ellipsoid(0.022, 0.022, 0.024)), meshes.add(blade_mesh(0.1, 0.06)));
-    let plumage = [Color::srgb(0.45, 0.33, 0.22), Color::srgb(0.62, 0.3, 0.16), Color::srgb(0.3, 0.34, 0.4)].map(|c| materials.add(StandardMaterial { base_color: c, perceptual_roughness: 0.9, double_sided: true, cull_mode: None, ..default() }));
-    for i in 0..SONGBIRDS {
-        let coat = plumage[i % 3].clone();
-        commands.spawn((Sings("bird"), Songbird { from: far, to: far, since: -100.0, flight: 0.0, own: roll(&mut state) * 100.0, facing: 0.0 }, Mesh3d(breast.clone()), MeshMaterial3d(coat.clone()), Transform::from_translation(far))).with_children(|body| {
-            body.spawn((Mesh3d(crown.clone()), MeshMaterial3d(coat.clone()), Transform::from_xyz(0.0, 0.035, -0.06)));
-            // A beak, and a tail held out behind.
-            body.spawn((Mesh3d(beak.clone()), MeshMaterial3d(horn.clone()), Transform::from_xyz(0.0, 0.032, -0.088)));
-            body.spawn((Mesh3d(pinion.clone()), MeshMaterial3d(coat.clone()), Transform::from_xyz(0.0, 0.01, 0.085).with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)).with_scale(Vec3::new(0.7, 1.0, 0.5))));
-            for side in [-1.0f32, 1.0] {
-                body.spawn((Wing { side, beat: 34.0, sweep: 1.0 }, Folds, Transform::from_xyz(side * 0.028, 0.02, 0.0), Visibility::default())).with_child((Mesh3d(pinion.clone()), MeshMaterial3d(coat.clone()), Transform::from_xyz(side * 0.045, 0.0, 0.0), NotShadowCaster));
-            }
-        });
+    // Small birds: on the wing, or down with their wings folded.
+    for _ in 0..SONGBIRDS {
+        commands.spawn((Sings("bird"), Songbird { from: far, to: far, since: -100.0, flight: 0.0, own: roll(&mut state) * 100.0, facing: 0.0, aloft: false }, Transform::from_translation(far), Visibility::default())).with_child(model(&registry, "songbird", "perch", 1.0));
     }
-    // Dragonflies: a thin bright body and four clear wings held flat, too fast to see beat.
-    let (needle, pane) = (meshes.add(ellipsoid(0.005, 0.005, 0.042)), meshes.add(blade_mesh(0.11, 0.02)));
-    let enamel = [Color::srgb(0.1, 0.5, 0.75), Color::srgb(0.2, 0.6, 0.25), Color::srgb(0.75, 0.2, 0.15)].map(|c| materials.add(StandardMaterial { base_color: c, perceptual_roughness: 0.3, ..default() }));
-    let clear = materials.add(StandardMaterial { base_color: Color::srgba(0.9, 0.95, 1.0, 0.35), alpha_mode: AlphaMode::Blend, double_sided: true, cull_mode: None, ..default() });
-    for i in 0..DRAGONFLIES {
-        commands.spawn((Dragonfly { over: far, from: far, to: far, since: 0.0, own: roll(&mut state) * 100.0 }, Mesh3d(needle.clone()), MeshMaterial3d(enamel[i % 3].clone()), Transform::from_translation(far), NotShadowCaster)).with_children(|body| {
-            for back in [-0.012f32, 0.012] {
-                body.spawn((Mesh3d(pane.clone()), MeshMaterial3d(clear.clone()), Transform::from_xyz(0.0, 0.008, back - 0.02), NotShadowCaster));
-            }
-        });
+    // Dragonflies: their wings too fast to see beat.
+    for _ in 0..DRAGONFLIES {
+        commands.spawn((Dragonfly { over: far, from: far, to: far, since: 0.0, own: roll(&mut state) * 100.0 }, Transform::from_translation(far), Visibility::default())).with_child(model(&registry, "darter", "fly", 4.0));
     }
     // Swallows: always a few on the wing near the camera, low and fast in long loops, so the
-    // sky in any view has something crossing it. True to size, 17 cm long and 33 across.
-    let (dart, blade) = (meshes.add(ellipsoid(0.022, 0.02, 0.085)), meshes.add(blade_mesh(0.16, 0.05)));
-    let slate = materials.add(StandardMaterial { base_color: Color::srgb(0.1, 0.12, 0.2), perceptual_roughness: 0.6, double_sided: true, cull_mode: None, ..default() });
+    // sky in any view has something crossing it. True to size, 15 cm long and 33 across.
     for _ in 0..SWALLOWS {
-        commands.spawn((Swallow { home: far, own: roll(&mut state) * 100.0, out: 6.0 + roll(&mut state) * 9.0, high: 2.5 + roll(&mut state) * 6.0 }, Mesh3d(dart.clone()), MeshMaterial3d(slate.clone()), Transform::from_translation(far))).with_children(|body| {
-            for side in [-1.0f32, 1.0] {
-                if side < 0.0 {
-                    body.spawn((Mesh3d(blade.clone()), MeshMaterial3d(slate.clone()), Transform::from_xyz(0.0, 0.0, 0.11).with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)).with_scale(Vec3::new(0.55, 1.0, 0.5))));
-                }
-                body.spawn((Wing { side, beat: 13.0, sweep: 0.7 }, Transform::default(), Visibility::default())).with_child((Mesh3d(blade.clone()), MeshMaterial3d(slate.clone()), Transform::from_xyz(side * 0.09, 0.0, 0.0)));
-            }
-        });
+        commands.spawn((Swallow { home: far, own: roll(&mut state) * 100.0, out: 6.0 + roll(&mut state) * 9.0, high: 2.5 + roll(&mut state) * 6.0 }, Transform::from_translation(far), Visibility::default())).with_child(model(&registry, "swallow", "fly", 1.3));
     }
-    // Fish: a body the length of a hand to a forearm, a tail that beats, dark on the back.
-    // They keep just under the surface where they can be seen, a school together.
-    let (flank, fin) = (meshes.add(ellipsoid(0.016, 0.028, 0.08)), meshes.add(ellipsoid(0.003, 0.03, 0.028)));
-    let scales = [Color::srgb(0.22, 0.26, 0.2), Color::srgb(0.3, 0.3, 0.26), Color::srgb(0.42, 0.3, 0.16)].map(|c| materials.add(StandardMaterial { base_color: c, perceptual_roughness: 0.35, reflectance: 0.6, ..default() }));
+    // Fish: the length of a hand to a forearm, swimming by the tail. They keep just under
+    // the surface where they can be seen, a school together.
     let ring = meshes.add(Annulus::new(0.9, 1.0).mesh().resolution(24));
     let ripple = materials.add(StandardMaterial { base_color: Color::srgba(0.9, 0.95, 1.0, 0.5), alpha_mode: AlphaMode::Blend, unlit: true, double_sided: true, cull_mode: None, ..default() });
     for school in 0..SCHOOLS {
         for _ in 0..SCHOOL {
             let long = 0.8 + roll(&mut state) * 1.4;
-            commands.spawn((Fish { school, own: roll(&mut state) * 100.0, long, leapt: -100.0 }, Mesh3d(flank.clone()), MeshMaterial3d(scales[school % 3].clone()), Transform::from_translation(far), NotShadowCaster)).with_children(|body| {
-                body.spawn((Tail, Mesh3d(fin.clone()), MeshMaterial3d(scales[school % 3].clone()), Transform::from_xyz(0.0, 0.0, 0.1), NotShadowCaster));
-            });
+            commands.spawn((Fish { school, own: roll(&mut state) * 100.0, long, leapt: -100.0 }, Transform::from_translation(far), Visibility::default())).with_child(model(&registry, "minnow", "swim", 1.2 + roll(&mut state) * 0.6));
         }
         // The ring a leaping fish leaves, one to a school.
         commands.spawn((Ring { school, since: -100.0 }, Mesh3d(ring.clone()), MeshMaterial3d(ripple.clone()), Transform::from_translation(far), NotShadowCaster));
     }
     commands.insert_resource(Schools(vec![far; SCHOOLS]));
-    // Birds: dark, a body and two long wings, seen from below against the sky.
-    let (trunk, span) = (meshes.add(ellipsoid(0.07, 0.06, 0.25)), meshes.add(blade_mesh(0.6, 0.24)));
-    let dark = materials.add(StandardMaterial { base_color: Color::srgb(0.07, 0.07, 0.08), perceptual_roughness: 0.9, double_sided: true, cull_mode: None, ..default() });
+    // Hawks, high over the land: wheeling on spread wings, seen from below against the sky.
     for _ in 0..FLOCKS {
         let turn = roll(&mut state) * TAU;
         let middle = Vec3::new(turn.cos(), 0.0, turn.sin()) * (10.0 + roll(&mut state) * 50.0) + Vec3::Y * (34.0 + roll(&mut state) * 16.0);
         let (out, speed) = (22.0 + roll(&mut state) * 30.0, 7.0 + roll(&mut state) * 4.0);
         for b in 0..4 + (roll(&mut state) * 5.0) as usize {
             let bird = Bird { middle: middle + Vec3::Y * (roll(&mut state) - 0.5) * 6.0, out: out + (roll(&mut state) - 0.5) * 9.0, speed, at: b as f32 * 0.22 + roll(&mut state) * 0.2 };
-            commands.spawn((Sings("crow"), bird, Mesh3d(trunk.clone()), MeshMaterial3d(dark.clone()), Transform::from_translation(far), NotShadowCaster)).with_children(|body| {
-                for side in [-1.0f32, 1.0] {
-                    if side < 0.0 {
-                        body.spawn((Mesh3d(span.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(0.0, 0.0, 0.32).with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)).with_scale(Vec3::new(0.5, 1.0, 0.6))));
-                    }
-                    body.spawn((Wing { side, beat: 5.5, sweep: 0.55 }, Transform::default(), Visibility::default())).with_child((Mesh3d(span.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(side * 0.32, 0.0, 0.0), NotShadowCaster));
-                }
-            });
+            commands.spawn((Sings("crow"), bird, Transform::from_translation(far), Visibility::default())).with_child(model(&registry, "soarer", if b % 3 == 0 { "fly" } else { "glide" }, 0.8));
         }
-    }
-    // `AIR_SHOW=1`: one of each set out still, a metre and a half up by the start, wings
-    // spread, to be looked at (`--at 3,0 --dist 2.2 --pitch 0.25`).
-    if std::env::var_os("AIR_SHOW").is_some() {
-        let mut show = |at: Vec3, body: &Handle<Mesh>, coat: &Handle<StandardMaterial>, wing: &Handle<Mesh>, wings: &Handle<StandardMaterial>, out: f32, tail: Option<f32>| {
-            commands.spawn((Mesh3d(body.clone()), MeshMaterial3d(coat.clone()), Transform::from_translation(at))).with_children(|b| {
-                for side in [-1.0f32, 1.0] {
-                    b.spawn((Mesh3d(wing.clone()), MeshMaterial3d(wings.clone()), Transform::from_xyz(side * out, 0.01, 0.0).with_rotation(Quat::from_rotation_z(side * 0.25))));
-                }
-                if let Some(back) = tail {
-                    b.spawn((Mesh3d(wing.clone()), MeshMaterial3d(wings.clone()), Transform::from_xyz(0.0, 0.0, back).with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)).with_scale(Vec3::new(0.55, 1.0, 0.5))));
-                }
-            });
-        };
-        let y = 13.2;
-        show(Vec3::new(2.4, y, 0.0), &thorax, &dusk, &wing, &coats[1], 0.022, None);
-        show(Vec3::new(2.7, y, 0.0), &breast, &plumage[1], &pinion, &plumage[1], 0.05, Some(0.085));
-        show(Vec3::new(3.1, y, 0.0), &dart, &slate, &blade, &slate, 0.09, Some(0.11));
-        show(Vec3::new(3.5, y, 0.0), &needle, &enamel[0], &pane, &clear, 0.055, None);
-        show(Vec3::new(4.3, y, 0.0), &trunk, &dark, &span, &dark, 0.32, Some(0.32));
-        commands.spawn((Mesh3d(flank.clone()), MeshMaterial3d(scales[0].clone()), Transform::from_xyz(3.8, y - 0.25, 0.0))).with_child((Mesh3d(fin.clone()), MeshMaterial3d(scales[0].clone()), Transform::from_xyz(0.0, 0.0, 0.1)));
     }
 }
 
@@ -460,7 +357,7 @@ fn leaves(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>, ter
 
 /// A butterfly keeps to a few metres of meadow near the camera, flying a loose looping path
 /// low over the grass, its wings beating too fast to count.
-fn butterflies(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>, terrain: Option<Res<Terrain>>, mut flies: Query<(&mut Butterfly, &mut Transform), Without<Wing>>, mut wings: Query<(&Wing, &mut Transform), Without<Folds>>, mut state: Local<u32>) {
+fn butterflies(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>, terrain: Option<Res<Terrain>>, mut flies: Query<(&mut Butterfly, &mut Transform)>, mut state: Local<u32>) {
     let (Some(eye), Some(terrain)) = (eye(&cameras), terrain) else { return };
     if *state == 0 {
         *state = 0x0BAD_5EED;
@@ -491,11 +388,6 @@ fn butterflies(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>
         let high = terrain.ground(now.x, now.z) + 0.55 + 0.3 * (t * 2.1 + own).sin() + 0.12 * (t * 9.0 + own).sin();
         at.translation = Vec3::new(now.x, high, now.z);
         at.look_to((soon - now).normalize_or(Vec3::X), Vec3::Y);
-    }
-    for (wing, mut hinge) in &mut wings {
-        // (A folding wing is its bird's to move: `songbirds`.)
-        // Up from flat to nearly closed over the back, and down again.
-        hinge.rotation = Quat::from_rotation_z(wing.side * (0.15 + wing.sweep * (t * wing.beat).sin().abs()));
     }
 }
 
@@ -620,8 +512,8 @@ fn songbirds(
     cameras: Query<&GlobalTransform, With<Camera3d>>,
     terrain: Option<Res<Terrain>>,
     live: Option<Res<crate::motion::Live>>,
-    mut birds: Query<(&mut Songbird, &mut Transform, &Children), Without<Wing>>,
-    mut wings: Query<(&Wing, &mut Transform), With<Folds>>,
+    mut birds: Query<(&mut Songbird, &mut Transform, &Children)>,
+    mut models: Query<&mut Creature>,
     mut state: Local<u32>,
 ) {
     let (Some(eye), Some(terrain)) = (eye(&cameras), terrain) else { return };
@@ -680,10 +572,15 @@ fn songbirds(
             let peck = if !hopping && (beat.floor() * 0.61 + bird.own).fract() < 0.4 { (beat.fract() * TAU * 2.0).sin().max(0.0) * 0.7 } else { 0.0 };
             *at = Transform::from_translation(bird.to + Vec3::Y * (0.03 + hop * 0.05)).with_rotation(Quat::from_rotation_y(bird.facing) * Quat::from_rotation_x(-peck));
         }
-        for &child in children {
-            if let Ok((wing, mut hinge)) = wings.get_mut(child) {
-                // Beating in the air, folded down along the body on the ground.
-                hinge.rotation = if flying { Quat::from_rotation_z(wing.side * (wing.sweep * (t * wing.beat).sin())) } else { Quat::from_rotation_z(wing.side * -1.35) };
+        // Beating in the air, folded along the body on the ground: its clip, changed as it
+        // takes off and as it lands.
+        if flying != bird.aloft {
+            bird.aloft = flying;
+            for &child in children {
+                if let Ok(mut model) = models.get_mut(child) {
+                    model.clip_name = Some(if flying { "fly" } else { "perch" }.into());
+                    model.speed = if flying { 2.4 } else { 1.0 };
+                }
             }
         }
     }
@@ -767,9 +664,8 @@ fn fish(
     cameras: Query<&GlobalTransform, With<Camera3d>>,
     terrain: Option<Res<Terrain>>,
     schools: Option<ResMut<Schools>>,
-    mut fishes: Query<(&mut Fish, &mut Transform, &Children), (Without<Tail>, Without<Ring>)>,
-    mut tails: Query<&mut Transform, (With<Tail>, Without<Ring>)>,
-    mut rings: Query<(&mut Ring, &mut Transform), Without<Tail>>,
+    mut fishes: Query<(&mut Fish, &mut Transform), Without<Ring>>,
+    mut rings: Query<(&mut Ring, &mut Transform), Without<Fish>>,
     mut state: Local<u32>,
 ) {
     let (Some(eye), Some(terrain), Some(mut schools)) = (eye(&cameras), terrain, schools) else { return };
@@ -794,7 +690,7 @@ fn fish(
             }
         }
     }
-    for (mut one, mut at, children) in &mut fishes {
+    for (mut one, mut at) in &mut fishes {
         let home = schools.0[one.school];
         if home.y < -100.0 {
             at.translation = hidden;
@@ -822,11 +718,6 @@ fn fish(
         }
         *at = Transform::from_translation(now.with_y(surface + height)).looking_to((soon - now).normalize_or(Vec3::X), Vec3::Y).with_scale(Vec3::splat(one.long));
         at.rotate_local_x(nose);
-        for &child in children {
-            if let Ok(mut tail) = tails.get_mut(child) {
-                tail.rotation = Quat::from_rotation_y(0.5 * (t * 9.0 + own).sin());
-            }
-        }
     }
     for (ring, mut at) in &mut rings {
         // Spreads to a metre across in a second and a half, thinning, then is gone.

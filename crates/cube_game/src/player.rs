@@ -84,7 +84,7 @@ fn start(
     registry: Res<Registry>,
     keys: Res<ButtonInput<KeyCode>>,
     selected: Option<Res<crate::ui::Selected>>,
-    creatures: Query<(Entity, &Creature, &Transform)>,
+    creatures: Query<(Entity, &Creature, &Transform), Without<crate::creatures::Picture>>,
     controlled: Query<Entity, With<Controlled>>,
     mut cameras: Query<&mut Orbit>,
     mut begun: Local<bool>,

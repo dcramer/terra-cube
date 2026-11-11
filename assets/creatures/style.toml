@@ -87,7 +87,21 @@ clips = ["idle", "walk", "run", "jump", "fall", "land", "attack", "hurt", "die",
 [plans.flyer]
 pose = "in flight seen from directly above, both wings fully spread flat and straight out to the sides, perfectly symmetrical, legs tucked up against the body, tail fanned straight back, head straight forward"
 rig = "forge"
-clips = ["fly", "glide"]
+clips = ["fly", "glide", "perch"]
+max_stretch = 2.5
+
+# The same rig, for what beats its whole wing (a butterfly) and for what swims with its tail.
+# These are models built here of boxes (`[built]` in creature.toml, crates/forge/src/built.rs).
+[plans.flutterer]
+pose = "built here"
+rig = "forge"
+clips = ["flutter", "glide"]
+max_stretch = 2.5
+
+[plans.swimmer]
+pose = "built here"
+rig = "forge"
+clips = ["swim"]
 max_stretch = 1.2
 
 # Six legs or eight: insects, spiders, scorpions, crabs. Seen from above and to one side so

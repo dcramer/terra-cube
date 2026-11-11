@@ -51,6 +51,12 @@ Tripo's rig of a bird is no use: the crow (67 credits) came back with a leg name
 
 Tried end to end on the old crow's mesh with its skeleton taken off: rig, skin, both clips, checks and sheet all run. That mesh stands with folded wings, so it twists (its widest way is beak to tail); the path wants a model made for it. **Not yet done: any such model.** The hawk is set to this plan with its lock cleared (its concept was drawn standing), and the account had no credits the day this was written: `cargo forge build hawk --to concept`, look, then `cargo forge build hawk`, about 47 credits. Then the air's birds (`cube_game::air`, still shapes made and moved in code) can be drawn from it. Butterflies, dragonflies and fish can take the same rig with their own clips.
 
+### The small life of air and water is built here, of boxes (2026-11-11)
+
+`[built]` in a `creature.toml` (`crates/forge/src/built.rs`): a form (`bird`, `insect`, `fish`), a length, a span and four colours, and `forge finish` makes the model itself, of boxes at its true size, then rigs it with the rig above and makes its clips. No Tripo, no credits, and it is the world's own style. Six are made: `songbird`, `swallow`, `soarer` (the hawk overhead), `flutterby`, `darter` (a dragonfly), `minnow`. Plans: `flyer` (`fly`, `glide`, `perch` with the wings folded), `flutterer` (`flutter`, `glide`), `swimmer` (`swim`: a wave down the body, the tail widest). All pass `forge check`; `cargo forge sheet soarer` shows the wingbeat.
+
+The game draws them as `creatures::Picture`: a model and its clips with no body in the simulation, moved by `cube_game::air` as before (the paths, the flocking, the schools are unchanged). Until this day each was a shape made in `air.rs` with wings turned by hand, outside the pipeline.
+
 ## Gaits
 
 A gait is right when a foot that is down stays where it was put while the body goes over it. Forge holds every walk, run and sprint to that, and `check` measures it (`slide`, bar 25%).

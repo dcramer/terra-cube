@@ -108,6 +108,9 @@ pub struct Creature {
     /// with the wings spread is only how thick its body is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub span: Option<f32>,
+    /// A model made here of boxes, not at Tripo (`built`): the small life of air and water.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub built: Option<crate::built::Built>,
     #[serde(default = "auto", skip_serializing_if = "is_auto")]
     pub facing: String,
     /// Scales how far Tripo's walk and run swing the limbs; under 1 for a bulky body whose

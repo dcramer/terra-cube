@@ -1,0 +1,18 @@
+name = "Swallow"
+kind = "wildlife"
+plan = "flyer"
+subject = "a swallow, blue-black above and white below, with long narrow wings and a forked tail"
+height = 0.05
+
+# Made by forge of boxes, at its true size: no Tripo, no credits.
+[built]
+form = "bird"
+length = 0.15
+span = 0.33
+chord = 0.34
+tail = 0.6
+forked = true
+back = [0.05, 0.08, 0.22]
+belly = [0.80, 0.78, 0.72]
+wing = [0.05, 0.07, 0.17]
+mark = [0.03, 0.03, 0.05]

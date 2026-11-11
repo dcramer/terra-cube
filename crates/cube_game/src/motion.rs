@@ -108,7 +108,7 @@ fn mirror(mut commands: Commands, registry: Res<Registry>, mut live: ResMut<Live
 }
 
 /// A creature with no agent gets one where it stands; an agent whose creature is gone goes.
-fn enrol(mut commands: Commands, registry: Res<Registry>, terrain: Option<Res<Terrain>>, mut live: ResMut<Live>, mut new: Query<(Entity, &Creature, &mut Transform), Without<Mover>>, movers: Query<&Mover>) {
+fn enrol(mut commands: Commands, registry: Res<Registry>, terrain: Option<Res<Terrain>>, mut live: ResMut<Live>, mut new: Query<(Entity, &Creature, &mut Transform), (Without<Mover>, Without<crate::creatures::Picture>)>, movers: Query<&Mover>) {
     let Some(terrain) = terrain else { return };
     for (entity, creature, mut at) in &mut new {
         let Some(kind) = live.0.kind(&registry.0[creature.def].id) else { continue };

@@ -1,0 +1,25 @@
+# Measured by `cargo forge finish`; do not edit.
+height = 0.01
+length = 0.031060548
+width = 0.06
+walk_speed = 0.0
+run_speed = 0.0
+sprint_speed = 0.0
+triangles = 264
+joints = 7
+
+[clips.flutter]
+seconds = 0.4
+looping = true
+source = "made"
+
+[clips.glide]
+seconds = 3.0
+looping = true
+source = "made"
+
+[bones]
+head = "wing_r2"
+neck = "wing_r1"
+root = "body"
+tail = "aft"

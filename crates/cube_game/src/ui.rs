@@ -62,7 +62,7 @@ fn panel(
     terrain: Res<Terrain>,
     mut selected: ResMut<Selected>,
     mut debug: ResMut<Debug>,
-    mut creatures: Query<(Entity, &mut Creature, Option<&mut Wander>, &Transform, Has<Wild>)>,
+    mut creatures: Query<(Entity, &mut Creature, Option<&mut Wander>, &Transform, Has<Wild>), Without<crate::creatures::Picture>>,
     mut orbit: Query<&mut Orbit>,
     mut show_bodies: ResMut<crate::motion::ShowBodies>,
     menus: Res<crate::player::Menus>,

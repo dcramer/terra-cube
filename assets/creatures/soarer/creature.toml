@@ -1,0 +1,17 @@
+name = "Soaring hawk"
+kind = "wildlife"
+plan = "flyer"
+subject = "a hawk on the wing, broad brown wings with dark tips, pale beneath"
+height = 0.15
+
+# Made by forge of boxes, at its true size: no Tripo, no credits.
+[built]
+form = "bird"
+length = 0.5
+span = 1.25
+chord = 0.62
+tail = 0.45
+back = [0.27, 0.17, 0.09]
+belly = [0.60, 0.50, 0.36]
+wing = [0.30, 0.20, 0.11]
+mark = [0.08, 0.06, 0.04]

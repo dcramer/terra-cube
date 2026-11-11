@@ -356,6 +356,28 @@ fn flight(name: &str, sk: &Skeleton) -> Option<Clip> {
             pose.rotations[aft] = sk.turned(aft, nod(0.07 * (a + 0.5).sin()));
             pose.rotations[fore] = sk.turned(fore, nod(-0.04 * (a + 0.5).sin()));
         }),
+        // Down: the wings folded along the flanks, the head looking about.
+        "perch" => Clip::made("perch", true, 2.0, sk, |t, pose| {
+            let a = t * TAU;
+            wings(pose, -1.3, -0.25);
+            pose.rotations[fore] = sk.turned(fore, Quat::from_axis_angle(Vec3::Y, 0.25 * a.sin()) * nod(0.08 * (2.0 * a).sin()));
+            pose.rotations[aft] = sk.turned(aft, nod(0.06 * (a + 1.0).sin()));
+        }),
+        // A butterfly's beat: the whole wing as one, far up and far down, the body bobbing.
+        "flutter" => Clip::made("flutter", true, 0.4, sk, |t, pose| {
+            let a = t * TAU;
+            wings(pose, 1.05 * a.sin() + 0.25, 0.12 * (a - 0.6).sin());
+            pose.root_t = sk.root_moved(Vec3::Y * -0.05 * span * a.sin());
+        }),
+        // A fish: a wave down its length, the tail swinging widest, the side fins sculling.
+        "swim" => Clip::made("swim", true, 1.0, sk, |t, pose| {
+            let a = t * TAU;
+            let sway = |angle: f32| Quat::from_axis_angle(Vec3::Y, angle);
+            pose.rotations[body] = sk.turned(body, sway(0.1 * a.sin()));
+            pose.rotations[aft] = sk.turned(aft, sway(0.5 * (a - 1.0).sin()));
+            pose.rotations[fore] = sk.turned(fore, sway(-0.12 * (a - 0.4).sin()));
+            wings(pose, 0.25 * (a * 2.0).sin(), 0.0);
+        }),
         "glide" => Clip::made("glide", true, 3.0, sk, |t, pose| {
             let a = t * TAU;
             wings(pose, 0.14 + 0.03 * a.sin(), 0.1 + 0.05 * (2.0 * a + 0.6).sin());

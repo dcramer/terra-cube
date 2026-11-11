@@ -35,7 +35,7 @@ fn orbit(
     scroll: Res<AccumulatedMouseScroll>,
     time: Res<Time>,
     selected: Res<Selected>,
-    creatures: Query<&GlobalTransform, With<Creature>>,
+    creatures: Query<&GlobalTransform, (With<Creature>, Without<crate::creatures::Picture>)>,
     mut egui: bevy_egui::EguiContexts,
     controlled: Query<(), With<crate::player::Controlled>>,
 ) {

@@ -1,0 +1,16 @@
+name = "River fish"
+kind = "wildlife"
+plan = "swimmer"
+subject = "a river fish, olive above and silver below, with reddish fins"
+height = 0.07
+
+# Made by forge of boxes, at its true size: no Tripo, no credits.
+[built]
+form = "fish"
+length = 0.24
+span = 0.12
+tail = 0.3
+back = [0.20, 0.25, 0.12]
+belly = [0.62, 0.64, 0.60]
+wing = [0.55, 0.22, 0.12]
+mark = [0.50, 0.20, 0.10]

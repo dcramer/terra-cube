@@ -25,7 +25,7 @@ pub fn made(glb: &Glb) -> bool {
 }
 
 /// Gives an unrigged, spread-winged model its skeleton and skin.
-pub fn rig(glb: &mut Glb) -> Result<()> {
+pub fn rig(glb: &mut Glb, wings_along_x: bool) -> Result<()> {
     if !glb.array("skins").is_empty() {
         bail!("the model already has a skin: a flyer is rigged here, not at Tripo");
     }
@@ -56,7 +56,8 @@ pub fn rig(glb: &mut Glb) -> Result<()> {
     let (lo, hi) = all().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), p| (lo.min(p), hi.max(p)));
     let (middle, size) = ((lo + hi) / 2.0, hi - lo);
     // The wings lie along whichever way it is wider; the body along the other.
-    let (side, along) = if size.x >= size.z { (Vec3::X, Vec3::Z) } else { (Vec3::Z, Vec3::X) };
+    // (A model built here says which: a fish or a dragonfly is longer than it is wide.)
+    let (side, along) = if wings_along_x || size.x >= size.z { (Vec3::X, Vec3::Z) } else { (Vec3::Z, Vec3::X) };
     let (span, long) = (size.dot(side), size.dot(along));
     // The body's own middle, by its thickest part: the points near the centre line.
     let core: Vec<Vec3> = all().filter(|p| (*p - middle).dot(side).abs() < span * 0.06).collect();

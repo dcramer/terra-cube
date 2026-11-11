@@ -1,0 +1,17 @@
+name = "Songbird"
+kind = "wildlife"
+plan = "flyer"
+subject = "a small brown songbird with a pale breast"
+height = 0.05
+
+# Made by forge of boxes, at its true size: no Tripo, no credits.
+[built]
+form = "bird"
+length = 0.13
+span = 0.24
+chord = 0.5
+tail = 0.45
+back = [0.30, 0.20, 0.11]
+belly = [0.62, 0.50, 0.36]
+wing = [0.24, 0.16, 0.09]
+mark = [0.10, 0.08, 0.06]

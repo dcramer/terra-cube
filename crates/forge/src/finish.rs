@@ -68,13 +68,18 @@ fn ground_speed(sk: &Skeleton, roles: &Roles, clip: &Clip) -> Option<f32> {
 
 pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -> Result<Finished> {
     let max_slide = creature.slide.unwrap_or(max_slide);
-    let mut glb = Glb::read(source)?;
-    // What flies comes from Tripo unrigged and is given its bones here (`shaped`).
+    // A model built here of boxes has no file to read; any other is Tripo's export.
+    let mut glb = match &creature.built {
+        Some(built) => crate::built::model(built)?,
+        None => Glb::read(source)?,
+    };
+    // What flies or swims is given its bones here (`shaped`), whoever made its mesh.
     if plan.rig == "forge" {
-        crate::shaped::rig(&mut glb)?;
+        crate::shaped::rig(&mut glb, creature.built.is_some())?;
     }
     let skeleton = Skeleton::read(&glb)?;
-    let roles = Roles::read(&skeleton, Facing::parse(&creature.facing)?);
+    // (A model built here faces +z: it was built so.)
+    let roles = Roles::read(&skeleton, if creature.built.is_some() { Facing::Told(Vec3::Z) } else { Facing::parse(&creature.facing)? });
     // A four-legged creature with any other number of legs has a skeleton that is short of
     // one (Tripo's rig sometimes is) or one the reader gets wrong. Say so; do not make clips.
     if creature.plan == "quadruped" && roles.legs.len() != 4 {
@@ -83,6 +88,8 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -
 
     let (lo, hi) = bounds(&glb)?;
     let scale = match creature.span {
+        // (Built here, it is already its true size.)
+        _ if creature.built.is_some() => 1.0,
         Some(span) => span / (hi.x - lo.x).max(hi.z - lo.z).max(1e-5),
         None => creature.height / (hi.y - lo.y).max(1e-5),
     };
@@ -198,7 +205,7 @@ pub fn run(id: &str, style: &spec::Style) -> Result<Finished> {
     let creature: Creature = spec::load(&spec::dir(id).join("creature.toml"))?;
     let plan = style.plans.get(&creature.plan).with_context(|| format!("{id}: no plan `{}` in style.toml", creature.plan))?;
     let source = spec::work(id).join("rigged.glb");
-    if !source.exists() {
+    if !source.exists() && creature.built.is_none() {
         bail!("{id}: {} is missing; `cargo forge build {id}` fetches it", source.display());
     }
     let mut done = finish(&source, &creature, plan, style.checks.max_slide)?;

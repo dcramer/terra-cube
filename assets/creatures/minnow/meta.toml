@@ -1,0 +1,20 @@
+# Measured by `cargo forge finish`; do not edit.
+height = 0.07
+length = 0.312
+width = 0.11999999
+walk_speed = 0.0
+run_speed = 0.0
+sprint_speed = 0.0
+triangles = 252
+joints = 7
+
+[clips.swim]
+seconds = 1.0
+looping = true
+source = "made"
+
+[bones]
+head = "wing_r2"
+neck = "wing_r1"
+root = "body"
+tail = "aft"
