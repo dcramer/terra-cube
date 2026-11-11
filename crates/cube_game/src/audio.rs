@@ -143,7 +143,7 @@ fn creatures(mut commands: Commands, time: Res<Time>, mut bank: ResMut<Bank>, li
         let first = !heard.contains_key(&mover.id);
         let mine = heard.entry(mover.id).or_default();
         if first {
-            mine.calls = t + 4.0 + bank.roll() * 30.0;
+            mine.calls = t + 6.0 + bank.roll() * 80.0;
         }
         if mine.act != Some(agent.act) {
             match agent.act {
@@ -166,7 +166,7 @@ fn creatures(mut commands: Commands, time: Res<Time>, mut bank: ResMut<Bank>, li
         }
         // Its call: seldom, and only at the hours it is about.
         if t >= mine.calls && agent.dead.is_none() {
-            mine.calls = t + 14.0 + bank.roll() * 40.0;
+            mine.calls = t + 35.0 + bank.roll() * 80.0;
             let about = ecology::Niche { name: "", biomes: &[], water: kind.water, cover: kind.cover, hours: kind.hours }.about(live.0.when);
             if let Some(voice) = voice.filter(|_| !person && about > 0.4 && matches!(agent.act, Act::Idle | Act::Walk | Act::Eat)) {
                 bank.play(&mut commands, &voice, Some(at), loud * 0.7);

@@ -74,3 +74,7 @@ The real window, not an offscreen picture, runs on a server through Mesa's softw
 ## Reading Bevy
 
 Bevy 0.20's source and examples are on disk once built: `~/.cargo/registry/src/*/bevy-0.20.0/examples/`. Names changed in recent releases (`WorldAssetRoot`, `WorldInstanceReady`, `GlobalAmbientLight`, `RenderTarget` as a component, egui's `Panel`), so read the example for what you are about to write. The ones this code was written from: `animation/animated_mesh_control.rs`, `3d/render_to_texture.rs`, `window/screenshot.rs`, `app/headless_renderer.rs`.
+
+## Testing the window with no one at it
+
+`make window` starts the real game window on the Xvfb, sends it real key presses (`tools/xkeys/xkeys.py 'w:4 2 i'`: a key held for the seconds after the colon, `click`, `move:DX,DY`, `wait:S`) and judges the trace: W must walk the player, 2 put the torch in hand, I open the pack. It also leaves `shots/window.png`. Two things it needs that a scene does not: the software Vulkan driver (`lvp_icd.json`, from mesa-vulkan-drivers), because a graphics card will not present to an Xvfb (the game dies choosing a present mode); and keyboard focus, which with no window manager nothing has until `xkeys` gives it to the window. Headless scenes (`--scene`) stay the quick way to judge a picture; this is for input and the interface under real events.

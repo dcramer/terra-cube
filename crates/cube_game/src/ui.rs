@@ -65,7 +65,14 @@ fn panel(
     mut creatures: Query<(Entity, &mut Creature, Option<&mut Wander>, &Transform, Has<Wild>)>,
     mut orbit: Query<&mut Orbit>,
     mut show_bodies: ResMut<crate::motion::ShowBodies>,
+    menus: Res<crate::player::Menus>,
+    playing: Query<(), With<crate::player::Controlled>>,
 ) -> Result {
+    // While someone is being played the sandbox is out of the way, unless the admin panel
+    // (F1) is open: a player does not want a spawn list over the world.
+    if !playing.is_empty() && !menus.admin {
+        return Ok(());
+    }
     let ctx = contexts.ctx_mut()?;
     egui::Window::new("Sandbox").default_pos([8.0, 8.0]).default_width(260.0).show(ctx, |ui| {
         ui.heading("Spawn");
