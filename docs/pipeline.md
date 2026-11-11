@@ -45,6 +45,12 @@ A plan can also cut a preset that runs long (`trim`: clip → from, to, speed): 
 
 Tripo's one animal clip, a walk, is not used: measured, its forefeet never reach the ground and the feet that do slide at 90% to 180% of the body's speed. `made = ["attack"]` in a `creature.toml` makes a clip for that creature where its plan would take the preset (the troll: the overhead chop tore its skin at 94%).
 
+### What flies is rigged here, not at Tripo (2026-11-11)
+
+Tripo's rig of a bird is no use: the crow (67 credits) came back with a leg named as spine and a wing as tail, its wings folded where no bone could open them, and seven of its ten clips fail. So there is a plan `flyer` (`style.toml`): the concept is drawn from above with the wings spread flat, the model is made and exported and **not rigged at Tripo** (20 credits saved), and `forge finish` gives it its bones from its shape (`crates/forge/src/shaped.rs`): a body, a fore and an aft end, two bones along each wing, every point held by where it lies along the span and the body. The bones are ours, so the clips (`fly`, a wingbeat with the outer wing a little behind; `glide`) find them by name. A flyer's size is its `span` in `creature.toml`.
+
+Tried end to end on the old crow's mesh with its skeleton taken off: rig, skin, both clips, checks and sheet all run. That mesh stands with folded wings, so it twists (its widest way is beak to tail); the path wants a model made for it. **Not yet done: any such model.** The hawk is set to this plan with its lock cleared (its concept was drawn standing), and the account had no credits the day this was written: `cargo forge build hawk --to concept`, look, then `cargo forge build hawk`, about 47 credits. Then the air's birds (`cube_game::air`, still shapes made and moved in code) can be drawn from it. Butterflies, dragonflies and fish can take the same rig with their own clips.
+
 ## Gaits
 
 A gait is right when a foot that is down stays where it was put while the body goes over it. Forge holds every walk, run and sprint to that, and `check` measures it (`slide`, bar 25%).

@@ -69,6 +69,10 @@ fn ground_speed(sk: &Skeleton, roles: &Roles, clip: &Clip) -> Option<f32> {
 pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -> Result<Finished> {
     let max_slide = creature.slide.unwrap_or(max_slide);
     let mut glb = Glb::read(source)?;
+    // What flies comes from Tripo unrigged and is given its bones here (`shaped`).
+    if plan.rig == "forge" {
+        crate::shaped::rig(&mut glb)?;
+    }
     let skeleton = Skeleton::read(&glb)?;
     let roles = Roles::read(&skeleton, Facing::parse(&creature.facing)?);
     // A four-legged creature with any other number of legs has a skeleton that is short of
@@ -78,7 +82,10 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -
     }
 
     let (lo, hi) = bounds(&glb)?;
-    let scale = creature.height / (hi.y - lo.y).max(1e-5);
+    let scale = match creature.span {
+        Some(span) => span / (hi.x - lo.x).max(hi.z - lo.z).max(1e-5),
+        None => creature.height / (hi.y - lo.y).max(1e-5),
+    };
 
     // Clips: Tripo's under our names, then the made ones the plan asks for.
     let theirs = clips::read(&glb, &skeleton)?;

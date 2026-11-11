@@ -124,6 +124,7 @@ impl Glb {
         let width = match kind {
             "SCALAR" => 1,
             "VEC3" => 3,
+            "MAT4" => 16,
             _ => 4,
         };
         let mut accessor = json!({ "bufferView": view, "componentType": 5126, "count": data.len() / width, "type": kind });

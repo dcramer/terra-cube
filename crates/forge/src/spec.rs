@@ -104,6 +104,10 @@ pub struct Creature {
     pub subject: String,
     /// Metres to the top of the rest pose.
     pub height: f32,
+    /// For what flies: its wingspan, metres. Its size is set by this and not its height, which
+    /// with the wings spread is only how thick its body is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub span: Option<f32>,
     #[serde(default = "auto", skip_serializing_if = "is_auto")]
     pub facing: String,
     /// Scales how far Tripo's walk and run swing the limbs; under 1 for a bulky body whose

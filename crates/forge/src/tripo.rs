@@ -80,6 +80,10 @@ pub fn run(id: &str, creature: &Creature, plan: &Plan, style: &Style, until: &st
                     lock.project = r["project"].as_str().context("model made no project")?.to_owned();
                     r
                 }
+                // What flies is rigged here, from its shape (`shaped`): nothing is asked of
+                // Tripo's rigger. (The export below is still wanted: the model as first downloaded is
+                // packed in a way nothing here reads, and the export is plain.)
+                "rig" if plan.rig == "forge" => serde_json::json!({ "credits": 0.0 }),
                 "rig" => {
                     let mut args = vec![s("rig"), lock.project.clone(), s("--type"), plan.rig.clone(), s("-o"), path("rig.glb")];
                     if let Some(sk) = &plan.skeleton {

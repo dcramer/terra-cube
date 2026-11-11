@@ -249,6 +249,9 @@ pub fn close_loop(frames: &mut [Pose]) {
 }
 
 fn recipe(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option<&Pose>, upright: bool, metres: f32, gain: f32) -> Option<Clip> {
+    if let Some(clip) = flight(name, sk) {
+        return Some(clip);
+    }
     let had = |name: &str| have.iter().find(|c| c.name == name);
     let stance = Stance::new(sk, stand);
     // Four legs, two in front and two behind, or two legs under an upright body: gaits made
@@ -325,6 +328,44 @@ fn bow(sk: &Skeleton, roles: &Roles, pose: &mut Pose, angle: f32) {
 }
 
 /// Breathing, a slow look about, a swaying tail.
+/// The clips of what flies, for a skeleton made here (`shaped`): its bones are found by name,
+/// which ours can be. `fly` is a wingbeat, the outer wing a little behind the inner, the
+/// body riding up as the wings come down; `glide` is the wings held a little raised, giving
+/// in the air, the tail steering.
+fn flight(name: &str, sk: &Skeleton) -> Option<Clip> {
+    let bone = |n: &str| sk.joints.iter().position(|j| j.name == n);
+    let (body, fore, aft) = (bone("body")?, bone("fore")?, bone("aft")?);
+    let (l1, l2, r1, r2) = (bone("wing_l1")?, bone("wing_l2")?, bone("wing_r1")?, bone("wing_r2")?);
+    let side = (sk.position(l1) - sk.position(body)).normalize_or(Vec3::X);
+    let along = side.cross(Vec3::Y).normalize_or(Vec3::Z);
+    let span = sk.position(l2).distance(sk.position(r2)) * 2.0;
+    // Turned about the body's length, the wing on `side` rises with the angle and the other falls.
+    let lift = move |angle: f32| Quat::from_axis_angle(along, angle);
+    let nod = move |angle: f32| Quat::from_axis_angle(side, angle);
+    let wings = move |pose: &mut Pose, inner: f32, outer: f32| {
+        pose.rotations[l1] = sk.turned(l1, lift(inner));
+        pose.rotations[r1] = sk.turned(r1, lift(-inner));
+        pose.rotations[l2] = sk.turned(l2, lift(outer));
+        pose.rotations[r2] = sk.turned(r2, lift(-outer));
+    };
+    Some(match name {
+        "fly" => Clip::made("fly", true, 0.5, sk, |t, pose| {
+            let a = t * TAU;
+            wings(pose, 0.7 * a.sin() - 0.08, 0.5 * (a - 0.9).sin());
+            pose.root_t = sk.root_moved(Vec3::Y * -0.03 * span * a.sin());
+            pose.rotations[aft] = sk.turned(aft, nod(0.07 * (a + 0.5).sin()));
+            pose.rotations[fore] = sk.turned(fore, nod(-0.04 * (a + 0.5).sin()));
+        }),
+        "glide" => Clip::made("glide", true, 3.0, sk, |t, pose| {
+            let a = t * TAU;
+            wings(pose, 0.14 + 0.03 * a.sin(), 0.1 + 0.05 * (2.0 * a + 0.6).sin());
+            pose.root_t = sk.root_moved(Vec3::Y * 0.01 * span * a.sin());
+            pose.rotations[aft] = sk.turned(aft, Quat::from_axis_angle(Vec3::Y, 0.08 * a.sin()) * nod(0.03 * (2.0 * a).sin()));
+        }),
+        _ => return None,
+    })
+}
+
 fn idle(sk: &Skeleton, roles: &Roles) -> Clip {
     Clip::made("idle", true, 4.0, sk, |t, pose| {
         let a = t * TAU;

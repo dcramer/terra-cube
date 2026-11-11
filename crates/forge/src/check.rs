@@ -108,12 +108,17 @@ pub fn check(done: &Finished, required: &[String], bars: &Bars, max_stretch: f32
     let mut out = Vec::new();
     out.push(line(meta.triangles <= bars.max_triangles, "triangles", meta.triangles.to_string(), format!("≤ {}", bars.max_triangles)));
     out.push(line(meta.joints <= bars.max_joints, "joints", meta.joints.to_string(), format!("≤ {}", bars.max_joints)));
-    out.push(line(
-        roles.legs.len() >= 2 && !roles.head.is_empty(),
-        "roles",
-        format!("{} legs, head {}, tail {}, {} other", roles.legs.len(), roles.head.len(), roles.tail.len(), roles.others.len()),
-        "≥ 2 legs and a head".into(),
-    ));
+    if crate::shaped::made(&done.glb) {
+        // Rigged here from its shape: the bones are ours and all there, or it would not have finished.
+        out.push(line(sk.joints.len() == crate::shaped::BONES.len(), "roles", "a body, its two ends and two wings of two bones".into(), "rigged here".into()));
+    } else {
+        out.push(line(
+            roles.legs.len() >= 2 && !roles.head.is_empty(),
+            "roles",
+            format!("{} legs, head {}, tail {}, {} other", roles.legs.len(), roles.head.len(), roles.tail.len(), roles.others.len()),
+            "≥ 2 legs and a head".into(),
+        ));
+    }
     let missing: Vec<&str> = required.iter().filter(|c| !meta.clips.contains_key(*c)).map(String::as_str).collect();
     out.push(line(missing.is_empty(), "clips", format!("{} of {}{}", required.len() - missing.len(), required.len(), if missing.is_empty() { String::new() } else { format!(", missing {}", missing.join(" ")) }), "all".into()));
 

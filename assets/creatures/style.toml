@@ -80,6 +80,16 @@ pose = "standing on both feet seen from the side and slightly in front, wings he
 rig = "other"
 clips = ["idle", "walk", "run", "jump", "fall", "land", "attack", "hurt", "die", "eat"]
 
+# What flies, on the wing. Drawn from above with the wings spread flat and straight out, and
+# not rigged at Tripo (its rig of a bird misnames every limb and cannot open a folded wing):
+# forge gives it bones from its shape (`rig = "forge"`, crates/forge/src/shaped.rs). A
+# creature of this plan gives its `span`, not its height.
+[plans.flyer]
+pose = "in flight seen from directly above, both wings fully spread flat and straight out to the sides, perfectly symmetrical, legs tucked up against the body, tail fanned straight back, head straight forward"
+rig = "forge"
+clips = ["fly", "glide"]
+max_stretch = 1.2
+
 # Six legs or eight: insects, spiders, scorpions, crabs. Seen from above and to one side so
 # every leg is drawn apart from the others.
 [plans.crawler]

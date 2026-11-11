@@ -1,6 +1,6 @@
 # What `cargo forge build` has made at Tripo. Delete a step (and those after it) to make it again.
 project = ""
-steps = ["concept"]
+steps = []
 
 [credits]
 concept = 4.0

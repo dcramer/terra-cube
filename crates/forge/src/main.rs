@@ -3,7 +3,7 @@
 //!
 //! Map: `spec` (the files) · `tripo` (paid steps, once each) · `finish` (stand, name and make
 //! clips, measure) · `rig` (skeleton, roles) · `clips` (clip recipes) · `check` (the bars) ·
-//! `glb` (the file format) · `cubes` (a model rebuilt from little cubes).
+//! `shaped` (a rig made here for what flies) · `glb` (the file format) · `cubes` (a model rebuilt from little cubes).
 
 mod check;
 mod clips;
@@ -12,6 +12,7 @@ mod finish;
 mod glb;
 mod looks;
 mod rig;
+mod shaped;
 mod spec;
 mod tripo;
 
@@ -162,7 +163,7 @@ fn run() -> Result<bool> {
             std::fs::create_dir_all(&dir)?;
             let mut name = id.replace(['-', '_'], " ");
             name[..1].make_ascii_uppercase();
-            let c = Creature { name, kind, plan, subject: subject.clone(), height, facing: "auto".into(), gait_gain: 1.0, slide: None, ease: 1.0, made: Vec::new(), without: Vec::new(), look: None, look_of: None };
+            let c = Creature { name, kind, plan, subject: subject.clone(), height, span: None, facing: "auto".into(), gait_gain: 1.0, slide: None, ease: 1.0, made: Vec::new(), without: Vec::new(), look: None, look_of: None };
             spec::save(&dir.join("creature.toml"), &c, "")?;
             println!("wrote {}. Next: cargo forge build {id} --to concept", dir.join("creature.toml").display());
         }

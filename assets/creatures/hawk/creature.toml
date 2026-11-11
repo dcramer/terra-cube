@@ -1,8 +1,9 @@
 name = "Hawk"
 kind = "wildlife"
-plan = "bird"
+plan = "flyer"
 subject = "a hawk with a hooked yellow beak, barred chest and broad brown wings"
 height = 0.5
+span = 1.2
 
 [life]
 temper = "hunter"
