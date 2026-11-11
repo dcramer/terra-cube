@@ -44,7 +44,7 @@ fn limb(world: &mut World, a: Vec3, b: Vec3, ra: f32, rb: f32, bark: Block) {
                     let c = middle + IVec3::new(x, y, z);
                     let d = ((c.as_vec3() + 0.5) * CELL).distance(at);
                     // Never thinner than one cell: a twig is still there.
-                    if (d <= r || c == middle) && matches!(world.get(c), Block::Air | Block::Leaves | Block::Needles | Block::Tuft | Block::Flower) {
+                    if (d <= r || c == middle) && (world.get(c) == Block::Air || world.get(c).foliage() || world.get(c).sprig()) {
                         world.set(c, bark);
                     }
                 }
@@ -97,6 +97,8 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
     let clear = foot.y + 3.5;
     match kind {
         Tree::Oak => {
+            // An old oak's leaves are deep; a younger one's the common green.
+            let leaf = if age > 0.55 && rng.chance(0.7) { Block::LeavesDeep } else { Block::Leaves };
             let base = 0.3 + 0.3 * age;
             let fork = foot + Vec3::Y * (3.6 + 2.6 * age) + lean(rng, 0.5);
             bole(world, foot, fork, base, base * 0.75, Block::Wood, rng);
@@ -111,20 +113,20 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
                 limb(world, fork, elbow, base * 0.55, base * 0.38, Block::Wood);
                 limb(world, elbow, end, base * 0.38, 0.1, Block::Wood);
                 let size = 1.5 + 0.9 * age + rng.between(-0.2, 0.4);
-                clump(world, end + Vec3::Y * size * 0.25, Vec3::new(size, size * 0.72, size), Block::Leaves, clear, rng);
+                clump(world, end + Vec3::Y * size * 0.25, Vec3::new(size, size * 0.72, size), leaf, clear, rng);
                 // A side shoot off the elbow, with a smaller clump.
                 if rng.chance(0.7) {
                     let off = way + rng.between(0.7, 1.3) * if rng.chance(0.5) { 1.0 } else { -1.0 };
                     let twig = elbow + Vec3::new(off.cos(), 0.6, off.sin()) * (1.2 + 1.2 * age);
                     limb(world, elbow, twig, base * 0.3, 0.08, Block::Wood);
-                    clump(world, twig, Vec3::new(1.1, 0.8, 1.1) * (1.0 + 0.5 * age), Block::Leaves, clear, rng);
+                    clump(world, twig, Vec3::new(1.1, 0.8, 1.1) * (1.0 + 0.5 * age), leaf, clear, rng);
                 }
             }
             // The leader, and the top of the crown over it.
             let top = fork + Vec3::Y * (2.2 + 2.0 * age) + lean(rng, 0.6);
             limb(world, fork, top, base * 0.5, 0.1, Block::Wood);
             let size = 1.7 + 1.0 * age;
-            clump(world, top, Vec3::new(size, size * 0.75, size), Block::Leaves, clear, rng);
+            clump(world, top, Vec3::new(size, size * 0.75, size), leaf, clear, rng);
         }
         Tree::Birch => {
             let base = 0.14 + 0.1 * age;
@@ -143,9 +145,9 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
                 let end = from + Vec3::new(way.cos() * 0.6, 0.8, way.sin() * 0.6) * long;
                 limb(world, from, end, base * 0.5, 0.05, Block::Birch);
                 let size = 0.8 + 0.5 * (1.0 - up) + 0.3 * age;
-                clump(world, end, Vec3::new(size, size * 0.8, size), Block::Leaves, clear, rng);
+                clump(world, end, Vec3::new(size, size * 0.8, size), Block::LeavesPale, clear, rng);
             }
-            clump(world, top, Vec3::new(0.9, 1.1, 0.9), Block::Leaves, clear, rng);
+            clump(world, top, Vec3::new(0.9, 1.1, 0.9), Block::LeavesPale, clear, rng);
         }
         Tree::Pine => {
             let base = 0.25 + 0.2 * age;
@@ -195,7 +197,7 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
                 let end = high + Vec3::new(way.cos(), -0.1, way.sin()) * long * 0.6;
                 limb(world, fork, high, base * 0.5, base * 0.3, Block::Wood);
                 limb(world, high, end, base * 0.3, 0.08, Block::Wood);
-                clump(world, high.lerp(end, 0.5) + Vec3::Y * 0.3, Vec3::new(1.8, 1.0, 1.8), Block::Leaves, foot.y + 1.2, rng);
+                clump(world, high.lerp(end, 0.5) + Vec3::Y * 0.3, Vec3::new(1.8, 1.0, 1.8), Block::LeavesPale, foot.y + 1.2, rng);
                 // Curtains: strands hanging from the limb's end almost to the ground.
                 for _ in 0..7 {
                     let at = end + Vec3::new(rng.between(-1.2, 1.2), 0.0, rng.between(-1.2, 1.2));
@@ -204,12 +206,12 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
                     for down in 0..(hang / CELL) as i32 {
                         let strand = c - IVec3::Y * down;
                         if world.get(strand) == Block::Air {
-                            world.set(strand, Block::Leaves);
+                            world.set(strand, Block::LeavesPale);
                         }
                     }
                 }
             }
-            clump(world, fork + Vec3::Y * 2.2, Vec3::new(2.2, 1.3, 2.2), Block::Leaves, foot.y + 1.5, rng);
+            clump(world, fork + Vec3::Y * 2.2, Vec3::new(2.2, 1.3, 2.2), Block::LeavesPale, foot.y + 1.5, rng);
         }
         Tree::Snag => {
             let base = 0.28 + 0.2 * age;
@@ -238,18 +240,20 @@ pub fn young(world: &mut World, foot: IVec3, needles: bool, rng: &mut Rng) {
             up += 0.7;
         }
     } else {
+        let leaf = [Block::Leaves, Block::LeavesPale, Block::LeavesDeep][rng.below(3)];
         let size = 0.7 + tall * 0.18;
-        clump(world, top - Vec3::Y * size * 0.3, Vec3::new(size, size * 0.9, size), Block::Leaves, foot.y + 1.0, rng);
-        clump(world, top - Vec3::Y * size + Vec3::new(rng.between(-0.5, 0.5), 0.0, rng.between(-0.5, 0.5)), Vec3::splat(size * 0.7), Block::Leaves, foot.y + 0.9, rng);
+        clump(world, top - Vec3::Y * size * 0.3, Vec3::new(size, size * 0.9, size), leaf, foot.y + 1.0, rng);
+        clump(world, top - Vec3::Y * size + Vec3::new(rng.between(-0.5, 0.5), 0.0, rng.between(-0.5, 0.5)), Vec3::splat(size * 0.7), leaf, foot.y + 0.9, rng);
     }
 }
 
 /// A bush: two or three clumps low on the ground.
 pub fn bush(world: &mut World, foot: IVec3, rng: &mut Rng) {
     let foot = (foot.as_vec3() + Vec3::new(0.5, 0.0, 0.5)) * CELL;
+    let leaf = [Block::Leaves, Block::LeavesDeep][rng.below(2)];
     for _ in 0..2 + rng.below(2) {
         let at = foot + Vec3::new(rng.between(-0.5, 0.5), rng.between(0.3, 0.6), rng.between(-0.5, 0.5));
-        clump(world, at, Vec3::new(rng.between(0.5, 0.9), rng.between(0.4, 0.7), rng.between(0.5, 0.9)), Block::Leaves, foot.y, rng);
+        clump(world, at, Vec3::new(rng.between(0.5, 0.9), rng.between(0.4, 0.7), rng.between(0.5, 0.9)), leaf, foot.y, rng);
     }
 }
 
@@ -271,17 +275,30 @@ pub fn stump(world: &mut World, foot: IVec3, rng: &mut Rng) {
     bole(world, foot, foot + Vec3::Y * rng.between(0.35, 0.8), thick, thick * 0.9, Block::Wood, rng);
 }
 
-/// A boulder about `size` metres across, shaped to the bit (5 cm), not the cell: three or four
-/// rounded lumps run together and sunk a little into the ground, so it has shoulders and a
-/// lean and is not a ball.
+/// A boulder about `size` metres across, shaped to the bit (5 cm): a block of stone with
+/// flat faces struck off it at angles, as rock breaks, and one or two smaller pieces lying
+/// against it. Not a ball: a ball is what a pebble is, and nothing else.
 pub fn boulder(world: &mut World, foot: IVec3, size: f32, rng: &mut Rng) {
     let foot = (foot.as_vec3() + Vec3::new(0.5, 0.0, 0.5)) * CELL;
-    let main = Vec3::new(size * rng.between(0.8, 1.15), size * rng.between(0.55, 0.85), size * rng.between(0.8, 1.15));
-    world.ellipsoid(foot + Vec3::Y * main.y * 0.45, main, Block::Stone, true);
-    for _ in 0..2 + rng.below(2) {
+    let stone = [Block::Stone, Block::Stone, Block::Slate, Block::Chalk][rng.below(4)];
+    let rock = |world: &mut World, middle: Vec3, radii: Vec3, rng: &mut Rng| {
+        // Seven to ten faces: each a plane across the stone, at its own angle and depth.
+        let faces: Vec<(Vec3, f32)> = (0..7 + rng.below(4))
+            .map(|i| {
+                let (turn, tilt) = (rng.between(0.0, TAU), if i == 0 { 1.4 } else { rng.between(-0.5, 1.2) });
+                (Vec3::new(turn.cos() * tilt.cos(), tilt.sin(), turn.sin() * tilt.cos()), rng.between(0.45, 0.8))
+            })
+            .collect();
+        world.shape(middle - radii, middle + radii, |p| {
+            let q = (p - middle) / radii;
+            q.length_squared() < 1.0 && faces.iter().all(|(n, d)| q.dot(*n) < *d)
+        }, stone, true);
+    };
+    let main = Vec3::new(size * rng.between(0.8, 1.2), size * rng.between(0.7, 1.1), size * rng.between(0.8, 1.2));
+    rock(world, foot + Vec3::Y * main.y * 0.3, main, rng);
+    for _ in 0..1 + rng.below(2) {
         let way = rng.between(0.0, TAU);
-        let lump = main * rng.between(0.45, 0.7);
-        let at = foot + Vec3::new(way.cos() * main.x, 0.0, way.sin() * main.z) * rng.between(0.45, 0.8) + Vec3::Y * lump.y * rng.between(0.3, 0.9);
-        world.ellipsoid(at, lump, Block::Stone, true);
+        let piece = main * rng.between(0.3, 0.5);
+        rock(world, foot + Vec3::new(way.cos() * main.x, 0.0, way.sin() * main.z) * rng.between(0.75, 1.05) + Vec3::Y * piece.y * 0.3, piece, rng);
     }
 }

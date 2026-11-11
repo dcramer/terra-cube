@@ -289,6 +289,9 @@ pub struct Sim {
     next: u32,
 }
 
+/// The fastest anything turns, radians a second: a full turn about in a third of a second.
+const TURN_RATE: f32 = 10.0;
+
 fn turn_between(from: f32, to: f32) -> f32 {
     (to - from + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
 }
@@ -390,8 +393,14 @@ impl Sim {
             // Facing follows the way it goes, eased.
             let speed = agent.body.ground_speed();
             agent.facing_before = agent.facing;
-            if let Some(want) = agent.turn_to.or((speed > 0.3).then(|| agent.body.vel.x.atan2(agent.body.vel.z))) {
-                agent.facing += turn_between(agent.facing, want) * (1.0 - (-14.0 * DT).exp());
+            // It turns to where it is steered, not to where it happens to be sliding: facing
+            // that followed velocity lagged every change of direction and swung wide. Eased
+            // close to, and no faster than a turn rate, so a reversal is a quick turn about
+            // and not a flip. Left alone it keeps the way it faced.
+            let steered = (intent.dir.length() > 0.1).then(|| intent.dir.x.atan2(intent.dir.y));
+            if let Some(want) = agent.turn_to.or(steered) {
+                let most = TURN_RATE * DT;
+                agent.facing += (turn_between(agent.facing, want) * (1.0 - (-16.0 * DT).exp())).clamp(-most, most);
             }
 
             agent.airborne = if agent.body.grounded || agent.body.swimming { 0.0 } else { agent.airborne + DT };

@@ -64,15 +64,31 @@ pub enum Block {
     Tuft,
     Flower,
     Reed,
+    /// Foliage of other trees: pale and yellow-green (birch, willow), and deep (an old oak).
+    LeavesPale,
+    LeavesDeep,
+    /// Stone in other beds: a dark band and a pale one, so a cliff shows how it was laid down.
+    Slate,
+    Chalk,
+    /// Moss over stone, and the brown litter of fallen leaves under trees.
+    Moss,
+    Litter,
+    /// More ground cover: a fern's wide fronds, a mushroom.
+    Fern,
+    Mushroom,
 }
 
 impl Block {
     pub fn solid(self) -> bool {
-        !matches!(self, Block::Air | Block::Water | Block::Tuft | Block::Flower | Block::Reed)
+        !matches!(self, Block::Air | Block::Water) && !self.sprig()
     }
     /// Whether it is ground cover: drawn as a few blades, not as a cube.
     pub fn sprig(self) -> bool {
-        matches!(self, Block::Tuft | Block::Flower | Block::Reed)
+        matches!(self, Block::Tuft | Block::Flower | Block::Reed | Block::Fern | Block::Mushroom)
+    }
+    /// Leaves or needles: what a crown is made of.
+    pub fn foliage(self) -> bool {
+        matches!(self, Block::Leaves | Block::LeavesPale | Block::LeavesDeep | Block::Needles)
     }
     /// Hides the faces of neighbours behind it. A broken cell may have gaps, so it does not.
     pub fn opaque(self) -> bool {
@@ -97,6 +113,14 @@ impl Block {
             Block::Tuft => ([0.30, 0.50, 0.12], [0.22, 0.42, 0.10]),
             Block::Flower => ([0.85, 0.70, 0.12], [0.22, 0.42, 0.10]),
             Block::Reed => ([0.55, 0.50, 0.24], [0.42, 0.44, 0.18]),
+            Block::LeavesPale => ([0.36, 0.50, 0.12], [0.28, 0.42, 0.10]),
+            Block::LeavesDeep => ([0.09, 0.27, 0.08], [0.07, 0.22, 0.07]),
+            Block::Slate => ([0.19, 0.20, 0.23], [0.16, 0.17, 0.20]),
+            Block::Chalk => ([0.46, 0.44, 0.40], [0.41, 0.39, 0.36]),
+            Block::Moss => ([0.20, 0.33, 0.09], [0.25, 0.26, 0.24]),
+            Block::Litter => ([0.26, 0.17, 0.07], [0.20, 0.13, 0.07]),
+            Block::Fern => ([0.10, 0.30, 0.10], [0.09, 0.27, 0.09]),
+            Block::Mushroom => ([0.55, 0.14, 0.08], [0.70, 0.66, 0.56]),
         }
     }
 }
@@ -193,28 +217,29 @@ impl World {
         self.ellipsoid(middle, Vec3::splat(radius), b, false);
     }
 
-    /// Makes everything inside an ellipsoid (metres) `b`, to the bit. Cells wholly inside are
-    /// set whole; only the ones the surface cuts through break. With `only_air` it fills air
-    /// and leaves what is there: a stone set on the ground, not through it.
+    /// Makes everything inside an ellipsoid (metres) `b`, to the bit. With `only_air` it fills
+    /// air and leaves what is there: a stone set on the ground, not through it.
     pub fn ellipsoid(&mut self, middle: Vec3, radii: Vec3, b: Block, only_air: bool) {
-        let (lo, hi) = (((middle - radii) / CELL).floor().as_ivec3(), ((middle + radii) / CELL).floor().as_ivec3());
-        let inside = |p: Vec3| ((p - middle) / radii).length_squared() < 1.0;
+        self.shape(middle - radii, middle + radii, |p| ((p - middle) / radii).length_squared() < 1.0, b, only_air);
+    }
+
+    /// Makes everything inside a convex shape `b`, to the bit: `inside` says whether a point
+    /// (metres) is in it, and it lies between `lo` and `hi`. Cells wholly inside are set
+    /// whole; only the ones its surface cuts through break.
+    pub fn shape(&mut self, lo: Vec3, hi: Vec3, inside: impl Fn(Vec3) -> bool, b: Block, only_air: bool) {
+        let (lo, hi) = ((lo / CELL).floor().as_ivec3(), (hi / CELL).floor().as_ivec3());
         for y in lo.y..=hi.y {
             for z in lo.z..=hi.z {
                 for x in lo.x..=hi.x {
                     let cell = IVec3::new(x, y, z);
                     let was = self.get(cell);
-                    if only_air && was != Block::Air && was != Block::Broken && was.solid() {
+                    if only_air && was != Block::Broken && was.solid() {
                         continue;
                     }
-                    // The cell's eight corners: all in, it is set whole; all out and its
-                    // middle out, it is left.
+                    // The cell's eight corners: all in, it is set whole (the shape is convex).
                     let corners = (0..8).filter(|i| inside((cell + IVec3::new(i & 1, i >> 1 & 1, i >> 2 & 1)).as_vec3() * CELL)).count();
                     if corners == 8 && (!only_air || !was.solid()) {
                         self.set(cell, b);
-                        continue;
-                    }
-                    if corners == 0 && !inside((cell.as_vec3() + 0.5) * CELL) && radii.min_element() > CELL {
                         continue;
                     }
                     for i in 0..SPLIT * SPLIT * SPLIT {

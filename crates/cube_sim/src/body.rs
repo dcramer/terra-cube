@@ -14,7 +14,8 @@ use glam::{IVec3, Vec2, Vec3};
 pub struct Tuning {
     /// Metres a second, squared, downward.
     pub gravity: f32,
-    /// Upward speed a jump starts with. 6.9 with gravity 22 clears two cells (1.08 m).
+    /// Upward speed a jump starts with. 8.2 with gravity 22 rises 1.5 m: over a ledge at chest
+    /// height. It was 6.9 (1.08 m), which felt like a hop.
     pub jump_speed: f32,
     /// How fast ground speed changes toward what is asked, m/s²: up to a run in about a fifth
     /// of a second, so starts and turns have weight without feeling late.
@@ -37,7 +38,7 @@ pub struct Tuning {
 
 impl Default for Tuning {
     fn default() -> Self {
-        Self { gravity: 22.0, jump_speed: 6.9, ground_accel: 18.0, ground_decel: 26.0, short_jump: 2.4, air_accel: 7.0, step: 0.55, max_fall: 25.0, coyote: 0.1, swim: 0.55 }
+        Self { gravity: 22.0, jump_speed: 8.2, ground_accel: 18.0, ground_decel: 26.0, short_jump: 2.4, air_accel: 7.0, step: 0.55, max_fall: 25.0, coyote: 0.1, swim: 0.55 }
     }
 }
 
@@ -438,10 +439,10 @@ mod tests {
             assert!(b.grounded && b.pos.y == 1.0);
             top
         };
-        // Held, it clears a metre; tapped, it is a hop of under half of one.
+        // Held, it clears a metre and a half; tapped, it is a hop of under half of that.
         let (held, tapped) = (rise(&mut b, true), rise(&mut b, false));
-        assert!(held > 1.0 && held < 1.3, "rose {held}");
-        assert!(tapped > 0.25 && tapped < 0.5, "hopped {tapped}");
+        assert!(held > 1.4 && held < 1.7, "rose {held}");
+        assert!(tapped > 0.3 && tapped < 0.75, "hopped {tapped}");
         // Held, it jumps again only once back on the ground, and a ceiling stops it.
         let mut w = w;
         w.fill(Vec3::new(0.0, 3.0, 0.0), Vec3::new(0.5, 3.5, 0.5), Block::Stone); // 0.25 m of headroom

@@ -196,9 +196,34 @@ pub fn generate(seed: u32, radius: i32) -> (World, Land) {
     // Snow lies half a metre deep, soil two metres, and the river's bed is gravel where it is
     // over half a metre down.
     let (snow, soil, deep) = (cells(0.5), cells(2.0), cells(1.0));
+    let seed = land.seed;
     for z in -span..span {
         for x in -span..span {
             let (h, biome) = (land.height(x, z), land.biome(x, z));
+            let (xm, zm) = (x as f32 * CELL, z as f32 * CELL);
+            // Stone lies in beds a metre or two thick that dip and roll: a dark band, a pale
+            // one, the grey between. A cliff then shows how it was laid down.
+            let dip = fbm(xm / 40.0, zm / 40.0, seed + 80) * 7.0 + xm * 0.04;
+            let bed = |y: i32| match (((y as f32 * CELL + dip) / 1.4).floor() as i32).rem_euclid(7) {
+                0 => Block::Slate,
+                3 | 4 => Block::Chalk,
+                _ => Block::Stone,
+            };
+            // On rock that is not steep: moss where it is low and damp, loose stone under a
+            // cliff, bare stone elsewhere.
+            let damp = fbm(xm / 35.0, zm / 35.0, seed + 21);
+            let under_cliff = (-2..=2).any(|dz| (-2..=2).any(|dx| land.height(x + dx, z + dz) >= h + cells(1.5)));
+            let cap = if biome != Biome::Rock || land.slope(x, z) > 1 {
+                None
+            } else if under_cliff {
+                Some(Block::Gravel)
+            } else if damp > 0.47 && h < SEA + cells(22.0) && hash2(x, z, seed + 81) < 0.8 {
+                Some(Block::Moss)
+            } else {
+                None
+            };
+            // Under trees the ground is leaf litter in drifts, forest turf between.
+            let litter = fbm(xm / 3.5, zm / 3.5, seed + 82) > 0.56;
             world.set_column(x, z, 0, h.max(SEA), |y| {
                 let depth = h - 1 - y;
                 if y >= h {
@@ -206,8 +231,10 @@ pub fn generate(seed: u32, radius: i32) -> (World, Land) {
                 }
                 match biome {
                     Biome::Snow if depth < snow => Block::Snow,
-                    Biome::Rock | Biome::Snow => Block::Stone,
-                    _ if depth > soil => Block::Stone,
+                    Biome::Rock if depth == 0 && cap.is_some() => cap.unwrap(),
+                    Biome::Rock | Biome::Snow => bed(y),
+                    _ if depth > soil => bed(y),
+                    Biome::Forest if depth == 0 && litter => Block::Litter,
                     Biome::Water if h < SEA - deep => Block::Gravel,
                     Biome::Water | Biome::Shore => Block::Sand,
                     Biome::Forest if depth == 0 => Block::Turf,
@@ -291,7 +318,9 @@ fn plant(world: &mut World, land: &mut Land) {
             let (thick, lot) = (fbm(x as f32 * CELL / 9.0, z as f32 * CELL / 9.0, seed + 70), hash2(x, z, seed + 71));
             let cover = match biome {
                 Biome::Meadow if lot < (thick - 0.35) * 0.9 => Some(if hash2(x, z, seed + 72) < 0.14 { Block::Flower } else { Block::Tuft }),
-                Biome::Forest if lot < (thick - 0.42) * 0.5 => Some(Block::Tuft),
+                Biome::Forest if lot < (thick - 0.38) * 0.7 => Some(if hash2(x, z, seed + 72) < 0.75 { Block::Fern } else { Block::Tuft }),
+                Biome::Forest if hash2(x, z, seed + 73) < 0.012 => Some(Block::Mushroom),
+                Biome::Rock if lot < 0.03 && world.get(on - IVec3::Y) == Block::Moss => Some(Block::Fern),
                 Biome::Shore if lot < 0.22 && land.height(x, z) <= SEA => Some(Block::Reed),
                 _ => None,
             };

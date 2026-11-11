@@ -96,11 +96,17 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                 // bed, the sea does not.
                 let depth = if liquid { (1..=crate::cells(4.0)).take_while(|d| near.get(local - IVec3::Y * *d) == Block::Water).count() } else { 0 };
                 let alpha = if liquid { 0.42 + depth as f32 * CELL * 0.14 } else { 1.0 };
-                if matches!(block, Block::Grass | Block::Turf | Block::Leaves) {
+                if matches!(block, Block::Grass | Block::Turf | Block::Moss | Block::Litter) || block.foliage() {
                     // Patches: lighter and yellower here, deeper there.
                     let drift = patch(cell) - 0.5;
                     tint *= 1.0 + drift * 0.35;
                     warm = drift * 0.25;
+                }
+                if block.foliage() {
+                    // A crown has depth: leaves under leaves are in their shade, the ones on
+                    // top catch the sun. Without it a tree is one flat green.
+                    let over = (1..=3).filter(|up| near.get(local + IVec3::Y * *up).foliage()).count();
+                    tint *= [1.14, 0.94, 0.8, 0.68][over];
                 }
                 for (n, u, v) in FACES {
                     // The underside of the world is never seen.
@@ -213,6 +219,28 @@ fn blade(m: &mut MeshData, cell: IVec3, lo: IVec3, hi: IVec3, colour: [f32; 3]) 
 fn sprig(cell: IVec3, block: Block, m: &mut MeshData) {
     let (top, side) = block.colors();
     let roll = |n: i32| hash(cell * 7 + IVec3::splat(n));
+    if block == Block::Mushroom {
+        // A pale stem and a cap three bits across, one or two to a cell.
+        for i in 0..1 + (roll(0) * 2.0) as i32 {
+            let (x, z) = (1 + (roll(i * 3 + 1) * 3.0) as i32, 1 + (roll(i * 3 + 2) * 3.0) as i32);
+            let tall = 1 + (roll(i + 9) * 2.0) as i32;
+            blade(m, cell, IVec3::new(x, 0, z), IVec3::new(x + 1, tall, z + 1), side);
+            blade(m, cell, IVec3::new(x - 1, tall, z - 1).max(IVec3::ZERO), IVec3::new(x + 2, tall + 1, z + 2).min(IVec3::splat(SPLIT)), top);
+        }
+        return;
+    }
+    if block == Block::Fern {
+        // Fronds: low wide slabs fanning out from the middle, each a little higher than the last.
+        for i in 0..4 {
+            let (dx, dz) = [(1, 0), (-1, 0), (0, 1), (0, -1)][i as usize];
+            let tall = 1 + (roll(i + 3) * 3.0) as i32;
+            let tint = 0.85 + 0.3 * roll(i + 20);
+            let (lo, hi) = (IVec3::new(2 + dx.min(0) * 2, tall - 1, 2 + dz.min(0) * 2), IVec3::new(3 + dx.max(0) * 2, tall, 3 + dz.max(0) * 2));
+            blade(m, cell, lo, hi, top.map(|c| c * tint));
+        }
+        blade(m, cell, IVec3::new(2, 0, 2), IVec3::new(3, 2, 3), side);
+        return;
+    }
     let blades = if block == Block::Flower { 2 } else { 3 + (roll(0) * 3.0) as i32 };
     for i in 0..blades {
         let (x, z) = ((roll(i * 3 + 1) * SPLIT as f32) as i32 % SPLIT, (roll(i * 3 + 2) * SPLIT as f32) as i32 % SPLIT);
@@ -286,7 +314,7 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
                 let (top, side_colour) = block.colors();
                 let mut tint = 0.9 + 0.2 * hash(cell);
                 let mut warm = 0.0;
-                if matches!(block, Block::Grass | Block::Turf | Block::Leaves) {
+                if matches!(block, Block::Grass | Block::Turf | Block::Moss | Block::Litter) || block.foliage() {
                     let drift = patch(cell) - 0.5;
                     tint *= 1.0 + drift * 0.35;
                     warm = drift * 0.25;

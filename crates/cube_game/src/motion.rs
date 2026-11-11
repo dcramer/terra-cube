@@ -148,7 +148,10 @@ fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, mut l
         if agent.driver == Driver::Stand {
             continue;
         }
-        m.lift = (m.lift - std::mem::take(&mut agent.stepped)) * (-14.0 * dt).exp();
+        // The model eases after a step so it does not pop, but never trails the body by more
+        // than a few centimetres: on a climb the steps come sixteen a second, and an uncapped
+        // lag put the feet a third of a metre inside the hill.
+        m.lift = ((m.lift - std::mem::take(&mut agent.stepped)) * (-22.0 * dt).exp()).clamp(-0.08, 0.08);
         transform.translation = agent.before.lerp(agent.body.pos, between) + Vec3::Y * m.lift;
 
         let speed = agent.body.ground_speed();

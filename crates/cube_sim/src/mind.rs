@@ -118,11 +118,11 @@ impl Nerve {
         let up = (step / CELL) as i32;
         Nerve { up, down: up * 2, step: up }
     }
-    /// The same creature in a hurry: it jumps what a jump clears (a metre) if that is more
+    /// The same creature in a hurry: it jumps what a jump clears with room (1.25 m) if that is more
     /// than its step, and drops three metres or six of its steps.
     fn hurried(step: f32) -> Self {
         let up = (step / CELL) as i32;
-        Nerve { up: up.max((1.0 / CELL) as i32), down: (up * 6).max((3.0 / CELL) as i32), step: up }
+        Nerve { up: up.max((1.25 / CELL) as i32), down: (up * 6).max((3.0 / CELL) as i32), step: up }
     }
 }
 
@@ -143,7 +143,10 @@ fn footing(world: &World, x: i32, z: i32, level: i32, height: f32, nerve: Nerve)
         return Footing::Wall;
     }
     // Nothing climbs into a bush or a tree.
-    if at > level && matches!(world.get(IVec3::new(x, at - 1, z)), Block::Leaves | Block::Needles | Block::Wood | Block::Birch) {
+    if at > level && {
+        let under = world.get(IVec3::new(x, at - 1, z));
+        under.foliage() || matches!(under, Block::Wood | Block::Birch)
+    } {
         return Footing::Wall;
     }
     let depth = (0..tall + 1).take_while(|&up| world.get(IVec3::new(x, at + up, z)) == Block::Water).count();
@@ -160,7 +163,7 @@ fn dry_ground(world: &World, at: Vec2, near: f32, height: f32) -> bool {
         while y > 0 && !get(y).solid() {
             y -= 1;
         }
-        if !matches!(get(y), Block::Leaves | Block::Needles) {
+        if !get(y).foliage() {
             break;
         }
         while y > 0 && get(y).solid() {
