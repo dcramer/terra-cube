@@ -2,9 +2,9 @@
 height = 0.85
 length = 1.1952412
 width = 0.33016995
-walk_speed = 0.9586484
-run_speed = 2.1825352
-sprint_speed = 4.294744
+walk_speed = 1.141248
+run_speed = 2.4497845
+sprint_speed = 4.382392
 triangles = 9362
 joints = 31
 
@@ -49,12 +49,12 @@ looping = false
 source = "made"
 
 [clips.run]
-seconds = 0.36666667
+seconds = 0.46666667
 looping = true
 source = "made"
 
 [clips.sprint]
-seconds = 0.33333334
+seconds = 0.46666667
 looping = true
 source = "made"
 
@@ -64,7 +64,7 @@ looping = true
 source = "made"
 
 [clips.walk]
-seconds = 0.5
+seconds = 0.6
 looping = true
 source = "made"
 

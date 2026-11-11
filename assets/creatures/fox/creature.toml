@@ -4,7 +4,6 @@ plan = "quadruped"
 subject = "a red fox with a bushy white-tipped tail and black legs"
 height = 0.5
 ease = 0.4
-gait_gain = 0.05
 
 [life]
 temper = "hunter"

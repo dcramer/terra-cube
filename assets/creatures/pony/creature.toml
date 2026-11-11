@@ -3,7 +3,6 @@ kind = "wildlife"
 plan = "quadruped"
 subject = "a stocky wild pony with a shaggy black mane and a dun coat"
 height = 1.6
-gait_gain = 0.42
 
 [life]
 temper = "timid"

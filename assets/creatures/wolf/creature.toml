@@ -4,7 +4,6 @@ plan = "quadruped"
 subject = "a grey wolf"
 height = 0.85
 ease = 0.5
-gait_gain = 0.4
 
 [life]
 temper = "hunter"
