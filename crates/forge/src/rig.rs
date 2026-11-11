@@ -219,7 +219,56 @@ impl Roles {
         let (floor, top) = ys.fold((f32::MAX, f32::MIN), |(lo, hi), y| (lo.min(y), hi.max(y)));
         let height = (top - floor).max(1e-4);
         let tip = |c: &Vec<usize>| sk.position(*c.last().unwrap());
-        let (legs, rest): (Vec<_>, Vec<_>) = chains.into_iter().partition(|c| c.len() >= 2 && tip(c).y - floor < 0.2 * height);
+        // A foot with toes: a low joint whose every branch is short. Its leg is the chain down
+        // to it, and the toes are not legs of their own (a frog's, a bird's, a lizard's).
+        fn below(sk: &Skeleton, j: usize, from: Vec3) -> (usize, f32) {
+            sk.joints[j].children.iter().map(|&c| below(sk, c, from)).fold((1, sk.position(j).distance(from)), |(deep, far), (d, f)| (deep.max(d + 1), far.max(f)))
+        }
+        fn under(sk: &Skeleton, mut j: usize, top: usize) -> bool {
+            while let Some(p) = sk.joints[j].parent {
+                if p == top {
+                    return true;
+                }
+                j = p;
+            }
+            false
+        }
+        let mut chains = chains;
+        for foot in 0..sk.joints.len() {
+            let j = &sk.joints[foot];
+            let toes = j.children.iter().map(|&c| below(sk, c, sk.position(foot)));
+            if foot == sk.root || j.children.len() < 2 || sk.position(foot).y - floor > 0.35 * height || toes.clone().any(|(deep, far)| deep > 4 || far > 0.45 * height) {
+                continue;
+            }
+            let mut chain = vec![foot];
+            let mut at = foot;
+            while let Some(p) = sk.joints[at].parent {
+                if p == sk.root || sk.joints[p].children.len() != 1 {
+                    break;
+                }
+                chain.push(p);
+                at = p;
+            }
+            chain.reverse();
+            // Its toes stay as chains of their own, but too short to be taken for legs.
+            for c in chains.iter_mut().filter(|c| under(sk, *c.last().unwrap(), foot)) {
+                c.retain(|&bone| under(sk, bone, foot));
+            }
+            chains.push(chain);
+        }
+        // A leg comes down: its tip is low, and it has dropped a good part of the body's height
+        // to get there. A tail lying along the ground has not.
+        let drop = |c: &Vec<usize>| sk.position(c[0]).y - tip(c).y;
+        let toe = |c: &Vec<usize>| sk.joints[c[0]].parent.is_some_and(|p| p != sk.root && sk.joints[p].children.len() >= 2 && sk.position(p).y - floor < 0.35 * height && drop(c) < 0.1 * height);
+        let (mut legs, mut rest): (Vec<_>, Vec<_>) = chains.into_iter().filter(|c| !c.is_empty()).partition(|c| c.len() >= 2 && tip(c).y - floor < 0.4 * height && drop(c) >= 0.15 * height && !toe(c));
+        // Legs come in pairs of a length. A chain that reaches the floor and has no partner is
+        // not a leg: a fox's brush hangs to the ground.
+        let span = |c: &Vec<usize>| c.windows(2).map(|w| sk.position(w[0]).distance(sk.position(w[1]))).sum::<f32>();
+        while legs.len() % 2 == 1 && legs.len() >= 3 {
+            let unlike = |i: usize| (0..legs.len()).filter(|&j| j != i).map(|j| (span(&legs[i]) - span(&legs[j])).abs()).fold(f32::MAX, f32::min);
+            let odd = (0..legs.len()).max_by(|&a, &b| unlike(a).total_cmp(&unlike(b))).unwrap();
+            rest.push(legs.remove(odd));
+        }
         let feet = legs.iter().map(&tip).sum::<Vec3>() / legs.len().max(1) as f32;
         let centre = if legs.is_empty() { sk.position(sk.root) } else { feet };
 
@@ -306,7 +355,11 @@ impl Roles {
                 at = sk.joints[j].parent;
             }
             path.reverse();
-            if path.len() >= 2 && !arms.iter().any(|a| a.chain[0] == path[0]) {
+            // A hand is held up: a limb that ends at the ground is a leg with toes, not an arm.
+            let low = path.last().is_some_and(|&hand| sk.position(hand).y - floor < 0.35 * height);
+            let legs: &Vec<Leg> = &legs;
+            let of_leg = path.iter().any(|j| legs.iter().any(|l| l.chain.contains(j)));
+            if path.len() >= 2 && !low && !of_leg && !arms.iter().any(|a| a.chain[0] == path[0]) {
                 let left = (sk.position(*path.last().unwrap()) - centre).dot(side) > 0.0;
                 arms.push(Leg { front: true, left, chain: path });
             }

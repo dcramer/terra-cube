@@ -3,6 +3,7 @@ kind = "monster"
 plan = "biped"
 subject = "a hunched creature of tangled roots and moss with long arms, a hollow log for a head and two pale yellow eyes, both arms held straight out sideways at shoulder height"
 height = 2.4
+made = ["idle"]
 
 [life]
 temper = "hostile"

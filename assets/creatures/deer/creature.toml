@@ -3,7 +3,7 @@ kind = "wildlife"
 plan = "quadruped"
 subject = "a red deer stag with antlers"
 height = 1.9
-gait_gain = 0.4
+gait_gain = 0.36
 
 [life]
 temper = "timid"

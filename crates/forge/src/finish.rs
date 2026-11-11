@@ -70,6 +70,11 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -
     let mut glb = Glb::read(source)?;
     let skeleton = Skeleton::read(&glb)?;
     let roles = Roles::read(&skeleton, Facing::parse(&creature.facing)?);
+    // A four-legged creature with any other number of legs has a skeleton that is short of
+    // one (Tripo's rig sometimes is) or one the reader gets wrong. Say so; do not make clips.
+    if creature.plan == "quadruped" && roles.legs.len() != 4 {
+        bail!("{} legs found on a four-legged creature: the rig is short of a leg, or misread. `cargo forge inspect` shows it; a rig short of a leg wants rigging again", roles.legs.len());
+    }
 
     let (lo, hi) = bounds(&glb)?;
     let scale = creature.height / (hi.y - lo.y).max(1e-5);

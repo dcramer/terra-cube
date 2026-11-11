@@ -2,16 +2,16 @@
 height = 3.6
 length = 1.5044533
 width = 2.3413699
-walk_speed = 1.9062881
-run_speed = 4.148979
-sprint_speed = 7.3183985
+walk_speed = 1.9286273
+run_speed = 4.168188
+sprint_speed = 7.5027375
 triangles = 7127
 joints = 65
 
 [clips.attack]
-seconds = 1.2
+seconds = 0.8
 looping = false
-source = "tripo"
+source = "made"
 
 [clips.die]
 seconds = 1.4
@@ -44,12 +44,12 @@ looping = false
 source = "made"
 
 [clips.run]
-seconds = 1.0333333
+seconds = 0.9
 looping = true
 source = "made"
 
 [clips.sprint]
-seconds = 0.76666665
+seconds = 0.7
 looping = true
 source = "made"
 
@@ -59,7 +59,7 @@ looping = true
 source = "made"
 
 [clips.walk]
-seconds = 1.2333333
+seconds = 1.0666667
 looping = true
 source = "made"
 

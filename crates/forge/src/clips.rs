@@ -368,6 +368,10 @@ fn stride(sk: &Skeleton, roles: &Roles) -> Clip {
 /// plan has studied gaits.
 fn quicker(name: &str, sk: &Skeleton, roles: &Roles, from: &Clip, time: f32, gain: f32, bob: f32, pump: f32, lean: f32) -> Clip {
     let rest = sk.rest();
+    // Nothing to quicken: the gait it would be made from could not be made.
+    if from.frames.len() < 2 {
+        return Clip { name: name.into(), looping: true, frames: vec![rest.clone(), rest], source: "made", speed: None };
+    }
     let n = ((from.frames.len() - 1) as f32 * time).round().max(4.0) as usize;
     let last = from.frames.len() - 1;
     let frames = (0..=n)
@@ -451,7 +455,10 @@ fn reach(sk: &Skeleton, roles: &Roles, pose: &mut Pose, leg: &crate::rig::Leg, t
     let at = |pose: &Pose, j: usize| sk.pose_world(pose)[j].w_axis.truncate();
     let (h, k, p) = (at(pose, hip), at(pose, knee), at(pose, tip));
     let (a, b) = (k.distance(h), p.distance(k));
-    let d = target.distance(h).clamp((a - b).abs() + 1e-4, (a + b) * 0.995);
+    // A leg of two bones has no knee to bend (one of the lengths is nothing): the bounds
+    // cross, and the nearer one stands.
+    let (near, far) = ((a - b).abs() + 1e-4, (a + b) * 0.995);
+    let d = target.distance(h).clamp(near.min(far), far.max(near));
     let now = (h - k).angle_between(p - k);
     let want = ((a * a + b * b - d * d) / (2.0 * a * b)).clamp(-1.0, 1.0).acos();
     let axis = (h - k).cross(p - k).try_normalize().unwrap_or(roles.side * if leg.front { -1.0 } else { 1.0 });

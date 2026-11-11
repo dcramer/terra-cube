@@ -62,6 +62,16 @@ fn option(args: &mut Vec<String>, name: &str) -> Option<String> {
 
 /// Finishes and checks one creature; prints its verdict lines. True when every check passed.
 fn finish_and_check(id: &str, style: &Style, write: bool) -> Result<bool> {
+    // A skeleton forge cannot make sense of must not stop the others being finished: a crash
+    // in the clip maker is that creature's failure, said in a line.
+    let quiet = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let done = std::panic::catch_unwind(|| finish_and_check_one(id, style, write));
+    std::panic::set_hook(quiet);
+    done.unwrap_or_else(|_| anyhow::bail!("forge crashed making its clips: the skeleton is one it cannot read (`cargo forge inspect {id}`)"))
+}
+
+fn finish_and_check_one(id: &str, style: &Style, write: bool) -> Result<bool> {
     let creature: Creature = spec::load(&spec::dir(id).join("creature.toml"))?;
     let plan = style.plans.get(&creature.plan).with_context(|| format!("no plan `{}`", creature.plan))?;
     let done = if write { finish::run(id, style)? } else { finish::finish(&spec::work(id).join("rigged.glb"), &creature, plan, style.checks.max_slide)? };

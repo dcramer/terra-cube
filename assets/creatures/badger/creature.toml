@@ -3,6 +3,7 @@ kind = "wildlife"
 plan = "quadruped"
 subject = "a badger with a black and white striped face and a low grey body"
 height = 0.3
+gait_gain = 0.65
 
 [life]
 temper = "wary"

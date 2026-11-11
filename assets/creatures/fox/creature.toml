@@ -3,6 +3,7 @@ kind = "wildlife"
 plan = "quadruped"
 subject = "a red fox with a bushy white-tipped tail and black legs"
 height = 0.5
+gait_gain = 0.6
 
 [life]
 temper = "hunter"
