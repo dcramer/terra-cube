@@ -380,6 +380,8 @@ mod tests {
 
     #[test]
     fn a_cell_breaks_into_bits_and_mends() {
+        // As cubes: the mesher's other ways of drawing ground are not what is counted here.
+        mesh::GROUND.store(mesh::Ground::Cubes as u8, std::sync::atomic::Ordering::Relaxed);
         let mut w = World::default();
         let cell = IVec3::new(3, 2, -1);
         w.set(cell, Block::Stone);
@@ -416,6 +418,8 @@ mod tests {
 
     #[test]
     fn a_lone_block_meshes_to_six_faces() {
+        // As cubes: the mesher's other ways of drawing ground are not what is counted here.
+        mesh::GROUND.store(mesh::Ground::Cubes as u8, std::sync::atomic::Ordering::Relaxed);
         let mut w = World::default();
         w.set(IVec3::new(3, 3, 3), Block::Stone);
         let m = mesh::mesh_chunk(&w, IVec3::ZERO, false);

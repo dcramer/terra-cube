@@ -289,6 +289,133 @@ impl Eased<'_> {
     }
 }
 
+/// The ground as one surface: where each column of the world's ground ends, and from that
+/// how high the surface stands at any corner where four columns meet (the mean of the sixteen
+/// columns round it). Smooth ground is drawn from this and nothing else: a quad a column, its
+/// corners on the surface, with no risers between. So a slope of any steepness is a slope;
+/// easing each cube's own corners left stretched risers on every steep face, which showed as
+/// sawteeth. What a person digs or builds in whole cells moves the surface with it.
+pub struct Heights<'a> {
+    world: &'a World,
+    ceiling: i32,
+    tops: HashMap<(i32, i32), (i32, Block)>,
+}
+
+impl<'a> Heights<'a> {
+    pub fn new(world: &'a World) -> Self {
+        Heights { world, ceiling: world.chunks.keys().map(|c| c.y).max().unwrap_or(0), tops: HashMap::new() }
+    }
+
+    /// Where the column's ground ends (the first cell over it), and what its top cell is.
+    pub fn top(&mut self, x: i32, z: i32) -> (i32, Block) {
+        if let Some(&known) = self.tops.get(&(x, z)) {
+            return known;
+        }
+        let (cx, cz) = (x.div_euclid(CHUNK), z.div_euclid(CHUNK));
+        let local = |y: i32| IVec3::new(x.rem_euclid(CHUNK), y, z.rem_euclid(CHUNK));
+        let mut found = (0, Block::Air);
+        'column: for cy in (0..=self.ceiling).rev() {
+            let Some(chunk) = self.world.chunks.get(&IVec3::new(cx, cy, cz)) else { continue };
+            for y in (0..CHUNK).rev() {
+                let block = chunk.get(local(y));
+                if block.ground() {
+                    found = (cy * CHUNK + y + 1, block);
+                    break 'column;
+                }
+            }
+        }
+        self.tops.insert((x, z), found);
+        found
+    }
+
+    /// How high the surface stands at the corner `x`, `z`, in cells. Columns not made yet
+    /// (beyond the world as it stands) do not count.
+    pub fn at(&mut self, x: i32, z: i32) -> f32 {
+        let (mut sum, mut n) = (0.0, 0.0);
+        for dz in -2..2 {
+            for dx in -2..2 {
+                let (top, block) = self.top(x + dx, z + dz);
+                if block != Block::Air {
+                    sum += top as f32;
+                    n += 1.0;
+                }
+            }
+        }
+        if n > 0.0 { sum / n } else { 0.0 }
+    }
+
+    /// Which way the surface faces at a corner.
+    fn normal(&mut self, x: i32, z: i32) -> Vec3 {
+        Vec3::new((self.at(x - 1, z) - self.at(x + 1, z)) * 0.5, 1.0, (self.at(x, z - 1) - self.at(x, z + 1)) * 0.5).normalize()
+    }
+
+    /// The colour of the ground at a corner: the mean of the tops of the columns round it.
+    fn colour(&mut self, x: i32, z: i32) -> [f32; 3] {
+        // (Of the sixteen round it, as its height is: of four, the line where sand met earth
+        // ran in a zigzag down every bank.)
+        let (mut sum, mut n) = ([0.0f32; 3], 0.0);
+        for dz in -2..2 {
+            for dx in -2..2 {
+                let block = self.top(x + dx, z + dz).1;
+                if block != Block::Air {
+                    let c = block.colors().0;
+                    sum = [sum[0] + c[0], sum[1] + c[1], sum[2] + c[2]];
+                    n += 1.0;
+                }
+            }
+        }
+        sum.map(|v| v / f32::max(n, 1.0))
+    }
+
+    /// The quads of the surface over the columns of a chunk whose tops are in it, a quad to
+    /// every `step` columns each way.
+    fn surface(&mut self, chunk: IVec3, step: i32, m: &mut MeshData) {
+        let origin = chunk * CHUNK;
+        for z in (0..CHUNK).step_by(step as usize) {
+            for x in (0..CHUNK).step_by(step as usize) {
+                let (wx, wz) = (origin.x + x, origin.z + z);
+                let (top, block) = self.top(wx, wz);
+                if block == Block::Air || (top - 1).div_euclid(CHUNK) != chunk.y {
+                    continue;
+                }
+                let cell = IVec3::new(wx, top - 1, wz);
+                let grassy = matches!(block, Block::Grass | Block::Turf | Block::Moss | Block::Litter | Block::Dirt);
+                let (mut tint, mut warm) = (shade(cell), 0.0);
+                if grassy {
+                    let (drift, wide) = (patch(cell) - 0.5, patch(IVec3::new(cell.x / 5 + 900, 0, cell.z / 5 - 400)) - 0.5);
+                    tint *= 1.0 + drift * 0.4 + wide * 0.35;
+                    warm = drift * 0.3 + wide * 0.45;
+                }
+                let grain = Grain::of(block, true);
+                let start = m.positions.len() as u32;
+                for (dz, dx) in [(0, 0), (1, 0), (1, 1), (0, 1)] {
+                    let (cx, cz) = (wx + dx * step, wz + dz * step);
+                    let facing = self.normal(cx, cz);
+                    let mut base = self.colour(cx, cz);
+                    // Where soft ground is steep, nothing grows on it: bare earth shows on a
+                    // bank and stone on a face, by how far the slope is from level.
+                    // (At every corner whatever the column is, so the quads either side of where
+                    // sand meets turf agree about the corner they share.)
+                    if block != Block::Snow {
+                        let (earth, stone) = (((0.86 - facing.y) / 0.12).clamp(0.0, 1.0), ((0.66 - facing.y) / 0.14).clamp(0.0, 1.0));
+                        let (dirt, rock) = (Block::Dirt.colors().0, Block::Stone.colors().1);
+                        base = std::array::from_fn(|c| {
+                            let soil = base[c] + (dirt[c] - base[c]) * earth;
+                            soil + (rock[c] - soil) * stone
+                        });
+                    }
+                    m.positions.push([cx as f32 * CELL, self.at(cx, cz) * CELL, cz as f32 * CELL]);
+                    m.normals.push(facing.to_array());
+                    m.tangents.push(tangent(IVec3::Y));
+                    m.uvs.push(uv(grain, IVec3::Y, IVec3::new(wx, 0, wz), IVec3::new(wx + dx.min(1) * step.min(SPAN - 1), 0, wz + dz.min(1) * step.min(SPAN - 1)), 1));
+                    m.colors.push([base[0] * tint * (1.0 + warm), base[1] * tint, base[2] * tint * (1.0 - warm), 1.0]);
+                }
+                m.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
+            }
+        }
+    }
+}
+
 /// The height the ground is drawn at under a point standing on it (metres), if what it stands
 /// on is ground and it stands on top of a cell of it: where to draw feet, since a body stands
 /// on the cubes and the cubes are drawn as a slope.
@@ -297,6 +424,13 @@ pub fn eased_under(world: &World, feet: Vec3) -> Option<f32> {
     let cell = IVec3::new((feet.x / CELL).floor() as i32, level as i32, (feet.z / CELL).floor() as i32);
     if (feet.y / CELL - level).abs() > 0.02 || !world.get(cell - IVec3::Y).ground() || ground() == Ground::Cubes {
         return None;
+    }
+    if ground() == Ground::Smooth {
+        let mut heights = Heights::new(world);
+        let (fx, fz) = (feet.x / CELL - cell.x as f32, feet.z / CELL - cell.z as f32);
+        let mut at = |dx: i32, dz: i32| heights.at(cell.x + dx, cell.z + dz);
+        let (a, b) = (at(0, 0) * (1.0 - fx) + at(1, 0) * fx, at(0, 1) * (1.0 - fx) + at(1, 1) * fx);
+        return Some((a * (1.0 - fz) + b * fz) * CELL);
     }
     let chunk = cell.div_euclid(IVec3::splat(CHUNK));
     let near = Near::of(world, chunk);
@@ -360,6 +494,12 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
     let Some(data) = world.chunks.get(&chunk) else { return m };
     let near = Near::of(world, chunk);
     let origin = chunk * CHUNK;
+    // Smooth ground is one surface, drawn here; its cells are then passed over below.
+    let smooth = ground() == Ground::Smooth;
+    let mut heights = Heights::new(world);
+    if smooth && !liquid {
+        heights.surface(chunk, 1, &mut m);
+    }
     // Whether there is any water in this chunk or beside it (only then is the bank looked at).
     let wet = liquid && ground() == Ground::Smooth && (-1..=1).any(|dz| (-1..=1).any(|dx| world.chunks.get(&(chunk + IVec3::new(dx, 0, dz))).is_some_and(|c| c.has(Block::Water))));
     let mut eased = Eased { near: &near, reach: REACH, lifts: HashMap::new(), tops: HashMap::new(), origin: chunk * CHUNK };
@@ -389,19 +529,19 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                         m.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
                     }
                 }
-                if block == Block::Air || (block == Block::Water) != liquid || modelled(block) {
+                if block == Block::Air || (block == Block::Water) != liquid || modelled(block) || (smooth && block.ground()) {
                     continue;
                 }
                 let cell = origin + local;
                 if block == Block::Broken {
-                    let (from, lift) = (m.positions.len(), eased.under(local) * CELL);
+                    let (from, lift) = (m.positions.len(), if smooth { ((heights.at(cell.x, cell.z) + heights.at(cell.x + 1, cell.z) + heights.at(cell.x, cell.z + 1) + heights.at(cell.x + 1, cell.z + 1)) / 4.0 - cell.y as f32).clamp(-2.0, 2.0) * CELL * block.sprig() as i32 as f32 } else { eased.under(local) * CELL });
                     bits(world, cell, &mut m);
                     m.positions[from..].iter_mut().for_each(|p| p[1] += lift);
                     continue;
                 }
                 if block.sprig() {
                     // It stands on the ground as the ground is drawn.
-                    let (from, lift) = (m.positions.len(), eased.under(local) * CELL);
+                    let (from, lift) = (m.positions.len(), if smooth { ((heights.at(cell.x, cell.z) + heights.at(cell.x + 1, cell.z) + heights.at(cell.x, cell.z + 1) + heights.at(cell.x + 1, cell.z + 1)) / 4.0 - cell.y as f32).clamp(-2.0, 2.0) * CELL * block.sprig() as i32 as f32 } else { eased.under(local) * CELL });
                     sprig(cell, block, &mut m);
                     m.positions[from..].iter_mut().for_each(|p| p[1] += lift);
                     continue;
@@ -704,15 +844,12 @@ fn sprig(cell: IVec3, block: Block, m: &mut MeshData) {
         return;
     }
     if block == Block::Fern {
-        // Fronds: low wide slabs fanning out from the middle, each a little higher than the last.
-        for i in 0..4 {
-            let (dx, dz) = [(1, 0), (-1, 0), (0, 1), (0, -1)][i as usize];
-            let tall = 1 + (roll(i + 3) * 3.0) as i32;
-            let tint = 0.85 + 0.3 * roll(i + 20);
-            let (lo, hi) = (IVec3::new(2 + dx.min(0) * 2, tall - 1, 2 + dz.min(0) * 2), IVec3::new(3 + dx.max(0) * 2, tall, 3 + dz.max(0) * 2));
-            blade(m, cell, lo, hi, top.map(|c| c * tint));
+        // Fronds: five or six long blades from one crown, each leaning out its own way.
+        for i in 0..5 + (roll(1) * 2.0) as i32 {
+            let (x, z) = (1 + (roll(i * 3 + 2) * 3.0) as i32, 1 + (roll(i * 3 + 3) * 3.0) as i32);
+            let tint = 0.8 + 0.4 * roll(i + 20);
+            blade(m, cell, IVec3::new(x, 0, z), IVec3::new(x + 1, 3 + (roll(i + 9) * 3.0) as i32, z + 1), top.map(|c| c * tint));
         }
-        blade(m, cell, IVec3::new(2, 0, 2), IVec3::new(3, 2, 3), side);
         return;
     }
     // A tuft is a clump, not three sticks: five to eight blades.
@@ -799,6 +936,10 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
         }
     }
     let origin = chunk * CHUNK;
+    let smooth = ground() == Ground::Smooth;
+    if smooth && !liquid {
+        Heights::new(world).surface(chunk, step, &mut m);
+    }
     // A group's top is up to a group above the ground it stands for, so columns count further.
     let mut eased = Eased { near: &near, reach: REACH + step, lifts: HashMap::new(), tops: HashMap::new(), origin: chunk * CHUNK };
     for sy in 0..n {
@@ -806,7 +947,7 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
             for sx in 0..n {
                 let s = IVec3::new(sx, sy, sz);
                 let block = groups[at_group(s)];
-                if block == Block::Air || modelled(block) {
+                if block == Block::Air || modelled(block) || (smooth && block.ground()) {
                     continue;
                 }
                 let cell = origin + s * step;
