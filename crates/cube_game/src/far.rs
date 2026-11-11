@@ -204,7 +204,7 @@ fn build(mut commands: Commands, terrain: Option<Res<Terrain>>, look: Option<Res
 }
 
 /// A piece is shown unless the real ground of its region is there and near.
-fn show(regions: Res<Regions>, cameras: Query<&GlobalTransform, With<Camera3d>>, mut pieces: Query<(&Far, &Transform, &mut Visibility)>) {
+fn show(regions: Res<Regions>, grown: Res<crate::flora::Grown>, cameras: Query<&GlobalTransform, With<Camera3d>>, mut pieces: Query<(&Far, &Transform, &mut Visibility)>) {
     let Some(eye) = cameras.iter().next().map(|c| c.translation()) else { return };
     let half = terrain::REGION as f32 * CELL * 0.5;
     for (far, at, mut seen) in &mut pieces {
@@ -212,7 +212,11 @@ fn show(regions: Res<Regions>, cameras: Query<&GlobalTransform, With<Camera3d>>,
         let middle = Vec2::new((far.0.0 as f32 + 0.5) * size, (far.0.1 as f32 + 0.5) * size);
         let _ = at;
         let away = (middle - eye.xz()).length();
-        let want = if regions.is_made(far.0) && away < NEAR { Visibility::Hidden } else { Visibility::Inherited };
+        // Hidden as soon as the real ground and what grows on it are both there, however far
+        // off: while both were drawn out to 150 m every far tree stood twice, once as itself
+        // and once as its stand-in, and the land changed where the stand-ins stopped.
+        let _ = (away, NEAR);
+        let want = if regions.is_made(far.0) && grown.has(far.0) { Visibility::Hidden } else { Visibility::Inherited };
         if *seen != want {
             *seen = want;
         }

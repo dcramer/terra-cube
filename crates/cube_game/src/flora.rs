@@ -32,7 +32,14 @@ pub struct Forms(pub HashMap<(i32, i32), Form>);
 
 /// The meshes made from them.
 #[derive(Resource, Default)]
-struct Grown(HashMap<(i32, i32), Entity>);
+pub struct Grown(HashMap<(i32, i32), Entity>);
+
+impl Grown {
+    /// Whether a region's trees and rocks have their meshes.
+    pub fn has(&self, region: (i32, i32)) -> bool {
+        self.0.contains_key(&region)
+    }
+}
 
 /// Sides to a trunk; how much of a leaf mass's surface its cards cover; how big a card is.
 const SIDES: usize = 7;
