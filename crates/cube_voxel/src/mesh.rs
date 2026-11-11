@@ -84,6 +84,18 @@ fn patch(p: IVec3) -> f32 {
     a * (1.0 - sz) + b * sz
 }
 
+/// How rough the country is at a place, 0 smooth to 1 broken: regions some twenty metres over.
+fn rough(p: IVec3) -> f32 {
+    let at = |x: i32, z: i32| hash(IVec3::new(x, 191, z));
+    let n = crate::cells(18.0);
+    let (gx, gz) = (p.x.div_euclid(n), p.z.div_euclid(n));
+    let (fx, fz) = (p.x.rem_euclid(n) as f32 / n as f32, p.z.rem_euclid(n) as f32 / n as f32);
+    let (sx, sz) = (fx * fx * (3.0 - 2.0 * fx), fz * fz * (3.0 - 2.0 * fz));
+    let v = (at(gx, gz) * (1.0 - sx) + at(gx + 1, gz) * sx) * (1.0 - sz) + (at(gx, gz + 1) * (1.0 - sx) + at(gx + 1, gz + 1) * sx) * sz;
+    // Most of the land is one or the other, with little between.
+    ((v - 0.35) / 0.3).clamp(0.0, 1.0)
+}
+
 /// The chunk and the 26 round it, so a cell's neighbours are read without looking the chunk
 /// up each time: meshing reads about thirty cells for every face it draws.
 struct Near<'a>([Option<&'a Chunk>; 27]);
@@ -132,6 +144,9 @@ pub struct Eased<'a> {
     lifts: HashMap<IVec3, (f32, [f32; 3])>,
     /// For each column looked at, every height where its ground ends with none over it.
     tops: HashMap<(i32, i32), Vec<i32>>,
+    /// Where the chunk's corner is in the world, cells: what is rough and what is fine goes
+    /// by place.
+    origin: IVec3,
 }
 
 impl Eased<'_> {
@@ -184,8 +199,12 @@ impl Eased<'_> {
     /// hillsides are the same staircase. The heights come from the eased ground, rounded to
     /// the size of the block.
     fn step(&mut self, x: i32, t: i32, z: i32) -> f32 {
+        let rough = rough(self.origin + IVec3::new(x, 0, z));
         let mut lift = |x: i32, z: i32| self.lift(IVec3::new(x, t, z));
-        for (size, steep) in [(4, 2.4), (2, 1.1)] {
+        // And by place as well as slope: the land has rough country, where even a modest slope
+        // is broken into half-metre and metre blocks, and smooth country, cut fine. With slope
+        // alone, everything in one view was one size.
+        for (size, steep) in [(4, 2.4 - 2.0 * rough), (2, 1.1 - 0.95 * rough)] {
             // The block this column is in, by the world's grid, and the slope across it.
             let (bx, bz, half) = (x.div_euclid(size) * size + size / 2, z.div_euclid(size) * size + size / 2, size / 2);
             let slope = (lift(bx + half, bz) - lift(bx - half, bz)).hypot(lift(bx, bz + half) - lift(bx, bz - half)) / size as f32;
@@ -195,7 +214,7 @@ impl Eased<'_> {
         }
         let (a, b, c, d) = (lift(x, z), lift(x + 1, z), lift(x, z + 1), lift(x + 1, z + 1));
         let (mean, slope) = ((a + b + c + d) / 4.0, ((b + d - a - c) / 2.0).hypot((c + d - a - b) / 2.0));
-        let size = if slope < 0.3 { 1.0 / SPLIT as f32 } else { 1.0 };
+        let size = if slope < 0.3 && rough < 0.6 { 1.0 / SPLIT as f32 } else { 1.0 };
         (mean / size).round() * size
     }
 
@@ -281,7 +300,7 @@ pub fn eased_under(world: &World, feet: Vec3) -> Option<f32> {
     }
     let chunk = cell.div_euclid(IVec3::splat(CHUNK));
     let near = Near::of(world, chunk);
-    let mut eased = Eased { near: &near, reach: REACH, lifts: HashMap::new(), tops: HashMap::new() };
+    let mut eased = Eased { near: &near, reach: REACH, lifts: HashMap::new(), tops: HashMap::new(), origin: chunk * CHUNK };
     let local = cell - chunk * CHUNK;
     if ground() == Ground::Stepped {
         return eased.land(local.x, local.y, local.z).then(|| (level + eased.step(local.x, local.y, local.z)) * CELL);
@@ -326,7 +345,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
     let Some(data) = world.chunks.get(&chunk) else { return m };
     let near = Near::of(world, chunk);
     let origin = chunk * CHUNK;
-    let mut eased = Eased { near: &near, reach: REACH, lifts: HashMap::new(), tops: HashMap::new() };
+    let mut eased = Eased { near: &near, reach: REACH, lifts: HashMap::new(), tops: HashMap::new(), origin: chunk * CHUNK };
     for y in 0..CHUNK {
         for z in 0..CHUNK {
             for x in 0..CHUNK {
@@ -688,7 +707,7 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
     }
     let origin = chunk * CHUNK;
     // A group's top is up to a group above the ground it stands for, so columns count further.
-    let mut eased = Eased { near: &near, reach: REACH + step, lifts: HashMap::new(), tops: HashMap::new() };
+    let mut eased = Eased { near: &near, reach: REACH + step, lifts: HashMap::new(), tops: HashMap::new(), origin: chunk * CHUNK };
     for sy in 0..n {
         for sz in 0..n {
             for sx in 0..n {
