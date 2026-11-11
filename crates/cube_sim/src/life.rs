@@ -439,6 +439,9 @@ pub struct Hit {
 /// Seconds something lies where it fell before it is gone; seconds after that until another
 /// of its kind comes to live where it did; and seconds a person lies before waking at home.
 const LIES: f32 = 25.0;
+/// How hungry a meat-eater can get before it dies of it: four meals missed (`Sim::day` holds
+/// the ones out of sight to the same).
+pub const STARVES: f32 = 4.0;
 const WAKES: f32 = 5.0;
 /// How far from the watcher a creature is still lived, metres.
 pub const AWAKE: f32 = 110.0;
@@ -466,6 +469,8 @@ pub struct Sim {
     /// The seed of the land its creatures were put on, by which they know its trails
     /// (`terrain::worn`); none, and they know of none.
     pub trails: Option<u32>,
+    /// Hunters that have starved in sight of someone, since the start.
+    pub starved: u32,
 }
 
 /// The fastest anything turns, radians a second: a full turn about in a third of a second.
@@ -477,7 +482,7 @@ fn turn_between(from: f32, to: f32) -> f32 {
 
 impl Sim {
     pub fn new(kinds: Vec<Kind>, seed: u64) -> Self {
-        Self { kinds, agents: BTreeMap::new(), tick: 0, focus: None, when: crate::sky::START, rng: Rng::new(seed), next: 1, trails: None }
+        Self { kinds, agents: BTreeMap::new(), tick: 0, focus: None, when: crate::sky::START, rng: Rng::new(seed), next: 1, trails: None, starved: 0 }
     }
 
     /// A person's state as text, a thing a line: when it is, where they are, their health,
@@ -632,6 +637,17 @@ impl Sim {
             let days = DT / crate::sky::DAY;
             agent.hunger += days * kind.appetite();
             agent.thirst += days * if kind.diet == Diet::None { 0.0 } else { 1.0 };
+            // A hunter that has found nothing for four meals weakens, and then lies down and
+            // dies where it is, in sight: what `day` does to the ones nobody is near.
+            if kind.diet == Diet::Meat && agent.hunger >= STARVES - 1.0 {
+                agent.health -= kind.health() * (agent.hunger - (STARVES - 1.0)).min(1.0) * DT / 30.0;
+                agent.calm = 0.0;
+                if agent.hunger >= STARVES || agent.health <= 0.0 {
+                    (agent.health, agent.dead, agent.swing, agent.intent) = (0.0, Some(0.0), None, Intent::default());
+                    agent.log.died += 1;
+                    self.starved += 1;
+                }
+            }
         }
         for (&id, agent) in self.agents.iter_mut().filter(|(_, a)| a.driver == Driver::Mind && a.dead.is_none() && a.awake) {
             let k = &self.kinds[agent.kind];
@@ -995,7 +1011,10 @@ impl Sim {
             let Some(hunter) = self.agents.get_mut(&id) else { continue };
             // A meal every six days; one that also feeds on what grows hunts a third as often.
             let kind = self.kinds[hunter.kind].clone();
-            hunter.hunger += kind.appetite();
+            // (One that is awake hungers by the second, in `step`.)
+            if !hunter.awake {
+                hunter.hunger += kind.appetite();
+            }
             if hunter.hunger < 1.0 {
                 continue;
             }
@@ -1020,7 +1039,7 @@ impl Sim {
                 }
                 self.agents.get_mut(&id).unwrap().hunger = 0.0;
                 tally.hunted += 1;
-            } else if hunger >= 4.0 && kind.diet == Diet::Meat {
+            } else if hunger >= STARVES && kind.diet == Diet::Meat {
                 self.agents.remove(&id);
                 tally.starved += 1;
             }
@@ -1436,6 +1455,24 @@ mod tests {
         assert!(!sim.agents.contains_key(&wolf) && starved >= 1);
     }
 
+
+    #[test]
+    fn a_wolf_in_sight_that_finds_nothing_weakens_and_starves() {
+        let (world, mut sim) = stage();
+        let wolf = sim.add(&world, 1, at(0.0, 0.0), 0.0, Driver::Mind);
+        let whole = sim.agents[&wolf].health;
+        // Three meals missed: it is hungry and hunts, and is not yet harmed by it.
+        sim.agents.get_mut(&wolf).unwrap().hunger = STARVES - 1.5;
+        run(&mut sim, &world, 5.0);
+        assert!(sim.agents[&wolf].dead.is_none() && sim.agents[&wolf].health >= whole - 0.01);
+        // Past that it loses strength by the second, and at four it dies.
+        sim.agents.get_mut(&wolf).unwrap().hunger = STARVES - 0.5;
+        run(&mut sim, &world, 5.0);
+        assert!(sim.agents[&wolf].dead.is_none() && sim.agents[&wolf].health < whole, "a starving wolf lost no strength");
+        sim.agents.get_mut(&wolf).unwrap().hunger = STARVES;
+        run(&mut sim, &world, 0.1);
+        assert!(sim.agents[&wolf].dead.is_some() && sim.starved == 1, "a wolf four meals short still lives");
+    }
 
     #[test]
     fn a_fed_wolf_lets_a_rabbit_be_and_a_thirsty_one_goes_to_water() {
