@@ -3,7 +3,12 @@
 
 use bevy::{asset::RenderAssetUsages, light::CascadeShadowConfigBuilder, mesh::Indices, prelude::*, render::render_resource::PrimitiveTopology};
 use cube_sim::terrain::{self, Land, SEA};
-use bevy::camera::visibility::VisibilityRange;
+use bevy::camera::{Exposure, visibility::VisibilityRange};
+use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy::light::{Atmosphere, AtmosphereEnvironmentMapLight, SunDisk, atmosphere::ScatteringMedium, light_consts::lux};
+use bevy::pbr::{AtmosphereSettings, ScreenSpaceAmbientOcclusion};
+use bevy::render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection};
+use bevy::post_process::bloom::Bloom;
 use bevy::image::{ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use cube_voxel::{
@@ -55,19 +60,59 @@ impl Terrain {
     }
 }
 
-/// Far things fade into the sky: the island's far shore is hazy, the sea has no edge.
-pub fn fog() -> DistanceFog {
-    DistanceFog { color: SKY, falloff: FogFalloff::Linear { start: 180.0, end: 700.0 }, ..default() }
+/// What every camera that looks at the world carries: the sky as real air scattering the
+/// sun (so the light's colour, the sky's and the haze's all come from where the sun is), that
+/// sky lighting what the sun does not reach, an exposure for full sunlight, a film-like roll
+/// off of the brightest light, a glow round it, and haze that warms toward the sun.
+pub fn look() -> impl Bundle {
+    (
+        DistanceFog {
+            color: Color::srgba(0.62, 0.74, 0.88, 1.0),
+            directional_light_color: Color::srgba(1.0, 0.86, 0.62, 0.6),
+            directional_light_exponent: 14.0,
+            falloff: FogFalloff::from_visibility_colors(900.0, Color::srgb(0.42, 0.50, 0.58), Color::srgb(0.78, 0.82, 0.86)),
+        },
+        AtmosphereSettings::default(),
+        // The sky fills shadows, but not so far that they stop being shadows.
+        AtmosphereEnvironmentMapLight { intensity: 0.9, ..default() },
+        Exposure { ev100: 13.4 },
+        Tonemapping::TonyMcMapface,
+        Bloom::NATURAL,
+        // Richer than the tonemapper leaves it, a little warm, with more between light and dark.
+        ColorGrading {
+            global: ColorGradingGlobal { post_saturation: 1.12, ..default() },
+            shadows: ColorGradingSection { contrast: 1.04, ..default() },
+            midtones: ColorGradingSection { contrast: 1.04, ..default() },
+            highlights: ColorGradingSection::default(),
+        },
+        // Corners, the feet of trunks and the undersides of crowns are darker: depth that the
+        // cubes' own baked shade cannot give between one thing and another.
+        Msaa::Off,
+        ScreenSpaceAmbientOcclusion::default(),
+    )
 }
-
-pub const SKY: Color = Color::srgb(0.53, 0.72, 0.90);
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ClearColor(SKY)).init_resource::<Dirty>().init_resource::<Drawn>().add_systems(Startup, setup).add_systems(Update, stream);
+        app.insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().add_systems(Startup, setup).add_systems(Update, stream);
     }
 }
 
+/// The sun of the world, in mid afternoon: low enough that everything throws a shadow longer
+/// than itself and a slope facing it is plainly lit. Its light is raw sunlight; the air
+/// between (`look`) is what colours it.
+fn spawn_sun(commands: &mut Commands, mediums: &mut Assets<ScatteringMedium>) {
+    commands.insert_resource(GlobalAmbientLight::NONE);
+    commands.spawn(Atmosphere::earth(mediums.add(ScatteringMedium::earth(256, 256))));
+    commands.spawn((
+        DirectionalLight { illuminance: lux::RAW_SUNLIGHT, shadow_maps_enabled: true, ..default() },
+        Transform::from_rotation(Quat::from_euler(EulerRot::YXZ, 0.7, -0.62, 0.0)),
+        CascadeShadowConfigBuilder { first_cascade_far_bound: 12.0, maximum_distance: 220.0, ..default() }.build(),
+        SunDisk::EARTH,
+    ));
+}
+
+/// Plain studio light, for contact sheets.
 pub fn spawn_lights(commands: &mut Commands, shadows: bool) {
     commands.insert_resource(GlobalAmbientLight { color: Color::srgb(0.75, 0.85, 1.0), brightness: 480.0, ..default() });
     commands.spawn((
@@ -77,7 +122,7 @@ pub fn spawn_lights(commands: &mut Commands, shadows: bool) {
     ));
 }
 
-fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, mut images: ResMut<Assets<Image>>) {
+fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, mut images: ResMut<Assets<Image>>, mut mediums: ResMut<Assets<ScatteringMedium>>) {
     let (voxels, land) = terrain::generate(args.seed, terrain::RADIUS);
     // The paint: grain for every surface, made in code (`cube_voxel::texture`). Drawn smooth,
     // so it reads as paint and not as pixels; far off the smaller copies take over, so distant
@@ -109,7 +154,7 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
         commands.spawn((Mesh3d(meshes.add(Plane3d::default().mesh().size(w * 2.0, d * 2.0))), MeshMaterial3d(sea.clone()), Transform::from_xyz(x, level, z)));
     }
     commands.insert_resource(Terrain(voxels, land));
-    spawn_lights(&mut commands, true);
+    spawn_sun(&mut commands, &mut mediums);
 }
 
 /// The levels of detail a chunk is drawn at: how many cells a side are taken as one, and the

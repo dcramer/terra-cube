@@ -87,6 +87,10 @@ impl<'a> Near<'a> {
     #[inline]
     fn get(&self, local: IVec3) -> Block {
         let c = local.div_euclid(IVec3::splat(CHUNK));
+        // Beyond the chunks round this one nothing is known: air.
+        if c.abs().max_element() > 1 {
+            return Block::Air;
+        }
         match self.0[((c.x + 1) + (c.z + 1) * 3 + (c.y + 1) * 9) as usize] {
             Some(chunk) => chunk.get(local - c * CHUNK),
             None => Block::Air,
@@ -118,9 +122,6 @@ pub struct Eased<'a> {
 impl Eased<'_> {
     /// How far the corner at `c` (local cells) is drawn above where it is, in cells.
     fn lift(&mut self, c: IVec3) -> f32 {
-        if !EASE.load(std::sync::atomic::Ordering::Relaxed) {
-            return 0.0;
-        }
         self.corner(c).0
     }
 
@@ -159,6 +160,54 @@ impl Eased<'_> {
         known
     }
 
+    /// The ground as blocks of the size its slope calls for: how far above the level `t` the
+    /// top of the column at `x`, `z` is drawn, in cells.
+    ///
+    /// Nearly level ground is cut fine, in steps of a bit (5 cm), so a meadow rolls. A slope
+    /// is whole cells, the plain cube. Steep ground is blocks half a metre a side, and a rock
+    /// face is blocks of a metre: the land gets blockier as it gets wilder, and no two
+    /// hillsides are the same staircase. The heights come from the eased ground, rounded to
+    /// the size of the block.
+    fn step(&mut self, x: i32, t: i32, z: i32) -> f32 {
+        let mut lift = |x: i32, z: i32| self.lift(IVec3::new(x, t, z));
+        for (size, steep) in [(4, 2.4), (2, 1.1)] {
+            // The block this column is in, by the world's grid, and the slope across it.
+            let (bx, bz, half) = (x.div_euclid(size) * size + size / 2, z.div_euclid(size) * size + size / 2, size / 2);
+            let slope = (lift(bx + half, bz) - lift(bx - half, bz)).hypot(lift(bx, bz + half) - lift(bx, bz - half)) / size as f32;
+            if slope >= steep {
+                return ((t as f32 + lift(bx, bz)) / size as f32).round() * size as f32 - t as f32;
+            }
+        }
+        let (a, b, c, d) = (lift(x, z), lift(x + 1, z), lift(x, z + 1), lift(x + 1, z + 1));
+        let (mean, slope) = ((a + b + c + d) / 4.0, ((b + d - a - c) / 2.0).hypot((c + d - a - b) / 2.0));
+        let size = if slope < 0.3 { 1.0 / SPLIT as f32 } else { 1.0 };
+        (mean / size).round() * size
+    }
+
+    /// For a ground cell, the level its column's ground ends at over it and how far above
+    /// that the column's top is drawn, if the column is land. Stone standing alone or built
+    /// up is not: its top would be drawn far from where it is, so it is drawn as its cubes.
+    fn column(&mut self, c: IVec3) -> Option<(i32, f32)> {
+        let near = self.near;
+        let ends = self.tops.entry((c.x, c.z)).or_insert_with(|| {
+            let ground = |y: i32| near.get(IVec3::new(c.x, y, c.z)).ground();
+            (1 - CHUNK..2 * CHUNK).filter(|&y| ground(y - 1) && !ground(y)).collect()
+        });
+        let level = *ends.iter().find(|&&y| y > c.y)?;
+        let high = self.step(c.x, level, c.z);
+        (high.abs() <= 2.5).then_some((level, high))
+    }
+
+    /// How far above itself whatever stands on the ground at the cell `c` is drawn, in cells:
+    /// ground cover, the bits of a broken cell.
+    fn under(&mut self, c: IVec3) -> f32 {
+        match ground() {
+            Ground::Cubes => 0.0,
+            Ground::Stepped => Some(self.step(c.x, c.y, c.z)).filter(|h| h.abs() <= 2.5).unwrap_or(0.0),
+            Ground::Smooth => (0..4).map(|i| self.lift(c + IVec3::new(i & 1, 0, i >> 1))).sum::<f32>() / 4.0,
+        }
+    }
+
     /// Which way the eased ground faces at a corner.
     fn normal(&mut self, c: IVec3) -> Vec3 {
         let (x, z) = (self.lift(c + IVec3::X) - self.lift(c - IVec3::X), self.lift(c + IVec3::Z) - self.lift(c - IVec3::Z));
@@ -172,24 +221,45 @@ impl Eased<'_> {
 pub fn eased_under(world: &World, feet: Vec3) -> Option<f32> {
     let level = (feet.y / CELL).round();
     let cell = IVec3::new((feet.x / CELL).floor() as i32, level as i32, (feet.z / CELL).floor() as i32);
-    if (feet.y / CELL - level).abs() > 0.02 || !eases(world.get(cell - IVec3::Y)) {
+    if (feet.y / CELL - level).abs() > 0.02 || !world.get(cell - IVec3::Y).ground() || ground() == Ground::Cubes {
         return None;
     }
     let chunk = cell.div_euclid(IVec3::splat(CHUNK));
     let near = Near::of(world, chunk);
     let mut eased = Eased { near: &near, reach: REACH, lifts: HashMap::new(), tops: HashMap::new() };
+    let local = cell - chunk * CHUNK;
+    if ground() == Ground::Stepped {
+        let high = eased.step(local.x, local.y, local.z);
+        return (high.abs() <= 2.5).then_some((level + high) * CELL);
+    }
     let (fx, fz) = (feet.x / CELL - cell.x as f32, feet.z / CELL - cell.z as f32);
-    let mut lift = |dx: i32, dz: i32| eased.lift(cell - chunk * CHUNK + IVec3::new(dx, 0, dz));
+    let mut lift = |dx: i32, dz: i32| eased.lift(local + IVec3::new(dx, 0, dz));
     let (a, b) = (lift(0, 0) * (1.0 - fx) + lift(1, 0) * fx, lift(0, 1) * (1.0 - fx) + lift(1, 1) * fx);
     Some((level + a * (1.0 - fz) + b * fz) * CELL)
 }
 
-/// Whether the ground is drawn eased at all. Off, every block is the cube it is: the look
-/// before 2026-11-11, kept so the two can be put side by side (`cargo sandbox --cubes`).
-pub static EASE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+/// How the ground is drawn. The cells are the same in all three; this is only the picture.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(u8)]
+pub enum Ground {
+    /// Every cell the cube it is: the look to 2026-11-11, every slope the same staircase.
+    Cubes,
+    /// Blocks of the size the slope calls for (the default): see [`Eased::step`].
+    Stepped,
+    /// Eased into smooth slopes. Tried and set aside: smooth land under cube trees was two
+    /// games in one picture.
+    Smooth,
+}
 
+pub static GROUND: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(Ground::Stepped as u8);
+
+fn ground() -> Ground {
+    [Ground::Cubes, Ground::Stepped, Ground::Smooth][GROUND.load(std::sync::atomic::Ordering::Relaxed) as usize]
+}
+
+/// Whether a block's faces are drawn eased into slopes.
 fn eases(block: Block) -> bool {
-    block.ground() && EASE.load(std::sync::atomic::Ordering::Relaxed)
+    block.ground() && ground() == Ground::Smooth
 }
 
 /// Cells above or below a corner that a column counts for, up close.
@@ -213,14 +283,14 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                 }
                 let cell = origin + local;
                 if block == Block::Broken {
-                    let (from, lift) = (m.positions.len(), (0..4).map(|i| eased.lift(local + IVec3::new(i & 1, 0, i >> 1))).sum::<f32>() / 4.0 * CELL);
+                    let (from, lift) = (m.positions.len(), eased.under(local) * CELL);
                     bits(world, cell, &mut m);
                     m.positions[from..].iter_mut().for_each(|p| p[1] += lift);
                     continue;
                 }
                 if block.sprig() {
                     // It stands on the ground as the ground is drawn.
-                    let (from, lift) = (m.positions.len(), (0..4).map(|i| eased.lift(local + IVec3::new(i & 1, 0, i >> 1))).sum::<f32>() / 4.0 * CELL);
+                    let (from, lift) = (m.positions.len(), eased.under(local) * CELL);
                     sprig(cell, block, &mut m);
                     m.positions[from..].iter_mut().for_each(|p| p[1] += lift);
                     continue;
@@ -244,6 +314,60 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                     let over = (1..=3).filter(|up| near.get(local + IVec3::Y * *up).foliage()).count();
                     tint *= [1.14, 0.94, 0.8, 0.68][over];
                 }
+                if let (true, Ground::Stepped, Some((level, high))) = (block.ground(), ground(), eased.column(local)) {
+                    // Only the top cell of a column draws: its top, and a riser down to each
+                    // neighbour that stands lower.
+                    if level != y + 1 {
+                        continue;
+                    }
+                    for (n, u, v) in FACES {
+                        if n == IVec3::NEG_Y || (n == IVec3::Y && near.get(local + n).opaque()) {
+                            continue;
+                        }
+                        let low = if n == IVec3::Y { high } else { eased.step(x + n.x, level, z + n.z) };
+                        if n != IVec3::Y && low > high - 1e-3 {
+                            continue;
+                        }
+                        // A low riser is the turf turning over an edge; a high one is the bank under it.
+                        let low_riser = n != IVec3::Y && high - low < 0.99;
+                        let (base, grain) = (if n == IVec3::Y { top } else if low_riser { top.map(|c| c * 0.92) } else { side }, Grain::of(block, n == IVec3::Y || low_riser));
+                        // A riser is drawn in lengths that end where the grain's tile does.
+                        let mut from = low;
+                        loop {
+                            let to = if n == IVec3::Y { high } else { high.min((((cell.y + 1) as f32 + from) / SPAN as f32 + 1e-4).floor() * SPAN as f32 + SPAN as f32 - (cell.y + 1) as f32) };
+                            let start = m.positions.len() as u32;
+                            for (su, sv) in [(0, 0), (1, 0), (1, 1), (0, 1)] {
+                                let corner = cell + n.max(IVec3::ZERO) + u * su + v * sv;
+                                let foot = n != IVec3::Y && corner.y == cell.y;
+                                let height = (cell.y + 1) as f32 + if foot { from } else { to };
+                                m.positions.push([corner.x as f32 * CELL, height * CELL, corner.z as f32 * CELL]);
+                                // A low riser is lit as the ground it is a fold of. Lit as a wall it
+                                // takes the warm light of the horizon while the ground takes the
+                                // blue of the sky overhead, and a forest floor is a grid of tiles.
+                                let facing = if low_riser { Vec3::Y } else { n.as_vec3() };
+                                m.normals.push(facing.to_array());
+                                let flat = uv(grain, n, cell, corner, 1);
+                                m.uvs.push(if n == IVec3::Y {
+                                    flat
+                                } else {
+                                    // The foot of a length may lie on the tile's lower edge and its
+                                    // head on the upper: each is read from inside the length.
+                                    let inside = height + if foot { 1e-4 } else { -1e-4 };
+                                    [flat[0], grain.uv(0.0, SPAN as f32 - inside.rem_euclid(SPAN as f32))[1]]
+                                });
+                                // A riser is in its own shade toward its foot.
+                                let k = tint * if foot && to - from > 0.3 { 0.7 } else { 1.0 };
+                                m.colors.push([base[0] * k * (1.0 + warm), base[1] * k, base[2] * k * (1.0 - warm), 1.0]);
+                            }
+                            m.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
+                            if to >= high - 1e-3 {
+                                break;
+                            }
+                            from = to;
+                        }
+                    }
+                    continue;
+                }
                 for (n, u, v) in FACES {
                     // The underside of the world is never seen.
                     if cell.y == 0 && n == IVec3::NEG_Y {
@@ -261,7 +385,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                     let mut at = [Vec3::ZERO; 4];
                     // What stands on the ground and is not ground (a trunk) runs a little
                     // way into it, since the ground may be drawn lower than its cubes.
-                    let rooted = !block.ground() && n.y == 0 && eases(near.get(local - IVec3::Y));
+                    let rooted = !block.ground() && n.y == 0 && near.get(local - IVec3::Y).ground() && ground() != Ground::Cubes;
                     for (i, (su, sv)) in [(0, 0), (1, 0), (1, 1), (0, 1)].into_iter().enumerate() {
                         let corner = cell + n.max(IVec3::ZERO) + u * su + v * sv;
                         let (du, dv) = (u * (su * 2 - 1), v * (sv * 2 - 1));

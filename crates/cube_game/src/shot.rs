@@ -286,7 +286,7 @@ fn scene(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terra
         // Only `--play` uses the orbit: behind the player, facing the way the route runs.
         crate::camera::Orbit { focus, yaw: args.yaw, pitch: 0.28, distance: 5.5 },
         Transform::from_translation(from).looking_at(focus, Vec3::Y),
-        world::fog(),
+        world::look(),
     ));
     stage.path = args.scene.clone().unwrap();
     stage.legend = format!("creatures={}", ids.join(","));

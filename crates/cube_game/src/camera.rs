@@ -24,7 +24,7 @@ impl Plugin for CameraPlugin {
 }
 
 fn setup(mut commands: Commands, args: Res<crate::Args>) {
-    commands.spawn((Camera3d::default(), Orbit { focus: Vec3::new(args.at.0, 11.0, args.at.1), yaw: 0.6, pitch: 0.35, distance: 12.0 }, world::fog()));
+    commands.spawn((Camera3d::default(), Orbit { focus: Vec3::new(args.at.0, 11.0, args.at.1), yaw: 0.6, pitch: 0.35, distance: 12.0 }, world::look()));
 }
 
 fn orbit(

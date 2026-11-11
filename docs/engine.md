@@ -39,12 +39,22 @@ The rule this protects: **the simulation never needs a window.** A big sandbox w
 - **Deep water is harder to see through**: a water face's alpha grows with the water under it, so a ford shows its bed and the sea does not. The sea beyond the island is four plain sheets out past the fog.
 - **Not yet**: greedy meshing (measured elsewhere at 50 to 350 µs a chunk for plain meshing, so not urgent), meshing off the main thread, level of detail, chunk streaming, saving.
 
-### Eased ground (on trial)
+### The ground's blocks
 
-- **The land's surface can be drawn as slopes, not stairs** (`mesh::Eased`, 2026-11-11). The cells are untouched: digging, building and what a body stands on are still cubes. Each corner of the ground's surface (soil, sand, snow, stone: `Block::ground`) is drawn at the mean height of the ground in the sixteen columns round it, a column counting for no more than six metres above or below. A staircase becomes the ramp through its middle, risers close to nothing and are not drawn, and colours are the mean of the four columns at a corner, so grass runs into sand without a sawn edge. Worked out from the cells alone, so chunks and levels of detail agree.
-- **What stands on it follows**: ground cover and the bits of broken cells are drawn moved by as much as the ground under them, trunks run a little way into it, and a creature's feet are drawn where the ground is (`mesh::eased_under`).
-- **Not settled.** Smooth land under cube trees reads as two games (the developer, the day it was built). `cargo sandbox --cubes` draws the ground as cubes, for the two to be put side by side. Open: go back to cubes; ease what grows as well; or something between. The plan for building bears on it: not one small cube at a time, but dug in pieces and placed as parts of different sizes.
-- **Known faults while on trial**: thin gaps where two levels of detail meet on a steep face; faces stretched on near-vertical rock.
+- **The land is drawn in blocks of the size its slope calls for** (`mesh::Eased::step`, 2026-11-11; `mesh::Ground::Stepped`, the default). Nearly level ground is cut in steps of a bit (5 cm), so a meadow rolls; a slope is whole cells; steep ground is blocks half a metre a side and a rock face blocks of a metre. The land gets blockier as it gets wilder, and no two hillsides are the same staircase, which is what every slope was when each was drawn as its 0.25 m cubes. It is voxels throughout: only the size varies.
+- **The cells are untouched.** Digging, building and what a body stands on are the same 0.25 m cells and bits; this is how the top cell of each column of land (`Block::ground`: soil, sand, snow, stone) is drawn. Its height is the mean height of the ground in the sixteen columns round it, rounded to the block's size, with a riser down to each neighbour that stands lower. Ground cover, the bits of a broken cell and a creature's feet (`mesh::eased_under`) are drawn at that height.
+- **Stone that is not land is drawn as its cubes**: a column whose top would be drawn more than a few cells from where it is (a block standing alone, something built) falls back to plain cubes.
+- **A low riser is lit and coloured as the ground it is a fold of.** Lit as a wall it took the warm light of the horizon while the ground beside it took the blue of the sky overhead, and a forest floor was a grid of orange lines.
+- **Tried and set aside: the ground eased fully smooth** (`--smooth`). It was built first, from a misreading of what was asked. Smooth land under cube trees was two games in one picture. `--cubes` draws the old plain cubes.
+- **Not done**: the far levels of detail still draw plain cubes of their own size, so the ground changes character at 40 m; a cube-drawn neighbour of a stepped column can leave a gap.
+
+### Light
+
+- **The sky is air scattering the sun** (Bevy's `Atmosphere`, 2026-11-11), so the colour of the sunlight, of the sky and of the light that fills shadows all come from where the sun is, and will follow it when there is a time of day. Before, a white sun and a flat blue fill lit everything evenly and nothing had depth.
+- **The sun stands at 35 degrees**: everything throws a shadow longer than itself.
+- **On every camera that looks at the world** (`world::look`): exposure for full sun, a filmic roll-off (TonyMcMapface), a little more saturation and contrast, bloom, screen-space ambient occlusion for the depth between one thing and another, and haze that warms toward the sun.
+- **Tried and backed out the same hour**: lit air (volumetric fog) over the whole island turned the sky purple and the grass yellow; a stronger grade made shade black. Light shafts want a volume placed where they are wanted (a wood, a morning), not one over everything.
+- **Not done**: a time of day, weather, wind, anything in the air.
 
 ### Paint
 

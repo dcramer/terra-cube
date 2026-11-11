@@ -27,6 +27,8 @@ const ROOM: usize = TILE + 2 * BORDER;
 /// down to eight texels a tile and one of border).
 pub const ACROSS: usize = 4;
 pub const LEVELS: usize = 4;
+/// How strongly the grain shows: 1 is as the shapes are written.
+pub const DEPTH: f32 = 1.7;
 /// The brightness every tile averages, of 1.
 pub const MEAN: f32 = 0.8;
 
@@ -168,7 +170,9 @@ pub fn atlas() -> Atlas {
     let size = ROOM * ACROSS;
     let mut first = vec![MEAN; size * size];
     for (i, &grain) in Grain::ALL.iter().enumerate() {
-        let mut tile: Vec<f32> = (0..TILE * TILE).map(|t| texel(grain, t % TILE, t / TILE).max(0.05)).collect();
+        // The shapes are written gently and deepened here, in one place: at their written
+        // strength the developer saw no texture at all.
+        let mut tile: Vec<f32> = (0..TILE * TILE).map(|t| (1.0 + (texel(grain, t % TILE, t / TILE) - 1.0) * DEPTH).max(0.05)).collect();
         // Every tile to the same mean, so far off it is its block's colour and no other.
         // (Nothing is brighter than 1, so a pale tile with dark marks takes a few rounds.)
         for _ in 0..12 {
