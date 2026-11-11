@@ -222,8 +222,8 @@ fn ripple(time: Res<Time>, live: Option<Res<crate::motion::Live>>, waters: Optio
     let dull = 1.0 - ((up - 0.1) / 0.45).clamp(0.0, 1.0);
     for handle in &waters.0 {
         if let Some(mut water) = materials.get_mut(handle) {
-            water.perceptual_roughness = 0.3 + 0.55 * dull;
-            water.reflectance = 0.4 - 0.25 * dull;
+            water.perceptual_roughness = 0.1 + 0.6 * dull;
+            water.reflectance = 0.5 - 0.3 * dull;
             water.uv_transform = bevy::math::Affine2::from_translation(Vec2::new(-0.8, -0.6) * (time.elapsed_secs() * 0.07));
         }
     }

@@ -429,8 +429,10 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                 if matches!(block, Block::Grass | Block::Turf | Block::Moss | Block::Litter) || block.foliage() {
                     // Patches: lighter and yellower here, deeper there.
                     let drift = patch(cell) - 0.5;
-                    tint *= 1.0 + drift * 0.35;
-                    warm = drift * 0.25;
+                    // And a broader drift over tens of metres: a hillside is not one green.
+                    let wide = patch(IVec3::new(cell.x / 5 + 900, 0, cell.z / 5 - 400)) - 0.5;
+                    tint *= 1.0 + drift * 0.4 + wide * 0.35;
+                    warm = drift * 0.3 + wide * 0.45;
                 }
                 if block.foliage() {
                     // A crown has depth: leaves under leaves are in their shade, the ones on
@@ -539,7 +541,18 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                         // Water is not painted from the atlas: its ripples lie by where it is in
                         // the world, four metres to a repeat (`WATER_TILE`).
                         m.uvs.push(if liquid { [corner.x as f32 * CELL / WATER_TILE, corner.z as f32 * CELL / WATER_TILE] } else { uv(grain, n, cell, corner, 1) });
-                        let base = if eases(block) && n == IVec3::Y { eased.corner(corner - origin).1 } else { base };
+                        let mut base = if eases(block) && n == IVec3::Y { eased.corner(corner - origin).1 } else { base };
+                        // Where soft ground is steep, nothing grows on it: bare earth shows on a
+                        // bank and stone on a face, by how far the slope is from level.
+                        if eases(block) && matches!(block, Block::Grass | Block::Turf | Block::Litter | Block::Moss | Block::Dirt) {
+                            let level = facing.y;
+                            let (earth, stone) = (((0.86 - level) / 0.12).clamp(0.0, 1.0), ((0.66 - level) / 0.14).clamp(0.0, 1.0));
+                            let (dirt, rock) = (Block::Dirt.colors().0, Block::Stone.colors().1);
+                            base = std::array::from_fn(|c| {
+                                let soil = base[c] + (dirt[c] - base[c]) * earth;
+                                soil + (rock[c] - soil) * stone
+                            });
+                        }
                         m.colors.push([base[0] * k * (1.0 + warm), base[1] * k, base[2] * k * (1.0 - warm), alpha]);
                     }
                     // A riser between two treads has closed to nothing: it is not drawn.
@@ -772,8 +785,10 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
                 let mut warm = 0.0;
                 if matches!(block, Block::Grass | Block::Turf | Block::Moss | Block::Litter) || block.foliage() {
                     let drift = patch(cell) - 0.5;
-                    tint *= 1.0 + drift * 0.35;
-                    warm = drift * 0.25;
+                    // And a broader drift over tens of metres: a hillside is not one green.
+                    let wide = patch(IVec3::new(cell.x / 5 + 900, 0, cell.z / 5 - 400)) - 0.5;
+                    tint *= 1.0 + drift * 0.4 + wide * 0.35;
+                    warm = drift * 0.3 + wide * 0.45;
                 }
                 if block.ground() && ground() == Ground::Stepped {
                     // As up close: the top group of a column draws its top and a riser down

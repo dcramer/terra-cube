@@ -11,7 +11,8 @@ The developer looked at the cube world with its light, paint and life all in and
 - **The world is voxels underneath and shapes to look at.** The land is drawn eased into smooth ground. What grows is drawn as what it is: round tapering trunks and limbs, leaf in masses of small cards (`cube_game::flora`, from the shapes `cube_sim::plants` grew). Cells are still what is dug, built on, walked on and collided with.
 - **Cubes are for what a person builds.** A cube seen in the world should mean someone put it there.
 - **The reference is Eco's level of detail with a more realistic look**: real materials, natural colour, real light. Not flat block colour, not hard cube edges on natural things.
-- Still cubes and still to change: rocks (cut to the 5 cm bit, and reading as stepped blocks), flowers and mushrooms (little boxes), the far land's trees (plain boxes beyond 176 m).
+- **Colour is muted and varied** (the same day): greens are olive and dark, not bright; a hillside drifts in tone over tens of metres as well as over a few; where soft ground is steep, bare earth shows, and on a face, stone. Rocks are faceted stone, flowers a bloom's true size, far trees rounded crowns and cones.
+- Still to change: grass is thin crossed blades where Eco has soft dense clumps; leaf cards look papery close to; steep rock stretches into a sawtooth; water reflects the sky but not the land.
 
 `--blocky` draws the trees as cubes again, `--stepped` and `--cubes` the ground: for comparison only.
 
