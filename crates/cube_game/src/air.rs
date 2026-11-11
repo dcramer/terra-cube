@@ -277,7 +277,7 @@ fn setup(mut commands: Commands, registry: Res<Registry>, mut meshes: ResMut<Ass
         let (out, speed) = (22.0 + roll(&mut state) * 30.0, 7.0 + roll(&mut state) * 4.0);
         for b in 0..4 + (roll(&mut state) * 5.0) as usize {
             let bird = Bird { middle: middle + Vec3::Y * (roll(&mut state) - 0.5) * 6.0, out: out + (roll(&mut state) - 0.5) * 9.0, speed, at: b as f32 * 0.22 + roll(&mut state) * 0.2 };
-            commands.spawn((Sings("crow"), bird, Transform::from_translation(far), Visibility::default())).with_child(model(&registry, "soarer", if b % 3 == 0 { "fly" } else { "glide" }, 0.8));
+            commands.spawn((Sings("hawk"), bird, Transform::from_translation(far), Visibility::default())).with_child(model(&registry, "soarer", if b % 3 == 0 { "fly" } else { "glide" }, 0.8));
         }
     }
 }

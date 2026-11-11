@@ -294,7 +294,7 @@ fn singers(mut commands: Commands, time: Res<Time>, mut bank: ResMut<Bank>, came
             // bird at arm's length was a call in the ear.
             let from = eye + (at.translation - eye).normalize_or(Vec3::Y) * away.max(12.0);
             bank.play(&mut commands, sings.0, Some(from), match sings.0 {
-                "crow" => 0.8,
+                "crow" | "hawk" => 0.8,
                 // A dragonfly's wings are barely heard.
                 "buzz" => 0.2,
                 _ => 0.4,

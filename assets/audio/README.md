@@ -76,6 +76,13 @@ Every file here is CC0 or public domain, fetched 2026-11-10 from Kenney.nl, Open
 
 Replaced 2026-11-11, after the developer listened: the first water loop was a seven-second "water loop" from a pack of splash effects and was heard as a drain; the first footfalls were made sounds from an interface pack. Both are now recordings of the thing itself. `tools/audio/steady.py` says how even a loop is and how much of it is low rumble; it could not tell the two water loops apart, so the choice rests on what each is a recording of, and still wants an ear.
 
+Added 2026-11-11, so the hawks overhead stop calling as crows:
+
+| File | Seconds | What it is | Source page | Original file | Licence | Where the licence is stated |
+|---|---|---|---|---|---|---|
+| hawk_1.ogg | 2.60 | A hawk's call (0.45 to 3.05 s of an 8.5 s recording of a roadside hawk, Belize, 2023), rumble under 400 Hz taken off | https://commons.wikimedia.org/wiki/File:Roadside_Hawk_Belize.mp3 | Roadside_Hawk_Belize.mp3 | CC0 | Licensing section: CC0 1.0 dedication, no attribution required |
+| hawk_2.ogg | 2.60 | A hawk's call (4.0 to 6.6 s of an 8.5 s recording of a roadside hawk, Belize, 2023), rumble under 400 Hz taken off | https://commons.wikimedia.org/wiki/File:Roadside_Hawk_Belize.mp3 | Roadside_Hawk_Belize.mp3 | CC0 | Licensing section: CC0 1.0 dedication, no attribution required |
+
 Made here, not recorded (2026-11-11), for creatures that had no sound of their own:
 
 | File | Seconds | What it is | Source | Original | Licence | Stated |
