@@ -582,7 +582,7 @@ fn small(mut commands: Commands, time: Res<Time>, mut bank: ResMut<Bank>, live: 
                 cricket.rests = cricket.next + 6.0 + bank.roll() * 22.0;
             } else {
                 cricket.next = t + cricket.every;
-                bank.far(&mut commands, "cricket", cricket.at, 0.09, cricket.pitch);
+                bank.far(&mut commands, "cricket", cricket.at, 0.07, cricket.pitch);
             }
         }
     }
