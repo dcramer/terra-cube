@@ -246,7 +246,7 @@ fn spawn_sun(commands: &mut Commands, mediums: &mut Assets<ScatteringMedium>, im
 /// dark as night cannot be played in: the camera opens up twelve stops, as an eye does, and
 /// the moon is brighter than a real one, so the land is dim and blue but can be read.
 const DAY_EV: f32 = 13.4;
-const NIGHT_EV: f32 = 0.0;
+const NIGHT_EV: f32 = 1.3;
 const MOONLIGHT: f32 = 1.6;
 
 /// The camera's exposure for a sun this high (the sine of its height): what light there is
@@ -255,11 +255,11 @@ const MOONLIGHT: f32 = 1.6;
 fn exposure_for(sun_up: f32) -> f32 {
     let between = |lo: f32, hi: f32, from: f32, to: f32| from + (to - from) * ((sun_up - lo) / (hi - lo)).clamp(0.0, 1.0);
     if sun_up < 0.05 {
-        between(-0.105, 0.05, NIGHT_EV, 10.0)
+        between(-0.105, 0.05, NIGHT_EV, 10.5)
     } else if sun_up < 0.35 {
-        between(0.05, 0.35, 10.0, 13.0)
+        between(0.05, 0.35, 10.5, 13.4)
     } else {
-        between(0.35, 0.85, 13.0, 14.0)
+        between(0.35, 0.85, 13.4, 14.4)
     }
 }
 
@@ -306,7 +306,7 @@ fn sky(
         light.shadow_maps_enabled = day < 0.4 && to_moon.y > 0.05;
     }
     // What the moon does not reach is not black.
-    *ambient = GlobalAmbientLight { color: Color::srgb(0.45, 0.6, 1.0), brightness: 0.9 * (1.0 - day), ..default() };
+    *ambient = GlobalAmbientLight { color: Color::srgb(0.45, 0.6, 1.0), brightness: 0.55 * (1.0 - day), ..default() };
     // Low sun warms the haze; night takes nearly all of it away.
     let low = (1.0 - to_sun.y.abs() * 4.0).clamp(0.0, 1.0) * day;
     let lit = 0.015 + 0.985 * day;
