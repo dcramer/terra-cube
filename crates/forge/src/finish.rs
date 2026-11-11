@@ -66,27 +66,37 @@ fn ground_speed(sk: &Skeleton, roles: &Roles, clip: &Clip) -> Option<f32> {
     None
 }
 
-/// How fast a recorded two-legged gait goes, two ways. `stance`: the foot that is lower is the
-/// one carrying the body, and the body goes forward as fast as that foot goes back; the middle
-/// of those speeds. `steps`: how far apart the feet get, fore and aft, added up over the clip:
-/// each swing from one foot ahead to the other ahead is a step's travel. The first is right
-/// for a run too (a step's travel leaves out the flight); the second is the check on it.
+/// How fast a recorded gait goes, two ways, over each pair of legs (a biped's one, an animal's
+/// fore and hind). `stance`: of a pair, the foot that is lower is the one carrying the body,
+/// and the body goes forward as fast as that foot goes back; the middle of those speeds.
+/// `steps`: how far apart the pair's feet get, fore and aft, added up over the clip: each
+/// swing from one foot ahead to the other ahead is a step's travel. The first is right for a
+/// run too (a step's travel leaves out the flight); the second is the check on it.
 fn recorded_speed(sk: &Skeleton, roles: &Roles, clip: &Clip) -> Option<(f32, f32)> {
-    let [a, b] = [roles.legs.first()?.foot(), roles.legs.get(1)?.foot()];
+    let pair = |front: bool| -> Option<[usize; 2]> {
+        let of: Vec<usize> = roles.legs.iter().filter(|l| l.front == front).map(|l| l.foot()).collect();
+        (of.len() == 2).then(|| [of[0], of[1]])
+    };
+    let pairs: Vec<[usize; 2]> = if roles.legs.len() == 2 { vec![[roles.legs[0].foot(), roles.legs[1].foot()]] } else { [pair(true), pair(false)].into_iter().flatten().collect() };
+    if pairs.is_empty() {
+        return None;
+    }
     let worlds: Vec<_> = clip.frames.iter().map(|p| sk.pose_world(p)).collect();
     let (mut stance, mut swung) = (Vec::new(), 0.0);
     for w in worlds.windows(2) {
         let at = |m: &Vec<glam::Mat4>, j: usize| m[j].w_axis.truncate();
-        let (low, high) = if at(&w[0], a).y < at(&w[0], b).y { (a, b) } else { (b, a) };
-        if at(&w[0], high).y - at(&w[0], low).y > 0.01 * roles.height {
-            stance.push(-(at(&w[1], low) - at(&w[0], low)).dot(roles.forward) * clips::FPS);
+        for &[a, b] in &pairs {
+            let (low, high) = if at(&w[0], a).y < at(&w[0], b).y { (a, b) } else { (b, a) };
+            if at(&w[0], high).y - at(&w[0], low).y > 0.01 * roles.height {
+                stance.push(-(at(&w[1], low) - at(&w[0], low)).dot(roles.forward) * clips::FPS);
+            }
+            let apart = |m: &Vec<glam::Mat4>| (at(m, a) - at(m, b)).dot(roles.forward);
+            swung += (apart(&w[1]) - apart(&w[0])).abs();
         }
-        let apart = |m: &Vec<glam::Mat4>| (at(m, a) - at(m, b)).dot(roles.forward);
-        swung += (apart(&w[1]) - apart(&w[0])).abs();
     }
     stance.retain(|v| *v > 0.0);
     stance.sort_by(f32::total_cmp);
-    let steps = swung / 2.0 / clip.seconds();
+    let steps = swung / 2.0 / clip.seconds() / pairs.len() as f32;
     Some((*stance.get(stance.len() / 2)?, steps))
 }
 
