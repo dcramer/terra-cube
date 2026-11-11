@@ -54,9 +54,13 @@ idle = "idle"
 walk = "walk"
 run = "run"
 attack = "slash"
+# Tripo's `fall` is a person staggering, going down and lying still, then getting up: all but
+# the getting up is a death, and a better one than the made topple.
+die = "fall"
 # `slash` is a slow two-handed overhead chop inside 6.6 s: keep the wind-up and blow, at double speed.
 [plans.biped.trim]
 attack = [0.9, 3.3, 2.0]
+die = [0.0, 2.45, 1.3]
 
 # Four-legged animals and monsters. Every clip is made (clips.rs).
 [plans.quadruped]

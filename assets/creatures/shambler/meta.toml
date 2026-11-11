@@ -14,9 +14,9 @@ looping = false
 source = "tripo"
 
 [clips.die]
-seconds = 1.4
+seconds = 1.9
 looping = false
-source = "made"
+source = "tripo"
 
 [clips.fall]
 seconds = 0.9
