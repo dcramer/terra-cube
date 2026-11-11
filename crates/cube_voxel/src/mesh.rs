@@ -1,7 +1,8 @@
-//! Chunk meshing: one quad per visible face, with ambient occlusion baked into vertex colour
-//! and a little per-cell colour variation so flat ground does not read as one tile.
+//! Chunk meshing: one quad per visible face, with ambient occlusion baked into vertex colour,
+//! the block's colour in it too, and a place in the atlas of grains (`texture`) for the paint.
 //! Not greedy yet: see docs/engine.md for the order of meshing work.
 
+use crate::texture::{Grain, MEAN, SPAN};
 use crate::{Block, CELL, CHUNK, Chunk, SPLIT, World};
 use glam::IVec3;
 
@@ -10,6 +11,8 @@ pub struct MeshData {
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
     pub colors: Vec<[f32; 4]>,
+    /// Where each corner is in the atlas of grains (`texture`).
+    pub uvs: Vec<[f32; 2]>,
     pub indices: Vec<u32>,
 }
 
@@ -22,6 +25,26 @@ const FACES: [(IVec3, IVec3, IVec3); 6] = [
     (IVec3::Z, IVec3::X, IVec3::Y),
     (IVec3::NEG_Z, IVec3::Y, IVec3::X),
 ];
+
+/// Where a corner of a face is in the atlas. `cube` is the least corner of the cube the face
+/// belongs to and `corner` the face's corner, both in units of which there are `per` to a
+/// cell (1 for cells, 5 for bits). The picture lies flat on tops and stands upright on sides,
+/// and runs on unbroken from one cube to the next.
+fn uv(grain: Grain, n: IVec3, cube: IVec3, corner: IVec3, per: i32) -> [f32; 2] {
+    let along = |c: i32, p: i32| (c.rem_euclid(SPAN * per) + (p - c)) as f32 / per as f32;
+    if n.y != 0 {
+        grain.uv(along(cube.x, corner.x), along(cube.z, corner.z))
+    } else {
+        let across = if n.x != 0 { along(cube.z, corner.z) } else { along(cube.x, corner.x) };
+        grain.uv(across, SPAN as f32 - along(cube.y, corner.y))
+    }
+}
+
+/// How much one cube differs in shade from the next: little, so a wall is its grain and not a
+/// chequer of cubes.
+fn shade(p: IVec3) -> f32 {
+    (0.96 + 0.08 * hash(p)) / MEAN
+}
 
 fn hash(p: IVec3) -> f32 {
     let mut h = (p.x as u32).wrapping_mul(0x9E3779B1) ^ (p.y as u32).wrapping_mul(0x85EBCA77) ^ (p.z as u32).wrapping_mul(0xC2B2AE3D);
@@ -90,7 +113,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                     continue;
                 }
                 let (top, side) = block.colors();
-                let mut tint = 0.9 + 0.2 * hash(cell);
+                let mut tint = shade(cell);
                 let mut warm = 0.0;
                 // Water hides what is under it by how much of it there is: a ford shows its
                 // bed, the sea does not.
@@ -119,6 +142,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                         continue;
                     }
                     let base = if n == IVec3::Y { top } else { side };
+                    let grain = Grain::of(block, n.y != 0);
                     let start = m.positions.len() as u32;
                     let mut ao = [0.0f32; 4];
                     for (i, (su, sv)) in [(0, 0), (1, 0), (1, 1), (0, 1)].into_iter().enumerate() {
@@ -131,6 +155,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                         let k = ao[i] * tint;
                         m.positions.push((corner.as_vec3() * CELL).to_array());
                         m.normals.push(n.as_vec3().to_array());
+                        m.uvs.push(uv(grain, n, cell, corner, 1));
                         m.colors.push([base[0] * k * (1.0 + warm), base[1] * k, base[2] * k * (1.0 - warm), alpha]);
                     }
                     // Split the quad along the diagonal that keeps the AO gradient smooth.
@@ -163,12 +188,13 @@ fn bits(world: &World, cell: IVec3, m: &mut MeshData) {
         let i = i as i32;
         let bit = cell * SPLIT + IVec3::new(i % SPLIT, i / (SPLIT * SPLIT), i / SPLIT % SPLIT);
         let (top, side) = block.colors();
-        let tint = 0.9 + 0.2 * hash(bit);
+        let tint = shade(bit);
         for (n, u, v) in FACES {
             if near(bit + n).solid() {
                 continue;
             }
             let base = if n == IVec3::Y { top } else { side };
+            let grain = Grain::of(block, n.y != 0);
             let start = m.positions.len() as u32;
             let mut ao = [0.0f32; 4];
             for (i, (su, sv)) in [(0, 0), (1, 0), (1, 1), (0, 1)].into_iter().enumerate() {
@@ -181,6 +207,7 @@ fn bits(world: &World, cell: IVec3, m: &mut MeshData) {
                 let k = ao[i] * tint;
                 m.positions.push((corner.as_vec3() * CELL / SPLIT as f32).to_array());
                 m.normals.push(n.as_vec3().to_array());
+                m.uvs.push(uv(grain, n, bit, corner, SPLIT));
                 m.colors.push([base[0] * k, base[1] * k, base[2] * k, 1.0]);
             }
             if ao[0] + ao[2] > ao[1] + ao[3] {
@@ -207,7 +234,8 @@ fn blade(m: &mut MeshData, cell: IVec3, lo: IVec3, hi: IVec3, colour: [f32; 3]) 
         for (su, sv) in [(0, 0), (1, 0), (1, 1), (0, 1)] {
             m.positions.push(at(from + u * size * su + v * size * sv));
             m.normals.push(n.as_vec3().to_array());
-            m.colors.push([colour[0] * shade, colour[1] * shade, colour[2] * shade, 1.0]);
+            m.uvs.push(Grain::Plain.uv(SPAN as f32 * 0.5, SPAN as f32 * 0.5));
+            m.colors.push([colour[0] * shade / MEAN, colour[1] * shade / MEAN, colour[2] * shade / MEAN, 1.0]);
         }
         m.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
     }
@@ -312,7 +340,7 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
                 }
                 let cell = origin + s * step;
                 let (top, side_colour) = block.colors();
-                let mut tint = 0.9 + 0.2 * hash(cell);
+                let mut tint = shade(cell);
                 let mut warm = 0.0;
                 if matches!(block, Block::Grass | Block::Turf | Block::Moss | Block::Litter) || block.foliage() {
                     let drift = patch(cell) - 0.5;
@@ -324,6 +352,7 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
                         continue;
                     }
                     let base = if normal == IVec3::Y { top } else { side_colour };
+                    let grain = Grain::of(block, normal.y != 0);
                     let start = m.positions.len() as u32;
                     let mut ao = [0.0f32; 4];
                     for (i, (su, sv)) in [(0, 0), (1, 0), (1, 1), (0, 1)].into_iter().enumerate() {
@@ -336,6 +365,7 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
                         let k = ao[i] * tint;
                         m.positions.push((corner.as_vec3() * CELL).to_array());
                         m.normals.push(normal.as_vec3().to_array());
+                        m.uvs.push(uv(grain, normal, cell, corner, 1));
                         m.colors.push([base[0] * k * (1.0 + warm), base[1] * k, base[2] * k * (1.0 - warm), if liquid { 0.8 } else { 1.0 }]);
                     }
                     if ao[0] + ao[2] > ao[1] + ao[3] {

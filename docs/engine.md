@@ -39,6 +39,14 @@ The rule this protects: **the simulation never needs a window.** A big sandbox w
 - **Deep water is harder to see through**: a water face's alpha grows with the water under it, so a ford shows its bed and the sea does not. The sea beyond the island is four plain sheets out past the fog.
 - **Not yet**: greedy meshing (measured elsewhere at 50 to 350 µs a chunk for plain meshing, so not urgent), meshing off the main thread, level of detail, chunk streaming, saving.
 
+### Paint
+
+- **One atlas of grains, made in code at start** (`cube_voxel::texture`, 2026-11-11): fifteen tiles of 64 texels with a border of 8 that repeats the tile's far side, and three smaller copies each half the last. The border is what lets the picture be drawn smooth and shrunk with distance without a tile taking colour from its neighbour; a tile and its border halve cleanly three times. No art files, no engine types: the game wraps the bytes in an image.
+- **The mesher gives every corner a place in it** from where the corner is in the world, not in its cube: tops lie flat, sides stand upright, and the tile repeats every eight cells, so bits, whole cells and the far levels of detail all show the same picture at the same place.
+- **A grain holds brightness only and every tile averages 0.8**; the mesher divides the block's colour by that. So the far levels need no other colours, and grain can be changed without touching a block.
+- **Still one material and one draw a chunk.** Not done: grain that differs by biome or wetness, normal or roughness maps (the art guide says base colour only), and merging faces (the per-cube shade is small now but still in the vertices).
+- **Every scene shot says what it cost** (`pace`): the middle and worst frame of the last sixty, the terrain faces in view, and what drew them. Frame times compare only on the same machine, and a scene may be held to the screen's 60 a second; faces in view compare anywhere.
+
 ## The world
 
 Built 2026-11-10. `cube_sim::terrain` makes it; `cargo world survey` and `map` judge it.

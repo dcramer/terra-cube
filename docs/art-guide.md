@@ -25,6 +25,8 @@ Each of these was built and looked at, not argued. Do not try them again without
 | Bulky cartoony proportions, oversized head | to 2026-11-10 | Replaced. It was the house style's own wording and it made a shelf of toys. |
 | Trees as a square column and one blob | to 2026-11-10 | Replaced: from the ground a forest was a field of sticks. |
 | Boulders of whole 0.25 m cubes | to 2026-11-10 | Replaced: a pile of crates, worse than a stone the player can build. |
+| Cubes of flat colour, each a tenth lighter or darker than the next | to 2026-11-11 | Replaced by grain: every surface was a chequer of cubes. |
+| Grain as square texels the size of a bit (5 cm), drawn sharp | 2026-11-11 | Dropped the same hour: it is Minecraft's look exactly. |
 | Boulders as rounded lumps, all about a metre | to 2026-11-10 | Replaced: uniform orbs. |
 | Sizes scaled up a number at a time (trees, then the island, then the hills) | to 2026-11-10 | Replaced by one table of sizes that is measured: each time something was left behind and the person stood like a giant on a model. |
 | Mountains wherever a noise ran high | to 2026-11-10 | Replaced: flat-topped walls round most of the island's rim, straight up from the plain. |
@@ -114,7 +116,9 @@ Two rules that the numbers come from:
 
 - **A cube is 0.25 m; a bit is 5 cm.** Almost everything is whole cubes. A cube breaks into 125 bits where something smaller than a cube is wanted: a hole dug, a stone built, a boulder's surface. Nothing in the world is smaller than a bit.
 - **What the generator makes is shaped to the bit where a cube is too coarse** (boulders), and left as whole cubes where it is not (ground, trunks, foliage): a broken cube's face is 25 squares where a whole one's is one.
-- **Colour is by block**, a top colour and a side colour each, in `Block::colors` (`cube_voxel`). Every cube is tinted a little lighter or darker by where it is, and grass, forest floor and leaves drift warmer and cooler in patches six metres across, so no large area is one flat colour. No textures.
+- **Colour is by block, grain is by surface.** A block has a top colour and a side colour (`Block::colors`, `cube_voxel`). Over that goes a grain: one of fifteen small pictures made in code (`cube_voxel::texture`: grass, soil, rock from above, rock in beds from the side, sand, snow, pebbles, bark, birch bark, end grain, leaves, needles, leaf litter, moss), holding only lighter and darker, never colour. A new block needs a colour and the name of a grain it shares, not a painting.
+- **Grain is painted, not pixelled.** Soft shapes the size of brush strokes (12 cm and up), drawn smooth, on a tile two metres across that runs on unbroken from cube to cube: the eye follows the grain of a wall, not its grid of cubes. Cubes differ in shade by a few parts in a hundred, not the fifth they did before there was grain. Grass, forest floor and leaves still drift warmer and cooler in patches six metres across.
+- **Far off a surface is its block's colour**: every grain averages the same brightness, and smaller copies of the picture take over with distance, so nothing sparkles and nothing changes tone at a level of detail.
 - **Light is baked where it can be**: the corners of a cube darken where neighbours crowd them (ambient occlusion in vertex colour). One sun with shadows, a blue ambient strong enough that a shaded face is not black.
 
 | Block | Reads as |

@@ -4,6 +4,8 @@
 use bevy::{asset::RenderAssetUsages, light::CascadeShadowConfigBuilder, mesh::Indices, prelude::*, render::render_resource::PrimitiveTopology};
 use cube_sim::terrain::{self, Land, SEA};
 use bevy::camera::visibility::VisibilityRange;
+use bevy::image::{ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use cube_voxel::{
     Block, CELL, CHUNK, World as Voxels,
     mesh::{mesh_chunk, mesh_chunk_far},
@@ -15,6 +17,10 @@ pub struct WorldPlugin;
 /// The voxel world, and the lie of the land it was made from (heights, biomes, trees).
 #[derive(Resource)]
 pub struct Terrain(pub Voxels, pub Land);
+
+/// How many faces a chunk's mesh has: what a scene's `pace` adds up for the ones in view.
+#[derive(Component)]
+pub struct Faces(pub u32);
 
 /// The chunks whose cells have changed since they were last meshed.
 #[derive(Resource, Default)]
@@ -71,9 +77,19 @@ pub fn spawn_lights(commands: &mut Commands, shadows: bool) {
     ));
 }
 
-fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
+fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, mut images: ResMut<Assets<Image>>) {
     let (voxels, land) = terrain::generate(args.seed, terrain::RADIUS);
-    let material = materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.95, reflectance: 0.2, ..default() });
+    // The paint: grain for every surface, made in code (`cube_voxel::texture`). Drawn smooth,
+    // so it reads as paint and not as pixels; far off the smaller copies take over, so distant
+    // ground does not sparkle.
+    let atlas = cube_voxel::texture::atlas();
+    let side = atlas.size as u32;
+    let mut paint = Image::new_uninit(Extent3d { width: side, height: side, depth_or_array_layers: 1 }, TextureDimension::D2, TextureFormat::Rgba8UnormSrgb, RenderAssetUsages::RENDER_WORLD);
+    paint.texture_descriptor.mip_level_count = atlas.levels as u32;
+    paint.data = Some(atlas.rgba);
+    paint.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor { mag_filter: ImageFilterMode::Linear, min_filter: ImageFilterMode::Linear, mipmap_filter: ImageFilterMode::Linear, lod_max_clamp: (atlas.levels - 1) as f32, anisotropy_clamp: 4, ..default() });
+    let paint = images.add(paint);
+    let material = materials.add(StandardMaterial { base_color: Color::WHITE, base_color_texture: Some(paint), perceptual_roughness: 0.95, reflectance: 0.2, ..default() });
     // Water is its own mesh and material: it is blended over what is under it.
     let water = materials.add(StandardMaterial { base_color: Color::WHITE, alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.25, reflectance: 0.5, ..default() });
     let mut voxels = voxels;
@@ -134,12 +150,14 @@ fn draw_level(commands: &mut Commands, meshes: &mut Assets<Mesh>, look: &Look, v
             continue;
         }
         data.positions.iter_mut().for_each(|p| *p = (Vec3::from_array(*p) - middle).to_array());
+        let faces = Faces(data.indices.len() as u32 / 6);
         let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
             .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
             .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, data.colors)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs)
             .with_inserted_indices(Indices::U32(data.indices));
-        spawned.push(commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material.clone()), Transform::from_translation(middle), range.clone())).id());
+        spawned.push(commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material.clone()), Transform::from_translation(middle), range.clone(), faces)).id());
     }
     spawned
 }

@@ -126,7 +126,25 @@ fn layout(
     stage.legend = format!("rows={} cols={cols} view={}", names.join(","), args.view);
 }
 
-fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, time: Res<Time>, rigs: Query<&Rig>, creatures: Query<(), With<Creature>>, drawn: Option<Res<world::Drawn>>, mut exit: MessageWriter<AppExit>, mut waited: Local<f32>) {
+/// What the picture cost to draw, said with every shot so a change that slows the game is
+/// seen the day it is made: the middle and the worst frame of the last sixty, on what drew
+/// them (a software renderer here is many times slower than a graphics card: compare a number
+/// only with the same machine's), and the terrain faces in view, which is the same anywhere.
+#[derive(Default)]
+struct Pace(Vec<f32>);
+
+impl Pace {
+    fn say(&self, faces: &Query<(&world::Faces, &ViewVisibility)>, adapter: &Option<Res<bevy::render::renderer::RenderAdapterInfo>>) -> String {
+        let mut frames = self.0.clone();
+        frames.sort_by(f32::total_cmp);
+        let in_view: u32 = faces.iter().filter(|(_, seen)| seen.get()).map(|(f, _)| f.0).sum();
+        let on = adapter.as_ref().map_or("?".into(), |a| a.name.clone());
+        format!("pace frame={:.0}ms worst={:.0}ms faces-in-view={:.2}M on={on}", frames.get(frames.len() / 2).unwrap_or(&0.0) * 1000.0, frames.last().unwrap_or(&0.0) * 1000.0, in_view as f32 / 1e6)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, time: Res<Time>, real: Res<Time<Real>>, rigs: Query<&Rig>, creatures: Query<(), With<Creature>>, drawn: Option<Res<world::Drawn>>, faces: Query<(&world::Faces, &ViewVisibility)>, adapter: Option<Res<bevy::render::renderer::RenderAdapterInfo>>, mut exit: MessageWriter<AppExit>, mut waited: Local<f32>, mut pace: Local<Pace>) {
     // Every creature there is going to be has its model (the ones asked for, and any the world
     // came with), and every chunk in view has its mesh.
     if !stage.laid_out || rigs.iter().count() < stage.expected.max(creatures.iter().count()) || drawn.is_some_and(|d| d.waiting > 0) {
@@ -134,6 +152,12 @@ fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, ti
     }
     stage.settled += 1;
     *waited += time.delta_secs();
+    if !stage.asked {
+        pace.0.push(real.delta_secs());
+        if pace.0.len() > 60 {
+            pace.0.remove(0);
+        }
+    }
     if args.strip > 0 {
         // A strip: a picture every `every` seconds; `gather` saves them as one when all are in.
         if stage.settled >= 40 && *waited >= args.after + stage.taken as f32 * args.every && stage.taken < args.strip {
@@ -156,7 +180,7 @@ fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, ti
         commands.spawn(Screenshot::image(stage.target.clone())).observe(save_to_disk(stage.path.clone()));
     }
     if stage.asked && std::path::Path::new(&stage.path).exists() && stage.settled > 50 {
-        println!("shot {} {}", stage.path, stage.legend);
+        println!("shot {} {} · {}", stage.path, stage.legend, pace.say(&faces, &adapter));
         exit.write(AppExit::Success);
     }
     if stage.asked && stage.settled > 600 {

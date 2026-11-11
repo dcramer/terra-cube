@@ -10,6 +10,7 @@
 //! cell happens to it: a hole dug in it, a thing built on it. Only broken cells cost more.
 
 pub mod mesh;
+pub mod texture;
 
 use glam::{IVec3, Vec3};
 use std::collections::HashMap;
