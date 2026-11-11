@@ -233,7 +233,6 @@ impl Roles {
             }
             false
         }
-        let mut chains = chains;
         for foot in 0..sk.joints.len() {
             let j = &sk.joints[foot];
             let toes = j.children.iter().map(|&c| below(sk, c, sk.position(foot)));
