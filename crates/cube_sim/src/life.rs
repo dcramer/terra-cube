@@ -353,6 +353,8 @@ impl Act {
 /// What a creature has done so far, for judging a run by numbers (`cargo world run`).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Log {
+    /// Times it went to water and drank.
+    pub drank: u32,
     /// Metres over the ground.
     pub moved: f32,
     /// Seconds in each [`Act`].
@@ -415,6 +417,8 @@ pub struct Agent {
     pub born: f32,
     /// How long since it fed, in meals: at 1 it must eat, at 4 it starves (`Sim::day`).
     pub hunger: f32,
+    /// How long since it drank, in days: past seven tenths it goes to water (`mind`).
+    pub thirst: f32,
     /// What it carries, if it is a person (`items`).
     pub pack: Option<crate::items::Pack>,
     landing: f32,
@@ -570,6 +574,8 @@ impl Sim {
         let k = self.kinds[kind].clone();
         // Put down grown: somewhere in the prime of its life. (What is born says so after.)
         let born = self.when - self.rng.between(0.15, 0.6) * k.lifespan * crate::sky::YEAR;
+        // And as it would be found: fed some while ago, drunk some while ago.
+        let (hunger, thirst) = (self.rng.between(0.1, 0.9), self.rng.between(0.0, 0.6));
         let mut body = Body::new(pos, k.shape().0, k.height.max(0.3));
         // Put down astride a step, it stands on the higher part, not in it.
         for _ in 0..20 {
@@ -584,7 +590,7 @@ impl Sim {
         let mind = Mind::new(Vec2::new(pos.x, pos.z), &mut self.rng);
         self.agents.insert(
             id,
-            Agent { kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), guard: false, calm: 0.0, awake: true, born, hunger: 0.0, pack: (k.temper == Temper::Person).then(crate::items::Pack::starting), stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
+            Agent { kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), guard: false, calm: 0.0, awake: true, born, hunger, thirst, pack: (k.temper == Temper::Person).then(crate::items::Pack::starting), stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
         );
         id
     }
@@ -620,6 +626,13 @@ impl Sim {
         let seen: Vec<mind::Seen> = self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.awake).map(|(&id, a)| mind::Seen { id, pos: a.body.pos, vel: a.body.vel, temper: self.kinds[a.kind].temper, reach: a.body.half + a.body.long.length() }).collect();
         let mut hits = Vec::new();
         let when = self.when;
+        // What is awake grows hungry and thirsty by the second, at the day's rates (`day`).
+        for agent in self.agents.values_mut().filter(|a| a.driver == Driver::Mind && a.dead.is_none() && a.awake) {
+            let kind = &self.kinds[agent.kind];
+            let days = DT / crate::sky::DAY;
+            agent.hunger += days * kind.appetite();
+            agent.thirst += days * if kind.diet == Diet::None { 0.0 } else { 1.0 };
+        }
         for (&id, agent) in self.agents.iter_mut().filter(|(_, a)| a.driver == Driver::Mind && a.dead.is_none() && a.awake) {
             let k = &self.kinds[agent.kind];
             agent.mind.about = k.niche().about(when);
@@ -680,6 +693,8 @@ impl Sim {
                 let meat = 1 + (self.kinds[agent.kind].height * 1.5) as u32;
                 if let Some(killer) = self.agents.get_mut(&hit.by) {
                     killer.log.kills += 1;
+                    // What it killed, it eats: a hunter is fed for days.
+                    killer.hunger = 0.0;
                     if let Some(pack) = killer.pack.as_mut() {
                         pack.add(crate::items::Item::Meat, meat);
                     }
@@ -980,7 +995,7 @@ impl Sim {
             let Some(hunter) = self.agents.get_mut(&id) else { continue };
             // A meal every six days; one that also feeds on what grows hunts a third as often.
             let kind = self.kinds[hunter.kind].clone();
-            hunter.hunger += if kind.diet == Diet::All { 1.0 / 18.0 } else { 1.0 / 6.0 };
+            hunter.hunger += kind.appetite();
             if hunter.hunger < 1.0 {
                 continue;
             }
@@ -1096,6 +1111,18 @@ impl Sim {
 }
 
 impl Kind {
+    /// How fast it grows hungry, in meals a day: what hunts wants a kill every six days,
+    /// what does both a third as often, what eats plants must graze part of every day, and
+    /// what does not eat never hungers.
+    pub fn appetite(&self) -> f32 {
+        match self.diet {
+            Diet::Meat => 1.0 / 6.0,
+            Diet::All => 1.0 / 18.0,
+            Diet::Plants => 2.0,
+            Diet::None => 0.0,
+        }
+    }
+
     /// Years before it is grown and breeds: a tenth of its life, a season at the least.
     pub fn maturity(&self) -> f32 {
         (self.lifespan * 0.1).clamp(0.25, 1.5)
@@ -1159,6 +1186,8 @@ mod tests {
         let (world, mut sim) = stage();
         let rabbit = sim.add(&world, 0, at(0.0, 0.0), 0.0, Driver::Mind);
         let wolf = sim.add(&world, 1, at(7.0, 0.0), 0.0, Driver::Mind);
+        // (A wolf that has not eaten for days.)
+        sim.agents.get_mut(&wolf).unwrap().hunger = 1.0;
         run(&mut sim, &world, 2.0);
         let (r, w) = (&sim.agents[&rabbit], &sim.agents[&wolf]);
         assert!(r.mind.state == State::Flee && r.body.pos.x < -0.5, "the rabbit did not run: {:?} at {}", r.mind.state, r.body.pos);
@@ -1405,6 +1434,27 @@ mod tests {
             starved += sim.day(&world, None).starved;
         }
         assert!(!sim.agents.contains_key(&wolf) && starved >= 1);
+    }
+
+
+    #[test]
+    fn a_fed_wolf_lets_a_rabbit_be_and_a_thirsty_one_goes_to_water() {
+        let (mut world, mut sim) = stage();
+        let rabbit = sim.add(&world, 0, at(0.0, 0.0), 0.0, Driver::Stand);
+        let wolf = sim.add(&world, 1, at(7.0, 0.0), 0.0, Driver::Mind);
+        let w = sim.agents.get_mut(&wolf).unwrap();
+        (w.hunger, w.thirst) = (0.0, 0.0);
+        run(&mut sim, &world, 6.0);
+        assert!(sim.agents[&wolf].mind.state != State::Chase && sim.agents[&rabbit].log.struck == 0, "a fed wolf hunted: {:?}", sim.agents[&wolf].mind.state);
+        // Water to the east, at the level water stands at. Thirsty, it walks there and drinks.
+        let level = crate::terrain::SEA as f32 * cube_voxel::CELL;
+        world.fill(Vec3::new(20.0, level - 0.5, -6.0), Vec3::new(26.0, level, 6.0), Block::Water);
+        sim.agents.remove(&rabbit);
+        let w = sim.agents.get_mut(&wolf).unwrap();
+        (w.thirst, w.mind.about) = (1.0, 1.0);
+        run(&mut sim, &world, 40.0);
+        let w = &sim.agents[&wolf];
+        assert!(w.log.drank >= 1 && w.thirst < 0.2 && w.body.pos.x > 14.0, "did not drink: thirst {} at {} {:?}", w.thirst, w.body.pos, w.mind.state);
     }
 
 }

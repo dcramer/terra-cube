@@ -207,7 +207,7 @@ fn run_command(args: &Args) -> ! {
         let acts: Vec<String> = acts.iter().map(|(act, part)| format!("{} {:.0}%", act.clip().0, part * 100.0)).collect();
         let (moved, stuck, swim, boxed) = (sum(&|l| l.moved) / n, sum(&|l| l.stuck) / total, sum(&|l| l.acts[Act::Swim as usize]) / total, sum(&|l| l.boxed) / total);
         let (inside, fell) = (sum(&|l| l.inside as f32), sum(&|l| l.fell as f32));
-        println!("{} ×{}: went {:.0}m each · {} · fled {} · hit {}", kind.id, of.len(), moved, acts.join(" "), sum(&|l| l.fled as f32), sum(&|l| l.struck as f32));
+        println!("{} ×{}: went {:.0}m each · {} · fled {} · hit {} · drank {}", kind.id, of.len(), moved, acts.join(" "), sum(&|l| l.fled as f32), sum(&|l| l.struck as f32), sum(&|l| l.drank as f32));
         checks.bar(&format!("{} inside-ground", kind.id), inside, inside == 0.0, "0 ticks");
         checks.bar(&format!("{} fell-out", kind.id), fell, fell == 0.0, "0 times");
         checks.bar(&format!("{} stuck", kind.id), stuck, stuck <= 0.08, "at most 0.08 of the time");
