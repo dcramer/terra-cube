@@ -218,6 +218,24 @@ impl Eased<'_> {
         level as f32 + if self.land(x, level, z) { self.step(x, level, z) } else { 0.0 }
     }
 
+    /// The same for a group of cells `size` a side seen from far off, whose middle is the
+    /// corner `x`, `z`: the eased height there, in blocks the group's size where the land is
+    /// steep and left as it is where it is not. A far hillside is then the near one with
+    /// broader treads, where drawn as plain cubes of its own size it was a different hill.
+    fn far_top(&mut self, x: i32, t: i32, z: i32, size: i32) -> f32 {
+        let near = self.near;
+        let ends = self.tops.entry((x, z)).or_insert_with(|| {
+            let ground = |y: i32| near.get(IVec3::new(x, y, z)).ground();
+            (1 - CHUNK..2 * CHUNK).filter(|&y| ground(y - 1) && !ground(y)).collect()
+        });
+        let Some(&level) = ends.iter().min_by_key(|&&y| (y - t).abs()) else { return (t - self.reach) as f32 };
+        let mut lift = |x: i32, z: i32| self.lift(IVec3::new(x, level, z));
+        let (here, half) = (lift(x, z), size / 2);
+        let slope = (lift(x + half, z) - lift(x - half, z)).hypot(lift(x, z + half) - lift(x, z - half)) / size as f32;
+        let high = level as f32 + here;
+        if slope >= 1.1 { (high / size as f32).round() * size as f32 } else { high }
+    }
+
     /// For a ground cell, the level its column's ground ends at over it and how far above
     /// that the column's top is drawn, if the column is land. Stone standing alone or built
     /// up is not: its top would be drawn far from where it is, so it is drawn as its cubes.
@@ -655,6 +673,42 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
                     tint *= 1.0 + drift * 0.35;
                     warm = drift * 0.25;
                 }
+                if block.ground() && ground() == Ground::Stepped {
+                    // As up close: the top group of a column draws its top and a riser down
+                    // to each neighbour that stands lower.
+                    if groups[at_group(s + IVec3::Y)].ground() {
+                        continue;
+                    }
+                    let (local, level, half) = (s * step, (s.y + 1) * step, step / 2);
+                    let high = eased.far_top(local.x + half, level, local.z + half, step);
+                    for (normal, u, v) in FACES {
+                        if normal == IVec3::NEG_Y || (normal == IVec3::Y && groups[at_group(s + normal)] != Block::Air) {
+                            continue;
+                        }
+                        let low = if normal == IVec3::Y { high } else { eased.far_top(local.x + half + normal.x * step, level, local.z + half + normal.z * step, step) };
+                        if normal != IVec3::Y && low > high - 1e-3 {
+                            continue;
+                        }
+                        let low_riser = normal != IVec3::Y && high - low < 0.99;
+                        let (base, grain) = (if normal == IVec3::Y { top } else if low_riser { top.map(|c| c * 0.92) } else { side_colour }, Grain::of(block, normal == IVec3::Y || low_riser));
+                        let start = m.positions.len() as u32;
+                        for (su, sv) in [(0, 0), (1, 0), (1, 1), (0, 1)] {
+                            let corner = cell + (normal.max(IVec3::ZERO) + u * su + v * sv) * step;
+                            let foot = normal != IVec3::Y && corner.y == cell.y;
+                            let height = origin.y as f32 + if foot { low } else { high };
+                            m.positions.push([corner.x as f32 * CELL, height * CELL, corner.z as f32 * CELL]);
+                            m.normals.push(if low_riser { [0.0, 1.0, 0.0] } else { normal.as_vec3().to_array() });
+                            m.tangents.push(tangent(normal));
+                            // Far off the grain has blurred to its mean: where in the tile does
+                            // not matter up a riser, only that it stays inside it.
+                            m.uvs.push(uv(grain, normal, cell, corner, 1));
+                            let k = tint * if foot && high - low > 0.3 { 0.7 } else { 1.0 };
+                            m.colors.push([base[0] * k * (1.0 + warm), base[1] * k, base[2] * k * (1.0 - warm), 1.0]);
+                        }
+                        m.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
+                    }
+                    continue;
+                }
                 for (normal, u, v) in FACES {
                     if (cell.y == 0 && normal == IVec3::NEG_Y) || groups[at_group(s + normal)] != Block::Air {
                         continue;
@@ -673,10 +727,10 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
                         let level = if a + b == 2 { 0 } else { 3 - (a + b + c) };
                         ao[i] = 0.45 + 0.55 * level as f32 / 3.0;
                         let k = ao[i] * tint;
-                        let rooted = normal.y == 0 && corner.y == cell.y && eases(groups[at_group(s - IVec3::Y)]);
+                        let rooted = normal.y == 0 && corner.y == cell.y && groups[at_group(s - IVec3::Y)].ground() && ground() != Ground::Cubes;
                         let lift = if eases(block) {
                             eased.lift(corner - origin)
-                        } else if rooted {
+                        } else if rooted && !block.ground() {
                             -(step as f32)
                         } else {
                             0.0

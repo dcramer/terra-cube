@@ -46,7 +46,8 @@ The rule this protects: **the simulation never needs a window.** A big sandbox w
 - **Stone that is not land is drawn as its cubes**: a column whose top would be drawn more than a few cells from where it is (a block standing alone, something built) falls back to plain cubes.
 - **A low riser is lit and coloured as the ground it is a fold of.** Lit as a wall it took the warm light of the horizon while the ground beside it took the blue of the sky overhead, and a forest floor was a grid of orange lines.
 - **Tried and set aside: the ground eased fully smooth** (`--smooth`). It was built first, from a misreading of what was asked. Smooth land under cube trees was two games in one picture. `--cubes` draws the old plain cubes.
-- **Not done**: the far levels of detail still draw plain cubes of their own size, so the ground changes character at 40 m; a cube-drawn neighbour of a stepped column can leave a gap.
+- **The far levels of detail draw the same ground** (`Eased::far_top`): each group of cells takes the eased height at its middle, in blocks its own size where the land is steep. Drawn as plain cubes of their own size the far levels were a different hill, striped in half-metre stairs from 40 m out.
+- **Not done**: a cube-drawn neighbour of a stepped column can leave a gap; thin gaps show where two levels of detail meet on steep rock.
 
 ### Light
 
