@@ -63,7 +63,7 @@ The rule this protects: **the simulation never needs a window.** A big sandbox w
   - *A low sun is made stronger and amber.* True to life the last hour of sun is weak and the sky's flat fill takes the picture; the gold of evening is wanted more than the truth. Exposure near the horizon is held down so the sky keeps its colour.
   - *Night has a sky.* Stars on a dome round the camera, a moon where its light comes from, and one mote in six a firefly that swells and fades.
 - **Mountains stand to the north** (`terrain::column`). The sun goes round by the south, so a mountain there is lit all day and never lies between the sun and the lowland. Placed anywhere, seed 6 had it due west and the start was in its shadow from mid afternoon: an hour was lost looking for a fault in the cloud shadows before a picture at another hour showed it.
-- **Not done**: clouds to look at, weather, creatures that keep hours, a light to carry.
+- **Not done**: clouds to look at, weather, creatures that keep hours, and torches: a warm light the player carries and can place, which is what makes the dark night playable (the night's level is set on the understanding that they will exist).
 
 ### Wind and the air
 
