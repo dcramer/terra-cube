@@ -139,7 +139,7 @@ fn tick(terrain: Option<Res<Terrain>>, mut live: ResMut<Live>) {
 
 /// Draws each body between ticks, tips the model into its turns, and plays the clip that
 /// fits what it is doing, at the rate that keeps its feet from sliding.
-fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, mut live: ResMut<Live>, mut movers: Query<(&mut Mover, &mut Creature, &mut Transform)>) {
+fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, terrain: Option<Res<crate::world::Terrain>>, mut live: ResMut<Live>, mut movers: Query<(&mut Mover, &mut Creature, &mut Transform)>) {
     let dt = time.delta_secs();
     let between = fixed.overstep_fraction();
     let Sim { agents, kinds, .. } = &mut live.0;
@@ -153,6 +153,15 @@ fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, mut l
         // lag put the feet a third of a metre inside the hill.
         m.lift = ((m.lift - std::mem::take(&mut agent.stepped)) * (-22.0 * dt).exp()).clamp(-0.08, 0.08);
         transform.translation = agent.before.lerp(agent.body.pos, between) + Vec3::Y * m.lift;
+        // On the ground its feet are where the ground is drawn: the body stands on cubes, and
+        // the cubes are drawn as a slope.
+        if let (true, Some(terrain)) = (agent.body.grounded, &terrain) {
+            let at = Vec3::new(transform.translation.x, agent.body.pos.y, transform.translation.z);
+            if let Some(y) = cube_voxel::mesh::eased_under(&terrain.0, at) {
+                transform.translation.y = y;
+                m.lift = 0.0;
+            }
+        }
 
         let speed = agent.body.ground_speed();
         let turn = (agent.facing - agent.facing_before + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;

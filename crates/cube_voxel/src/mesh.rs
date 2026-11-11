@@ -4,7 +4,8 @@
 
 use crate::texture::{Grain, MEAN, SPAN};
 use crate::{Block, CELL, CHUNK, Chunk, SPLIT, World};
-use glam::IVec3;
+use glam::{IVec3, Vec3};
+use std::collections::HashMap;
 
 #[derive(Default)]
 pub struct MeshData {
@@ -72,7 +73,16 @@ fn patch(p: IVec3) -> f32 {
 /// up each time: meshing reads about thirty cells for every face it draws.
 struct Near<'a>([Option<&'a Chunk>; 27]);
 
-impl Near<'_> {
+impl<'a> Near<'a> {
+    fn of(world: &'a World, chunk: IVec3) -> Self {
+        let mut near = Near([None; 27]);
+        for (i, slot) in near.0.iter_mut().enumerate() {
+            let i = i as i32;
+            *slot = world.chunks.get(&(chunk + IVec3::new(i % 3 - 1, i / 9 - 1, i / 3 % 3 - 1)));
+        }
+        near
+    }
+
     /// The block at a position local to the middle chunk, from -32 to 63 on each axis.
     #[inline]
     fn get(&self, local: IVec3) -> Block {
@@ -84,17 +94,115 @@ impl Near<'_> {
     }
 }
 
+/// The ground drawn as slopes, not stairs. The cells are not changed: digging, building and
+/// what a body stands on are still cubes. Only where a corner of the ground's surface is
+/// drawn moves, up or down to the mean height of the ground in the sixteen columns round it.
+/// A staircase of cubes becomes the ramp through its middle, a gentle rise becomes a gentle
+/// rise, and anything up to eight up for one along a smooth slope. A column counts for no
+/// more than [`Eased::reach`] cells above or below the corner, so a real cliff keeps its face
+/// and only its lip and foot are rounded. (At a reach of three, every slope steeper than one
+/// in one broke into sawteeth; it is twenty-four, six metres, over a
+/// mountain's ledges.)
+///
+/// The move is worked out from the cells alone, the same for a corner whichever chunk or
+/// level of detail asks, so neighbouring meshes meet. Ground cover and the bits of a broken
+/// cell (a rock, the rim of a hole) are drawn moved by as much as the ground under them.
+pub struct Eased<'a> {
+    near: &'a Near<'a>,
+    reach: i32,
+    lifts: HashMap<IVec3, (f32, [f32; 3])>,
+    /// For each column looked at, every height where its ground ends with none over it.
+    tops: HashMap<(i32, i32), Vec<i32>>,
+}
+
+impl Eased<'_> {
+    /// How far the corner at `c` (local cells) is drawn above where it is, in cells.
+    fn lift(&mut self, c: IVec3) -> f32 {
+        if !EASE.load(std::sync::atomic::Ordering::Relaxed) {
+            return 0.0;
+        }
+        self.corner(c).0
+    }
+
+    /// That, and the colour of the ground there: the mean of the tops of the four columns that
+    /// meet at the corner, so grass runs into sand and litter into turf without a sawn edge.
+    fn corner(&mut self, c: IVec3) -> (f32, [f32; 3]) {
+        if let Some(&known) = self.lifts.get(&c) {
+            return known;
+        }
+        let r = self.reach;
+        let (mut sum, mut colour, mut tops) = (0, [0.0f32; 3], 0.0);
+        for dz in -2..2 {
+            for dx in -2..2 {
+                // Where this column's ground ends, from the corner: the first cell from the
+                // top that is ground with none over it.
+                let near = self.near;
+                let ends = self.tops.entry((c.x + dx, c.z + dz)).or_insert_with(|| {
+                    let ground = |y: i32| near.get(IVec3::new(c.x + dx, y, c.z + dz)).ground();
+                    (1 - CHUNK..2 * CHUNK).filter(|&y| ground(y - 1) && !ground(y)).collect()
+                });
+                let top = if near.get(c + IVec3::new(dx, r, dz)).ground() { r } else { ends.iter().rev().find(|&&y| y <= c.y + r).map_or(-r, |y| (y - c.y).max(-r)) };
+                sum += top;
+                if (-1..=0).contains(&dx) && (-1..=0).contains(&dz) && top > -r {
+                    let block = self.near.get(c + IVec3::new(dx, top - 1, dz));
+                    // Its top if it lies open, its side if it is the face of a bank.
+                    let (open, side) = block.colors();
+                    let shown = if top.abs() <= 2 { open } else { side };
+                    colour = [colour[0] + shown[0], colour[1] + shown[1], colour[2] + shown[2]];
+                    tops += 1.0;
+                }
+            }
+        }
+        let lift = sum as f32 / 16.0;
+        let known = (lift, if tops > 0.0 { colour.map(|v| v / tops) } else { [0.0; 3] });
+        self.lifts.insert(c, known);
+        known
+    }
+
+    /// Which way the eased ground faces at a corner.
+    fn normal(&mut self, c: IVec3) -> Vec3 {
+        let (x, z) = (self.lift(c + IVec3::X) - self.lift(c - IVec3::X), self.lift(c + IVec3::Z) - self.lift(c - IVec3::Z));
+        Vec3::new(-x * 0.5, 1.0, -z * 0.5).normalize()
+    }
+}
+
+/// The height the ground is drawn at under a point standing on it (metres), if what it stands
+/// on is ground and it stands on top of a cell of it: where to draw feet, since a body stands
+/// on the cubes and the cubes are drawn as a slope.
+pub fn eased_under(world: &World, feet: Vec3) -> Option<f32> {
+    let level = (feet.y / CELL).round();
+    let cell = IVec3::new((feet.x / CELL).floor() as i32, level as i32, (feet.z / CELL).floor() as i32);
+    if (feet.y / CELL - level).abs() > 0.02 || !eases(world.get(cell - IVec3::Y)) {
+        return None;
+    }
+    let chunk = cell.div_euclid(IVec3::splat(CHUNK));
+    let near = Near::of(world, chunk);
+    let mut eased = Eased { near: &near, reach: REACH, lifts: HashMap::new(), tops: HashMap::new() };
+    let (fx, fz) = (feet.x / CELL - cell.x as f32, feet.z / CELL - cell.z as f32);
+    let mut lift = |dx: i32, dz: i32| eased.lift(cell - chunk * CHUNK + IVec3::new(dx, 0, dz));
+    let (a, b) = (lift(0, 0) * (1.0 - fx) + lift(1, 0) * fx, lift(0, 1) * (1.0 - fx) + lift(1, 1) * fx);
+    Some((level + a * (1.0 - fz) + b * fz) * CELL)
+}
+
+/// Whether the ground is drawn eased at all. Off, every block is the cube it is: the look
+/// before 2026-11-11, kept so the two can be put side by side (`cargo sandbox --cubes`).
+pub static EASE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+fn eases(block: Block) -> bool {
+    block.ground() && EASE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Cells above or below a corner that a column counts for, up close.
+const REACH: i32 = 24;
+
 /// The mesh of one chunk, in metres, positioned in world space: its solid blocks, or with
 /// `liquid` its water, which is drawn apart because it is seen through.
 pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
     let mut m = MeshData::default();
     let Some(data) = world.chunks.get(&chunk) else { return m };
-    let mut near = Near([None; 27]);
-    for (i, slot) in near.0.iter_mut().enumerate() {
-        let i = i as i32;
-        *slot = world.chunks.get(&(chunk + IVec3::new(i % 3 - 1, i / 9 - 1, i / 3 % 3 - 1)));
-    }
+    let near = Near::of(world, chunk);
     let origin = chunk * CHUNK;
+    let mut eased = Eased { near: &near, reach: REACH, lifts: HashMap::new(), tops: HashMap::new() };
     for y in 0..CHUNK {
         for z in 0..CHUNK {
             for x in 0..CHUNK {
@@ -105,11 +213,16 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                 }
                 let cell = origin + local;
                 if block == Block::Broken {
+                    let (from, lift) = (m.positions.len(), (0..4).map(|i| eased.lift(local + IVec3::new(i & 1, 0, i >> 1))).sum::<f32>() / 4.0 * CELL);
                     bits(world, cell, &mut m);
+                    m.positions[from..].iter_mut().for_each(|p| p[1] += lift);
                     continue;
                 }
                 if block.sprig() {
+                    // It stands on the ground as the ground is drawn.
+                    let (from, lift) = (m.positions.len(), (0..4).map(|i| eased.lift(local + IVec3::new(i & 1, 0, i >> 1))).sum::<f32>() / 4.0 * CELL);
                     sprig(cell, block, &mut m);
+                    m.positions[from..].iter_mut().for_each(|p| p[1] += lift);
                     continue;
                 }
                 let (top, side) = block.colors();
@@ -145,18 +258,45 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                     let grain = Grain::of(block, n.y != 0);
                     let start = m.positions.len() as u32;
                     let mut ao = [0.0f32; 4];
+                    let mut at = [Vec3::ZERO; 4];
+                    // What stands on the ground and is not ground (a trunk) runs a little
+                    // way into it, since the ground may be drawn lower than its cubes.
+                    let rooted = !block.ground() && n.y == 0 && eases(near.get(local - IVec3::Y));
                     for (i, (su, sv)) in [(0, 0), (1, 0), (1, 1), (0, 1)].into_iter().enumerate() {
                         let corner = cell + n.max(IVec3::ZERO) + u * su + v * sv;
                         let (du, dv) = (u * (su * 2 - 1), v * (sv * 2 - 1));
-                        let occ = |d: IVec3| near.get(local + n + d).opaque() as i32;
+                        // On eased ground a step one cube high casts no shade: it is not there.
+                        let occ = |d: IVec3| {
+                            let by = near.get(local + n + d);
+                            (by.opaque() && !(eases(block) && n == IVec3::Y && by.ground() && !near.get(local + n + d + IVec3::Y).opaque())) as i32
+                        };
                         let (a, b, c) = (occ(du), occ(dv), occ(du + dv));
                         let level = if a + b == 2 { 0 } else { 3 - (a + b + c) };
                         ao[i] = 0.45 + 0.55 * level as f32 / 3.0;
                         let k = ao[i] * tint;
-                        m.positions.push((corner.as_vec3() * CELL).to_array());
-                        m.normals.push(n.as_vec3().to_array());
+                        let lift = if eases(block) {
+                            eased.lift(corner - origin)
+                        } else if rooted && corner.y == cell.y {
+                            -0.75
+                        } else {
+                            0.0
+                        };
+                        at[i] = (corner.as_vec3() + Vec3::Y * lift) * CELL;
+                        // Every face of the ground is lit as the slope it is part of, a riser too.
+                        let facing = if eases(block) && n != IVec3::NEG_Y { eased.normal(corner - origin) } else { n.as_vec3() };
+                        m.positions.push(at[i].to_array());
+                        m.normals.push(facing.to_array());
                         m.uvs.push(uv(grain, n, cell, corner, 1));
+                        let base = if eases(block) && n == IVec3::Y { eased.corner(corner - origin).1 } else { base };
                         m.colors.push([base[0] * k * (1.0 + warm), base[1] * k, base[2] * k * (1.0 - warm), alpha]);
+                    }
+                    // A riser between two treads has closed to nothing: it is not drawn.
+                    if (at[2] - at[0]).cross(at[3] - at[1]).length_squared() < 1e-10 {
+                        m.positions.truncate(start as usize);
+                        m.normals.truncate(start as usize);
+                        m.uvs.truncate(start as usize);
+                        m.colors.truncate(start as usize);
+                        continue;
                     }
                     // Split the quad along the diagonal that keeps the AO gradient smooth.
                     if ao[0] + ao[2] > ao[1] + ao[3] {
@@ -297,16 +437,12 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
     if !world.chunks.contains_key(&chunk) {
         return m;
     }
-    let mut near = Near([None; 27]);
-    for (i, slot) in near.0.iter_mut().enumerate() {
-        let i = i as i32;
-        *slot = world.chunks.get(&(chunk + IVec3::new(i % 3 - 1, i / 9 - 1, i / 3 % 3 - 1)));
-    }
+    let near = Near::of(world, chunk);
     let n = CHUNK / step;
     let side = (n + 2) as usize;
     // Every group in the chunk and one beyond each face, worked out once.
     let mut groups = vec![Block::Air; side * side * side];
-    let at = |s: IVec3| ((s.x + 1) + (s.z + 1) * (n + 2) + (s.y + 1) * (n + 2) * (n + 2)) as usize;
+    let at_group = |s: IVec3| ((s.x + 1) + (s.z + 1) * (n + 2) + (s.y + 1) * (n + 2) * (n + 2)) as usize;
     for sy in -1..=n {
         for sz in -1..=n {
             for sx in -1..=n {
@@ -317,24 +453,31 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
                         for x in 0..step {
                             let block = near.get(s * step + IVec3::new(x, y, z));
                             let wanted = if liquid { block == Block::Water } else { block.solid() };
-                            if wanted {
+                            if wanted && (found == Block::Air || eases(block)) {
                                 // The bits of a broken cell are not looked at from here: stone.
                                 found = if block == Block::Broken { Block::Stone } else { block };
-                                break 'group;
+                                // Ground wins over what stands on it: a group with a trunk's
+                                // foot in it is the ground the trunk stands on, or the eased
+                                // ground round it leaves a hole.
+                                if liquid || found.ground() {
+                                    break 'group;
+                                }
                             }
                         }
                     }
                 }
-                groups[at(s)] = found;
+                groups[at_group(s)] = found;
             }
         }
     }
     let origin = chunk * CHUNK;
+    // A group's top is up to a group above the ground it stands for, so columns count further.
+    let mut eased = Eased { near: &near, reach: REACH + step, lifts: HashMap::new(), tops: HashMap::new() };
     for sy in 0..n {
         for sz in 0..n {
             for sx in 0..n {
                 let s = IVec3::new(sx, sy, sz);
-                let block = groups[at(s)];
+                let block = groups[at_group(s)];
                 if block == Block::Air {
                     continue;
                 }
@@ -348,25 +491,45 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
                     warm = drift * 0.25;
                 }
                 for (normal, u, v) in FACES {
-                    if (cell.y == 0 && normal == IVec3::NEG_Y) || groups[at(s + normal)] != Block::Air {
+                    if (cell.y == 0 && normal == IVec3::NEG_Y) || groups[at_group(s + normal)] != Block::Air {
                         continue;
                     }
                     let base = if normal == IVec3::Y { top } else { side_colour };
                     let grain = Grain::of(block, normal.y != 0);
                     let start = m.positions.len() as u32;
                     let mut ao = [0.0f32; 4];
+                    let mut at = [Vec3::ZERO; 4];
                     for (i, (su, sv)) in [(0, 0), (1, 0), (1, 1), (0, 1)].into_iter().enumerate() {
                         let corner = cell + (normal.max(IVec3::ZERO) + u * su + v * sv) * step;
                         let (du, dv) = (u * (su * 2 - 1), v * (sv * 2 - 1));
-                        let occ = |d: IVec3| (!liquid && groups[at(s + normal + d)] != Block::Air) as i32;
+                        // Ground shades ground only up close.
+                        let occ = |d: IVec3| (!liquid && !eases(block) && groups[at_group(s + normal + d)] != Block::Air) as i32;
                         let (a, b, c) = (occ(du), occ(dv), occ(du + dv));
                         let level = if a + b == 2 { 0 } else { 3 - (a + b + c) };
                         ao[i] = 0.45 + 0.55 * level as f32 / 3.0;
                         let k = ao[i] * tint;
-                        m.positions.push((corner.as_vec3() * CELL).to_array());
-                        m.normals.push(normal.as_vec3().to_array());
+                        let rooted = normal.y == 0 && corner.y == cell.y && eases(groups[at_group(s - IVec3::Y)]);
+                        let lift = if eases(block) {
+                            eased.lift(corner - origin)
+                        } else if rooted {
+                            -(step as f32)
+                        } else {
+                            0.0
+                        };
+                        at[i] = (corner.as_vec3() + Vec3::Y * lift) * CELL;
+                        let facing = if eases(block) && normal != IVec3::NEG_Y { eased.normal(corner - origin) } else { normal.as_vec3() };
+                        m.positions.push(at[i].to_array());
+                        m.normals.push(facing.to_array());
                         m.uvs.push(uv(grain, normal, cell, corner, 1));
+                        let base = if eases(block) && normal == IVec3::Y { eased.corner(corner - origin).1 } else { base };
                         m.colors.push([base[0] * k * (1.0 + warm), base[1] * k, base[2] * k * (1.0 - warm), if liquid { 0.8 } else { 1.0 }]);
+                    }
+                    if (at[2] - at[0]).cross(at[3] - at[1]).length_squared() < 1e-10 {
+                        m.positions.truncate(start as usize);
+                        m.normals.truncate(start as usize);
+                        m.uvs.truncate(start as usize);
+                        m.colors.truncate(start as usize);
+                        continue;
                     }
                     if ao[0] + ao[2] > ao[1] + ao[3] {
                         m.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);

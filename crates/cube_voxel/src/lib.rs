@@ -96,6 +96,13 @@ impl Block {
         self.solid() && self != Block::Broken
     }
     /// Linear RGB of the block's top and of its sides.
+    /// The land itself, as against what grows or is built on it: soil, sand, snow and stone.
+    /// Its surface is drawn eased into slopes (`mesh::Eased`); everything else is drawn as
+    /// the cubes it is.
+    pub fn ground(self) -> bool {
+        matches!(self, Block::Grass | Block::Dirt | Block::Stone | Block::Sand | Block::Snow | Block::Turf | Block::Gravel | Block::Slate | Block::Chalk | Block::Moss | Block::Litter)
+    }
+
     pub fn colors(self) -> ([f32; 3], [f32; 3]) {
         match self {
             Block::Air | Block::Broken => ([0.0; 3], [0.0; 3]),

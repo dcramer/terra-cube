@@ -39,6 +39,13 @@ The rule this protects: **the simulation never needs a window.** A big sandbox w
 - **Deep water is harder to see through**: a water face's alpha grows with the water under it, so a ford shows its bed and the sea does not. The sea beyond the island is four plain sheets out past the fog.
 - **Not yet**: greedy meshing (measured elsewhere at 50 to 350 µs a chunk for plain meshing, so not urgent), meshing off the main thread, level of detail, chunk streaming, saving.
 
+### Eased ground (on trial)
+
+- **The land's surface can be drawn as slopes, not stairs** (`mesh::Eased`, 2026-11-11). The cells are untouched: digging, building and what a body stands on are still cubes. Each corner of the ground's surface (soil, sand, snow, stone: `Block::ground`) is drawn at the mean height of the ground in the sixteen columns round it, a column counting for no more than six metres above or below. A staircase becomes the ramp through its middle, risers close to nothing and are not drawn, and colours are the mean of the four columns at a corner, so grass runs into sand without a sawn edge. Worked out from the cells alone, so chunks and levels of detail agree.
+- **What stands on it follows**: ground cover and the bits of broken cells are drawn moved by as much as the ground under them, trunks run a little way into it, and a creature's feet are drawn where the ground is (`mesh::eased_under`).
+- **Not settled.** Smooth land under cube trees reads as two games (the developer, the day it was built). `cargo sandbox --cubes` draws the ground as cubes, for the two to be put side by side. Open: go back to cubes; ease what grows as well; or something between. The plan for building bears on it: not one small cube at a time, but dug in pieces and placed as parts of different sizes.
+- **Known faults while on trial**: thin gaps where two levels of detail meet on a steep face; faces stretched on near-vertical rock.
+
 ### Paint
 
 - **One atlas of grains, made in code at start** (`cube_voxel::texture`, 2026-11-11): fifteen tiles of 64 texels with a border of 8 that repeats the tile's far side, and three smaller copies each half the last. The border is what lets the picture be drawn smooth and shrunk with distance without a tile taking colour from its neighbour; a tile and its border halve cleanly three times. No art files, no engine types: the game wraps the bytes in an image.
