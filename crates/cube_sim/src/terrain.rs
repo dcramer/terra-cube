@@ -34,7 +34,7 @@ fn value_noise(x: f32, z: f32, seed: u32) -> f32 {
 }
 
 /// Four layers of noise, each twice as fine and half as strong: 0 to 1, mostly near 0.5.
-fn fbm(x: f32, z: f32, seed: u32) -> f32 {
+pub(crate) fn fbm(x: f32, z: f32, seed: u32) -> f32 {
     layers(x, z, seed, 4)
 }
 
@@ -196,14 +196,8 @@ impl Land {
         }
         let high = h > SEA + cells(scale::CONIFER_LINE);
         let conifers = high || matches!(biome, Biome::Rock | Biome::Snow);
-        let (tree, under, rock) = match biome {
-            Biome::Forest => (0.8, 0.3, 0.02),
-            Biome::Meadow => (0.09, 0.08, 0.03),
-            Biome::Rock => (0.1, 0.02, 0.14),
-            Biome::Snow => (0.04, 0.0, 0.09),
-            Biome::Shore => (0.0, 0.0, 0.04),
-            Biome::Water => (0.0, 0.0, 0.0),
-        };
+        // How thick the trees, the undergrowth and the rocks stand here (`land.toml`).
+        let crate::cover::Density { trees: tree, under, rocks: rock } = crate::cover::density(biome);
         let pick = roll(2);
         // Up a mountain the trees thin and stop: nothing stands on a peak.
         let over = (h - SEA) as f32 * CELL;
@@ -220,11 +214,12 @@ impl Land {
             let giant = kind.species().giant && roll(6) < scale::GIANTS;
             What::Tree(kind, if giant { scale::GIANT } else { roll(4).sqrt() })
         } else if pick < under {
-            match roll(3) {
-                // (Young trees in some spots, not everywhere: a quarter of what grows under.)
-                r if r < 0.25 => What::Young(conifers || roll(5) < 0.25),
-                r if r < 0.78 => What::Bush,
-                r if r < 0.92 => What::Log,
+            // What the undergrowth is, by its shares (`land.toml`).
+            let of = crate::cover::undergrowth();
+            match roll(3) * (of.young + of.bush + of.log + of.stump) {
+                r if r < of.young => What::Young(conifers || roll(5) < of.young_conifers),
+                r if r < of.young + of.bush => What::Bush,
+                r if r < of.young + of.bush + of.log => What::Log,
                 _ => What::Stump,
             }
         } else if pick < under + rock {
@@ -481,27 +476,13 @@ pub fn fill(world: &mut World, land: &Land, lo: (i32, i32), hi: (i32, i32)) {
             } else {
                 None
             };
-            // What the top of the soil is, from what is over it and what crosses it. A trail
-            // is bare earth. At the foot of a trunk nothing grows. Under a crown lie its
-            // leaves, in drifts that thicken toward the trunk (under a pine, a bed of
-            // needles nearly whole); and that is so of a lone oak in a meadow as much as of a
-            // wood. Between, a forest floor is turf with moss where it is dampest; a meadow
-            // is grass with the odd scrape of bare earth; a shore is sand with beds of
-            // pebbles. One rule a biome made every wood the same floor from edge to edge.
-            let drift = fbm(xm / 3.5, zm / 3.5, seed + 82);
+            // What the top of the soil is, from what is over it and what crosses it: the
+            // rules of `land.toml` (`cover::ground`). A trail is bare earth; at the foot of a
+            // trunk nothing grows; under a crown lie its leaves; and so on, each a rule there.
+            // One rule a biome made every wood the same floor from edge to edge.
             let (shade, needles, foot) = under(x, z);
-            let trail = land.trail(x, z);
-            let top = match biome {
-                Biome::Meadow | Biome::Forest if trail > 0.5 || foot => Block::Dirt,
-                Biome::Meadow | Biome::Forest if shade > 0.12 && drift > if needles { 0.3 } else { 0.66 - shade * 0.3 } => Block::Litter,
-                Biome::Forest if drift > 0.6 => Block::Litter,
-                Biome::Forest if damp > 0.56 && fbm(xm / 6.0, zm / 6.0, seed + 83) > 0.6 => Block::Moss,
-                Biome::Forest => Block::Turf,
-                Biome::Meadow if fbm(xm / 4.0, zm / 4.0, seed + 84) > 0.8 => Block::Dirt,
-                Biome::Meadow => Block::Grass,
-                Biome::Shore if fbm(xm / 5.0, zm / 5.0, seed + 85) > 0.6 => Block::Gravel,
-                _ => Block::Sand,
-            };
+            let site = crate::cover::Site { biome, x, z, seed, shade, needles, foot, trail: land.trail(x, z), damp, wet: h <= SEA, slope: land.slope(x, z), over: (h - SEA) as f32 * CELL, on: Block::Air };
+            let top = crate::cover::ground(&site).unwrap_or(Block::Sand);
             world.set_column(x, z, 0, h.max(SEA), |y| {
                 let depth = h - 1 - y;
                 if y >= h {
@@ -557,55 +538,13 @@ pub fn fill(world: &mut World, land: &Land, lo: (i32, i32), hi: (i32, i32)) {
             if world.get(on) != Block::Air || !world.get(on - IVec3::Y).solid() {
                 continue;
             }
-            let (xm, zm) = (x as f32 * CELL, z as f32 * CELL);
-            let (thick, lot, pick) = (fbm(xm / 9.0, zm / 9.0, seed + 70), hash2(x, z, seed + 71), hash2(x, z, seed + 72));
-            let (shade, _, foot) = under(x, z);
-            let trail = land.trail(x, z);
-            let below = world.get(on - IVec3::Y);
-            let cover = match biome {
-                // Nothing in a trail or against a trunk; long grass along a trail's edge,
-                // where nothing treads and nothing shades it.
-                _ if trail > 0.3 || foot => None,
-                Biome::Meadow if trail > 0.0 => (lot < 0.4).then_some(Block::Tuft),
-                // Under a lone tree the grass thins, and what likes shade comes up.
-                Biome::Meadow if shade > 0.35 => match lot {
-                    l if l < 0.012 => Some(Block::Mushroom),
-                    l if l < 0.05 => Some(Block::Fern),
-                    l if l < (thick - 0.3) * 0.5 => Some(Block::Tuft),
-                    _ => None,
-                },
-                // Flowers come in drifts some metres over, thick at the heart; long grass
-                // in its own patches; a few of each anywhere.
-                Biome::Meadow => {
-                    let bloom = ((fbm(xm / 7.0, zm / 7.0, seed + 86) - 0.58) * 6.0).clamp(0.0, 1.0);
-                    if lot < (thick - 0.3) * 1.3 {
-                        Some(if pick < 0.05 + 0.5 * bloom { Block::Flower } else { Block::Tuft })
-                    } else if lot > 1.0 - 0.14 * bloom {
-                        Some(Block::Flower)
-                    } else {
-                        None
-                    }
-                }
-                Biome::Forest if lot < (thick - 0.34) * 1.0 => Some(if pick < 0.75 { Block::Fern } else { Block::Tuft }),
-                Biome::Forest if below == Block::Moss && lot > 0.93 => Some(Block::Fern),
-                // Mushrooms in troops, on litter and by what has fallen; hardly one alone.
-                Biome::Forest if fbm(xm / 2.5, zm / 2.5, seed + 87) > 0.72 && pick < if below == Block::Litter { 0.16 } else { 0.05 } => Some(Block::Mushroom),
-                Biome::Forest if hash2(x, z, seed + 73) < 0.003 => Some(Block::Mushroom),
-                Biome::Rock if lot < 0.03 && below == Block::Moss => Some(Block::Fern),
-                // Grass in the cracks of low rock that is not steep.
-                Biome::Rock if lot < 0.02 && land.slope(x, z) <= 1 && h < SEA + cells(scale::ROCK_LINE) => Some(Block::Tuft),
-                // Reeds stand together at the water's edge; marram on the dry sand behind.
-                Biome::Shore if h <= SEA && lot < 0.4 && fbm(xm / 6.0, zm / 6.0, seed + 88) > 0.5 => Some(Block::Reed),
-                Biome::Shore if h > SEA && below == Block::Sand && lot < 0.25 && fbm(xm / 5.0, zm / 5.0, seed + 89) > 0.58 => Some(Block::Tuft),
-                _ => None,
-            };
-            if let Some(block) = cover {
-                world.set(on, block);
-                // Reeds stand two or three cells tall.
-                if block == Block::Reed {
-                    for up in 1..2 + (lot * 9.0) as i32 % 2 {
-                        world.set(on + IVec3::Y * up, Block::Reed);
-                    }
+            // What grows here: the rules of `land.toml` (`cover::cover`).
+            let (shade, needles, foot) = under(x, z);
+            let damp = fbm(x as f32 * CELL / DAMP, z as f32 * CELL / DAMP, seed + 21);
+            let site = crate::cover::Site { biome, x, z, seed, shade, needles, foot, trail: land.trail(x, z), damp, wet: h <= SEA, slope: land.slope(x, z), over: (h - SEA) as f32 * CELL, on: world.get(on - IVec3::Y) };
+            if let Some((block, tall)) = crate::cover::cover(&site) {
+                for up in 0..tall {
+                    world.set(on + IVec3::Y * up, block);
                 }
             }
         }

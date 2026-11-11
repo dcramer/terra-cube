@@ -9,6 +9,7 @@
 pub mod body;
 pub mod ecology;
 pub mod items;
+pub mod cover;
 pub mod flora;
 pub mod life;
 pub mod mind;
