@@ -124,6 +124,18 @@ Built 2026-11-10. `cube_sim::life` and `mind`; `cargo world run` judges it.
 - **Random choices come from one seeded generator** in the `Sim`, and agents are visited in id order, so a seed replays exactly (tested).
 - **Judged by numbers** (`cargo world run`): no creature ends a tick inside the ground or falls out of the world, each kind walks into something for at most 8% of the time, is walled in for at most 10%, swims for at most 5%, and goes at least 3 m.
 
+## Fighting, and what a person carries
+
+Built 2026-11-11, in the simulation (`cube_sim::life`, `items`) and tested there; the game shows it (`cube_game::hud`).
+
+- **Health is by size**: a rabbit 22, a wolf 56, a bear 91, a golem 345; a person 100. A blow takes what the striker's size gives (4 + 9 a metre of height), or for a person what is in hand: fists 6, a torch 9, a shovel 12, a short sword 28.
+- **A blow lands a third of a second into the swing** on the nearest thing within a metre and a half in front. Minds time their own; a driven creature asks with `Sim::swing`.
+- **The dead lie, are gone, and return.** At no health a creature falls (`Act::Die`), lies 25 s, and is removed; 150 s later another of its kind comes to live where it did, so hunting and being hunted do not empty the world. A person wakes at home after five seconds, whole. Left in peace eight seconds, anything mends two a second.
+- **A pack is 24 slots, the first eight a bar to hand, one of those in the hand** (`items::Pack`). A person sets out with a short sword, a torch, a shovel and six berries. `Sim::use_held` is the one way a thing is used: a weapon swings, berries are eaten for 15 health (only by the hurt), the shovel asks the game to dig. The torch is lit while it is the thing in hand.
+- **Keys**: left button uses what is in hand; 1 to 8 take a slot, Q and E step along the bar, T takes the torch; I opens the pack (click a slot, then another, to change them over); F1 opens the admin panel (time, season and speed; heal, hurt, give, go to water or wood or meadow or rock; put any creature down ahead; nothing hurts me). In a script: `use`, `torch`, `hold3`.
+- **Tested without a window**: the rules in `cube_sim` tests; from the game, a scripted `--play --scene` prints `health=`, `held=` and `kills=` in its trace. The windows themselves (bar, pack, admin) are only seen by running the game: a scene is drawn to an image with no window, and they are not in it.
+- **Not done**: anything dropped by the dead, armour, blocking, ranged weapons, hit shapes per limb; animals do not flee a person who has hurt them any differently.
+
 ## Ecology
 
 Built 2026-11-11. One system decides what life a place has (`cube_sim::ecology`); `cargo world life` judges it.

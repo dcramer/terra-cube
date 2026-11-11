@@ -12,6 +12,7 @@
 mod air;
 mod camera;
 mod creatures;
+mod hud;
 mod motion;
 mod player;
 mod shot;
@@ -269,7 +270,7 @@ fn main() {
     } else if shot {
         app.add_plugins(shot::ShotPlugin);
     } else {
-        app.add_plugins((world::WorldPlugin, air::AirPlugin, camera::CameraPlugin, motion::MotionPlugin, player::PlayPlugin, ui::UiPlugin));
+        app.add_plugins((world::WorldPlugin, air::AirPlugin, camera::CameraPlugin, motion::MotionPlugin, player::PlayPlugin, ui::UiPlugin, hud::HudPlugin));
     }
     app.run();
 }

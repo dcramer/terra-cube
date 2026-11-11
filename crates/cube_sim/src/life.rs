@@ -306,6 +306,8 @@ pub struct Agent {
     pub power: f32,
     /// Seconds since it was last hurt: left in peace, it mends.
     pub calm: f32,
+    /// What it carries, if it is a person (`items`).
+    pub pack: Option<crate::items::Pack>,
     landing: f32,
     airborne: f32,
     jumped: bool,
@@ -360,6 +362,35 @@ impl Sim {
         Self { kinds, agents: BTreeMap::new(), tick: 0, graves: Vec::new(), when: crate::sky::START, rng: Rng::new(seed), next: 1 }
     }
 
+    /// A person uses what is in their hand: a blade swings, berries are eaten, a shovel asks
+    /// for the ground to be dug (which is the caller's to do: the world is not ours here).
+    pub fn use_held(&mut self, id: u32) -> crate::items::Used {
+        use crate::items::{Item, Used};
+        let Some(agent) = self.agents.get_mut(&id).filter(|a| a.dead.is_none()) else { return Used::Nothing };
+        let held = agent.pack.as_ref().and_then(|p| p.held());
+        match held {
+            Some(Item::Shovel) => Used::Dig,
+            Some(item) if item.heals().is_some() => {
+                let full = self.kinds[agent.kind].health();
+                if agent.health >= full || agent.doing.is_some() {
+                    return Used::Nothing;
+                }
+                let pack = agent.pack.as_mut().unwrap();
+                pack.take(pack.hand);
+                agent.health = (agent.health + item.heals().unwrap()).min(full);
+                agent.doing = Some((Act::Eat, 1.2));
+                Used::Ate
+            }
+            _ => {
+                if agent.swing.is_some() || agent.doing.is_some() {
+                    return Used::Nothing;
+                }
+                self.swing(id);
+                Used::Swing
+            }
+        }
+    }
+
     /// A driven creature begins a blow: it lands a third of a second on.
     pub fn swing(&mut self, id: u32) {
         if let Some(agent) = self.agents.get_mut(&id).filter(|a| a.dead.is_none() && a.swing.is_none()) {
@@ -389,7 +420,7 @@ impl Sim {
         let mind = Mind::new(Vec2::new(pos.x, pos.z), &mut self.rng);
         self.agents.insert(
             id,
-            Agent { kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), calm: 0.0, stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
+            Agent { kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), calm: 0.0, pack: (k.temper == Temper::Person).then(crate::items::Pack::starting), stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
         );
         id
     }
@@ -407,6 +438,10 @@ impl Sim {
         // A driven creature's blow: it lands part way through the swing on the nearest thing
         // in reach in front of it.
         for (&id, agent) in self.agents.iter_mut().filter(|(_, a)| a.dead.is_none()) {
+            // What a person's blow takes is what is in their hand.
+            if let Some(pack) = &agent.pack {
+                agent.power = pack.held().and_then(|i| i.power()).unwrap_or(FISTS);
+            }
             let Some(left) = &mut agent.swing else { continue };
             *left -= DT;
             if *left > 0.0 {
@@ -730,14 +765,15 @@ mod tests {
         let person = sim.add(&world, 4, at(0.0, 0.0), 0.0, Driver::Outside);
         let rabbit = sim.add(&world, 0, at(0.0, 1.0), 0.0, Driver::Stand);
         let full = sim.agents[&rabbit].health;
-        // Bare hands: a rabbit takes several blows. Each lands a third of a second on.
+        sim.agents.get_mut(&person).unwrap().pack.as_mut().unwrap().hold(7);
+        // Bare hands (an empty slot of the bar): a rabbit takes several blows. Each lands a third of a second on.
         sim.swing(person);
         run(&mut sim, &world, 0.3);
         assert_eq!(sim.agents[&rabbit].health, full);
         run(&mut sim, &world, 0.2);
         assert_eq!(sim.agents[&rabbit].health, full - FISTS);
         // With a blade, one more is enough; it lies, then is gone, then another lives there.
-        sim.agents.get_mut(&person).unwrap().power = 40.0;
+        sim.agents.get_mut(&person).unwrap().pack.as_mut().unwrap().hold(0);
         sim.agents.get_mut(&person).unwrap().doing = None;
         sim.swing(person);
         run(&mut sim, &world, 1.0);
@@ -753,6 +789,33 @@ mod tests {
         sim.swing(person);
         run(&mut sim, &world, 1.0);
         assert_eq!(sim.agents[&behind].health, sim.kinds[0].health());
+    }
+
+    #[test]
+    fn what_is_in_hand_decides_what_using_it_does() {
+        use crate::items::{Item, Used};
+        let (world, mut sim) = stage();
+        let person = sim.add(&world, 4, at(0.0, 0.0), 0.0, Driver::Outside);
+        let bear = sim.add(&world, 2, at(0.0, 1.6), 0.0, Driver::Stand);
+        let full = sim.agents[&bear].health;
+        // The sword is in hand at the start: a blow takes what a sword takes.
+        assert_eq!(sim.use_held(person), Used::Swing);
+        assert_eq!(sim.use_held(person), Used::Nothing, "one blow at a time");
+        run(&mut sim, &world, 1.2);
+        assert_eq!(sim.agents[&bear].health, full - Item::Sword.power().unwrap());
+        // The shovel asks for a hole; berries mend, one at a time, and only the hurt eat.
+        let hand = |sim: &mut Sim, item: Item| {
+            let pack = sim.agents.get_mut(&person).unwrap().pack.as_mut().unwrap();
+            pack.hold(pack.slots.iter().position(|s| s.is_some_and(|s| s.0 == item)).unwrap());
+        };
+        hand(&mut sim, Item::Shovel);
+        assert_eq!(sim.use_held(person), Used::Dig);
+        hand(&mut sim, Item::Berries);
+        assert_eq!(sim.use_held(person), Used::Nothing);
+        sim.agents.get_mut(&person).unwrap().health = 40.0;
+        assert_eq!(sim.use_held(person), Used::Ate);
+        let p = &sim.agents[&person];
+        assert_eq!((p.health, p.pack.as_ref().unwrap().count(Item::Berries)), (55.0, 5));
     }
 
     #[test]

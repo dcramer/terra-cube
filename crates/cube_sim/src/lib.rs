@@ -8,6 +8,7 @@
 
 pub mod body;
 pub mod ecology;
+pub mod items;
 pub mod life;
 pub mod mind;
 pub mod plants;

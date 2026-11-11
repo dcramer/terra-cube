@@ -20,7 +20,7 @@ pub struct PlayPlugin;
 
 impl Plugin for PlayPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Controls>().add_systems(Update, (start, keys, script, drive, follow, edit, cursor, trace).chain());
+        app.init_resource::<Controls>().init_resource::<Menus>().add_systems(Update, (start, keys, script, drive, follow, edit, cursor, trace).chain());
         app.add_systems(Update, torch);
     }
 }
@@ -39,6 +39,25 @@ pub struct Controls {
     pub put: bool,
     /// Something to do on the spot, once: a blow, a bite of grass, a flinch.
     pub act: Option<cube_sim::life::Act>,
+    /// What is in hand is to be used, once: a blow, a bite, a spadeful.
+    pub use_held: bool,
+    /// A slot of the bar to take in hand, or a step along it.
+    pub hold: Option<usize>,
+    pub cycle: i32,
+}
+
+/// The windows that take the mouse from the camera while they are open: the pack, the admin
+/// panel.
+#[derive(Resource, Default)]
+pub struct Menus {
+    pub pack: bool,
+    pub admin: bool,
+}
+
+impl Menus {
+    pub fn open(&self) -> bool {
+        self.pack || self.admin
+    }
 }
 
 /// On the creature being controlled.
@@ -93,8 +112,23 @@ fn start(
     }
 }
 
-fn keys(keys: Res<ButtonInput<KeyCode>>, buttons: Res<ButtonInput<MouseButton>>, args: Res<Args>, mut controls: ResMut<Controls>, mut controlled: Query<&mut Controlled>) {
+fn keys(keys: Res<ButtonInput<KeyCode>>, buttons: Res<ButtonInput<MouseButton>>, args: Res<Args>, mut menus: ResMut<Menus>, mut controls: ResMut<Controls>, mut controlled: Query<&mut Controlled>) {
     if args.scene.is_some() {
+        return;
+    }
+    // The pack opens on I and the admin panel on F1; Escape shuts both. While either is
+    // open the keys and the mouse are the window's.
+    if keys.just_pressed(KeyCode::KeyI) {
+        menus.pack = !menus.pack;
+    }
+    if keys.just_pressed(KeyCode::F1) {
+        menus.admin = !menus.admin;
+    }
+    if keys.just_pressed(KeyCode::Escape) {
+        (menus.pack, menus.admin) = (false, false);
+    }
+    if menus.open() {
+        (controls.dir, controls.jump) = (Vec2::ZERO, false);
         return;
     }
     let held = |k: KeyCode| keys.pressed(k) as i32 as f32;
@@ -108,7 +142,18 @@ fn keys(keys: Res<ButtonInput<KeyCode>>, buttons: Res<ButtonInput<MouseButton>>,
     };
     controls.jump = keys.pressed(KeyCode::Space);
     controls.dive = keys.pressed(KeyCode::ControlLeft);
-    controls.dig |= buttons.just_pressed(MouseButton::Left) && !controlled.is_empty();
+    // The left button uses what is in hand; 1 to 8 take a slot of the bar, Q and E step
+    // along it, T takes the torch.
+    controls.use_held |= buttons.just_pressed(MouseButton::Left) && !controlled.is_empty();
+    for (slot, key) in [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6, KeyCode::Digit7, KeyCode::Digit8].into_iter().enumerate() {
+        if keys.just_pressed(key) {
+            controls.hold = Some(slot);
+        }
+    }
+    controls.cycle += keys.just_pressed(KeyCode::KeyE) as i32 - keys.just_pressed(KeyCode::KeyQ) as i32;
+    if keys.just_pressed(KeyCode::KeyT) {
+        controls.hold = Some(usize::MAX);
+    }
     controls.put |= buttons.just_pressed(MouseButton::Right) && !controlled.is_empty();
     if keys.just_pressed(KeyCode::KeyV) {
         for mut c in &mut controlled {
@@ -153,7 +198,9 @@ fn script(time: Res<Time>, args: Res<Args>, mut controls: ResMut<Controls>, mut 
                 "sprint" => controls.gait = Gait::Sprint,
                 "jump" => clock.1 = now + 0.4,
                 "dive" => controls.dive = true,
-                "attack" => controls.act = Some(cube_sim::life::Act::Attack),
+                "attack" | "use" => controls.use_held = true,
+                "torch" => controls.hold = Some(usize::MAX),
+                "hold1" | "hold2" | "hold3" | "hold4" | "hold5" | "hold6" | "hold7" | "hold8" => controls.hold = word[4..].parse::<usize>().ok().map(|n| n - 1),
                 "eat" => controls.act = Some(cube_sim::life::Act::Eat),
                 "hurt" => controls.act = Some(cube_sim::life::Act::Hurt),
                 "dig" => controls.dig = true,
@@ -182,8 +229,8 @@ fn trace(time: Res<Time>, args: Res<Args>, live: Res<Live>, controlled: Query<(&
         let b = &agent.body;
         let yaw = cameras.iter().next().map_or(0.0, |o| o.yaw);
         println!(
-            "play t={:.1} pos={:.1},{:.1},{:.1} speed={:.2} grounded={} swimming={} clip={clip}x{:.2} yaw={yaw:.2} first={}",
-            clock.0, b.pos.x, b.pos.y, b.pos.z, b.ground_speed(), b.grounded, b.swimming, creature.speed, c.first_person
+            "play t={:.1} pos={:.1},{:.1},{:.1} speed={:.2} grounded={} swimming={} clip={clip}x{:.2} yaw={yaw:.2} first={} health={:.0} held={} kills={}",
+            clock.0, b.pos.x, b.pos.y, b.pos.z, b.ground_speed(), b.grounded, b.swimming, creature.speed, c.first_person, agent.health, agent.pack.as_ref().and_then(|p| p.held()).map_or("nothing", |i| i.name()), agent.log.kills
         );
     }
 }
@@ -195,6 +242,22 @@ fn drive(mut controls: ResMut<Controls>, args: Res<Args>, mut live: ResMut<Live>
     // The camera looks along -Z turned by its yaw; right is +X turned the same.
     let (sin, cos) = yaw.sin_cos();
     for (c, mover, mut visibility) in &mut controlled {
+        // What is in hand, and using it: the simulation says what that does.
+        if let Some(pack) = live.agent_mut(mover).and_then(|a| a.pack.as_mut()) {
+            match controls.hold.take() {
+                Some(usize::MAX) => {
+                    if let Some(slot) = pack.slots[..cube_sim::items::BAR].iter().position(|s| s.is_some_and(|s| s.0.lights())) {
+                        pack.hold(slot);
+                    }
+                }
+                Some(slot) => pack.hold(slot),
+                None => {}
+            }
+            pack.cycle(std::mem::take(&mut controls.cycle));
+        }
+        if std::mem::take(&mut controls.use_held) && live.0.use_held(mover.id) == cube_sim::items::Used::Dig {
+            controls.dig = true;
+        }
         let Some(speed) = live.kind(mover).map(|k| k.speed(controls.gait)) else { continue };
         let Some(m) = live.agent_mut(mover) else { continue };
         m.intent.dir = Vec2::new(cos, -sin) * controls.dir.x + Vec2::new(-sin, -cos) * controls.dir.y;
@@ -227,13 +290,14 @@ fn follow(
     terrain: Option<Res<Terrain>>,
     motion: Res<AccumulatedMouseMotion>,
     scroll: Res<AccumulatedMouseScroll>,
+    menus: Res<Menus>,
     controlled: Query<(&Controlled, &Creature, &Transform), Without<Orbit>>,
     mut cameras: Query<(&mut Orbit, &mut Transform)>,
 ) {
     let (Ok((c, creature, at)), Some(terrain)) = (controlled.single(), terrain) else { return };
     let def = &registry.0[creature.def];
     for (mut orbit, mut transform) in &mut cameras {
-        if args.scene.is_none() {
+        if args.scene.is_none() && !menus.open() {
             orbit.yaw -= motion.delta.x * 0.003;
             orbit.pitch = (orbit.pitch + motion.delta.y * 0.003).clamp(-1.3, 1.45);
             if !c.first_person {
@@ -290,8 +354,8 @@ fn edit(mut controls: ResMut<Controls>, live: Res<Live>, terrain: Option<ResMut<
 }
 
 /// The mouse belongs to the camera while a creature is controlled, and to the panel otherwise.
-fn cursor(controlled: Query<(), With<Controlled>>, mut windows: Query<&mut CursorOptions>) {
-    let locked = !controlled.is_empty();
+fn cursor(menus: Res<Menus>, controlled: Query<(), With<Controlled>>, mut windows: Query<&mut CursorOptions>) {
+    let locked = !controlled.is_empty() && !menus.open();
     for mut options in &mut windows {
         let mode = if locked { CursorGrabMode::Locked } else { CursorGrabMode::None };
         if options.grab_mode != mode {
@@ -311,16 +375,14 @@ fn torch(
     mut commands: Commands,
     time: Res<Time>,
     args: Res<crate::Args>,
-    keys: Option<Res<ButtonInput<KeyCode>>>,
-    bearers: Query<(&Transform, &crate::creatures::Creature), With<Controlled>>,
+    live: Res<Live>,
+    bearers: Query<(&Transform, &Mover), With<Controlled>>,
     mut torches: Query<(Entity, &mut Transform, &mut PointLight), (With<Torch>, Without<Controlled>)>,
-    mut lit: Local<Option<bool>>,
 ) {
-    let on = lit.get_or_insert(args.torch);
-    if keys.is_some_and(|k| k.just_pressed(KeyCode::KeyT)) {
-        *on = !*on;
-    }
-    let Some((bearer, _)) = bearers.iter().next().filter(|_| *on) else {
+    // Lit while the torch is the thing in hand (T takes it from the bar); `--torch` lights
+    // it whatever is held, for pictures.
+    let held = |m: &Mover| live.agent(m).is_some_and(|a| a.dead.is_none() && a.pack.as_ref().and_then(|p| p.held()).is_some_and(|i| i.lights()));
+    let Some((bearer, _)) = bearers.iter().next().filter(|(_, m)| args.torch || held(m)) else {
         for (entity, ..) in &torches {
             commands.entity(entity).despawn();
         }
