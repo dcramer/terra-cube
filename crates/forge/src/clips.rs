@@ -149,8 +149,8 @@ pub fn write(glb: &mut Glb, sk: &Skeleton, clips: &[Clip]) {
 /// Recipes are written from the rest pose. `stand` is how the creature really stands (the first
 /// frame of its idle, where Tripo gave one): a figure rigged in a T-pose rests with its arms
 /// out, so each recipe's turns are laid over `stand` instead.
-pub fn make(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option<&Pose>, upright: bool, metres: f32, gain: f32, ease: f32) -> Option<Clip> {
-    let mut clip = recipe(name, sk, roles, have, stand, upright, metres, gain)?;
+pub fn make(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option<&Pose>, upright: bool, metres: f32, gain: f32, ease: f32, hops: bool) -> Option<Clip> {
+    let mut clip = recipe(name, sk, roles, have, stand, upright, metres, gain, hops)?;
     // A body whose skin tears is moved less: every joint's turn from rest, and the root's
     // travel, scaled down. Not the gaits, whose feet would slide, nor the fall, which must land.
     if ease != 1.0 && !matches!(name, "run" | "walk" | "sprint" | "die") {
@@ -293,7 +293,8 @@ pub fn close_loop(frames: &mut [Pose]) {
     }
 }
 
-fn recipe(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option<&Pose>, upright: bool, metres: f32, gain: f32) -> Option<Clip> {
+#[allow(clippy::too_many_arguments)]
+fn recipe(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option<&Pose>, upright: bool, metres: f32, gain: f32, hops: bool) -> Option<Clip> {
     if let Some(clip) = flight(name, sk) {
         return Some(clip);
     }
@@ -307,6 +308,9 @@ fn recipe(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option
     let base = stand.unwrap_or(&rest);
     Some(match name {
         "idle" => idle(sk, roles),
+        "walk" if four && hops => gait(sk, roles, &HOP, base, false, metres, gain),
+        "run" if four && hops => gait(sk, roles, &BOUND, base, false, metres, gain),
+        "sprint" if four && hops => gait(sk, roles, &Gait { name: "sprint", froude: 3.2, quickest: 0.3, ..BOUND }, base, false, metres, gain),
         "walk" if four => gait(sk, roles, &WALK, base, false, metres, gain),
         "run" if four => gait(sk, roles, &TROT, base, false, metres, gain),
         "sprint" if four => gait(sk, roles, &GALLOP, base, false, metres, gain),
@@ -549,7 +553,11 @@ struct Gait {
 
 const WALK: Gait = Gait { name: "walk", duty: 0.64, lands: [0.25, 0.75, 0.0, 0.5], froude: 0.22, stride: 0.75, lift: 0.14, bob: 0.012, bobs: 2.0, quickest: 0.5, rock: 0.0, arch: 0.0, lean: 0.0, arms: 0.0, elbow: 0.0 };
 const TROT: Gait = Gait { name: "run", duty: 0.46, lands: [0.0, 0.5, 0.5, 0.0], froude: 1.0, stride: 0.9, lift: 0.2, bob: 0.03, bobs: 2.0, quickest: 0.38, rock: 0.0, arch: 0.0, lean: 0.0, arms: 0.0, elbow: 0.0 };
-const GALLOP: Gait = Gait { name: "sprint", duty: 0.3, lands: [0.5, 0.6, 0.0, 0.1], froude: 3.2, stride: 1.05, lift: 0.26, bob: 0.06, bobs: 1.0, quickest: 0.32, rock: 0.06, arch: 0.05, lean: 0.0, arms: 0.0, elbow: 0.0 };
+const GALLOP: Gait = Gait { name: "sprint", duty: 0.3, lands: [0.5, 0.6, 0.0, 0.1], froude: 3.2, stride: 1.05, lift: 0.26, bob: 0.06, bobs: 1.0, quickest: 0.32, rock: 0.09, arch: 0.1, lean: 0.0, arms: 0.0, elbow: 0.0 };
+// What hops: hind feet land together and push, fore feet land together after, the back rocking
+// between them. A slow hop is the same thing with a wait in it.
+const HOP: Gait = Gait { name: "walk", duty: 0.45, lands: [0.5, 0.56, 0.0, 0.06], froude: 0.35, stride: 0.9, lift: 0.3, bob: 0.07, bobs: 1.0, quickest: 0.45, rock: 0.12, arch: 0.1, lean: 0.0, arms: 0.0, elbow: 0.0 };
+const BOUND: Gait = Gait { name: "run", duty: 0.32, lands: [0.5, 0.56, 0.0, 0.06], froude: 1.4, stride: 1.05, lift: 0.34, bob: 0.1, bobs: 1.0, quickest: 0.34, rock: 0.16, arch: 0.14, lean: 0.0, arms: 0.0, elbow: 0.0 };
 
 // Two legs: left lands at 0, right half a cycle later (the first two of `lands`). A run and a
 // sprint leave the ground between steps (duty under a half).
@@ -656,14 +664,16 @@ fn gait(sk: &Skeleton, roles: &Roles, g: &Gait, base: &Pose, upright: bool, metr
             for &j in &roles.spine {
                 let share = 1.0 / roles.spine.len() as f32;
                 // An upright trunk leans in and turns against the legs; a gallop's arches.
-                let turn = pitch(roles, (g.arch * gain * gain * (a + 2.2).sin() + g.lean) * share) * yaw(if upright { 0.5 * g.arms * share * a.sin() * 0.3 } else { 0.0 });
+                // An animal's back sways side to side with its steps, a walk's most of all.
+                let sway = if g.duty > 0.5 { 0.09 } else if g.rock == 0.0 { 0.05 } else { 0.0 } * gain;
+                let turn = pitch(roles, (g.arch * gain * gain * (a + 2.2).sin() + g.lean) * share) * yaw(if upright { 0.5 * g.arms * share * a.sin() * 0.3 } else { sway * share * (a + 0.8).sin() });
                 turn_now(sk, pose, j, turn);
             }
             if let Some(&j) = roles.head.first() {
-                turn_now(sk, pose, j, pitch(roles, -rock * 0.8 - g.lean * 0.7 + 0.03 * (g.bobs * a + 0.5).sin()));
+                turn_now(sk, pose, j, pitch(roles, -rock * 0.8 - g.lean * 0.7 + if upright { 0.03 } else { 0.07 } * (g.bobs * a + 0.5).sin()));
             }
             for (i, &j) in roles.tail.iter().enumerate() {
-                turn_now(sk, pose, j, yaw(0.1 * (a - i as f32 * 0.6).sin()) * pitch(roles, -rock * 0.5));
+                turn_now(sk, pose, j, yaw(if upright { 0.1 } else { 0.16 } * (a - i as f32 * 0.6).sin()) * pitch(roles, -rock * 0.5));
             }
             for arm in &roles.arms {
                 // Each arm goes forward with the leg across from it.

@@ -22,10 +22,9 @@ while every forge check passed. What is the source of a clip that looks right?
   still. 20 credits each, once: the asset goes on any humanoid free. Swim is still made.
 - **Tripo has one animal clip, and it does not travel.** `quadruped:walk` on the wolf lifts
   its legs well but its feet cover 0.14 to 0.27 m/s: marching on the spot.
-- **Our made animal gaits are stiff, and tuning them did not help.** A longer stride with more
-  back, head and tail motion changed the bear and little else; most animals have their stride
-  cut per creature (`gait_gain` 0.4 on wolf and deer) because Tripo's animal skinning tears
-  at full reach. The limit is the rig, not the numbers.
+- **Our made animal gaits were stiff mostly because we throttled them.** Strides had been cut
+  per creature (`gait_gain` 0.05 on the fox, 0.4 on wolf and deer) to pass a 60% stretch bar.
+  At full stride, drawn large, six of seven hold their shape; the pony's hoof tears.
 - **An animal animated by hand is plainly better.** Quaternius's wolf (CC0, 1,962 triangles,
   51 joints; clips Walk, Gallop, Gallop_Jump, Attack, Death, Eating, Idle, Idle_2,
   Idle_2_HeadLow, Idle_HitReact_Left/Right, Jump_ToIdle) drawn in our engine beside ours:

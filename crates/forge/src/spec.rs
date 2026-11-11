@@ -136,6 +136,9 @@ pub struct Creature {
     /// thing down (a run for a sprint, a walk for a swim).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub without: Vec<String>,
+    /// It goes by hopping: hind feet together, then fore feet together (a rabbit, a hare).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hops: bool,
     /// A look from `looks.toml` to draw this creature in, where the house style would be:
     /// for building one creature in a look that is being tried.
     #[serde(default, skip_serializing_if = "Option::is_none")]

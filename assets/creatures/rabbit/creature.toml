@@ -4,7 +4,8 @@ plan = "quadruped"
 subject = "a small brown rabbit with long upright ears, standing on all four feet"
 height = 0.3
 ease = 0.35
-gait_gain = 0.9
+# A rabbit does not walk: it hops, slow or fast.
+hops = true
 
 [life]
 temper = "timid"

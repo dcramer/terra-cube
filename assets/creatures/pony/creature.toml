@@ -3,6 +3,9 @@ kind = "wildlife"
 plan = "quadruped"
 subject = "a stocky wild pony with a shaggy black mane and a dun coat"
 height = 1.6
+# One fore hoof is skinned partly to another bone and pulls out into a spike as the leg
+# reaches (seen large from the side); the shorter the stride the smaller it is.
+gait_gain = 0.42
 
 [life]
 temper = "timid"

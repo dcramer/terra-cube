@@ -57,17 +57,34 @@ Tried end to end on the old crow's mesh with its skeleton taken off: rig, skin, 
 
 The game draws them as `creatures::Picture`: a model and its clips with no body in the simulation, moved by `cube_game::air` as before (the paths, the flocking, the schools are unchanged). Until this day each was a shape made in `air.rs` with wings turned by hand, outside the pipeline.
 
-## Gaits
+## Where motion comes from
 
-A gait is right when a foot that is down stays where it was put while the body goes over it. Forge holds every made walk, run and sprint to that, and `check` measures it (`slide`, bar 25%).
+**Tripo's motion is used wherever Tripo has it, untouched; a clip is made here only where it has none.** (The developer, 2026-11-11: "if Tripo animates well we should rely on it.") Every time our code rewrote a recorded clip it got worse while every check passed.
 
-- **Four legs: made** (`gait` in clips.rs). Each foot is carried straight back along the ground at the gait's speed while it is down and swung forward in an arc while it is up, and the leg is bent to reach it (a two-bone solve). Walk, trot (`run`) and gallop (`sprint`) differ only in numbers: how long a foot is down, the order the feet land, stride, lift, and for the gallop a rocking trunk. Speed comes from the leg's length by Froude number, v² / (g × leg), which animals of every size share at each gait: a wolf walks at 1.0 m/s, trots at 2.0, gallops at 3.6; a rabbit 0.5, 0.9, 1.6. Slide is 0% to 6%.
-- **Two legs: Tripo's, as recorded** (2026-11-11). A biped's walk and run are Tripo's presets and nothing is done to them but three things that do not change the motion: the loop is closed, the clip is stood over the creature's own place (Tripo's run is recorded most of a metre ahead of its walk) and on its floor, by one shift for the whole clip. The game moves the body at the speed the clip's feet say: the middle speed of whichever foot is lower, checked against how far the steps reach (where the two differ by more than a quarter, as on the troll's run, the steps are believed). The sprint is the run a fifth quicker.
-- **A biped's death is Tripo's `fall`** (2026-11-11): a person staggering, going down and lying still, cut before the getting up. All eleven of Tripo's presets were drawn untouched on one sheet for the player to see what there is: `jump` is skipping on the spot and `hurt` is sitting wounded, neither of use; `dive` is a roll and `climb` a vault, kept in mind. The troll and golem keep the made topple: crumpled, their skin stretches past the bar.
-- **A biped's leap and flinch are motions Tripo made from a description** (2026-11-11): "a man crouches and jumps straight up high, then lands on both feet and stands" and "a man standing is hit in the chest, flinches back sharply, then recovers". A described motion is an asset of its own at Tripo: 20 credits once, then it goes on any humanoid for nothing (`[plans.biped.motions]` holds each one's asset id; `tripo.ts animate PROJECT --motion ASSET`, and its report lists the ones a model carries). The leap is cut into the three clips the game plays (`jump` leaving the ground, `fall` tucked in the air, `land` coming down), each frame stood on its own lowest foot since the game is what lifts the body; the flinch is `hurt`. A described breaststroke was tried with them and came back lying flat and still: `swim` stays made.
-- **What was done before, and why it went.** Each recorded gait had its feet locked to a straight line at one speed, its stride lengthened, and was replaced by a made stride wherever the feet still slid by our measure, which was every biped's walk. Set side by side on one sheet (the recorded clip, ours, eight moments each from the side), the recorded walk was a person walking and ours was a shuffle of small steps with the arms held out. The measure was wrong for a person, not the clip: an ankle does not travel at one speed while its foot is down (the heel lands, the foot rolls, the toe pushes off), so a good walk read as 88% slide. `slide` is now a bar for made gaits only. Putting other recorded motion (the CMU capture library) on Tripo's skeleton with Blender was tried the same day and dropped: the walk came out leaning back with the trunk twisted, worse than Tripo's own, and it had passed every check. The lesson of both: a number that passes is not a clip that looks right, and a recorded clip is compared with its source on one sheet before anything is done to it.
-- **`meta.toml` speeds are the speeds the game moves at**, so a clip always plays at its own rate. To make a creature faster, change the gait, not a number in the game.
-- **Four-legged animals stride in full** (2026-11-11). Seven of them had `gait_gain` set as low as 0.05 (the fox) to get under the general 60% bar on skin stretch, and shuffled. Drawn large at full stride from the side, the front and a quarter, with stretch of 70% to 103%, none tears: the bar was failing gaits that look right, as `slide` had failed a good human walk. The four-legged plan's bar is now 110% and those seven have no `gait_gain`: the deer and fox gallop with legs reaching fore and aft, the bear bounds.
+| Clip | Bipeds | Four legs |
+|---|---|---|
+| idle, walk, run | Tripo presets | made (`gait` in clips.rs) |
+| sprint | the run a fifth quicker | made |
+| jump, fall, land, hurt | Tripo motions from a description | made |
+| attack | Tripo `slash`, trimmed | made |
+| die | Tripo `fall`, cut before the getting up | made |
+| swim, eat | made | made |
+
+- **To a recorded clip forge does only this:** closes its loop, stands it over the creature's own place and floor by one shift (Tripo's run sits most of a metre ahead of its walk), trims it (`[plans.x.trim]`). A leap is stood on its own lowest foot frame by frame, since the game lifts the body.
+- **A recorded gait's speed is read, not set:** the middle speed of whichever foot of a pair is lower, checked against how far the steps reach (the steps are believed where the two differ by over a quarter). `meta.toml` speeds are the speeds the game moves at.
+- **A motion from a description is an asset at Tripo:** 20 credits once, then free on any humanoid. `tripo.ts animate PROJECT --prompt "…" --seconds 4` makes one and reports its asset id; `[plans.biped.motions]` lists the ids and every biped's export carries them. Judge it before adopting: a described breaststroke came back lying still.
+- **Tripo's presets that are no use:** biped `jump` (skipping on the spot), `hurt` (sitting wounded); `quadruped:walk` (marches on the spot, 0.14 to 0.27 m/s on a wolf). `dive` (a roll) and `climb` (a vault) are good and unused.
+- **Made four-legged gaits:** each foot is carried straight back at the gait's speed while down and swung forward in an arc while up, the leg bent to reach it; speed from leg length by Froude number. The spine sways, the head nods, a gallop's back rocks. `hops = true` (the rabbit) lands hind feet together, then fore.
+- **Tried and dropped:** locking a recorded gait's feet to a line and stretching its stride; replacing a recorded walk with a made one; putting CMU capture on Tripo's skeleton in Blender (twisted trunk); Tripo's own models with a hand-animated pack's motion (not tried: the same retargeting). A hand-animated CC0 animal (Quaternius) moves better than our made gaits and looks plainer: [research](research/2026-11-11-animal-animation.md).
+
+## Judging motion
+
+**A number that passes is not a clip that looks right.** Two bars failed good motion for weeks: `slide` read a recorded human walk as 88% (an ankle does not move at one speed while its foot is down), and the 60% `stretch` bar had animals' strides cut to as little as a twentieth. One number missed a real fault: the pony's fore hoof pulls into a spike at full stride.
+
+- `make gaits ID="wolf deer"` draws walk, run and sprint from the side, eight moments each, large enough to see a spine and a hoof: `shots/gaits.png`. Look at it after any change to a gait, a plan or a creature's knobs, and set a changed clip beside what it came from.
+- `slide` is a bar for made gaits only. `stretch` is 60%, 110% for four legs (full strides read 70% to 103% and hold), 80% for bipeds.
+- To see what Tripo offers before using it, fetch the presets untouched into a trial creature and draw them (a plan whose `presets` are the names, a creature dir with the other's `forge.lock`).
+
 - `gait_gain` in `creature.toml` (under 1) shortens stride, lift, rock and arm swing for a body whose skin tears at full reach: troll 0.6, golem 0.75, lizard 0.6, tortoise 0.45. A made gait uses the average of it and 1, so 0 is half a stride and it may go below 0 for less (the bog toad -0.4, the bullfrog -0.6): a number that wants renaming when the gaits are next worked on.
 - `ease` (under 1) does the same for the made clips that are not gaits (idle, jump, swim, attack, eat…): every joint's turn from rest, and the root's travel, scaled. Fox 0.4, tortoise 0.3, toad 0.35, bullfrog 0.3, lizard 0.7. Not `die`, which has to finish on the floor.
 - `without = ["sprint"]` leaves out a clip of the plan a creature would not do, and the checks do not ask for it: the tortoise and the frog-types do not sprint, the stone golem does not swim. The game plays the next thing down.
@@ -121,7 +138,6 @@ What finish does to every clip, so no creature needs hand fixes:
 - A made clip is laid over how the creature **stands** (the first frame of Tripo's idle), not its rest pose, so a biped does not snap to a T-pose.
 - A recipe that cares which way a limb really points (arms in `jump`, `fall`, `swim`) gives its turns **as the creature stands** (`Stance` in clips.rs): on a T-pose rig "swing the arm forward" is a different turn at rest than with the arm hanging.
 - A looping preset is **closed**: its last fifth eases into its first frame (Tripo's biped run was 19° open).
-- Tripo's gaits have their feet locked (see Gaits).
 
 ## Checks
 
@@ -133,12 +149,12 @@ One line each, `ok` or `FAIL name value (bar)`; passing lines print only when so
 | roles | ≥ 2 legs and a head | A skeleton the recipes cannot use |
 | clips | all the plan's | A preset Tripo did not deliver |
 | weights | 0 unweighted vertices | Skin left behind |
-| stretch, per clip | 99th-percentile edge stretch ≤ 60% | Bad weights or a recipe that tears the skin: the skin is posed on the CPU through each clip |
+| stretch, per clip | 99th-percentile edge stretch ≤ 60% (110% four legs, 80% bipeds) | Bad weights or a recipe that tears the skin: the skin is posed on the CPU through each clip |
 | loop gap | ≤ 5° | A looping clip that pops |
 | feet off floor | ≤ 8% of height | Feet sinking or floating in idle, walk, run, sprint, eat |
-| slide | ≤ 25% of the gait's speed | Feet that skate: how fast a foot moves over the ground while it is down, with the gait played at its speed |
+| slide, made gaits only | ≤ 25% of the gait's speed | Feet that skate: how fast a foot moves over the ground while it is down, with the gait played at its speed |
 
-The bars are first guesses calibrated on eight creatures. Terra measured a hand-rigged deer at 10% stretch in a gallop and bad auto-weights at 118% to 194%; ours sit at 8% to 41%.
+The bars are guesses; see Judging motion for the two that were wrong.
 
 ## Looking
 

@@ -157,7 +157,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
             }
             None => {
                 let stand = out.iter().find(|c| c.name == "idle" && c.source == "tripo").map(|c| &c.frames[0]);
-                clips::make(name, &skeleton, &roles, &out, stand, plan.upright, scale, (1.0 + creature.gait_gain) / 2.0, creature.ease).with_context(|| format!("no preset and no recipe for the clip `{name}` (clips.rs `make`)"))?
+                clips::make(name, &skeleton, &roles, &out, stand, plan.upright, scale, (1.0 + creature.gait_gain) / 2.0, creature.ease, creature.hops).with_context(|| format!("no preset and no recipe for the clip `{name}` (clips.rs `make`)"))?
             }
         };
         let mut clip = clip;
