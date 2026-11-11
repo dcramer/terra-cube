@@ -115,7 +115,7 @@ pub fn look() -> impl Bundle {
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<Windy>::default()).insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().add_systems(Startup, setup).add_systems(Update, (stream, sky));
+        app.add_plugins(MaterialPlugin::<Windy>::default()).insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().add_systems(Startup, setup).add_systems(Update, (stream, sky, ripple));
     }
 }
 
@@ -126,6 +126,43 @@ impl Plugin for WorldPlugin {
 struct Sun;
 #[derive(Component)]
 struct Moon;
+
+/// The water's materials, for `ripple` to slide their ripples.
+#[derive(Resource)]
+struct Waters(Vec<Handle<StandardMaterial>>);
+
+/// Ripples: which way each point of the water's surface faces, as a tile that repeats. A few
+/// wave trains crossing at angles, short and low.
+fn ripples() -> Image {
+    const SIDE: usize = 128;
+    // Whole numbers of waves across the tile each way, how high, and where in its swing.
+    let trains: [(f32, f32, f32, f32); 6] = [(3.0, 1.0, 0.5, 0.0), (-2.0, 4.0, 0.35, 1.3), (5.0, -3.0, 0.22, 2.1), (7.0, 6.0, 0.14, 0.7), (-9.0, 4.0, 0.1, 4.0), (4.0, 11.0, 0.08, 5.2)];
+    let mut data = Vec::with_capacity(SIDE * SIDE * 4);
+    for i in 0..SIDE * SIDE {
+        let (u, v) = ((i % SIDE) as f32 / SIDE as f32, (i / SIDE) as f32 / SIDE as f32);
+        let (mut dx, mut dy) = (0.0, 0.0);
+        for (kx, ky, high, at) in trains {
+            let slope = (std::f32::consts::TAU * (kx * u + ky * v) + at).cos() * high;
+            dx += slope * kx;
+            dy += slope * ky;
+        }
+        let n = Vec3::new(-dx * 0.05, -dy * 0.05, 1.0).normalize();
+        data.extend([n.x, n.y, n.z].map(|c| ((c * 0.5 + 0.5) * 255.0) as u8).into_iter().chain([255]));
+    }
+    let mut image = Image::new(Extent3d { width: SIDE as u32, height: SIDE as u32, depth_or_array_layers: 1 }, TextureDimension::D2, data, TextureFormat::Rgba8Unorm, RenderAssetUsages::RENDER_WORLD);
+    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor { address_mode_u: ImageAddressMode::Repeat, address_mode_v: ImageAddressMode::Repeat, mag_filter: ImageFilterMode::Linear, min_filter: ImageFilterMode::Linear, mipmap_filter: ImageFilterMode::Linear, ..default() });
+    image
+}
+
+/// The ripples run downwind.
+fn ripple(time: Res<Time>, waters: Option<Res<Waters>>, mut materials: ResMut<Assets<StandardMaterial>>) {
+    let Some(waters) = waters else { return };
+    for handle in &waters.0 {
+        if let Some(mut water) = materials.get_mut(handle) {
+            water.uv_transform = bevy::math::Affine2::from_translation(Vec2::new(-0.8, -0.6) * (time.elapsed_secs() * 0.07));
+        }
+    }
+}
 
 /// How far across one tile of cloud shadow is on the ground, metres (the light's own size is
 /// half of it: a tile is two of the light's units), and how fast it drifts.
@@ -286,7 +323,10 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     let (paint, relief) = (picture(atlas.rgba, TextureFormat::Rgba8UnormSrgb), picture(atlas.relief, TextureFormat::Rgba8Unorm));
     let material = windy.add(ExtendedMaterial { base: StandardMaterial { base_color: Color::WHITE, base_color_texture: Some(paint), normal_map_texture: Some(relief), perceptual_roughness: 0.95, reflectance: 0.2, ..default() }, extension: Wind {} });
     // Water is its own mesh and material: it is blended over what is under it.
-    let water = materials.add(StandardMaterial { base_color: Color::WHITE, alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.25, reflectance: 0.5, ..default() });
+    // And it moves: ripples, as a picture of which way the surface faces, slid across it by
+    // `ripple`. Smooth enough to throw the sun back as a glitter path.
+    let waves = images.add(ripples());
+    let water = materials.add(StandardMaterial { base_color: Color::WHITE, alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.16, reflectance: 0.5, normal_map_texture: Some(waves.clone()), ..default() });
     let mut voxels = voxels;
     for &(x, z, across, build) in &args.dug {
         let ground = land.height((x / CELL).floor() as i32, (z / CELL).floor() as i32) as f32 * CELL;
@@ -295,11 +335,12 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
         voxels.ball(Vec3::new(x, ground + lift, z), across / 2.0, block);
     }
     // The chunks are meshed as the camera comes near them (`stream`), not here.
-    commands.insert_resource(Look { solid: material, water });
+    commands.insert_resource(Look { solid: material, water: water.clone() });
     // The sea beyond the world's edge: four sheets round it at the water's level, out past the fog.
     let (edge, far, level) = (land.span as f32 * CELL, 1500.0, SEA as f32 * CELL - 0.01);
     let [r, g, b] = cube_voxel::Block::Water.colors().0;
-    let sea = materials.add(StandardMaterial { base_color: Color::linear_rgb(r, g, b), perceptual_roughness: 0.25, reflectance: 0.5, ..default() });
+    let sea = materials.add(StandardMaterial { base_color: Color::linear_rgb(r, g, b), perceptual_roughness: 0.09, reflectance: 0.6, normal_map_texture: Some(waves), uv_transform: bevy::math::Affine2::from_scale(Vec2::splat(far * 2.0 / cube_voxel::mesh::WATER_TILE)), ..default() });
+    commands.insert_resource(Waters(vec![water.clone()]));
     for (x, z, w, d) in [(0.0, -(edge + far) / 2.0, far, (far - edge) / 2.0), (0.0, (edge + far) / 2.0, far, (far - edge) / 2.0), (-(edge + far) / 2.0, 0.0, (far - edge) / 2.0, edge), ((edge + far) / 2.0, 0.0, (far - edge) / 2.0, edge)] {
         commands.spawn((Mesh3d(meshes.add(Plane3d::default().mesh().size(w * 2.0, d * 2.0))), MeshMaterial3d(sea.clone()), Transform::from_xyz(x, level, z)));
     }

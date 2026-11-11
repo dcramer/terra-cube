@@ -44,6 +44,9 @@ fn uv(grain: Grain, n: IVec3, cube: IVec3, corner: IVec3, per: i32) -> [f32; 2] 
     }
 }
 
+/// How far across one repeat of the water's ripples is, metres.
+pub const WATER_TILE: f32 = 4.0;
+
 /// How free a leaf is to move in the wind, of the 1 that the tip of a blade of grass is.
 const LEAF: f32 = 0.4;
 
@@ -464,7 +467,9 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                         m.positions.push(at[i].to_array());
                         m.normals.push(facing.to_array());
                         m.tangents.push(tangent(n));
-                        m.uvs.push(uv(grain, n, cell, corner, 1));
+                        // Water is not painted from the atlas: its ripples lie by where it is in
+                        // the world, four metres to a repeat (`WATER_TILE`).
+                        m.uvs.push(if liquid { [corner.x as f32 * CELL / WATER_TILE, corner.z as f32 * CELL / WATER_TILE] } else { uv(grain, n, cell, corner, 1) });
                         let base = if eases(block) && n == IVec3::Y { eased.corner(corner - origin).1 } else { base };
                         m.colors.push([base[0] * k * (1.0 + warm), base[1] * k, base[2] * k * (1.0 - warm), alpha]);
                     }
@@ -740,7 +745,7 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
                         m.positions.push(at[i].to_array());
                         m.normals.push(facing.to_array());
                         m.tangents.push(tangent(normal));
-                        m.uvs.push(uv(grain, normal, cell, corner, 1));
+                        m.uvs.push(if liquid { [corner.x as f32 * CELL / WATER_TILE, corner.z as f32 * CELL / WATER_TILE] } else { uv(grain, normal, cell, corner, 1) });
                         let base = if eases(block) && normal == IVec3::Y { eased.corner(corner - origin).1 } else { base };
                         m.colors.push([base[0] * k * (1.0 + warm), base[1] * k, base[2] * k * (1.0 - warm), if liquid { 0.8 } else if block.foliage() { 1.0 - LEAF } else { 1.0 }]);
                     }
