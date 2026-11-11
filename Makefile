@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -91,6 +91,12 @@ fight: ## no window: the player fights a goblin in the real game; passes if he i
 
 sheet: need-id ## no window: shots/ID.png, every clip of one creature (ID=wolf)
 	cargo forge sheet $(ID)
+
+grown: ## no window: shots/grown/*.png, every kind of tree and rock alone, whole and close (tools/grown.sh oak for one)
+	@tools/grown.sh
+
+floors: ## no window: shots/floors.png, the ground of a trail, forest, meadow and shore in one sheet
+	@tools/floors.sh
 
 gif: need-id ## no window: shots/ID.gif, creature ID moving through every gait, a jump, a blow and a flinch (ID=wolf)
 	cargo sandbox --scene shots/$(ID).gif --play --as $(ID) --gif 12 --view three

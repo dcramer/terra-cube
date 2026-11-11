@@ -190,6 +190,10 @@ impl Land {
         if land.slope(x, z) >= 2 || near_start || land.index(x, z).is_none() {
             return None;
         }
+        // Nothing stands in a trail: that is what keeps it one.
+        if matches!(biome, Biome::Meadow | Biome::Forest) && worn(x as f32 * CELL, z as f32 * CELL, seed) > 0.0 {
+            return None;
+        }
         let high = h > SEA + cells(scale::CONIFER_LINE);
         let conifers = high || matches!(biome, Biome::Rock | Biome::Snow);
         let (tree, under, rock) = match biome {
@@ -263,6 +267,15 @@ impl Land {
         [(1, 0), (-1, 0), (0, 1), (0, -1)].into_iter().map(|(dx, dz)| (self.height(x + dx, z + dz) - h).abs()).max().unwrap_or(0)
     }
 
+    /// How worn the ground at a column is by a trail ([`worn`]): only where a trail can
+    /// run, on meadow and forest floor that is not steep.
+    pub fn trail(&self, x: i32, z: i32) -> f32 {
+        if !matches!(self.biome(x, z), Biome::Meadow | Biome::Forest) || self.slope(x, z) > 1 {
+            return 0.0;
+        }
+        worn(x as f32 * CELL, z as f32 * CELL, self.seed)
+    }
+
     fn biome_of(&self, x: i32, z: i32) -> Biome {
         let h = self.height(x, z);
         let over_sea = (h - SEA) as f32 * CELL;
@@ -282,6 +295,33 @@ impl Land {
         }
     }
 }
+
+/// How worn by feet the ground is at a point (metres): 0 not at all, 1 the middle of a trail.
+///
+/// Animals walk the same lines until they are paths. The lines here are the level lines of
+/// a slow, bent noise, so they wander, fork where two come near and never run straight;
+/// one passes within a hundred metres or so of anywhere. A trail is about a metre of bare
+/// earth with as much again of trodden grass each side. Where the land will not carry one
+/// (water, rock, a steep bank) is for whoever asks to say: [`Land::trail`].
+pub fn worn(x: f32, z: f32, seed: u32) -> f32 {
+    let field = |x: f32, z: f32| {
+        let (bx, bz) = (fbm(x / 31.0, z / 31.0, seed + 90) - 0.5, fbm(x / 31.0, z / 31.0, seed + 91) - 0.5);
+        layers((x + bx * 22.0) / 110.0, (z + bz * 22.0) / 110.0, seed + 92, 2) - 0.5
+    };
+    let here = field(x, z);
+    if here.abs() > 0.04 {
+        return 0.0;
+    }
+    // How fast the noise changes here says how far off its level line is.
+    let steep = (field(x + 1.0, z) - here).hypot(field(x, z + 1.0) - here);
+    if steep < 0.004 {
+        return 0.0;
+    }
+    (1.0 - here.abs() / steep / TRAIL).clamp(0.0, 1.0)
+}
+
+/// Half the width of a trail and its trodden edges, metres.
+const TRAIL: f32 = 1.5;
 
 /// How far apart damp ground and dry are, metres: forest grows on the damp.
 const DAMP: f32 = 70.0;
@@ -391,6 +431,37 @@ pub fn fill(world: &mut World, land: &Land, lo: (i32, i32), hi: (i32, i32)) {
     // over half a metre down.
     let (snow, soil, deep) = (cells(0.5), cells(2.0), cells(1.0));
     let seed = land.seed;
+    // The trees whose crowns are over this ground: where each stands, how far its crown
+    // reaches, and whether it drops needles. The ground under a tree is that tree's.
+    let mut crowns: Vec<(f32, f32, f32, bool)> = Vec::new();
+    let grid = cells(scale::TREE_ROOM);
+    for gz in (lo.1 - CROWN).div_euclid(grid)..=(hi.1 + CROWN).div_euclid(grid) {
+        for gx in (lo.0 - CROWN).div_euclid(grid)..=(hi.0 + CROWN).div_euclid(grid) {
+            if let Some(Thing { foot, what: What::Tree(kind, age), .. }) = land.thing(0, gx, gz) {
+                let reach = plants::height(kind, age) * match kind {
+                    Tree::Oak | Tree::Willow => 0.5,
+                    Tree::Birch => 0.24,
+                    Tree::Pine => 0.2,
+                    Tree::Snag => 0.06,
+                };
+                crowns.push(((foot.x as f32 + 0.5) * CELL, (foot.z as f32 + 0.5) * CELL, reach, kind == Tree::Pine));
+            }
+        }
+    }
+    // For a column: how far under a crown it is (0 outside, 1 at the trunk), whether that
+    // crown drops needles, and whether it is at the very foot of a trunk.
+    let under = |x: i32, z: i32| {
+        let (xm, zm) = ((x as f32 + 0.5) * CELL, (z as f32 + 0.5) * CELL);
+        let (mut most, mut needles, mut foot) = (0.0f32, false, false);
+        for (tx, tz, reach, pine) in &crowns {
+            let away = (xm - tx).hypot(zm - tz);
+            if away < *reach && 1.0 - away / reach > most {
+                (most, needles) = (1.0 - away / reach, *pine);
+            }
+            foot |= away < 0.9;
+        }
+        (most, needles, foot)
+    };
     for z in lo.1..hi.1 {
         for x in lo.0..hi.0 {
             let (h, biome) = (land.height(x, z), land.biome(x, z));
@@ -418,8 +489,27 @@ pub fn fill(world: &mut World, land: &Land, lo: (i32, i32), hi: (i32, i32)) {
             } else {
                 None
             };
-            // Under trees the ground is leaf litter in drifts, forest turf between.
-            let litter = fbm(xm / 3.5, zm / 3.5, seed + 82) > 0.56;
+            // What the top of the soil is, from what is over it and what crosses it. A trail
+            // is bare earth. At the foot of a trunk nothing grows. Under a crown lie its
+            // leaves, in drifts that thicken toward the trunk (under a pine, a bed of
+            // needles nearly whole); and that is so of a lone oak in a meadow as much as of a
+            // wood. Between, a forest floor is turf with moss where it is dampest; a meadow
+            // is grass with the odd scrape of bare earth; a shore is sand with beds of
+            // pebbles. One rule a biome made every wood the same floor from edge to edge.
+            let drift = fbm(xm / 3.5, zm / 3.5, seed + 82);
+            let (shade, needles, foot) = under(x, z);
+            let trail = land.trail(x, z);
+            let top = match biome {
+                Biome::Meadow | Biome::Forest if trail > 0.5 || foot => Block::Dirt,
+                Biome::Meadow | Biome::Forest if shade > 0.12 && drift > if needles { 0.3 } else { 0.66 - shade * 0.3 } => Block::Litter,
+                Biome::Forest if drift > 0.6 => Block::Litter,
+                Biome::Forest if damp > 0.56 && fbm(xm / 6.0, zm / 6.0, seed + 83) > 0.6 => Block::Moss,
+                Biome::Forest => Block::Turf,
+                Biome::Meadow if fbm(xm / 4.0, zm / 4.0, seed + 84) > 0.8 => Block::Dirt,
+                Biome::Meadow => Block::Grass,
+                Biome::Shore if fbm(xm / 5.0, zm / 5.0, seed + 85) > 0.6 => Block::Gravel,
+                _ => Block::Sand,
+            };
             world.set_column(x, z, 0, h.max(SEA), |y| {
                 let depth = h - 1 - y;
                 if y >= h {
@@ -430,11 +520,10 @@ pub fn fill(world: &mut World, land: &Land, lo: (i32, i32), hi: (i32, i32)) {
                     Biome::Rock if depth == 0 && cap.is_some() => cap.unwrap(),
                     Biome::Rock | Biome::Snow => bed(y),
                     _ if depth > soil => bed(y),
-                    Biome::Forest if depth == 0 && litter => Block::Litter,
                     Biome::Water if h < SEA - deep => Block::Gravel,
-                    Biome::Water | Biome::Shore => Block::Sand,
-                    Biome::Forest if depth == 0 => Block::Turf,
-                    Biome::Meadow if depth == 0 => Block::Grass,
+                    Biome::Water => Block::Sand,
+                    Biome::Shore if depth > 0 => Block::Sand,
+                    _ if depth == 0 => top,
                     _ => Block::Dirt,
                 }
             });
@@ -476,13 +565,46 @@ pub fn fill(world: &mut World, land: &Land, lo: (i32, i32), hi: (i32, i32)) {
             if world.get(on) != Block::Air || !world.get(on - IVec3::Y).solid() {
                 continue;
             }
-            let (thick, lot) = (fbm(x as f32 * CELL / 9.0, z as f32 * CELL / 9.0, seed + 70), hash2(x, z, seed + 71));
+            let (xm, zm) = (x as f32 * CELL, z as f32 * CELL);
+            let (thick, lot, pick) = (fbm(xm / 9.0, zm / 9.0, seed + 70), hash2(x, z, seed + 71), hash2(x, z, seed + 72));
+            let (shade, _, foot) = under(x, z);
+            let trail = land.trail(x, z);
+            let below = world.get(on - IVec3::Y);
             let cover = match biome {
-                Biome::Meadow if lot < (thick - 0.3) * 1.3 => Some(if hash2(x, z, seed + 72) < 0.14 { Block::Flower } else { Block::Tuft }),
-                Biome::Forest if lot < (thick - 0.34) * 1.0 => Some(if hash2(x, z, seed + 72) < 0.75 { Block::Fern } else { Block::Tuft }),
-                Biome::Forest if hash2(x, z, seed + 73) < 0.012 => Some(Block::Mushroom),
-                Biome::Rock if lot < 0.03 && world.get(on - IVec3::Y) == Block::Moss => Some(Block::Fern),
-                Biome::Shore if lot < 0.22 && land.height(x, z) <= SEA => Some(Block::Reed),
+                // Nothing in a trail or against a trunk; long grass along a trail's edge,
+                // where nothing treads and nothing shades it.
+                _ if trail > 0.3 || foot => None,
+                Biome::Meadow if trail > 0.0 => (lot < 0.4).then_some(Block::Tuft),
+                // Under a lone tree the grass thins, and what likes shade comes up.
+                Biome::Meadow if shade > 0.35 => match lot {
+                    l if l < 0.012 => Some(Block::Mushroom),
+                    l if l < 0.05 => Some(Block::Fern),
+                    l if l < (thick - 0.3) * 0.5 => Some(Block::Tuft),
+                    _ => None,
+                },
+                // Flowers come in drifts some metres over, thick at the heart; long grass
+                // in its own patches; a few of each anywhere.
+                Biome::Meadow => {
+                    let bloom = ((fbm(xm / 7.0, zm / 7.0, seed + 86) - 0.58) * 6.0).clamp(0.0, 1.0);
+                    if lot < (thick - 0.3) * 1.3 {
+                        Some(if pick < 0.05 + 0.5 * bloom { Block::Flower } else { Block::Tuft })
+                    } else if lot > 1.0 - 0.14 * bloom {
+                        Some(Block::Flower)
+                    } else {
+                        None
+                    }
+                }
+                Biome::Forest if lot < (thick - 0.34) * 1.0 => Some(if pick < 0.75 { Block::Fern } else { Block::Tuft }),
+                Biome::Forest if below == Block::Moss && lot > 0.93 => Some(Block::Fern),
+                // Mushrooms in troops, on litter and by what has fallen; hardly one alone.
+                Biome::Forest if fbm(xm / 2.5, zm / 2.5, seed + 87) > 0.72 && pick < if below == Block::Litter { 0.16 } else { 0.05 } => Some(Block::Mushroom),
+                Biome::Forest if hash2(x, z, seed + 73) < 0.003 => Some(Block::Mushroom),
+                Biome::Rock if lot < 0.03 && below == Block::Moss => Some(Block::Fern),
+                // Grass in the cracks of low rock that is not steep.
+                Biome::Rock if lot < 0.02 && land.slope(x, z) <= 1 && h < SEA + cells(scale::ROCK_LINE) => Some(Block::Tuft),
+                // Reeds stand together at the water's edge; marram on the dry sand behind.
+                Biome::Shore if h <= SEA && lot < 0.4 && fbm(xm / 6.0, zm / 6.0, seed + 88) > 0.5 => Some(Block::Reed),
+                Biome::Shore if h > SEA && below == Block::Sand && lot < 0.25 && fbm(xm / 5.0, zm / 5.0, seed + 89) > 0.58 => Some(Block::Tuft),
                 _ => None,
             };
             if let Some(block) = cover {

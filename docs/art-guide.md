@@ -8,13 +8,17 @@ Status: the developer ruled on the look on 2026-11-10. What follows is decided u
 
 The developer looked at the cube world with its light, paint and life all in and said it was Minecraft imitated, not a style of its own, and not realistic terrain. What changed that day, and what everything below is to be read in the light of:
 
-- **The world is voxels underneath and shapes to look at.** The land is drawn eased into smooth ground. What grows is drawn as what it is: round tapering trunks and limbs, leaf in masses of small cards (`cube_game::flora`, from the shapes `cube_sim::plants` grew). Cells are still what is dug, built on, walked on and collided with.
+- **The ground is voxels; what grows on it is low-poly shapes** (settled later the same day, after the ground was first drawn smooth: the developer had been content with voxels, and what read as Minecraft was the paint, the colour and the placing, not the blocks. Eco itself is low poly on a voxel world.) The land is drawn in blocks sized to its slope (`mesh::Ground::Stepped`). What grows is drawn as what it is: round tapering trunks and limbs, leaf in masses of small cards (`cube_game::flora`, from the shapes `cube_sim::plants` grew). Cells are still what is dug, built on, walked on and collided with.
 - **Cubes are for what a person builds.** A cube seen in the world should mean someone put it there.
 - **The reference is Eco's level of detail with a more realistic look**: real materials, natural colour, real light. Not flat block colour, not hard cube edges on natural things.
 - **Colour is muted and varied** (the same day): greens are olive and dark, not bright; a hillside drifts in tone over tens of metres as well as over a few; where soft ground is steep, bare earth shows, and on a face, stone. Rocks are faceted stone, flowers a bloom's true size, far trees rounded crowns and cones.
 - Still to change: grass is thin crossed blades where Eco has soft dense clumps; leaf cards look papery close to; steep rock stretches into a sawtooth; water reflects the sky but not the land.
 
-`--blocky` draws the trees as cubes again, `--stepped` and `--cubes` the ground: for comparison only.
+`--blocky` draws the trees as cubes again, `--smooth` and `--cubes` the ground: for comparison only.
+
+- **Each thing that grows is designed, one at a time, and judged alone** (`make grown`: every kind stood by itself, whole and close to). A recipe shared by all of them made poles with tufts on. What each one is: an oak is as wide as it is tall, a short thick trunk forking low into heavy limbs that run out and then up, every shoot ending in a mass of leaf, the masses overlapping into one dome; a birch is a slender swaying pale trunk whose branches leave steeply and hang at their ends, a narrow open crown; a pine is whorls of drooping boughs close enough to overlap, to a point; a dead tree keeps broken stubs and a forked limb or two; a fallen trunk keeps its stubs. A trunk's roots are part of the trunk: it swells to the ground and runs out in sharp-backed buttresses, each its own length. Roots as separate round limbs were sausages laid against a pipe.
+- **Leaf is sprigs near to, cards far off.** Within 36 m a leaf mass is sprigs (three pointed leaflets fanned from a twig, five narrow ones for needles) over a dark faceted body, so a crown has depth and no sky shows through its middle; to 88 m plain pointed cards, beyond that a few broad ones. One flat card to a spray was a shard of paper however it was painted.
+- **The ground of a place comes from what is there** (`terrain::fill`, `make floors`): see [engine.md](engine.md#the-world). One rule a biome made every wood the same floor from edge to edge.
 
 ## Pillars
 

@@ -45,8 +45,10 @@ The rule this protects: **the simulation never needs a window.** A big sandbox w
 - **The mesher does not draw wood or leaf cells** when that is on (`mesh::MODELLED`), nor let them hide the ground under them. They are still cells: bodies stop at trunks, creatures do not climb crowns.
 - **Cost**: frames went from 11 ms to 8 in the meadow; cube crowns were more faces than the cards that replaced them.
 - **Smooth ground is one surface** (`mesh::Heights`): where each column's ground ends is found from the cells, the surface at a corner is the mean of the sixteen columns round it, and a quad is drawn a column with its corners on that surface and its colour the mean of what tops those columns; steep, it shows earth and then stone. No risers are drawn at all. The first smooth ground eased each cube's own corners, which left a stretched riser on every steep face (sawteeth up a cliff) and a zigzag wherever two materials met. The far levels draw the same surface a quad to two or four columns.
-- **The ground is smooth by default again** (`Ground::Smooth`), now that nothing natural beside it is cubes; and the water's surface runs two cells on under the bank, so a shoreline is where smooth ground meets it and not a sawn edge.
-- **Not done**: beyond the made regions the far land still stands plain boxes for trees; rocks, flowers and mushrooms are still little cubes.
+- **The ground was smooth by default for a few hours** (`Ground::Smooth`, now `--smooth`; the default is blocks again, see below), now that nothing natural beside it is cubes; and the water's surface runs two cells on under the bank, so a shoreline is where smooth ground meets it and not a sawn edge.
+- **Limbs are wood, not pipes** (`flora::Shape::limb`): rings along their length that wander a little, ridged along the grain, an end rounded over where another limb goes on and cut wood (end grain) where none does. `plants::bole` notes how many roots a trunk has and the trunk is drawn swelling into them as one piece.
+- **Three levels of detail for what grows** (`flora::grow`, by a region's distance: 36 m, 88 m), as the ground has: sprigs, cards, a few broad cards. Sprigs everywhere cost 4 ms a frame; with the levels a meadow frame is 13 ms with the voxel ground.
+- **Not done**: beyond the made regions the far land still stands rounded stand-ins for trees; rocks, flowers and mushrooms are still little cubes.
 
 ### The ground's blocks
 
@@ -58,6 +60,8 @@ The rule this protects: **the simulation never needs a window.** A big sandbox w
 - **Block size goes by place as well as slope** (`mesh::rough`): the land has rough country some twenty metres over, where a modest slope is already half-metre and metre blocks, and smooth country cut fine. By slope alone everything in one view was one size, and the developer saw only uniform voxels.
 - **The far levels of detail draw the same ground** (`Eased::far_top`): each group of cells takes the eased height at its middle, in blocks its own size where the land is steep. Drawn as plain cubes of their own size the far levels were a different hill, striped in half-metre stairs from 40 m out.
 - **Not done**: a cube-drawn neighbour of a stepped column can leave a gap; thin gaps show where two levels of detail meet on steep rock.
+
+- **Blocks are the default again** (2026-11-11, the developer's word: voxels were never the trouble). `cargo world survey` counts faces as the game draws them, trees as shapes.
 
 ### Light
 
@@ -125,6 +129,12 @@ Built 2026-11-10. `cube_sim::terrain` makes it; `cargo world survey` and `map` j
 - **Judged by numbers first** (`cargo world survey`): water 20% to 60%, each of meadow, forest and rock at least 6%, 400 trees, ground at least 40 m high, cliffs on 3% to 35% of the land, half the land reached from the start on foot and nine tenths by swimming, at most 2 million faces drawn from the start, and the scale bars above. `cargo world grade` says where the ground is easy, steep and cliff by height, and draws it. A seed that fails one is not a world to ship; seed 6 passes and is the default.
 - **Not yet:** caves and overhangs (the land is a height map), shaped blocks, textures.
 - **Where the world goes** (decided 2026-11-10): procedural and much larger, a small version of a real world, not one island held whole in memory. What that needs, in order: `Land` answering for any column from the seed instead of holding an array of all of them; cells made a chunk at a time near the player and dropped behind, with what was changed kept; trees and rocks placed by a rule that gives the same answer whichever chunk asks first (a tree's crown crosses chunks); where mountains, plains, forests and seas are coming from slow maps (height of the land, warmth, wet) instead of one placed mountain; creatures placed and put away as the player moves; and beyond the last chunks one coarse mesh from the height map. The scale table is what such a world is generated from, and `column` is already a pure function of a point.
+
+- **What the ground is at a place comes from what is there** (`terrain::fill`, 2026-11-11), not from its biome alone:
+  - **Trails** (`terrain::worn`, `Land::trail`): the level lines of a slow bent noise, so they wander and fork and one passes within a hundred metres of anywhere; a metre of bare earth, trodden grass each side, long grass along the edge. Nothing stands in one (`Land::thing`), which is what makes it a way through a wood. Only on meadow and forest floor that is not steep. They are not yet roads between places, and creatures do not yet keep to them.
+  - **Under a tree is that tree's ground**: `fill` gathers the trees whose crowns are over a region, and a column knows how far under a crown it is. Bare earth at the foot of a trunk; fallen leaf in drifts thickening toward it (a bed of needles under a pine), under a lone meadow oak as much as in a wood; in its shade the grass thins and ferns and mushrooms come up.
+  - **Forest floor**: turf, leaf drifts, moss where it is dampest, ferns in colonies, mushrooms in troops on the litter. **Meadow**: flowers in drifts some metres over, long grass in its own patches, scrapes of bare earth, and the grass itself dry and straw-coloured in stretches and lush in others (`mesh::sward`). **Shore**: beds of pebbles in the sand, reeds in stands at the water, marram on the dry sand behind. **Rock**: grass in the cracks of low rock.
+  - `make floors` pictures a trail, a forest floor, a meadow and a shore in one sheet; `cargo world find trail` says where an open stretch of trail is.
 
 ## What lives in it
 

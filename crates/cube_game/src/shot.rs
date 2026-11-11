@@ -279,7 +279,13 @@ fn scene(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terra
     let dist = args.dist.unwrap_or(if high { 150.0 } else { 8.7 * (1.0 + ids.len() as f32 * 0.07) });
     let pitch = args.pitch.unwrap_or(if high { 0.6 } else { 0.3 });
     let yaw = if args.play || args.yaw_given { args.yaw } else { 0.57 };
+    // A specimen is looked at part way up it, from however far off.
+    if args.specimen.is_some() {
+        focus.y += dist * 0.25 - 0.8;
+    }
     let from = focus + Quat::from_euler(EulerRot::YXZ, yaw, -pitch, 0.0) * Vec3::Z * dist;
+    // Never from under a hillside.
+    let from = from.with_y(from.y.max(terrain.ground(from.x, from.z) + 1.6));
     // `--view moon`: from over the trees, looking at where the moon is at that day and hour,
     // close in: its phase, to be seen.
     let when = cube_sim::sky::at(args.day.unwrap_or(3), args.hour.unwrap_or(15.0));

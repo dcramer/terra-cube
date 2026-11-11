@@ -69,6 +69,8 @@ pub struct Args {
     pub quiet: bool,
     /// The player starts with a torch lit.
     pub torch: bool,
+    /// One thing that grows, stood alone at the start to be looked at (`plants::specimen`).
+    pub specimen: Option<String>,
     /// The hour the world starts at, if not the usual mid afternoon.
     pub hour: Option<f32>,
     /// The day the world starts on, counted from the first day of spring.
@@ -120,9 +122,11 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
         … --no-reflect                  forward rendering, and water that reflects only the sky
         … --continue                    start from terra-cube.save (F5 writes it, F9 reads it)
         … --quiet                       no sound
+        … --specimen oak                one thing that grows, alone at the start, to be looked at:
+                                        oak birch pine willow snag young sapling bush log stump rock
         … --plain                       every surface's grain made in code, none from a photograph
         … --cubes | --smooth            the ground as plain cubes, or eased smooth, not in blocks sized
-                                        by its slope
+                                        by its slope; --blocky: trees as their cubes
         … --wild --at 47,28 [--dist 12] [--pitch 0.3] [--yaw 1.0] [--view high]
                                         a scene somewhere else: metres east and south of the start
                                         (`cargo world who` says where creatures live), the camera
@@ -209,7 +213,9 @@ fn parse_args() -> Args {
             "--hud" => args.hud = Some(it.next().unwrap_or_else(|| "bar".into())),
             "--quiet" => args.quiet = true,
             "--torch" => args.torch = true,
+            "--specimen" => args.specimen = it.next(),
             "--cubes" => cube_voxel::mesh::GROUND.store(cube_voxel::mesh::Ground::Cubes as u8, std::sync::atomic::Ordering::Relaxed),
+            "--smooth" => cube_voxel::mesh::GROUND.store(cube_voxel::mesh::Ground::Smooth as u8, std::sync::atomic::Ordering::Relaxed),
             "--stepped" => cube_voxel::mesh::GROUND.store(cube_voxel::mesh::Ground::Stepped as u8, std::sync::atomic::Ordering::Relaxed),
             "--dig" | "--build" => {
                 let v: Vec<f32> = it.next().unwrap_or_default().split(',').filter_map(|v| v.parse().ok()).collect();

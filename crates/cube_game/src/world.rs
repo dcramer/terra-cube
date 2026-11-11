@@ -639,6 +639,24 @@ fn regions(time: Res<Time>, args: Res<crate::Args>, terrain: Option<ResMut<Terra
         form.limbs.retain(|l| within((l.a + l.b) / 2.0));
         form.clumps.retain(|c| within(c.middle));
         form.stones.retain(|s| within(s.middle));
+        // `--specimen`: the ground round the start is cleared of what grew and one thing stood there.
+        let start = Vec3::new(args.at.0, 0.0, args.at.1);
+        if let Some(name) = &args.specimen {
+            let clear = |p: Vec3| p.with_y(0.0).distance(start) > 18.0;
+            form.limbs.retain(|l| clear(l.a));
+            form.clumps.retain(|c| clear(c.middle));
+            form.stones.retain(|s| clear(s.middle));
+            if within(start) {
+                let foot = IVec3::new((start.x / CELL) as i32, land.height((start.x / CELL) as i32, (start.z / CELL) as i32), (start.z / CELL) as i32);
+                let (found, grown) = cube_sim::plants::recorded(|| cube_sim::plants::specimen(voxels, foot, name, &mut cube_sim::rng::Rng::new(args.seed as u64 + 7)));
+                if !found {
+                    eprintln!("no specimen `{name}`: oak birch pine willow snag young sapling bush log stump rock");
+                }
+                form.limbs.extend(grown.limbs);
+                form.clumps.extend(grown.clumps);
+                form.stones.extend(grown.stones);
+            }
+        }
         forms.0.insert(r, form);
         regions.made.insert(r);
         regions.waiting -= 1;

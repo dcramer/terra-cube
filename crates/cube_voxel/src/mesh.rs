@@ -84,6 +84,16 @@ fn patch(p: IVec3) -> f32 {
     a * (1.0 - sz) + b * sz
 }
 
+/// Grass is not one green over a meadow: in stretches a dozen metres over it is dry, paler
+/// and gone to straw, and in others lush and deep. Takes and gives a cell's tint and warmth.
+fn sward(block: Block, cell: IVec3, tint: f32, warm: f32) -> (f32, f32) {
+    if block != Block::Grass {
+        return (tint, warm);
+    }
+    let dry = patch(IVec3::new(cell.x.div_euclid(2) + 300, 0, cell.z.div_euclid(2) + 700)) - 0.5;
+    (tint * (1.0 + dry.max(0.0) * 0.3 - (-dry).max(0.0) * 0.45), warm + dry.max(0.0) * 1.2 - (-dry).max(0.0) * 0.3)
+}
+
 /// How rough the country is at a place, 0 smooth to 1 broken: regions some twenty metres over.
 fn rough(p: IVec3) -> f32 {
     let at = |x: i32, z: i32| hash(IVec3::new(x, 191, z));
@@ -387,6 +397,7 @@ impl<'a> Heights<'a> {
                     let (drift, wide) = (patch(cell) - 0.5, patch(IVec3::new(cell.x / 5 + 900, 0, cell.z / 5 - 400)) - 0.5);
                     tint *= 1.0 + drift * 0.4 + wide * 0.35;
                     warm = drift * 0.3 + wide * 0.45;
+                    (tint, warm) = sward(block, cell, tint, warm);
                 }
                 let grain = Grain::of(block, true);
                 let start = m.positions.len() as u32;
@@ -470,12 +481,11 @@ pub enum Ground {
     Cubes,
     /// Blocks of the size the slope calls for (the default): see [`Eased::step`].
     Stepped,
-    /// Eased into smooth slopes. Tried and set aside: smooth land under cube trees was two
-    /// games in one picture.
+    /// Eased into smooth slopes (`--smooth`). Tried twice and set aside: the land is voxels.
     Smooth,
 }
 
-pub static GROUND: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(Ground::Smooth as u8);
+pub static GROUND: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(Ground::Stepped as u8);
 
 fn ground() -> Ground {
     [Ground::Cubes, Ground::Stepped, Ground::Smooth][GROUND.load(std::sync::atomic::Ordering::Relaxed) as usize]
@@ -577,6 +587,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                     let wide = patch(IVec3::new(cell.x / 5 + 900, 0, cell.z / 5 - 400)) - 0.5;
                     tint *= 1.0 + drift * 0.4 + wide * 0.35;
                     warm = drift * 0.3 + wide * 0.45;
+                    (tint, warm) = sward(block, cell, tint, warm);
                 }
                 if block.foliage() {
                     // A crown has depth: leaves under leaves are in their shade, the ones on
@@ -964,6 +975,7 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
                     let wide = patch(IVec3::new(cell.x / 5 + 900, 0, cell.z / 5 - 400)) - 0.5;
                     tint *= 1.0 + drift * 0.4 + wide * 0.35;
                     warm = drift * 0.3 + wide * 0.45;
+                    (tint, warm) = sward(block, cell, tint, warm);
                 }
                 if block.ground() && ground() == Ground::Stepped {
                     // As up close: the top group of a column draws its top and a riser down

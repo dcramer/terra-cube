@@ -104,6 +104,8 @@ fn made(args: &Args) -> (World, Land) {
 fn survey_command(args: &Args) -> ! {
     let (world, land) = made(args);
     let s = survey::survey(&land);
+    // (Trees and rocks are drawn as shapes by the game, not by the mesher: counted as it draws.)
+    cube_voxel::mesh::MODELLED.store(true, std::sync::atomic::Ordering::Relaxed);
     // What the game draws standing at the start: each chunk meshed at the level its distance
     // gives it, as the game does. (All of the world at full detail is never drawn.)
     let faces_of = |c: IVec3, step: i32| [false, true].map(|liquid| if step == 1 { cube_voxel::mesh::mesh_chunk(&world, c, liquid) } else { cube_voxel::mesh::mesh_chunk_far(&world, c, liquid, step) }.indices.len() / 6).iter().sum::<usize>();
@@ -415,21 +417,24 @@ fn main() {
             let land = Land::new(args.seed, args.radius);
             let mut found = Vec::new();
             for ring in 1..(land.span as f32 * CELL / 4.0) as i32 {
-                for turn in 0..32 {
-                    let (out, way) = (ring as f32 * 4.0, turn as f32 * std::f32::consts::TAU / 32.0);
+                for turn in 0..128 {
+                    let (out, way) = (ring as f32 * 4.0, turn as f32 * std::f32::consts::TAU / 128.0);
                     let (x, z) = (way.cos() * out, way.sin() * out);
                     let (cx, cz) = ((x / CELL).floor() as i32, (z / CELL).floor() as i32);
                     let depth = (SEA - land.height(cx, cz)) as f32 * CELL;
                     // Deep, and open water for ten metres each way: somewhere to swim, not a pothole.
                     let open = [(10.0, 0.0), (-10.0, 0.0), (0.0, 10.0), (0.0, -10.0)].iter().all(|(dx, dz)| (SEA - land.height(((x + dx) / CELL).floor() as i32, ((z + dz) / CELL).floor() as i32)) as f32 * CELL > 1.2);
-                    let hit = if what == "deep" { depth > 2.0 && open } else { Biome::named(&what) == Some(land.biome(cx, cz)) };
+                    let hit = if what == "deep" { depth > 2.0 && open } else if what == "trail" {
+                        // A stretch in the open, to be seen: meadow, and no tree within seven metres.
+                        land.trail(cx, cz) > 0.8 && land.biome(cx, cz) == Biome::Meadow && land.trees.iter().all(|t| ((t.x - cx) as f32).hypot((t.z - cz) as f32) * CELL > 7.0)
+                    } else { Biome::named(&what) == Some(land.biome(cx, cz)) };
                     if hit && found.len() < 3 && found.iter().all(|f: &(f32, f32, f32)| (f.0 - x).hypot(f.1 - z) > 30.0) {
                         found.push((x, z, depth));
                     }
                 }
             }
             if found.is_empty() {
-                fail(&format!("no `{what}` on this island (deep, or one of water shore meadow forest rock snow)"));
+                fail(&format!("no `{what}` on this island (deep, trail, or one of water shore meadow forest rock snow)"));
             }
             for (x, z, depth) in found {
                 println!("{what} at {x:.0},{z:.0} · {:.0}m from the start{}", x.hypot(z), if depth > 0.0 { format!(" · {depth:.1}m of water") } else { String::new() });

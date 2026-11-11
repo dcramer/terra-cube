@@ -57,6 +57,9 @@ pub struct Limb {
     pub ra: f32,
     pub rb: f32,
     pub bark: Block,
+    /// A trunk standing in the ground: how many roots it spreads into at its foot (none,
+    /// for any other limb). Whoever draws it draws them as one piece with the trunk.
+    pub roots: u8,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -87,9 +90,15 @@ fn cell(p: Vec3) -> IVec3 {
 fn limb(world: &mut World, a: Vec3, b: Vec3, ra: f32, rb: f32, bark: Block) {
     NOTED.with(|n| {
         if let Some(form) = n.borrow_mut().as_mut() {
-            form.limbs.push(Limb { a, b, ra, rb, bark });
+            form.limbs.push(Limb { a, b, ra, rb, bark, roots: 0 });
         }
     });
+    wood(world, a, b, ra, rb, bark);
+}
+
+/// The cells of a limb, and no note of its shape: for wood that whoever draws shapes draws
+/// as part of something else (the flare at a trunk's foot).
+fn wood(world: &mut World, a: Vec3, b: Vec3, ra: f32, rb: f32, bark: Block) {
     let steps = ((a.distance(b) / (CELL * 0.5)).ceil() as i32).max(1);
     for i in 0..=steps {
         let t = i as f32 / steps as f32;
@@ -144,15 +153,20 @@ fn clump(world: &mut World, middle: Vec3, radii: Vec3, leaf: Block, floor: f32, 
 
 /// A trunk from the ground at `foot` to `top` (metres), flaring into roots at its base.
 fn bole(world: &mut World, foot: Vec3, top: Vec3, base: f32, tip: f32, bark: Block, rng: &mut Rng) {
-    limb(world, foot - Vec3::Y * 0.5, top, base, tip, bark);
+    let roots = 4 + rng.below(3);
+    NOTED.with(|n| {
+        if let Some(form) = n.borrow_mut().as_mut() {
+            form.limbs.push(Limb { a: foot - Vec3::Y * 0.5, b: top, ra: base, rb: tip, bark, roots: roots as u8 });
+        }
+    });
+    wood(world, foot - Vec3::Y * 0.5, top, base, tip, bark);
     // The flare, and roots running out along the ground and into it.
-    limb(world, foot - Vec3::Y * 0.3, foot + Vec3::Y * base * 1.5, base * 1.5, base, bark);
-    let roots = 3 + rng.below(3);
+    wood(world, foot - Vec3::Y * 0.3, foot + Vec3::Y * base * 1.5, base * 1.5, base, bark);
     let turn = rng.between(0.0, TAU);
     for i in 0..roots {
         let way = turn + i as f32 / roots as f32 * TAU + rng.between(-0.4, 0.4);
         let out = Vec3::new(way.cos(), 0.0, way.sin()) * (base * 2.2 + rng.between(0.2, 0.7));
-        limb(world, foot + Vec3::Y * base * 0.8, foot + out - Vec3::Y * 0.2, base * 0.5, CELL * 0.4, bark);
+        wood(world, foot + Vec3::Y * base * 0.8, foot + out - Vec3::Y * 0.2, base * 0.5, CELL * 0.4, bark);
     }
 }
 
@@ -176,61 +190,82 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
     let clear = foot.y + scale::UNDER_CROWN;
     match kind {
         Tree::Oak => {
-            // As wide as it is tall: the trunk forks a third of the way up into heavy limbs.
+            // As wide as it is tall. A short thick trunk forks low into heavy limbs that run
+            // out, then up; each throws side branches, and every shoot ends in a mass of leaf.
+            // The masses overlap into one broad dome with the limbs showing under it.
             let tall = scale::OAK.at(age);
             // An old oak's leaves are deep; a younger one's the common green.
             let leaf = if age > 0.55 && rng.chance(0.7) { Block::LeavesDeep } else { Block::Leaves };
-            let base = tall * 0.027;
-            let fork = foot + Vec3::Y * tall * 0.34 + lean(rng, tall * 0.03);
-            bole(world, foot, fork, base, base * 0.75, Block::Wood, rng);
-            let limbs = 4 + rng.below(3);
+            let base = tall * 0.034;
+            let fork = foot + Vec3::Y * tall * 0.3 + lean(rng, tall * 0.03);
+            bole(world, foot, fork, base, base * 0.78, Block::Wood, rng);
+            let mass = |world: &mut World, at: Vec3, size: f32, rng: &mut Rng| clump(world, at + Vec3::Y * size * 0.2, Vec3::new(size, size * 0.7, size), leaf, clear, rng);
+            let limbs = 5 + rng.below(3);
             let turn = rng.between(0.0, TAU);
             for i in 0..limbs {
-                let way = turn + i as f32 / limbs as f32 * TAU + rng.between(-0.35, 0.35);
-                let (rise, long) = (rng.between(0.5, 1.05), tall * rng.between(0.27, 0.36));
+                let way = turn + i as f32 / limbs as f32 * TAU + rng.between(-0.3, 0.3);
+                let (rise, long) = (rng.between(0.3, 0.95), tall * rng.between(0.3, 0.42));
                 let end = fork + Vec3::new(way.cos() * rise.cos(), rise.sin(), way.sin() * rise.cos()) * long;
-                // A limb bends: out first, then up.
-                let elbow = fork.lerp(end, 0.55) - Vec3::Y * 0.12 * long * rise.cos();
-                limb(world, fork, elbow, base * 0.55, base * 0.38, Block::Wood);
-                limb(world, elbow, end, base * 0.38, 0.1, Block::Wood);
-                let size = tall * rng.between(0.11, 0.145);
-                clump(world, end + Vec3::Y * size * 0.25, Vec3::new(size, size * 0.72, size), leaf, clear, rng);
-                // A side shoot off the elbow, with a smaller clump.
-                if rng.chance(0.75) {
-                    let off = way + rng.between(0.7, 1.3) * if rng.chance(0.5) { 1.0 } else { -1.0 };
-                    let twig = elbow + Vec3::new(off.cos(), 0.6, off.sin()) * tall * 0.13;
-                    limb(world, elbow, twig, base * 0.3, 0.08, Block::Wood);
-                    let size = tall * rng.between(0.075, 0.1);
-                    clump(world, twig, Vec3::new(size, size * 0.75, size), leaf, clear, rng);
+                let first = fork.lerp(end, 0.35) - Vec3::Y * 0.06 * long * rise.cos();
+                let second = fork.lerp(end, 0.7) + Vec3::Y * 0.04 * long;
+                let end = end + Vec3::Y * 0.16 * long;
+                limb(world, fork, first, base * 0.5, base * 0.4, Block::Wood);
+                limb(world, first, second, base * 0.4, base * 0.27, Block::Wood);
+                limb(world, second, end, base * 0.27, 0.07, Block::Wood);
+                mass(world, end, tall * rng.between(0.15, 0.19), rng);
+                for (from, thick, reach) in [(first, base * 0.3, 0.2), (second, base * 0.22, 0.16)] {
+                    let off = way + rng.between(0.6, 1.3) * if rng.chance(0.5) { 1.0 } else { -1.0 };
+                    let tip = from + Vec3::new(off.cos(), rng.between(0.5, 1.0), off.sin()).normalize() * tall * reach;
+                    let mid = from.lerp(tip, 0.5) - Vec3::Y * tall * 0.012;
+                    limb(world, from, mid, thick, thick * 0.6, Block::Wood);
+                    limb(world, mid, tip, thick * 0.6, 0.05, Block::Wood);
+                    mass(world, tip, tall * rng.between(0.11, 0.15), rng);
                 }
             }
-            // The leader, and the top of the crown over it.
-            let size = tall * 0.13;
-            let top = foot + Vec3::Y * (tall - size * 0.75) + lean(rng, tall * 0.04);
-            limb(world, fork, top, base * 0.5, 0.1, Block::Wood);
-            clump(world, top, Vec3::new(size, size * 0.75, size), leaf, clear, rng);
+            // The leader, the top of the crown over it, and the heart of the crown round it.
+            let size = tall * 0.16;
+            let top = foot + Vec3::Y * (tall - size * 0.7) + lean(rng, tall * 0.04);
+            let mid = fork.lerp(top, 0.5) + lean(rng, tall * 0.03);
+            limb(world, fork, mid, base * 0.5, base * 0.3, Block::Wood);
+            limb(world, mid, top, base * 0.3, 0.08, Block::Wood);
+            mass(world, top, size, rng);
+            mass(world, mid, tall * 0.2, rng);
             tall
         }
         Tree::Birch => {
-            // A thin pale trunk with a bend in it, and light clumps up its top half.
+            // A slender pale trunk that sways as it climbs. Its branches leave it steeply,
+            // then tire and hang at their ends: a tall narrow crown of light leaf, open
+            // enough to see the trunk through, longest in the middle and gathered at the top.
             let tall = scale::BIRCH.at(age);
-            let base = tall * 0.016;
-            let bend = lean(rng, tall * 0.07);
-            let (mid, top) = (foot + Vec3::Y * tall * 0.5 + bend * 0.7, foot + Vec3::Y * tall * 0.93 + bend);
-            limb(world, foot - Vec3::Y * 0.4, mid, base * 1.3, base, Block::Birch);
-            limb(world, mid, top, base, 0.06, Block::Birch);
-            let n = 6 + rng.below(5);
+            let base = tall * 0.018;
+            let bend = lean(rng, tall * 0.06);
+            let low = foot + Vec3::Y * tall * 0.34 + bend * 0.9;
+            let mid = foot + Vec3::Y * tall * 0.66 - bend * 0.3;
+            let top = foot + Vec3::Y * tall * 0.95 + bend * 0.5;
+            bole(world, foot, low, base * 1.2, base * 0.85, Block::Birch, rng);
+            limb(world, low, mid, base * 0.85, base * 0.5, Block::Birch);
+            limb(world, mid, top, base * 0.5, 0.05, Block::Birch);
+            let along = |up: f32| if up < 0.34 { foot.lerp(low, up / 0.34) } else if up < 0.66 { low.lerp(mid, (up - 0.34) / 0.32) } else { mid.lerp(top, (up - 0.66) / 0.29) };
+            let n = 10 + rng.below(6);
+            let mut way = rng.between(0.0, TAU);
             for i in 0..n {
-                let up = 0.42 + 0.53 * i as f32 / n as f32;
-                let from = if up < 0.5 { foot.lerp(mid, up * 2.0) } else { mid.lerp(top, up * 2.0 - 1.0) };
-                let way = rng.between(0.0, TAU);
-                let long = tall * (0.07 + 0.11 * (1.0 - up));
-                let end = from + Vec3::new(way.cos() * 0.6, 0.8, way.sin() * 0.6) * long;
-                limb(world, from, end, base * 0.5, 0.05, Block::Birch);
-                let size = tall * (0.055 + 0.05 * (1.0 - up));
-                clump(world, end, Vec3::new(size, size * 0.8, size), Block::LeavesPale, clear, rng);
+                let up = 0.36 + 0.56 * (i as f32 + rng.between(0.0, 0.8)) / n as f32;
+                // Longest two thirds of the way up the crown.
+                let part = (up - 0.36) / 0.56;
+                let long = tall * (0.07 + 0.15 * (1.0 - (part - 0.35).abs() * 1.5).max(0.0));
+                way += 2.4 + rng.between(-0.5, 0.5);
+                let out = Vec3::new(way.cos(), 0.0, way.sin());
+                let from = along(up);
+                let elbow = from + (out * 0.55 + Vec3::Y * 0.85) * long * 0.6;
+                let tip = elbow + (out * 0.9 - Vec3::Y * 0.45) * long * 0.7;
+                limb(world, from, elbow, base * 0.32 * (1.2 - part), 0.05, Block::Birch);
+                limb(world, elbow, tip, 0.05, 0.03, Block::Birch);
+                let size = long * rng.between(0.42, 0.55);
+                clump(world, elbow.lerp(tip, 0.3), Vec3::new(size, size * 0.7, size), Block::LeavesPale, clear, rng);
+                // The hanging end: longer down than across.
+                clump(world, tip - Vec3::Y * size * 0.6, Vec3::new(size * 0.6, size * 1.1, size * 0.6), Block::LeavesPale, clear, rng);
             }
-            clump(world, top, Vec3::new(tall * 0.06, tall * 0.07, tall * 0.06), Block::LeavesPale, clear, rng);
+            clump(world, top, Vec3::new(tall * 0.055, tall * 0.075, tall * 0.055), Block::LeavesPale, clear, rng);
             tall
         }
         Tree::Pine => {
@@ -258,14 +293,14 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
                     let way = turn + i as f32 / boughs as f32 * TAU + rng.between(-0.25, 0.25);
                     let from = foot.lerp(top, up / tall);
                     let long = long * rng.between(0.75, 1.1);
-                    let end = from + Vec3::new(way.cos(), -0.22, way.sin()) * long;
+                    let end = from + Vec3::new(way.cos(), -0.3, way.sin()) * long;
                     limb(world, from, end, tall * 0.006, 0.05, Block::Wood);
                     // Needles in a flat spray along the outer part of the bough.
                     let spray = from.lerp(end, 0.62);
-                    let flat = Vec3::new(long * 0.5 + 0.3, tall * 0.014 + 0.2, long * 0.5 + 0.3);
+                    let flat = Vec3::new(long * 0.5 + 0.3, tall * 0.014 + 0.3, long * 0.5 + 0.3);
                     clump(world, spray, flat * Vec3::new(0.55 + 0.45 * way.cos().abs(), 1.0, 0.55 + 0.45 * way.sin().abs()), Block::Needles, clear.min(foot.y + first - 0.5), rng);
                 }
-                up += tall * rng.between(0.06, 0.085);
+                up += tall * rng.between(0.042, 0.06);
                 turn += 0.6;
             }
             clump(world, top - Vec3::Y * 0.3, Vec3::new(tall * 0.03, tall * 0.055, tall * 0.03), Block::Needles, clear, rng);
@@ -315,14 +350,52 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
             let base = tall * 0.035;
             let top = foot + Vec3::Y * tall + lean(rng, tall * 0.08);
             bole(world, foot, top, base, base * 0.45, Block::Wood, rng);
-            for _ in 0..2 + rng.below(3) {
-                let (up, way) = (rng.between(0.45, 0.9), rng.between(0.0, TAU));
+            for _ in 0..3 + rng.below(4) {
+                let (up, way) = (rng.between(0.35, 0.92), rng.between(0.0, TAU));
                 let from = foot.lerp(top, up);
-                limb(world, from, from + Vec3::new(way.cos(), 0.5, way.sin()) * tall * rng.between(0.12, 0.28), base * 0.35, 0.06, Block::Wood);
+                let out = Vec3::new(way.cos(), rng.between(0.2, 0.7), way.sin());
+                // Some limbs are whole and forked, most broken off short.
+                if rng.chance(0.4) {
+                    let elbow = from + out * tall * rng.between(0.1, 0.18);
+                    limb(world, from, elbow, base * 0.4, base * 0.22, Block::Wood);
+                    for turn in [-0.7f32, 0.6] {
+                        let fork = Vec3::new((way + turn).cos(), rng.between(0.3, 0.9), (way + turn).sin());
+                        limb(world, elbow, elbow + fork * tall * rng.between(0.06, 0.13), base * 0.2, 0.04, Block::Wood);
+                    }
+                } else {
+                    limb(world, from, from + out * rng.between(0.4, 1.1), base * 0.4, base * 0.3, Block::Wood);
+                }
             }
             tall
         }
     }
+}
+
+/// Grows one thing by name at `foot`, to be looked at on its own (`--specimen`): a tree
+/// (`oak`, `birch`, `pine`, `willow`, `snag`), `young`, `sapling`, `bush`, `log`, `stump`,
+/// `rock`. False if there is no such thing.
+pub fn specimen(world: &mut World, foot: IVec3, name: &str, rng: &mut Rng) -> bool {
+    let kind = match name {
+        "oak" => Some(Tree::Oak),
+        "birch" => Some(Tree::Birch),
+        "pine" => Some(Tree::Pine),
+        "willow" => Some(Tree::Willow),
+        "snag" => Some(Tree::Snag),
+        _ => None,
+    };
+    match (kind, name) {
+        (Some(kind), _) => {
+            tree(world, foot, kind, 0.8, rng);
+        }
+        (_, "young") => young(world, foot, false, rng),
+        (_, "sapling") => young(world, foot, true, rng),
+        (_, "bush") => bush(world, foot, rng),
+        (_, "log") => log(world, foot, rng),
+        (_, "stump") => stump(world, foot, rng),
+        (_, "rock") => rock(world, foot, 2.4, rng),
+        _ => return false,
+    }
+    true
 }
 
 /// A young tree, its crown low: what stands at eye level in a wood.
@@ -340,9 +413,17 @@ pub fn young(world: &mut World, foot: IVec3, needles: bool, rng: &mut Rng) {
         }
     } else {
         let leaf = [Block::Leaves, Block::LeavesPale, Block::LeavesDeep][rng.below(3)];
-        let size = 0.6 + tall * 0.2;
+        let size = 0.45 + tall * 0.14;
         clump(world, top - Vec3::Y * size * 0.3, Vec3::new(size, size * 0.9, size), leaf, foot.y + 1.0, rng);
-        clump(world, top - Vec3::Y * size + Vec3::new(rng.between(-0.5, 0.5), 0.0, rng.between(-0.5, 0.5)), Vec3::splat(size * 0.7), leaf, foot.y + 0.9, rng);
+        let mut way = rng.between(0.0, TAU);
+        for i in 0..4 + rng.below(3) {
+            let up = 0.4 + 0.1 * i as f32;
+            way += 2.3;
+            let from = foot.lerp(top, up.min(0.9));
+            let tip = from + Vec3::new(way.cos(), 0.7, way.sin()) * tall * (0.3 - 0.2 * up).max(0.08);
+            limb(world, from, tip, tall * 0.012, 0.03, Block::Wood);
+            clump(world, tip, Vec3::new(size, size * 0.75, size) * rng.between(0.6, 0.85), leaf, foot.y + 0.9, rng);
+        }
     }
 }
 
@@ -363,6 +444,11 @@ pub fn log(world: &mut World, foot: IVec3, rng: &mut Rng) {
     let (way, long, thick) = (rng.between(0.0, TAU), rng.between(3.0, 9.0), rng.between(0.2, 0.5));
     let along = Vec3::new(way.cos(), 0.0, way.sin());
     limb(world, foot + Vec3::Y * thick * 0.7, foot + along * long + Vec3::Y * thick * 0.5, thick, thick * 0.7, Block::Wood);
+    for _ in 0..1 + rng.below(4) {
+        let at = foot + along * long * rng.between(0.25, 0.9) + Vec3::Y * thick * 0.6;
+        let side = Vec3::new(-along.z, rng.between(0.4, 1.6), along.x * if rng.chance(0.5) { 1.0 } else { -1.0 }).normalize();
+        limb(world, at, at + side * rng.between(0.35, 1.2), thick * 0.3, thick * 0.18, Block::Wood);
+    }
     if thick > 0.3 {
         stump(world, cell(foot - along * (thick + 0.6)), rng);
     }
