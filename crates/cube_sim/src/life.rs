@@ -299,8 +299,8 @@ pub struct Sim {
     /// By id, in order, so a tick visits them the same way every run.
     pub agents: BTreeMap<u32, Agent>,
     pub tick: u64,
-    /// The hour of the day, 0 to 24 (`sky`).
-    pub hour: f32,
+    /// The time: days since the world began, the hour its fraction (`sky`).
+    pub when: f32,
     pub rng: Rng,
     next: u32,
 }
@@ -314,7 +314,7 @@ fn turn_between(from: f32, to: f32) -> f32 {
 
 impl Sim {
     pub fn new(kinds: Vec<Kind>, seed: u64) -> Self {
-        Self { kinds, agents: BTreeMap::new(), tick: 0, hour: crate::sky::START, rng: Rng::new(seed), next: 1 }
+        Self { kinds, agents: BTreeMap::new(), tick: 0, when: crate::sky::START, rng: Rng::new(seed), next: 1 }
     }
 
     pub fn kind(&self, id: &str) -> Option<usize> {
@@ -346,7 +346,7 @@ impl Sim {
     /// One tick of [`DT`] for every creature.
     pub fn step(&mut self, world: &World) {
         self.tick += 1;
-        self.hour = crate::sky::later(self.hour, DT);
+        self.when = crate::sky::later(self.when, DT);
         // Minds see the world as it was at the start of the tick.
         let seen: Vec<mind::Seen> = self.agents.iter().map(|(&id, a)| mind::Seen { id, pos: a.body.pos, vel: a.body.vel, temper: self.kinds[a.kind].temper, reach: a.body.half + a.body.long.length() }).collect();
         let mut hits = Vec::new();

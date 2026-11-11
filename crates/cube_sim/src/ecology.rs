@@ -183,8 +183,8 @@ impl Niche {
     }
 
     /// How much it is about at an hour of the day, 0 to 1.
-    pub fn about(&self, hour: f32) -> f32 {
-        let day = sky::daylight(hour);
+    pub fn about(&self, when: f32) -> f32 {
+        let day = sky::daylight(when);
         match self.hours {
             Hours::Any => 1.0,
             Hours::Day => day,
@@ -194,8 +194,8 @@ impl Niche {
     }
 
     /// Whether it is here now: the place, and the hour.
-    pub fn fit(&self, p: &Place, hour: f32) -> f32 {
-        self.suits(p) * self.about(hour)
+    pub fn fit(&self, p: &Place, when: f32) -> f32 {
+        self.suits(p) * self.about(when)
     }
 }
 
@@ -224,11 +224,11 @@ mod tests {
     fn each_kind_has_its_place_and_its_hour() {
         let (glade, deep_wood, lake, dry_meadow) = (place(Biome::Forest, 12.0, 0.4), place(Biome::Forest, 50.0, 0.95), place(Biome::Water, 0.0, 0.0), place(Biome::Meadow, 55.0, 0.0));
         // Fireflies: a damp glade at night, never at noon, never far from water.
-        assert!(FIREFLY.fit(&glade, 22.0) > 0.6 && FIREFLY.fit(&glade, 12.0) < 0.05 && FIREFLY.fit(&dry_meadow, 22.0) < 0.05);
+        assert!(FIREFLY.fit(&glade, sky::at(3, 22.0)) > 0.6 && FIREFLY.fit(&glade, sky::at(3, 12.0)) < 0.05 && FIREFLY.fit(&dry_meadow, sky::at(3, 22.0)) < 0.05);
         // Butterflies: open meadow by day; not in deep wood, not at night.
-        assert!(BUTTERFLY.fit(&dry_meadow, 12.0) > 0.9 && BUTTERFLY.fit(&deep_wood, 12.0) < 0.05 && BUTTERFLY.fit(&dry_meadow, 0.0) < 0.05);
+        assert!(BUTTERFLY.fit(&dry_meadow, sky::at(3, 12.0)) > 0.9 && BUTTERFLY.fit(&deep_wood, sky::at(3, 12.0)) < 0.05 && BUTTERFLY.fit(&dry_meadow, sky::at(3, 0.0)) < 0.05);
         // Fish: in the lake at any hour, nowhere else.
-        assert!(FISH.fit(&lake, 3.0) > 0.9 && FISH.fit(&glade, 12.0) == 0.0);
+        assert!(FISH.fit(&lake, sky::at(3, 3.0)) > 0.9 && FISH.fit(&glade, sky::at(3, 12.0)) == 0.0);
         // Leaves fall under trees, not in the open.
         assert!(FALLING_LEAF.suits(&deep_wood) > 0.9 && FALLING_LEAF.suits(&dry_meadow) < 0.05);
     }

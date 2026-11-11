@@ -63,7 +63,10 @@ impl Plugin for MotionPlugin {
             .insert_resource(ShowBodies(args.bodies))
             .insert_resource(Live({
                 let mut sim = Sim::new(kinds, args.seed as u64);
-                sim.hour = args.hour.unwrap_or(sim.hour);
+                // `--day` and `--hour` set the calendar: the day picks the season and the moon.
+                if args.day.is_some() || args.hour.is_some() {
+                    sim.when = cube_sim::sky::at(args.day.unwrap_or(sim.when as u32), args.hour.unwrap_or(cube_sim::sky::hour(sim.when)));
+                }
                 sim
             }))
             .add_systems(FixedUpdate, tick)

@@ -12,6 +12,10 @@ import bevy_pbr::render::{
 };
 
 // The most a corner moves, metres; which way the wind blows; how fast gusts roll.
+// The season, from the game: how the leaves and grass are tinted (rgb), and how much snow
+// lies (a).
+@group(constants::MATERIAL_BIND_GROUP) @binding(100) var<uniform> season: vec4<f32>;
+
 const REACH: f32 = 0.16;
 const DIR: vec2<f32> = vec2<f32>(0.8, 0.6);
 
@@ -46,8 +50,15 @@ fn vertex(vertex_in: Vertex) -> VertexOutput {
 @if(VERTEX_TANGENTS)
     out.world_tangent = mesh_functions::mesh_tangent_local_to_world(world_from_local, vertex.tangent, vertex_in.instance_index);
 
-@if(VERTEX_COLORS)
-    out.color = vec4<f32>(vertex.color.rgb, 1.0);
+@if(VERTEX_COLORS) {
+    // What grows takes the season's colour, by how much of a leaf it is (the same number
+    // that says how free it is to move); and in winter snow lies on whatever faces up.
+    let leaf = clamp((1.0 - vertex.color.a) * 2.5, 0.0, 1.0);
+    var colour = mix(vertex.color.rgb, vertex.color.rgb * season.rgb, leaf);
+@if(VERTEX_NORMALS)
+    colour = mix(colour, vec3<f32>(1.1, 1.13, 1.2), season.a * smoothstep(0.5, 0.9, vertex.normal.y));
+    out.color = vec4<f32>(colour, 1.0);
+}
 
 @if(VERTEX_OUTPUT_INSTANCE_INDEX)
     out.instance_index = vertex_in.instance_index;

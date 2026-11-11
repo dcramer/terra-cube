@@ -360,7 +360,7 @@ fn life_command(args: &Args) -> ! {
     let mut checks = Checks(Vec::new());
     for niche in SMALL_LIFE {
         let home = places.iter().filter(|p| niche.suits(p) > 0.5).count() as f32 / places.len() as f32;
-        let hours: Vec<String> = [6.0, 12.0, 18.0, 23.0].iter().map(|h| format!("{:.0}h {:.0}%", h, niche.about(*h) * 100.0)).collect();
+        let hours: Vec<String> = [6.0, 12.0, 18.0, 23.0].iter().map(|h| format!("{:.0}h {:.0}%", h, niche.about(cube_sim::sky::at(3, *h)) * 100.0)).collect();
         println!("{:<13} at home on {:>4.1}% of the island · about: {}", niche.name, home * 100.0, hours.join(" "));
         checks.bar(niche.name, home, home >= 0.005, "somewhere to live: at least 0.5% of the island");
     }

@@ -31,7 +31,7 @@ fn hour() -> f32 {
 }
 
 fn clock(live: Option<Res<crate::motion::Live>>) {
-    HOUR.store(live.map_or(cube_sim::sky::START, |l| l.0.hour).to_bits(), Ordering::Relaxed);
+    HOUR.store(live.map_or(cube_sim::sky::START, |l| l.0.when).to_bits(), Ordering::Relaxed);
 }
 
 /// Whether one of a kind settles at a spot: the better the place and hour suit it
@@ -82,6 +82,8 @@ struct Firefly {
 struct Star(Vec3);
 #[derive(Component)]
 struct MoonDisc;
+#[derive(Component)]
+struct MoonShade;
 
 /// The stars' material and the moon's.
 #[derive(Resource)]
@@ -217,6 +219,10 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     }
     let moonlight = materials.add(StandardMaterial { base_color: Color::BLACK, fog_enabled: false, perceptual_roughness: 1.0, ..default() });
     commands.spawn((MoonDisc, Mesh3d(meshes.add(Sphere::new(1.0).mesh().ico(3).unwrap())), MeshMaterial3d(moonlight.clone()), Transform::from_translation(far).with_scale(Vec3::splat(16.0)), NotShadowCaster));
+    // The moon's phase: a dark disc the colour of the night sky over the part of its face the
+    // sun does not light, slid off it as the moon fills.
+    let dark = materials.add(StandardMaterial { base_color: Color::srgb(0.03, 0.045, 0.1), unlit: true, fog_enabled: false, ..default() });
+    commands.spawn((MoonShade, Mesh3d(meshes.add(Sphere::new(1.0).mesh().ico(3).unwrap())), MeshMaterial3d(dark), Transform::from_translation(far).with_scale(Vec3::splat(16.4)), NotShadowCaster));
     commands.insert_resource(Heavens(starlight, moonlight));
     // Leaves: a flat chip of one of four autumn-turning greens and browns.
     let chip = meshes.add(Cuboid::new(0.17, 0.008, 0.12));
@@ -460,7 +466,7 @@ fn fireflies(time: Res<Time>, live: Option<Res<crate::motion::Live>>, cameras: Q
     if *state == 0 {
         *state = 0xF12E_F1E5;
     }
-    let hour = live.map_or(cube_sim::sky::START, |l| l.0.hour);
+    let hour = live.map_or(cube_sim::sky::START, |l| l.0.when);
     let out = 1.0 - cube_sim::sky::daylight(hour);
     let t = time.elapsed_secs();
     let hidden = Vec3::new(0.0, -500.0, 0.0);
@@ -503,17 +509,23 @@ fn fireflies(time: Res<Time>, live: Option<Res<crate::motion::Live>>, cameras: Q
 
 /// Stars and the moon keep their places in the sky wherever the camera goes, and come out as
 /// the light goes: nothing by day, faint at dusk, sharp in full night.
-fn heavens(live: Option<Res<crate::motion::Live>>, heavens: Option<Res<Heavens>>, cameras: Query<&GlobalTransform, With<Camera3d>>, mut materials: ResMut<Assets<StandardMaterial>>, mut stars: Query<(&Star, &mut Transform), Without<MoonDisc>>, mut moon: Query<&mut Transform, With<MoonDisc>>, mut was: Local<f32>) {
+fn heavens(live: Option<Res<crate::motion::Live>>, heavens: Option<Res<Heavens>>, cameras: Query<&GlobalTransform, With<Camera3d>>, mut materials: ResMut<Assets<StandardMaterial>>, mut stars: Query<(&Star, &mut Transform), (Without<MoonDisc>, Without<MoonShade>)>, mut moon: Query<&mut Transform, (With<MoonDisc>, Without<MoonShade>)>, mut shade: Query<&mut Transform, With<MoonShade>>, mut was: Local<f32>) {
     let (Some(eye), Some(heavens)) = (eye(&cameras), heavens) else { return };
-    let hour = live.map_or(cube_sim::sky::START, |l| l.0.hour);
+    let hour = live.map_or(cube_sim::sky::START, |l| l.0.when);
     let (to_sun, night) = (cube_sim::sky::sun(hour), 1.0 - cube_sim::sky::daylight(hour));
     for (star, mut at) in &mut stars {
         at.translation = if night > 0.0 { eye + star.0 * DOME } else { Vec3::new(0.0, -500.0, 0.0) };
     }
     // Where `world::sky` puts the moon's light.
-    let to_moon = (-to_sun + Vec3::new(0.0, 0.25, 0.3)).normalize();
+    let to_moon = cube_sim::sky::moon(hour);
     if let Ok(mut at) = moon.single_mut() {
         at.translation = if night > 0.0 && to_moon.y > -0.05 { eye + to_moon * DOME } else { Vec3::new(0.0, -500.0, 0.0) };
+    }
+    if let Ok(mut at) = shade.single_mut() {
+        // Over the limb away from the sun, and further off it the fuller the moon.
+        let away = -(to_sun - to_moon * to_sun.dot(to_moon)).normalize_or(Vec3::Y);
+        let off = away * 32.0 * cube_sim::sky::moon_lit(hour);
+        at.translation = if night > 0.0 && to_moon.y > -0.05 { eye + to_moon * (DOME - 24.0) + off } else { Vec3::new(0.0, -500.0, 0.0) };
     }
     if (night - *was).abs() < 0.01 {
         return;
@@ -653,7 +665,7 @@ fn dragonflies(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>
 /// rising, banked into the turn. By night they are gone.
 fn swallows(time: Res<Time>, live: Option<Res<crate::motion::Live>>, cameras: Query<&GlobalTransform, With<Camera3d>>, terrain: Option<Res<Terrain>>, mut birds: Query<(&mut Swallow, &mut Transform)>) {
     let (Some(eye), Some(terrain)) = (eye(&cameras), terrain) else { return };
-    let day = cube_sim::sky::daylight(live.map_or(cube_sim::sky::START, |l| l.0.hour));
+    let day = cube_sim::sky::daylight(live.map_or(cube_sim::sky::START, |l| l.0.when));
     let (t, dt) = (time.elapsed_secs(), time.delta_secs());
     for (mut bird, mut at) in &mut birds {
         // Over open ground within reach of water, by day (`ecology::SWALLOW`).

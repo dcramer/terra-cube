@@ -31,7 +31,11 @@ pub struct Terrain(pub Voxels, pub Land, pub cube_sim::ecology::Ecology);
 pub type Windy = ExtendedMaterial<StandardMaterial, Wind>;
 
 #[derive(Asset, AsBindGroup, TypePath, Clone, Default)]
-pub struct Wind {}
+pub struct Wind {
+    /// The season, for the shader: the tint of leaves and grass (rgb) and how much snow lies.
+    #[uniform(100)]
+    pub season: Vec4,
+}
 
 impl MaterialExtension for Wind {
     fn vertex_shader() -> ShaderRef {
@@ -120,7 +124,7 @@ pub fn look() -> impl Bundle {
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<Windy>::default()).insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().add_systems(Startup, setup).add_systems(Update, (stream, sky, ripple));
+        app.add_plugins(MaterialPlugin::<Windy>::default()).insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().add_systems(Startup, setup).add_systems(Update, (stream, sky, ripple, seasons));
     }
 }
 
@@ -184,7 +188,7 @@ fn ripple(time: Res<Time>, live: Option<Res<crate::motion::Live>>, waters: Optio
     let Some(waters) = waters else { return };
     // A low sun glances off every ripple at once and the lake breaks into white speckle:
     // the water is made duller as the sun drops, as haze over real water does.
-    let up = cube_sim::sky::sun(live.map_or(cube_sim::sky::START, |l| l.0.hour)).y;
+    let up = cube_sim::sky::sun(live.map_or(cube_sim::sky::START, |l| l.0.when)).y;
     let dull = 1.0 - ((up - 0.1) / 0.45).clamp(0.0, 1.0);
     for handle in &waters.0 {
         if let Some(mut water) = materials.get_mut(handle) {
@@ -252,7 +256,7 @@ fn spawn_sun(commands: &mut Commands, mediums: &mut Assets<ScatteringMedium>, im
 /// the moon is brighter than a real one, so the land is dim and blue but can be read.
 const DAY_EV: f32 = 13.4;
 const NIGHT_EV: f32 = 1.3;
-const MOONLIGHT: f32 = 1.6;
+const MOONLIGHT: f32 = 2.4;
 
 /// The camera's exposure for a sun this high (the sine of its height): what light there is
 /// falls away fast in the last few degrees over the horizon, and a noon sun is brighter than
@@ -279,7 +283,7 @@ fn sky(
     mut cameras: Query<(&mut Exposure, &mut DistanceFog, &mut ColorGrading)>,
     mut mists: Query<&mut FogVolume>,
 ) {
-    let hour = live.map_or(cube_sim::sky::START, |l| l.0.hour);
+    let hour = live.map_or(cube_sim::sky::START, |l| l.0.when);
     let (to_sun, day) = (cube_sim::sky::sun(hour), cube_sim::sky::daylight(hour));
     if let Ok((mut at, mut light)) = sun.single_mut() {
         // Where it stands and how big it is are where the cloud shadows lie and how big they
@@ -305,13 +309,15 @@ fn sky(
     }
     if let Ok((mut at, mut light)) = moon.single_mut() {
         // Opposite the sun and a little aside, so it is up for the whole night.
-        let to_moon = (-to_sun + Vec3::new(0.0, 0.25, 0.3)).normalize();
+        // Where the calendar puts it, and as bright as it is full (`sky::moonlight`): a new
+        // moon gives nothing, and the night is starlight alone.
+        let to_moon = cube_sim::sky::moon(hour);
         *at = Transform::default().looking_to(-to_moon, Vec3::Y);
-        light.illuminance = MOONLIGHT * (1.0 - day);
+        light.illuminance = MOONLIGHT * cube_sim::sky::moonlight(hour) * (1.0 - day);
         light.shadow_maps_enabled = day < 0.4 && to_moon.y > 0.05;
     }
     // What the moon does not reach is not black.
-    *ambient = GlobalAmbientLight { color: Color::srgb(0.45, 0.6, 1.0), brightness: 0.55 * (1.0 - day), ..default() };
+    *ambient = GlobalAmbientLight { color: Color::srgb(0.45, 0.6, 1.0), brightness: (0.28 + 0.3 * cube_sim::sky::moonlight(hour)) * (1.0 - day), ..default() };
     // Low sun warms the haze; night takes nearly all of it away.
     let low = (1.0 - to_sun.y.abs() * 4.0).clamp(0.0, 1.0) * day;
     let lit = 0.015 + 0.985 * day;
@@ -370,7 +376,7 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     let material = windy.add(ExtendedMaterial { base: StandardMaterial { base_color: Color::WHITE, base_color_texture: Some(paint), normal_map_texture: Some(relief), perceptual_roughness: 0.95, reflectance: 0.2,
         // Foliage has gaps cut in it (the atlas's alpha), and through a gap the inside of the
         // crown's far side is seen: so nothing is culled by which way it faces.
-        alpha_mode: AlphaMode::Mask(0.5), cull_mode: None, double_sided: true, ..default() }, extension: Wind {} });
+        alpha_mode: AlphaMode::Mask(0.5), cull_mode: None, double_sided: true, ..default() }, extension: Wind { season: Vec4::new(1.0, 1.0, 1.0, 0.0) } });
     // Water is its own mesh and material: it is blended over what is under it.
     // And it moves: ripples, as a picture of which way the surface faces, slid across it by
     // `ripple`. Smooth enough to throw the sun back as a glitter path.
@@ -500,5 +506,30 @@ fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, terra
         if started.elapsed().as_secs_f32() > slice {
             break;
         }
+    }
+}
+
+/// What the season does to the look of the land, for the wind shader: the tint of leaves and
+/// grass, and how much snow lies. Fresh and a little yellow-green in spring, full green in
+/// summer, gold and russet through autumn, dull in winter under snow.
+pub fn season_look(when: f32) -> Vec4 {
+    // The middle of each season, and round again.
+    let keys = [Vec3::new(0.94, 1.08, 0.8), Vec3::new(1.0, 1.0, 1.0), Vec3::new(1.5, 0.98, 0.5), Vec3::new(1.05, 0.88, 0.68), Vec3::new(0.94, 1.08, 0.8)];
+    let at = (cube_sim::sky::year(when) * 4.0 - 0.5).rem_euclid(4.0);
+    let (from, part) = (at as usize, at.fract());
+    let tint = keys[from].lerp(keys[from + 1], part * part * (3.0 - 2.0 * part));
+    let snow = ((-cube_sim::sky::warmth(when) - 0.35) / 0.65).clamp(0.0, 1.0) * 0.85;
+    tint.extend(snow)
+}
+
+fn seasons(live: Option<Res<crate::motion::Live>>, look: Option<Res<Look>>, mut windy: ResMut<Assets<Windy>>, mut was: Local<Vec4>) {
+    let (Some(live), Some(look)) = (live, look) else { return };
+    let now = season_look(live.0.when);
+    if now.distance(*was) < 0.004 {
+        return;
+    }
+    *was = now;
+    if let Some(mut material) = windy.get_mut(&look.solid) {
+        material.extension.season = now;
     }
 }

@@ -56,6 +56,8 @@ pub struct Args {
     pub torch: bool,
     /// The hour the world starts at, if not the usual mid afternoon.
     pub hour: Option<f32>,
+    /// The day the world starts on, counted from the first day of spring.
+    pub day: Option<u32>,
     /// The world starts with its creatures in it, living by their own minds.
     pub wild: bool,
     /// Where spawned creatures are put and a scene looks, metres (x, z).
@@ -94,7 +96,9 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
                                         the route, as times and what changes then: fwd back left
                                         right stop · walk run sprint · jump hop · dive surface ·
                                         attack eat hurt · dig put · first third
-        … --hour 6.5                    the hour it is (0 to 24; the day starts at 15, a minute an hour)
+        … --hour 6.5 [--day 10]         the hour it is (0 to 24; a minute an hour) and the day, from
+                                        the first of spring: 7 days a season (3 mid spring, 10 mid
+                                        summer, 17 autumn, 24 winter), and a moon full on days 3, 10…
         … --torch                       the player carries a lit torch (T lights it and puts it out)
         … --plain                       every surface's grain made in code, none from a photograph
         … --cubes | --smooth            the ground as plain cubes, or eased smooth, not in blocks sized
@@ -190,6 +194,7 @@ fn parse_args() -> Args {
                 args.dug.push((v[0], v[1], v[2], a == "--build"));
             }
             "--hour" => args.hour = it.next().and_then(|v| v.parse().ok()),
+            "--day" => args.day = it.next().and_then(|v| v.parse().ok()),
             "--seed" => args.seed = it.next().and_then(|v| v.parse().ok()).unwrap_or(cube_sim::terrain::SEED),
             "--dist" => args.dist = it.next().and_then(|v| v.parse().ok()),
             "--pitch" => args.pitch = it.next().and_then(|v| v.parse().ok()),
