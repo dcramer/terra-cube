@@ -291,7 +291,21 @@ pub fn atlas_with(photo: impl Fn(Grain) -> Option<Photo>) -> Atlas {
             Some(p) => {
                 let keep = if matches!(grain, Grain::Sand | Grain::Pebbles | Grain::Snow) { 0.45 } else { 1.0 };
                 let mean: [f32; 3] = std::array::from_fn(|c| p.colour.iter().map(|v| v[c]).sum::<f32>() / p.colour.len() as f32);
-                p.colour.iter().map(|v| std::array::from_fn(|c| mean[c] + (v[c] - mean[c]) * keep)).collect()
+                // A photograph of grass, earth or bark from a hand's breadth is true and, from
+                // where a person stands, even: a fine speckle with nothing in it the eye can
+                // hold. The painted grain has the shapes (strokes of blades, clods, furrows of
+                // bark, in clumps and patches) and none of the fineness. So these take both:
+                // the photograph for what is fine, the paint laid over it for what is broad.
+                let both = matches!(grain, Grain::Grass | Grain::Soil | Grain::Bark | Grain::Moss | Grain::Litter | Grain::EndGrain | Grain::BirchBark);
+                let over = |t: usize| -> [f32; 3] {
+                    if !both {
+                        return [1.0; 3];
+                    }
+                    let (x, y) = ((t % TILE) as f32 * unit, (t / TILE) as f32 * unit);
+                    let deep = (1.0 + (texel(grain, x, y) - 1.0) * DEPTH).max(0.05);
+                    hue(grain, x, y).map(|c| c * deep)
+                };
+                p.colour.iter().enumerate().map(|(t, v)| { let o = over(t); std::array::from_fn(|c| (mean[c] + (v[c] - mean[c]) * keep) * o[c]) }).collect()
             }
             None if painted.is_some() => painted.as_ref().unwrap().0.clone(),
             None => (0..TILE * TILE).map(|t| hue(grain, (t % TILE) as f32 * unit, (t / TILE) as f32 * unit).map(|c| c * bright[t])).collect(),
