@@ -44,6 +44,8 @@ pub struct Controls {
     /// A slot of the bar to take in hand, or a step along it.
     pub hold: Option<usize>,
     pub cycle: i32,
+    /// A kind of creature to be put down just ahead (a script's `spawn=ID`).
+    pub spawn: Option<String>,
 }
 
 /// The windows that take the mouse from the camera while they are open: the pack, the admin
@@ -208,6 +210,8 @@ fn script(time: Res<Time>, args: Res<Args>, mut controls: ResMut<Controls>, mut 
                 "surface" => controls.dive = false,
                 "hop" => clock.1 = now + 0.04,
                 "first" | "third" => controlled.iter_mut().for_each(|mut c| c.first_person = word == "first"),
+                // `spawn=goblin`: one of that kind is put down two metres ahead, for a fight.
+                other if other.starts_with("spawn=") => controls.spawn = Some(other[6..].to_owned()),
                 other => warn!("--script: no such step `{other}`"),
             }
         }
@@ -236,7 +240,7 @@ fn trace(time: Res<Time>, args: Res<Args>, live: Res<Live>, controlled: Query<(&
 }
 
 /// Hands the controls to the controlled creature's body, turned to the way the camera faces.
-fn drive(mut controls: ResMut<Controls>, args: Res<Args>, mut live: ResMut<Live>, cameras: Query<&Orbit>, mut controlled: Query<(&Controlled, &Mover, &mut Visibility)>) {
+fn drive(mut controls: ResMut<Controls>, args: Res<Args>, terrain: Option<Res<Terrain>>, mut live: ResMut<Live>, cameras: Query<&Orbit>, mut controlled: Query<(&Controlled, &Mover, &mut Visibility)>) {
     // A scripted route runs the way `--yaw` says, whatever the camera is doing.
     let yaw = if args.scene.is_some() { args.yaw } else { cameras.iter().next().map_or(0.0, |o| o.yaw) };
     // The camera looks along -Z turned by its yaw; right is +X turned the same.
@@ -254,6 +258,12 @@ fn drive(mut controls: ResMut<Controls>, args: Res<Args>, mut live: ResMut<Live>
                 None => {}
             }
             pack.cycle(std::mem::take(&mut controls.cycle));
+        }
+        if let (Some(id), Some(terrain)) = (controls.spawn.take(), &terrain)
+            && let (Some(kind), Some(me)) = (live.0.kind(&id), live.agent(mover).map(|a| (a.body.pos, a.facing)))
+        {
+            let at = me.0 + Vec3::new(me.1.sin(), 0.0, me.1.cos()) * 2.0;
+            live.0.add(&terrain.0, kind, Vec3::new(at.x, terrain.ground(at.x, at.z), at.z), me.1 + std::f32::consts::PI, cube_sim::life::Driver::Mind);
         }
         if std::mem::take(&mut controls.use_held) && live.0.use_held(mover.id) == cube_sim::items::Used::Dig {
             controls.dig = true;

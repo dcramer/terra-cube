@@ -39,6 +39,7 @@ cargo forge sheet wolf             # shots/wolf.png: every clip at six moments, 
 cargo world survey                 # the land in numbers; `cargo world run`: its creatures living, in numbers
 cargo world life                   # the ecology: how much of the island suits each kind of life, when it is about, where each animal settled
 cargo world map shots/map.png      # one picture from above with where every creature went
+make fight                         # the player fights a goblin in the real game, judged from the trace: hit, kill, sounds
 make slice                         # shots/slice/*.png: six fixed views (meadow at noon, dawn and night, forest, shore, from the air); look at all six after any change to the world's look
 cargo world grade shots/grade.png  # where the ground is easy, steep and cliff, by height and in a picture
 cargo sandbox --spawn all          # the interactive sandbox (needs a real screen)

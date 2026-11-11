@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -68,6 +68,9 @@ slice: ## no window: shots/slice/*.png, seven fixed views and two moving ones, t
 	$(SLICE)/far-high.png --at 0,0 --view high --dist 420 --pitch 0.4 --hour 13
 	$(SLICE)/forest-moving.gif --at -15,85 --dist 10 --pitch 0.1 --hour 15 --gif 6
 	$(SLICE)/meadow-walk.gif --play --script '1 fwd walk; 3 fwd run; 5 stop' --gif 7 --view three --hour 13
+
+fight: ## no window: the player fights a goblin in the real game; passes if he is hit, kills it, and the sounds played
+	@cargo sandbox --scene shots/fight.png --play --script '0.5 stop; 1 spawn=goblin; 1.2 use; 2.4 use; 3.6 use; 4.8 use; 6 use; 7.2 use' --after 9 --view three --hour 13 2>&1 | awk '/^play/ { if (match($$0, /health=[0-9]+/)) { h = substr($$0, RSTART + 7, RLENGTH - 7) + 0; if (h < low || low == "") low = h } if ($$0 ~ /kills=1/) killed = 1 } /^sound swing/ { swing = 1 } /^sound monster_die|^sound goblin/ { voice = 1 } END { ok = (low < 100 && low > 0 && killed && swing && voice); printf "%s fight: lowest health %s, killed %d, swing heard %d, goblin heard %d\n", ok ? "ok" : "FAIL", low, killed, swing, voice; exit !ok }'
 
 sheet: need-id ## no window: shots/ID.png, every clip of one creature (ID=wolf)
 	cargo forge sheet $(ID)
