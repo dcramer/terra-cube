@@ -87,7 +87,7 @@ seasons: ## no window: the meadow in summer and winter, judged by the ground's c
 swim: ## no window: the player is put in deep water in the real game; passes if he floats, swims and is heard
 	@tools/xkeys/swim.sh
 
-window: ## the real window on a screenless display, driven by real key presses: W walks, 2 takes the torch, I opens the pack
+window: ## the real window on a screenless display, driven by real key presses: the loading screen holds W off and lifts, then W walks, 2 takes the torch, I opens the pack
 	@cargo build -q --release -p cube_game && tools/xkeys/window.sh target/release/cube_game
 
 fight: ## no window: the player fights a goblin in the real game; passes if he is hit, kills it, and the sounds played

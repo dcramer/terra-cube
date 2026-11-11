@@ -158,9 +158,11 @@ fn drivers(mut live: ResMut<Live>, movers: Query<(&Mover, &Transform, Has<Contro
     }
 }
 
-fn tick(terrain: Option<Res<Terrain>>, mut live: ResMut<Live>) {
+/// (Behind the loading screen the world is held still: no time passes, nothing moves or is
+/// hurt, but what is near the player is woken, so its model is there when the screen lifts.)
+fn tick(terrain: Option<Res<Terrain>>, loading: Res<crate::loading::Loading>, mut live: ResMut<Live>) {
     if let Some(terrain) = terrain {
-        live.0.step(&terrain.0);
+        if loading.up { live.0.wake(&terrain.0) } else { live.0.step(&terrain.0) }
     }
 }
 

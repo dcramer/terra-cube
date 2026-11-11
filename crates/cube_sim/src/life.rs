@@ -529,12 +529,11 @@ impl Sim {
         id
     }
 
-    /// One tick of [`DT`] for every creature.
-    pub fn step(&mut self, world: &World) {
-        self.tick += 1;
-        self.when = crate::sky::later(self.when, DT);
-        // Who is lived this tick: what is near the watcher and has ground made under it. One
-        // just woken is stood clear of whatever its place turned out to hold.
+    /// Who is lived: what is near the watcher and has ground made under it. One just woken
+    /// is stood clear of whatever its place turned out to hold. Every tick begins with it; on
+    /// its own it is a world held still (no time passes, nothing moves) that still knows who
+    /// is near: what the game does while it is first being made.
+    pub fn wake(&mut self, world: &World) {
         let focus = self.focus;
         for agent in self.agents.values_mut() {
             let made = world.chunks.contains_key(&(agent.body.pos / (CELL * cube_voxel::CHUNK as f32)).floor().as_ivec3().with_y(0)) || focus.is_none();
@@ -550,6 +549,13 @@ impl Sim {
             }
             agent.awake = awake;
         }
+    }
+
+    /// One tick of [`DT`] for every creature.
+    pub fn step(&mut self, world: &World) {
+        self.tick += 1;
+        self.when = crate::sky::later(self.when, DT);
+        self.wake(world);
         // Minds see the world as it was at the start of the tick.
         let seen: Vec<mind::Seen> = self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.awake).map(|(&id, a)| mind::Seen { id, pos: a.body.pos, vel: a.body.vel, temper: self.kinds[a.kind].temper, reach: a.body.half + a.body.long.length() }).collect();
         let mut hits = Vec::new();
@@ -886,6 +892,24 @@ mod tests {
         for _ in 0..(seconds * TICKS as f32) as u32 {
             sim.step(world);
         }
+    }
+
+    #[test]
+    fn a_world_only_woken_is_held_still() {
+        // What the game does behind its loading screen: a wolf beside a rabbit, and nothing
+        // happens to either, nor does the clock move.
+        let (world, mut sim) = stage();
+        let rabbit = sim.add(&world, 0, at(0.0, 0.0), 0.0, Driver::Mind);
+        let wolf = sim.add(&world, 1, at(1.0, 0.0), 0.0, Driver::Mind);
+        let (when, tick) = (sim.when, sim.tick);
+        for _ in 0..TICKS * 5 {
+            sim.wake(&world);
+        }
+        assert_eq!((sim.when, sim.tick), (when, tick));
+        assert_eq!(sim.agents[&rabbit].body.pos, at(0.0, 0.0));
+        assert_eq!(sim.agents[&wolf].body.pos, at(1.0, 0.0));
+        assert_eq!(sim.agents[&rabbit].health, sim.kinds[0].health());
+        assert!(sim.agents[&wolf].awake);
     }
 
     #[test]

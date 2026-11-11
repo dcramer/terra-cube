@@ -7,7 +7,8 @@
 //! Map: `world` (terrain from cube_sim, drawn) · `creatures` (registry, spawning, clips, wander) ·
 //! `motion` (the simulation's creatures, drawn between ticks with the clip that fits) · `player` (controlling
 //! one with the keys, the follow and first-person cameras) · `ui` (the egui panel, skeleton
-//! overlay) · `camera` (free orbit) · `shot` (contact sheets and scene pictures).
+//! overlay) · `camera` (free orbit) · `shot` (contact sheets and scene pictures) · `loading`
+//! (the screen the window opens on while the world near the player is made).
 
 mod air;
 mod audio;
@@ -16,6 +17,7 @@ mod creatures;
 mod far;
 mod flora;
 mod hud;
+mod loading;
 mod motion;
 mod player;
 mod shot;
@@ -301,6 +303,7 @@ fn main() {
         WindowPlugin { primary_window: Some(Window { title: "terra-cube sandbox".into(), resolution: (1600, 900).into(), ..default() }), ..default() }
     }).set(bevy::asset::AssetPlugin { file_path: assets, ..default() }))
     .insert_resource(args)
+    .init_resource::<loading::Loading>()
     .add_plugins(creatures::CreaturesPlugin);
     if shot {
         // With no window the loop would idle at sixty a second, and every `pace` would read
@@ -318,6 +321,11 @@ fn main() {
         app.add_plugins(shot::ShotPlugin);
     } else {
         app.add_plugins((world::WorldPlugin, far::FarPlugin, flora::FloraPlugin, air::AirPlugin, audio::SoundPlugin, camera::CameraPlugin, motion::MotionPlugin, player::PlayPlugin, ui::UiPlugin, hud::HudPlugin));
+        // The window opens on a loading screen when someone is to play in it. Never a scene:
+        // a picture does its own waiting (`shot`).
+        if app.world().resource::<Args>().play {
+            app.add_plugins(loading::LoadingPlugin);
+        }
     }
     app.run();
 }

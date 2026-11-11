@@ -90,8 +90,9 @@ fn start(
     mut begun: Local<bool>,
     // The creature last let go of, and what was picked in the panel at the time.
     mut last: Local<Option<(Entity, Option<Entity>)>>,
+    loading: Res<crate::loading::Loading>,
 ) {
-    let toggle = keys.just_pressed(KeyCode::Tab);
+    let toggle = keys.just_pressed(KeyCode::Tab) && !loading.up;
     let picked_now = selected.as_ref().and_then(|s| s.0);
     let begin = args.play && !*begun && !creatures.is_empty();
     if toggle && let Some(entity) = controlled.iter().next() {
@@ -121,8 +122,15 @@ fn start(
     }
 }
 
-fn keys(keys: Res<ButtonInput<KeyCode>>, buttons: Res<ButtonInput<MouseButton>>, args: Res<Args>, mut menus: ResMut<Menus>, mut controls: ResMut<Controls>, mut controlled: Query<&mut Controlled>) {
+fn keys(keys: Res<ButtonInput<KeyCode>>, buttons: Res<ButtonInput<MouseButton>>, args: Res<Args>, mut loading: ResMut<crate::loading::Loading>, mut menus: ResMut<Menus>, mut controls: ResMut<Controls>, mut controlled: Query<&mut Controlled>) {
     if args.scene.is_some() {
+        return;
+    }
+    // Behind the loading screen no key does anything; each one pressed is counted, so a test
+    // can tell a key that was turned away from one that never arrived.
+    if loading.up {
+        loading.barred += keys.get_just_pressed().len() as u32;
+        *controls = default();
         return;
     }
     // The pack opens on I and the admin panel on F1; Escape shuts both. While either is
@@ -332,13 +340,14 @@ fn follow(
     motion: Res<AccumulatedMouseMotion>,
     scroll: Res<AccumulatedMouseScroll>,
     menus: Res<Menus>,
+    loading: Res<crate::loading::Loading>,
     controlled: Query<(&Controlled, &Creature, &Transform), Without<Orbit>>,
     mut cameras: Query<(&mut Orbit, &mut Transform)>,
 ) {
     let (Ok((c, creature, at)), Some(terrain)) = (controlled.single(), terrain) else { return };
     let def = &registry.0[creature.def];
     for (mut orbit, mut transform) in &mut cameras {
-        if args.scene.is_none() && !menus.open() {
+        if args.scene.is_none() && !menus.open() && !loading.up {
             orbit.yaw -= motion.delta.x * 0.003;
             orbit.pitch = (orbit.pitch + motion.delta.y * 0.003).clamp(-1.3, 1.45);
             if !c.first_person {
@@ -417,13 +426,15 @@ fn torch(
     time: Res<Time>,
     args: Res<crate::Args>,
     live: Res<Live>,
+    loading: Res<crate::loading::Loading>,
     bearers: Query<(&Transform, &Mover), With<Controlled>>,
     mut torches: Query<(Entity, &mut Transform, &mut PointLight), (With<Torch>, Without<Controlled>)>,
 ) {
     // Lit while the torch is the thing in hand (T takes it from the bar); `--torch` lights
     // it whatever is held, for pictures.
     let held = |m: &Mover| live.agent(m).is_some_and(|a| a.dead.is_none() && a.pack.as_ref().and_then(|p| p.held()).is_some_and(|i| i.lights()));
-    let Some((bearer, _)) = bearers.iter().next().filter(|(_, m)| args.torch || held(m)) else {
+    // (Not behind the loading screen: it would be heard to catch.)
+    let Some((bearer, _)) = bearers.iter().next().filter(|(_, m)| !loading.up && (args.torch || held(m))) else {
         for (entity, ..) in &torches {
             commands.entity(entity).despawn();
         }

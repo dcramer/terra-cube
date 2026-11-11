@@ -499,6 +499,24 @@ pub struct Drawn {
     pub waiting: usize,
 }
 
+impl Drawn {
+    /// Of the chunk meshes wanted within `near` metres of the eye, how many are made, and how
+    /// many are wanted: what the loading screen counts.
+    pub fn near(&self, voxels: &Voxels, eye: Vec3, near: f32) -> (usize, usize) {
+        let (mut made, mut wanted) = (0, 0);
+        for &chunk in voxels.chunks.keys() {
+            let away = eye.distance(middle_of(chunk));
+            for (level, &(_, from, to)) in LEVELS.iter().enumerate() {
+                if away < near && away > from - FADE - KEEP && away < to + KEEP {
+                    wanted += 1;
+                    made += self.made.contains_key(&(chunk, level)) as usize;
+                }
+            }
+        }
+        (made, wanted)
+    }
+}
+
 fn middle_of(chunk: IVec3) -> Vec3 {
     ((chunk * CHUNK).as_vec3() + CHUNK as f32 / 2.0) * CELL
 }
@@ -543,7 +561,7 @@ fn draw_level(commands: &mut Commands, meshes: &mut Assets<Mesh>, look: &Look, v
 /// frame), and its mesh is dropped when the camera is well outside it. A chunk that changed
 /// loses its meshes and is made again. So what is meshed and held is what can be seen, and
 /// the world can be bigger than that.
-fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, mut meshes: ResMut<Assets<Mesh>>, mut drawn: ResMut<Drawn>, mut dirty: ResMut<Dirty>, regions: Res<Regions>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
+fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, mut meshes: ResMut<Assets<Mesh>>, mut drawn: ResMut<Drawn>, mut dirty: ResMut<Dirty>, regions: Res<Regions>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
     let (Some(terrain), Some(look), Some(eye)) = (terrain, look, cameras.iter().next().map(|t| t.translation())) else { return };
     for chunk in dirty.0.drain() {
         for level in 0..LEVELS.len() {
@@ -569,8 +587,9 @@ fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, terra
     wanted.sort_by(|a, b| a.0.total_cmp(&b.0));
     drawn.waiting = wanted.len() + regions.waiting;
     // A picture waits for the world, so it may take as long as it likes; a window gets a long
-    // slice while it first fills in, then a few milliseconds a frame.
-    let slice = if args.scene.is_some() || time.elapsed_secs() < 3.0 { 0.05 } else { 0.004 };
+    // slice while it first fills in (behind the loading screen, in play), then a few
+    // milliseconds a frame.
+    let slice = if loading.up { crate::loading::SLICE } else if args.scene.is_some() || time.elapsed_secs() < 3.0 { 0.05 } else { 0.004 };
     let started = std::time::Instant::now();
     for (_, chunk, level) in wanted {
         let spawned = draw_level(&mut commands, &mut meshes, &look, &terrain.0, chunk, level);
@@ -613,7 +632,7 @@ fn seasons(live: Option<Res<crate::motion::Live>>, look: Option<Res<Look>>, mut 
 /// milliseconds' worth a frame; drops those it has left well behind, unless someone dug or
 /// built there. So what is held in cells is what is near, and the island can be a kilometre
 /// across (or ten) for the price of the ground underfoot.
-fn regions(time: Res<Time>, args: Res<crate::Args>, terrain: Option<ResMut<Terrain>>, mut forms: ResMut<crate::flora::Forms>, mut regions: ResMut<Regions>, mut dirty: ResMut<Dirty>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
+fn regions(time: Res<Time>, args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrain: Option<ResMut<Terrain>>, mut forms: ResMut<crate::flora::Forms>, mut regions: ResMut<Regions>, mut dirty: ResMut<Dirty>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
     let (Some(mut terrain), Some(eye)) = (terrain, cameras.iter().next().map(|t| t.translation())) else { return };
     let size = terrain::REGION as f32 * CELL;
     let away = |r: (i32, i32)| Vec2::new((r.0 as f32 + 0.5) * size - eye.x, (r.1 as f32 + 0.5) * size - eye.z).length();
@@ -634,7 +653,7 @@ fn regions(time: Res<Time>, args: Res<crate::Args>, terrain: Option<ResMut<Terra
         let (lo, hi) = ((r.0 * per - 1, r.1 * per - 1), ((r.0 + 1) * per, (r.1 + 1) * per));
         dirty.0.extend(voxels.chunks.keys().filter(|c| c.x >= lo.0 && c.x <= hi.0 && c.z >= lo.1 && c.z <= hi.1));
     };
-    let slice = if args.scene.is_some() || time.elapsed_secs() < 3.0 { 0.06 } else { 0.006 };
+    let slice = if loading.up { crate::loading::SLICE } else if args.scene.is_some() || time.elapsed_secs() < 3.0 { 0.06 } else { 0.006 };
     let started = std::time::Instant::now();
     for (_, r) in wanted {
         let Terrain(voxels, land, ..) = &mut *terrain;
