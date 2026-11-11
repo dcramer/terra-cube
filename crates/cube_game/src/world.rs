@@ -310,7 +310,8 @@ fn sky(
     mut ambient: ResMut<GlobalAmbientLight>,
     mut sun: Query<(&mut Transform, &mut DirectionalLight), (With<Sun>, Without<Moon>)>,
     mut moon: Query<(&mut Transform, &mut DirectionalLight), (With<Moon>, Without<Sun>)>,
-    mut cameras: Query<(&mut Exposure, &mut DistanceFog, &mut ColorGrading)>,
+    terrain: Option<Res<Terrain>>,
+    mut cameras: Query<(&mut Exposure, &mut DistanceFog, &mut ColorGrading, &GlobalTransform)>,
     mut mists: Query<&mut FogVolume>,
 ) {
     let hour = live.map_or(cube_sim::sky::START, |l| l.0.when);
@@ -351,13 +352,24 @@ fn sky(
     // Low sun warms the haze; night takes nearly all of it away.
     let low = (1.0 - to_sun.y.abs() * 4.0).clamp(0.0, 1.0) * day;
     let lit = 0.015 + 0.985 * day;
-    for (mut exposure, mut fog, mut grade) in &mut cameras {
+    for (mut exposure, mut fog, mut grade, eye) in &mut cameras {
         exposure.ev100 = exposure_for(to_sun.y);
         // By moonlight there is little colour to see.
         // No more colour than the light gives: the grade only takes some away at night.
         grade.global.post_saturation = 0.6 + 0.4 * day;
         fog.color = Color::srgba((0.62 + 0.25 * low) * lit, (0.74 - 0.08 * low) * lit, (0.88 - 0.3 * low) * lit, 1.0);
         fog.directional_light_color = Color::srgba(1.0 * lit, (0.86 - 0.25 * low) * lit, (0.62 - 0.35 * low) * lit, 0.6);
+        // Under the water: green-blue murk a few metres deep, dimmer the further down.
+        let eye = eye.translation();
+        let under = terrain.as_ref().is_some_and(|t| eye.y < SEA as f32 * CELL - 0.05 && t.ground(eye.x, eye.z) < eye.y);
+        if under {
+            let down = (SEA as f32 * CELL - eye.y).min(6.0) / 6.0;
+            fog.color = Color::srgba(0.05 * lit, (0.3 - 0.12 * down) * lit, (0.36 - 0.12 * down) * lit, 1.0);
+            fog.directional_light_color = Color::NONE;
+            fog.falloff = FogFalloff::Exponential { density: 0.22 };
+        } else if matches!(fog.falloff, FogFalloff::Exponential { .. }) {
+            fog.falloff = FogFalloff::from_visibility_colors(900.0, Color::srgb(0.42, 0.50, 0.58), Color::srgb(0.78, 0.82, 0.86));
+        }
     }
 }
 

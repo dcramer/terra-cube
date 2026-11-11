@@ -377,7 +377,17 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                 // Of what is solid, alpha is how fast it is held against the wind: leaves give.
                 // (Gently: a large step in opacity for each cell of depth drew the lake bed's
                 // contours across the water as bands.)
-                let alpha = if liquid { 0.82 + depth as f32 * CELL * 0.045 } else if block.foliage() { 1.0 - LEAF } else { 1.0 };
+                // Shallows are clear and pale, a hand's depth at the very edge near white where
+                // the water breaks on the shore; a metre down it is the lake's own colour.
+                let shallow = if liquid { (1.0 - depth as f32 * CELL / 1.0).clamp(0.0, 1.0) } else { 0.0 };
+                let (top, side) = if liquid {
+                    let foam = if depth == 0 { 0.12 } else { 0.0 };
+                    let pale = |c: [f32; 3]| [c[0] + (0.2 - c[0]) * shallow * 0.25 + foam * 0.5, c[1] + (0.36 - c[1]) * shallow * 0.25 + foam * 0.5, c[2] + (0.38 - c[2]) * shallow * 0.25 + foam * 0.45];
+                    (pale(top), pale(side))
+                } else {
+                    (top, side)
+                };
+                let alpha = if liquid { 0.8 + 0.06 * (1.0 - shallow) + depth as f32 * CELL * 0.045 } else if block.foliage() { 1.0 - LEAF } else { 1.0 };
                 if matches!(block, Block::Grass | Block::Turf | Block::Moss | Block::Litter) || block.foliage() {
                     // Patches: lighter and yellower here, deeper there.
                     let drift = patch(cell) - 0.5;

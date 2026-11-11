@@ -58,15 +58,15 @@ slice: ## no window: shots/slice/*.png, seven fixed views and two moving ones, t
 	$(SLICE)/meadow-dawn.png --play --script '2 fwd walk' --after 3 --view three --hour 6.4
 	$(SLICE)/meadow-night.png --play --script '2 fwd walk' --after 6 --view three --hour 21
 	$(SLICE)/meadow-torch.png --play --script '2 fwd walk' --after 6 --view three --hour 21 --torch
-	$(SLICE)/forest-day.png --at -15,85 --dist 10 --pitch 0.1 --hour 15 --after 8
-	$(SLICE)/shore-evening.png --at 17,165 --yaw 0.3 --dist 16 --pitch 0.35 --hour 17
+	$(SLICE)/forest-day.png --at 19,34 --dist 10 --pitch 0.1 --hour 15 --after 8
+	$(SLICE)/shore-evening.png --at 48,19 --dist 14 --pitch 0.3 --hour 17
 	$(SLICE)/island-high.png --view high --hour 15
 	$(SLICE)/meadow-autumn.png --play --script '2 fwd walk' --after 3 --view three --day 17 --hour 13
 	$(SLICE)/meadow-winter.png --play --script '2 fwd walk' --after 3 --view three --day 24 --hour 13
 	$(SLICE)/hud-pack.png --play --script '2 fwd walk' --after 3 --view three --hour 13 --hud pack
 	$(SLICE)/hud-admin.png --play --script '2 fwd walk' --after 3 --view three --hour 13 --hud admin
 	$(SLICE)/far-high.png --at 0,0 --view high --dist 420 --pitch 0.4 --hour 13
-	$(SLICE)/forest-moving.gif --at -15,85 --dist 10 --pitch 0.1 --hour 15 --gif 6
+	$(SLICE)/forest-moving.gif --at 19,34 --dist 10 --pitch 0.1 --hour 15 --gif 6
 	$(SLICE)/meadow-walk.gif --play --script '1 fwd walk; 3 fwd run; 5 stop' --gif 7 --view three --hour 13
 
 fight: ## no window: the player fights a goblin in the real game; passes if he is hit, kills it, and the sounds played
