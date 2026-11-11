@@ -61,7 +61,11 @@ impl Plugin for MotionPlugin {
         let kinds = Kind::load(&std::path::Path::new("assets").join("creatures"));
         app.insert_resource(Time::<Fixed>::from_hz(cube_sim::TICKS as f64))
             .insert_resource(ShowBodies(args.bodies))
-            .insert_resource(Live(Sim::new(kinds, args.seed as u64)))
+            .insert_resource(Live({
+                let mut sim = Sim::new(kinds, args.seed as u64);
+                sim.hour = args.hour.unwrap_or(sim.hour);
+                sim
+            }))
             .add_systems(FixedUpdate, tick)
             .add_systems(Update, (populate, enrol, drivers, show).chain())
             .add_systems(Update, bodies);

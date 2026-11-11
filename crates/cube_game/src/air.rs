@@ -17,7 +17,7 @@ pub struct AirPlugin;
 
 impl Plugin for AirPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup).add_systems(Update, (motes, leaves, butterflies, birds));
+        app.add_systems(Startup, setup).add_systems(Update, (motes, leaves, butterflies, birds, glow));
     }
 }
 
@@ -39,6 +39,10 @@ fn roll(state: &mut u32) -> f32 {
     *state ^= *state << 5;
     (*state & 0xFFFF) as f32 / 65535.0
 }
+
+/// The pollen's material, kept so its own light can follow the camera's exposure.
+#[derive(Resource)]
+struct Pale(Handle<StandardMaterial>);
 
 /// A speck of pollen or down. `0` is its own number, so no two move alike.
 #[derive(Component)]
@@ -80,6 +84,7 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     // with a little light of its own so it is not lost there.
     let speck = meshes.add(Sphere::new(0.011).mesh().ico(1).unwrap());
     let pale = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.96, 0.78), emissive: LinearRgba::rgb(260.0, 235.0, 150.0), perceptual_roughness: 1.0, ..default() });
+    commands.insert_resource(Pale(pale.clone()));
     for _ in 0..MOTES {
         let size = 0.6 + roll(&mut state) * 1.2;
         commands.spawn((Mote(roll(&mut state) * 100.0), Mesh3d(speck.clone()), MeshMaterial3d(pale.clone()), Transform::from_translation(far).with_scale(Vec3::splat(size)), NotShadowCaster));
@@ -228,5 +233,20 @@ fn birds(time: Res<Time>, mut birds: Query<(&Bird, &mut Transform)>) {
         let ahead = Vec3::new(-round.sin(), 0.0, round.cos());
         *at = at.looking_to(ahead, Vec3::Y);
         at.rotate_local_z(-0.35);
+    }
+}
+
+/// Pollen's own light is set for day. As the camera opens up for night it is turned down by
+/// as much, or every speck would blaze like a lamp.
+fn glow(pale: Option<Res<Pale>>, cameras: Query<&bevy::camera::Exposure, With<Camera3d>>, mut materials: ResMut<Assets<StandardMaterial>>, mut was: Local<f32>) {
+    let (Some(pale), Some(exposure)) = (pale, cameras.iter().next()) else { return };
+    if (exposure.ev100 - *was).abs() < 0.05 {
+        return;
+    }
+    *was = exposure.ev100;
+    if let Some(mut material) = materials.get_mut(&pale.0) {
+        // Dimmer still by night: pollen is not fireflies.
+        let dim = 2.0f32.powf(exposure.ev100 - 13.4) * (0.25 + 0.75 * ((exposure.ev100 - 6.0) / 7.0).clamp(0.0, 1.0));
+        material.emissive = LinearRgba::rgb(260.0 * dim, 235.0 * dim, 150.0 * dim);
     }
 }

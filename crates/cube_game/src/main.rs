@@ -50,6 +50,8 @@ pub struct Args {
     pub after: f32,
     /// The world's seed.
     pub seed: u32,
+    /// The hour the world starts at, if not the usual mid afternoon.
+    pub hour: Option<f32>,
     /// The world starts with its creatures in it, living by their own minds.
     pub wild: bool,
     /// Where spawned creatures are put and a scene looks, metres (x, z).
@@ -88,6 +90,7 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
                                         the route, as times and what changes then: fwd back left
                                         right stop · walk run sprint · jump hop · dive surface ·
                                         attack eat hurt · dig put · first third
+        … --hour 6.5                    the hour it is (0 to 24; the day starts at 15, a minute an hour)
         … --cubes | --smooth            the ground as plain cubes, or eased smooth, not in blocks sized
                                         by its slope
         … --wild --at 47,28 [--dist 12] [--pitch 0.3] [--yaw 1.0] [--view high]
@@ -178,6 +181,7 @@ fn parse_args() -> Args {
                 }
                 args.dug.push((v[0], v[1], v[2], a == "--build"));
             }
+            "--hour" => args.hour = it.next().and_then(|v| v.parse().ok()),
             "--seed" => args.seed = it.next().and_then(|v| v.parse().ok()).unwrap_or(cube_sim::terrain::SEED),
             "--dist" => args.dist = it.next().and_then(|v| v.parse().ok()),
             "--pitch" => args.pitch = it.next().and_then(|v| v.parse().ok()),

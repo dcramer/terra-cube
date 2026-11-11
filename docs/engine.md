@@ -55,7 +55,9 @@ The rule this protects: **the simulation never needs a window.** A big sandbox w
 - **The sun stands at 35 degrees**: everything throws a shadow longer than itself.
 - **On every camera that looks at the world** (`world::look`): exposure for full sun, a filmic roll-off (TonyMcMapface), a little more saturation and contrast, bloom, screen-space ambient occlusion for the depth between one thing and another, and haze that warms toward the sun.
 - **Tried and backed out the same hour**: lit air (volumetric fog) over the whole island turned the sky purple and the grass yellow; a stronger grade made shade black. Light shafts want a volume placed where they are wanted (a wood, a morning), not one over everything.
-- **Not done**: a time of day, weather.
+- **The day is the simulation's** (`cube_sim::sky`, 2026-11-11): `Sim` carries the hour, a day lasts 24 minutes (a minute to the hour) and starts at 15:00. The sun rises in the east at six, stands 62 degrees up to the south at noon and sets at eighteen. It is kept with the rules, not the drawing, because what sleeps, what hunts and what a person can see by will follow it; nothing does yet.
+- **The sky is drawn from the hour** (`world::sky`): the sun goes round and under and is put out below the horizon (the air does the reddening and dimming above it); a moon comes up opposite, bluer and brighter than a real one; the camera's exposure follows the sun's height, opening fourteen stops by night as an eye does, because a night as dark as night cannot be played in; colour drains under the moon; the haze warms at a low sun and nearly goes at night. The exposure for each height was set by eye against pictures (`--hour H` on any scene).
+- **Not done**: stars, a moon to look at, clouds and weather, creatures that keep hours, a light to carry.
 
 ### Wind and the air
 

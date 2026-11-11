@@ -94,7 +94,7 @@ pub fn look() -> impl Bundle {
         AtmosphereSettings::default(),
         // The sky fills shadows, but not so far that they stop being shadows.
         AtmosphereEnvironmentMapLight { intensity: 0.9, ..default() },
-        Exposure { ev100: 13.4 },
+        Exposure { ev100: DAY_EV },
         Tonemapping::TonyMcMapface,
         Bloom::NATURAL,
         // Richer than the tonemapper leaves it, a little warm, with more between light and dark.
@@ -113,22 +113,84 @@ pub fn look() -> impl Bundle {
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<Windy>::default()).insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().add_systems(Startup, setup).add_systems(Update, stream);
+        app.add_plugins(MaterialPlugin::<Windy>::default()).insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().add_systems(Startup, setup).add_systems(Update, (stream, sky));
     }
 }
 
-/// The sun of the world, in mid afternoon: low enough that everything throws a shadow longer
-/// than itself and a slope facing it is plainly lit. Its light is raw sunlight; the air
-/// between (`look`) is what colours it.
+/// The sun and the moon of the world. Where they stand and how bright they are is set every
+/// frame from the hour (`sky`); the sun's light is raw sunlight, and the air between (`look`)
+/// is what colours it.
+#[derive(Component)]
+struct Sun;
+#[derive(Component)]
+struct Moon;
+
 fn spawn_sun(commands: &mut Commands, mediums: &mut Assets<ScatteringMedium>) {
     commands.insert_resource(GlobalAmbientLight::NONE);
     commands.spawn(Atmosphere::earth(mediums.add(ScatteringMedium::earth(256, 256))));
-    commands.spawn((
-        DirectionalLight { illuminance: lux::RAW_SUNLIGHT, shadow_maps_enabled: true, ..default() },
-        Transform::from_rotation(Quat::from_euler(EulerRot::YXZ, 0.7, -0.62, 0.0)),
-        CascadeShadowConfigBuilder { first_cascade_far_bound: 12.0, maximum_distance: 220.0, ..default() }.build(),
-        SunDisk::EARTH,
-    ));
+    let shadows = || CascadeShadowConfigBuilder { first_cascade_far_bound: 12.0, maximum_distance: 220.0, ..default() }.build();
+    commands.spawn((Sun, DirectionalLight { illuminance: lux::RAW_SUNLIGHT, shadow_maps_enabled: true, ..default() }, shadows(), SunDisk::EARTH));
+    commands.spawn((Moon, DirectionalLight { illuminance: 0.0, shadow_maps_enabled: false, color: Color::srgb(0.62, 0.74, 1.0), ..default() }, shadows()));
+}
+
+/// Exposure in full day and in full night, and the moon's light. A night that is truly as
+/// dark as night cannot be played in: the camera opens up twelve stops, as an eye does, and
+/// the moon is brighter than a real one, so the land is dim and blue but can be read.
+const DAY_EV: f32 = 13.4;
+const NIGHT_EV: f32 = 0.0;
+const MOONLIGHT: f32 = 1.6;
+
+/// The camera's exposure for a sun this high (the sine of its height): what light there is
+/// falls away fast in the last few degrees over the horizon, and a noon sun is brighter than
+/// an afternoon one. Set by eye against pictures at each hour, as a photographer would.
+fn exposure_for(sun_up: f32) -> f32 {
+    let between = |lo: f32, hi: f32, from: f32, to: f32| from + (to - from) * ((sun_up - lo) / (hi - lo)).clamp(0.0, 1.0);
+    if sun_up < 0.05 {
+        between(-0.105, 0.05, NIGHT_EV, 9.2)
+    } else if sun_up < 0.35 {
+        between(0.05, 0.35, 9.2, 13.0)
+    } else {
+        between(0.35, 0.85, 13.0, 14.0)
+    }
+}
+
+/// The sky follows the hour: the sun goes round and under, the moon comes up opposite it, the
+/// camera opens as the light goes, and the haze takes the colour of the hour.
+fn sky(
+    live: Option<Res<crate::motion::Live>>,
+    mut ambient: ResMut<GlobalAmbientLight>,
+    mut sun: Query<(&mut Transform, &mut DirectionalLight), (With<Sun>, Without<Moon>)>,
+    mut moon: Query<(&mut Transform, &mut DirectionalLight), (With<Moon>, Without<Sun>)>,
+    mut cameras: Query<(&mut Exposure, &mut DistanceFog, &mut ColorGrading)>,
+) {
+    let hour = live.map_or(cube_sim::sky::START, |l| l.0.hour);
+    let (to_sun, day) = (cube_sim::sky::sun(hour), cube_sim::sky::daylight(hour));
+    if let Ok((mut at, mut light)) = sun.single_mut() {
+        *at = Transform::default().looking_to(-to_sun, Vec3::Y);
+        // The air reddens and dims it toward the horizon; this only puts it out below.
+        let up = ((to_sun.y + 0.03) / 0.06).clamp(0.0, 1.0);
+        light.illuminance = lux::RAW_SUNLIGHT * up;
+        light.shadow_maps_enabled = up > 0.0;
+    }
+    if let Ok((mut at, mut light)) = moon.single_mut() {
+        // Opposite the sun and a little aside, so it is up for the whole night.
+        let to_moon = (-to_sun + Vec3::new(0.0, 0.25, 0.3)).normalize();
+        *at = Transform::default().looking_to(-to_moon, Vec3::Y);
+        light.illuminance = MOONLIGHT * (1.0 - day);
+        light.shadow_maps_enabled = day < 0.4 && to_moon.y > 0.05;
+    }
+    // What the moon does not reach is not black.
+    *ambient = GlobalAmbientLight { color: Color::srgb(0.45, 0.6, 1.0), brightness: 0.9 * (1.0 - day), ..default() };
+    // Low sun warms the haze; night takes nearly all of it away.
+    let low = (1.0 - to_sun.y.abs() * 4.0).clamp(0.0, 1.0) * day;
+    let lit = 0.015 + 0.985 * day;
+    for (mut exposure, mut fog, mut grade) in &mut cameras {
+        exposure.ev100 = exposure_for(to_sun.y);
+        // By moonlight there is little colour to see.
+        grade.global.post_saturation = 0.62 + 0.5 * day;
+        fog.color = Color::srgba((0.62 + 0.25 * low) * lit, (0.74 - 0.08 * low) * lit, (0.88 - 0.3 * low) * lit, 1.0);
+        fog.directional_light_color = Color::srgba(1.0 * lit, (0.86 - 0.25 * low) * lit, (0.62 - 0.35 * low) * lit, 0.6);
+    }
 }
 
 /// Plain studio light, for contact sheets.

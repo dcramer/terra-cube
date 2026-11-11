@@ -40,7 +40,7 @@ cargo world map shots/map.png      # one picture from above with where every cre
 cargo world grade shots/grade.png  # where the ground is easy, steep and cliff, by height and in a picture
 cargo sandbox --spawn all          # the interactive sandbox (needs a real screen)
 cargo sandbox --play --wild        # the living world, as the player (make play)
-cargo sandbox --scene shots/herd.png --wild --at 47,28   # no window: a picture of any place (`cargo world who` says where things live)
+cargo sandbox --scene shots/herd.png --wild --at 47,28   # no window: a picture of any place (`cargo world who` says where things live); `--hour 6.2` for any time of day
 cargo sandbox --scene shots/wolf.gif --play --as wolf --gif 12 --view three   # no window: a moving picture of every gait and change of clip, for a person to watch (make gif ID=wolf)
 cargo sandbox --scene shots/run.png --play --script '0.5 fwd run; 2 jump' --strip 10 --after 1.5 --view side   # no window: a scripted run as a strip of pictures
 cargo test --workspace             # must pass before a commit
