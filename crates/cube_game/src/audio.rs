@@ -27,7 +27,7 @@ impl Plugin for SoundPlugin {
         app.insert_resource(DefaultSpatialScale(SpatialScale::new(1.0 / 5.0)))
             .init_resource::<Bank>()
             .add_systems(Startup, load)
-            .add_systems(Update, (ears, air, creatures, footsteps, hands).chain());
+            .add_systems(Update, (ears, air, creatures, footsteps, hands, singers).chain());
     }
 }
 
@@ -228,6 +228,19 @@ fn hands(mut commands: Commands, mut bank: ResMut<Bank>, menus: Res<Menus>, live
         was.2 = lit;
         if lit {
             bank.play(&mut commands, "torch_ignite", None, 0.6);
+        }
+    }
+}
+
+/// The small birds and the ones wheeling overhead are heard from where they are: each now and
+/// then, a few a minute between them, and only those that are out (one put away for the
+/// night or the winter is not in the world to sing).
+fn singers(mut commands: Commands, time: Res<Time>, mut bank: ResMut<Bank>, cameras: Query<&GlobalTransform, With<Camera3d>>, singers: Query<(&crate::air::Sings, &Transform)>) {
+    let Some(eye) = cameras.iter().next().map(|c| c.translation()) else { return };
+    for (sings, at) in &singers {
+        let away = at.translation.distance(eye);
+        if at.translation.y > -100.0 && away < 70.0 && bank.roll() < time.delta_secs() / 25.0 {
+            bank.play(&mut commands, sings.0, Some(at.translation), if sings.0 == "crow" { 1.4 } else { 0.6 });
         }
     }
 }

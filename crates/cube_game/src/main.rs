@@ -56,6 +56,8 @@ pub struct Args {
     pub seed: u32,
     /// Every surface's grain made in code, none photographed.
     pub plain: bool,
+    /// Start from the save file (`--continue`).
+    pub resume: bool,
     /// On trial: water that reflects the land (deferred rendering, screen-space reflections).
     pub reflect: bool,
     /// Trees drawn as the cubes they are in the simulation, not as shapes.
@@ -116,6 +118,7 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
         … --hud bar|pack|admin          in a scene with --play: the bar, health and clock drawn over it,
                                         with the pack or the admin panel open
         … --reflect                     on trial: deferred rendering and screen-space reflections on water
+        … --continue                    start from terra-cube.save (F5 writes it, F9 reads it)
         … --quiet                       no sound
         … --plain                       every surface's grain made in code, none from a photograph
         … --cubes | --smooth            the ground as plain cubes, or eased smooth, not in blocks sized
@@ -200,6 +203,7 @@ fn parse_args() -> Args {
             }
             "--wild" => args.wild = true,
             "--plain" => args.plain = true,
+            "--continue" => args.resume = true,
             "--reflect" => args.reflect = true,
             "--blocky" => args.blocky = true,
             "--hud" => args.hud = Some(it.next().unwrap_or_else(|| "bar".into())),

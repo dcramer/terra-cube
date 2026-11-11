@@ -29,6 +29,10 @@ impl Item {
         }
     }
 
+    pub fn named(name: &str) -> Option<Item> {
+        Item::ALL.into_iter().find(|i| i.name() == name)
+    }
+
     /// How many lie in one slot.
     pub fn stack(self) -> u32 {
         match self {

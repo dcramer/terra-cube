@@ -519,7 +519,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                     if beside {
                         let cell = origin + local;
                         let start = m.positions.len() as u32;
-                        let colour = Block::Water.colors().0.map(|c| (c + (0.36 - c) * 0.12) / MEAN);
+                        let colour = Block::Water.colors().0.map(|c| (c + (0.36 - c) * 0.05) / MEAN);
                         for (dx, dz) in [(0, 0), (0, 1), (1, 1), (1, 0)] {
                             let corner = cell + IVec3::new(dx, 1, dz);
                             m.positions.push((corner.as_vec3() * CELL).to_array());
@@ -562,7 +562,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                 let shallow = if liquid { (1.0 - depth as f32 * CELL / 1.0).clamp(0.0, 1.0) } else { 0.0 };
                 let (top, side) = if liquid {
                     let foam = if depth == 0 { 0.04 } else { 0.0 };
-                    let pale = |c: [f32; 3]| [c[0] + (0.2 - c[0]) * shallow * 0.12 + foam * 0.5, c[1] + (0.36 - c[1]) * shallow * 0.12 + foam * 0.5, c[2] + (0.38 - c[2]) * shallow * 0.12 + foam * 0.45];
+                    let pale = |c: [f32; 3]| [c[0] + (0.2 - c[0]) * shallow * 0.05 + foam * 0.5, c[1] + (0.36 - c[1]) * shallow * 0.05 + foam * 0.5, c[2] + (0.38 - c[2]) * shallow * 0.05 + foam * 0.45];
                     (pale(top), pale(side))
                 } else {
                     (top, side)

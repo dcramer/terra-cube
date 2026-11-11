@@ -115,6 +115,10 @@ struct Wing {
     sweep: f32,
 }
 
+/// Something here that is heard now and then: the name of its sound (`audio`).
+#[derive(Component)]
+pub struct Sings(pub &'static str);
+
 /// A small bird of the meadows and woods. It is either down, hopping and pecking where it
 /// landed (`to`), or in the air between `from` and `to` since `since` for `flight` seconds.
 #[derive(Component)]
@@ -252,7 +256,7 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     let plumage = [Color::srgb(0.45, 0.33, 0.22), Color::srgb(0.62, 0.3, 0.16), Color::srgb(0.3, 0.34, 0.4)].map(|c| materials.add(StandardMaterial { base_color: c, perceptual_roughness: 0.9, double_sided: true, cull_mode: None, ..default() }));
     for i in 0..SONGBIRDS {
         let coat = plumage[i % 3].clone();
-        commands.spawn((Songbird { from: far, to: far, since: -100.0, flight: 0.0, own: roll(&mut state) * 100.0, facing: 0.0 }, Mesh3d(breast.clone()), MeshMaterial3d(coat.clone()), Transform::from_translation(far))).with_children(|body| {
+        commands.spawn((Sings("bird"), Songbird { from: far, to: far, since: -100.0, flight: 0.0, own: roll(&mut state) * 100.0, facing: 0.0 }, Mesh3d(breast.clone()), MeshMaterial3d(coat.clone()), Transform::from_translation(far))).with_children(|body| {
             body.spawn((Mesh3d(crown.clone()), MeshMaterial3d(coat.clone()), Transform::from_xyz(0.0, 0.045, -0.065)));
             for side in [-1.0f32, 1.0] {
                 body.spawn((Wing { side, beat: 34.0, sweep: 1.0 }, Folds, Transform::from_xyz(side * 0.028, 0.02, 0.0), Visibility::default())).with_child((Mesh3d(pinion.clone()), MeshMaterial3d(coat.clone()), Transform::from_xyz(side * 0.045, 0.0, 0.0), NotShadowCaster));
@@ -307,7 +311,7 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
         let (out, speed) = (22.0 + roll(&mut state) * 30.0, 7.0 + roll(&mut state) * 4.0);
         for b in 0..4 + (roll(&mut state) * 5.0) as usize {
             let bird = Bird { middle: middle + Vec3::Y * (roll(&mut state) - 0.5) * 6.0, out: out + (roll(&mut state) - 0.5) * 9.0, speed, at: b as f32 * 0.22 + roll(&mut state) * 0.2 };
-            commands.spawn((bird, Mesh3d(trunk.clone()), MeshMaterial3d(dark.clone()), Transform::from_translation(far), NotShadowCaster)).with_children(|body| {
+            commands.spawn((Sings("crow"), bird, Mesh3d(trunk.clone()), MeshMaterial3d(dark.clone()), Transform::from_translation(far), NotShadowCaster)).with_children(|body| {
                 for side in [-1.0f32, 1.0] {
                     body.spawn((Wing { side, beat: 5.5, sweep: 0.55 }, Transform::default(), Visibility::default())).with_child((Mesh3d(span.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(side * 0.32, 0.0, 0.0), NotShadowCaster));
                 }

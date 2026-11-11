@@ -151,7 +151,9 @@ Built 2026-11-11, in the simulation (`cube_sim::life`, `items`) and tested there
 - **Tested without a window**: the rules in `cube_sim` tests; from the game, a scripted `--play --scene` prints `health=`, `held=` and `kills=` in its trace. The bar, the pack and the admin panel are drawn into a scene with `--hud bar|pack|admin`, and two of them are in `make slice`.
 - **A kill gives meat** to a killer who carries a pack, by the size of what was killed; eaten, it mends 35. **A guard** (the right button held, with anything but the shovel in hand) turns seven tenths of a blow that comes from in front.
 - **A bow** is in the pack from the start: its blow reaches thirty metres in a line five degrees either side, where a blade's reaches a step and sweeps wide (`Item::reach`); it takes 16. No arrow is drawn or flies: what is in line when the shot lands is hit.
-- **Not done**: armour, an arrow to see, hit shapes per limb, anything lying on the ground to be picked up.
+- **An arrow is seen** to fly from the archer when the bow is loosed (`player::arrows`); what it hit was already decided by the simulation.
+- **The player's state is saved** (`Sim::save`, `load`, tested): when it is, where they are, their health and pack, as a few lines of text in `terra-cube.save` where the game is run from. F5 writes it, F9 reads it, `--continue` starts from it; in a script, `save` and `load`. The land is the seed's and is not written, so what was dug or built is lost, as are the creatures' whereabouts.
+- **Not done**: armour, hit shapes per limb, anything lying on the ground to be picked up, saving what was dug.
 
 ## Sound
 
@@ -160,6 +162,7 @@ Built 2026-11-11 (`cube_game::audio`); the files are CC0, in `assets/audio`, who
 - **A sound is a set of files found by name**: `wolf` is `wolf_1.ogg` and `wolf_2.ogg`, one is picked and played a little off its pitch. A creature's voice is the name of a set, in `[life] voice` of its `creature.toml`.
 - **The air of a place is the ecology's** (`ecology::ambience`, tested): wind by how open and high it is, birdsong by day where there are trees and little in winter, insects on warm nights, water by nearness to it. Four loops play always and their loudness is eased to it.
 - **A creature is heard when the simulation says it does something**: its voice with a blow, a hit when wounded, a death; and its call now and then at the hours its niche says it is about. Heard from where it is, to 45 m. The player's feet sound for each stride by what is underfoot (grass, stone, shallows), with a splash going in and a stroke for each while swimming.
+- **The small birds and the ones overhead are heard from where they are** (`air::Sings`, `audio::singers`): each now and then, only while it is out.
 - **Checked without listening**: every sound played is a line of the trace (`sound step_grass_2 vol=0.58 at 9,12,6`), so a scripted `--play --scene` run can be read for what was heard. `--quiet` for none.
 - **Levels are measured, not heard** (`tools/audio/level.py`): every one-shot is brought to a mean of -20 dB and every loop to -27 dB, no peak over -1 dB; 37 of the 52 files were out, by up to 7 dB. Run it after adding a file.
 - **Loops join their own start, by measurement** (`tools/audio/loops.py`): the jump from a loop's last sample to its first must be no more than is usual between neighbouring samples inside it; one of the six failed and had its last second faded into its first.

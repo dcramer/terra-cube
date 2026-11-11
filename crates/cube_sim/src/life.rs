@@ -415,6 +415,54 @@ impl Sim {
         Self { kinds, agents: BTreeMap::new(), tick: 0, focus: None, graves: Vec::new(), when: crate::sky::START, rng: Rng::new(seed), next: 1 }
     }
 
+    /// A person's state as text, a thing a line: when it is, where they are, their health,
+    /// what is in each slot of their pack and which is in hand. What `load` reads.
+    pub fn save(&self, id: u32) -> String {
+        let Some(a) = self.agents.get(&id) else { return String::new() };
+        let mut out = format!("when={}\npos={},{},{}\nfacing={}\nhealth={}\n", self.when, a.body.pos.x, a.body.pos.y, a.body.pos.z, a.facing, a.health);
+        if let Some(pack) = &a.pack {
+            out += &format!("hand={}\n", pack.hand);
+            for (i, slot) in pack.slots.iter().enumerate() {
+                if let Some((item, n)) = slot {
+                    out += &format!("slot={i},{},{n}\n", item.name());
+                }
+            }
+        }
+        out
+    }
+
+    /// Puts a person back as `save` left them. False, and nothing changed, if the text is
+    /// not a save.
+    pub fn load(&mut self, id: u32, text: &str) -> bool {
+        let mut pack = crate::items::Pack::default();
+        let (mut when, mut pos, mut facing, mut health) = (None, None, None, None);
+        for line in text.lines() {
+            let Some((key, value)) = line.split_once('=') else { return false };
+            let numbers: Vec<f32> = value.split(',').filter_map(|v| v.parse().ok()).collect();
+            match key {
+                "when" => when = numbers.first().copied(),
+                "pos" if numbers.len() == 3 => pos = Some(Vec3::new(numbers[0], numbers[1], numbers[2])),
+                "facing" => facing = numbers.first().copied(),
+                "health" => health = numbers.first().copied(),
+                "hand" => pack.hand = (numbers.first().copied().unwrap_or(0.0) as usize).min(crate::items::BAR - 1),
+                "slot" => {
+                    let parts: Vec<&str> = value.split(',').collect();
+                    let (Some(i), Some(item), Some(n)) = (parts.first().and_then(|v| v.parse::<usize>().ok()), parts.get(1).and_then(|v| crate::items::Item::named(v)), parts.get(2).and_then(|v| v.parse().ok())) else { return false };
+                    if i >= crate::items::SLOTS {
+                        return false;
+                    }
+                    pack.slots[i] = Some((item, n));
+                }
+                _ => return false,
+            }
+        }
+        let (Some(when), Some(pos), Some(facing), Some(health), Some(agent)) = (when, pos, facing, health, self.agents.get_mut(&id)) else { return false };
+        self.when = when;
+        (agent.body.pos, agent.before, agent.body.vel, agent.facing, agent.health, agent.dead) = (pos, pos, Vec3::ZERO, facing, health, None);
+        agent.pack = Some(pack);
+        true
+    }
+
     /// A person uses what is in their hand: a blade swings, berries are eaten, a shovel asks
     /// for the ground to be dug (which is the caller's to do: the world is not ours here).
     pub fn use_held(&mut self, id: u32) -> crate::items::Used {
@@ -936,6 +984,27 @@ mod tests {
         run(&mut sim, &world, 1.2);
         assert_eq!(sim.agents[&ahead].health, full - Item::Bow.power().unwrap());
         assert_eq!(sim.agents[&aside].health, full);
+    }
+
+    #[test]
+    fn a_person_saved_is_the_person_loaded() {
+        let (world, mut sim) = stage();
+        let person = sim.add(&world, 4, at(3.0, -2.0), 1.0, Driver::Outside);
+        {
+            let a = sim.agents.get_mut(&person).unwrap();
+            a.health = 61.0;
+            let pack = a.pack.as_mut().unwrap();
+            pack.add(crate::items::Item::Meat, 3);
+            pack.hold(2);
+        }
+        sim.when = 12.25;
+        let (text, was) = (sim.save(person), sim.agents[&person].clone());
+        let (_, mut other) = stage();
+        let them = other.add(&world, 4, at(0.0, 0.0), 0.0, Driver::Outside);
+        assert!(other.load(them, &text));
+        let now = &other.agents[&them];
+        assert_eq!((other.when, now.body.pos, now.health, &now.pack), (12.25, was.body.pos, 61.0, &was.pack));
+        assert!(!other.load(them, "nonsense") && !other.load(them, "slot=99,Torch,1"));
     }
 
     #[test]

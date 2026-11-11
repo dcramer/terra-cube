@@ -21,7 +21,7 @@ pub struct PlayPlugin;
 impl Plugin for PlayPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Controls>().init_resource::<Menus>().add_systems(Update, (start, keys, script, drive, follow, edit, cursor, trace).chain());
-        app.add_systems(Update, torch);
+        app.add_systems(Update, (torch, arrows, saves));
     }
 }
 
@@ -48,6 +48,11 @@ pub struct Controls {
     pub guard: bool,
     /// A kind of creature to be put down just ahead (a script's `spawn=ID`).
     pub spawn: Option<String>,
+    /// An arrow loosed: from where, and which way.
+    pub shot: Option<(Vec3, Vec3)>,
+    /// The player's state is to be written to the save file, or read from it.
+    pub save: bool,
+    pub load: bool,
 }
 
 /// The windows that take the mouse from the camera while they are open: the pack, the admin
@@ -124,6 +129,12 @@ fn keys(keys: Res<ButtonInput<KeyCode>>, buttons: Res<ButtonInput<MouseButton>>,
     // open the keys and the mouse are the window's.
     if keys.just_pressed(KeyCode::KeyI) {
         menus.pack = !menus.pack;
+    }
+    if keys.just_pressed(KeyCode::F5) {
+        controls.save = true;
+    }
+    if keys.just_pressed(KeyCode::F9) {
+        controls.load = true;
     }
     if keys.just_pressed(KeyCode::F1) {
         menus.admin = !menus.admin;
@@ -205,6 +216,8 @@ fn script(time: Res<Time>, args: Res<Args>, mut controls: ResMut<Controls>, mut 
                 "dive" => controls.dive = true,
                 "attack" | "use" => controls.use_held = true,
                 "torch" => controls.hold = Some(usize::MAX),
+                "save" => controls.save = true,
+                "load" => controls.load = true,
                 "guard" => controls.guard = true,
                 "unguard" => controls.guard = false,
                 "hold1" | "hold2" | "hold3" | "hold4" | "hold5" | "hold6" | "hold7" | "hold8" => controls.hold = word[4..].parse::<usize>().ok().map(|n| n - 1),
@@ -270,8 +283,15 @@ fn drive(mut controls: ResMut<Controls>, args: Res<Args>, terrain: Option<Res<Te
             let at = me.0 + Vec3::new(me.1.sin(), 0.0, me.1.cos()) * 2.0;
             live.0.add(&terrain.0, kind, Vec3::new(at.x, terrain.ground(at.x, at.z), at.z), me.1 + std::f32::consts::PI, cube_sim::life::Driver::Mind);
         }
-        if std::mem::take(&mut controls.use_held) && live.0.use_held(mover.id) == cube_sim::items::Used::Dig {
-            controls.dig = true;
+        if std::mem::take(&mut controls.use_held) {
+            let used = live.0.use_held(mover.id);
+            if used == cube_sim::items::Used::Dig {
+                controls.dig = true;
+            }
+            // A shot: an arrow is seen to fly the way the archer faces.
+            if let Some(a) = live.agent(mover).filter(|a| used == cube_sim::items::Used::Swing && a.pack.as_ref().and_then(|p| p.held()) == Some(cube_sim::items::Item::Bow)) {
+                controls.shot = Some((a.body.pos + Vec3::Y * 1.4, Vec3::new(a.facing.sin(), 0.0, a.facing.cos())));
+            }
         }
         let Some(speed) = live.kind(mover).map(|k| k.speed(controls.gait)) else { continue };
         let Some(m) = live.agent_mut(mover) else { continue };
@@ -424,3 +444,51 @@ fn torch(
 /// How bright the torch is, lumens. Set for the camera as it is at night; by day it is lost
 /// in the sun, as a real one is.
 const TORCH: f32 = 2600.0;
+
+/// An arrow in flight: which way, and how long it has flown. It is only to be seen: what
+/// the shot hit was decided by the simulation when the bow was loosed.
+#[derive(Component)]
+struct Arrow(Vec3, f32);
+
+fn arrows(mut commands: Commands, time: Res<Time>, mut controls: ResMut<Controls>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, mut flying: Query<(Entity, &mut Arrow, &mut Transform)>, mut look: Local<Option<(Handle<Mesh>, Handle<StandardMaterial>)>>) {
+    if let Some((from, way)) = controls.shot.take() {
+        let (mesh, material) = look.get_or_insert_with(|| (meshes.add(Cuboid::new(0.025, 0.025, 0.8)), materials.add(StandardMaterial { base_color: Color::srgb(0.55, 0.42, 0.25), perceptual_roughness: 0.8, ..default() }))).clone();
+        // Loosed a third of a second on, when the simulation lands the shot.
+        commands.spawn((Arrow(way, -0.3), Mesh3d(mesh), MeshMaterial3d(material), Transform::from_translation(from + way * 0.6).looking_to(way, Vec3::Y), Visibility::Hidden));
+    }
+    for (entity, mut arrow, mut at) in &mut flying {
+        arrow.1 += time.delta_secs();
+        if arrow.1 > 0.0 {
+            commands.entity(entity).insert(Visibility::Inherited);
+            // Sixty metres a second, dropping a little.
+            at.translation += (arrow.0 * 60.0 + Vec3::NEG_Y * arrow.1 * 6.0) * time.delta_secs();
+        }
+        if arrow.1 > 0.55 {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+/// Where the player's state is kept between runs: beside where the game is run from.
+fn save_file() -> std::path::PathBuf {
+    std::env::current_dir().unwrap_or_default().join("terra-cube.save")
+}
+
+/// F5 writes the player's state (where, when, health, pack) and F9 reads it back; `--continue`
+/// reads it at the start. The land is the seed's and is not written: what was dug is lost.
+fn saves(args: Res<Args>, mut controls: ResMut<Controls>, mut live: ResMut<Live>, controlled: Query<&Mover, With<Controlled>>, mut began: Local<bool>) {
+    let Ok(mover) = controlled.single() else { return };
+    let first = !std::mem::replace(&mut *began, true) && args.resume;
+    if std::mem::take(&mut controls.save) {
+        match std::fs::write(save_file(), live.0.save(mover.id)) {
+            Ok(()) => println!("saved {}", save_file().display()),
+            Err(e) => warn!("could not save: {e}"),
+        }
+    }
+    if std::mem::take(&mut controls.load) || first {
+        match std::fs::read_to_string(save_file()) {
+            Ok(text) => println!("loaded {} ({})", save_file().display(), if live.0.load(mover.id, &text) { "ok" } else { "not understood" }),
+            Err(e) => warn!("no save to load: {e}"),
+        }
+    }
+}
