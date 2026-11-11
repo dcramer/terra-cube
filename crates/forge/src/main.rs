@@ -39,7 +39,7 @@ cargo forge cubes ID [--size 0.05] [--head 1.0]
                                         clips; --head 1.4 makes its head that much bigger
 cargo forge ideas ID                    shots/ideas-ID.jpg: other things that creature could be, each
                                         subject in its ideas.toml drawn in the house style (2 credits
-                                        an image, once)
+                                        an image, once); --take NAME makes that one what it is
 cargo forge looks                       shots/looks.jpg: a few creatures drawn in each look being tried
                                         (assets/creatures/looks.toml); 2 credits an image, once
 cargo forge inspect FILE.glb|ID         the skeleton's roles
@@ -125,6 +125,11 @@ fn run() -> Result<bool> {
         "looks" => println!("{}", looks::run(&style()?)?),
         "ideas" => {
             let style = style()?;
+            if let Some(name) = option(&mut args, "--take") {
+                let id = targets(&args).into_iter().next().context("ideas --take wants a creature: cargo forge ideas player --take plain")?;
+                println!("{}", looks::take(&id, &name)?);
+                return Ok(ok);
+            }
             for id in targets(&args) {
                 println!("{}", looks::ideas(&id, &style)?);
             }

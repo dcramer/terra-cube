@@ -92,6 +92,33 @@ pub fn ideas(id: &str, style: &Style) -> Result<String> {
     Ok(format!("{out} · left to right, top to bottom: {} · {spent} credits this run", pictures.iter().map(|p| p.0.as_str()).collect::<Vec<_>>().join(" ")))
 }
 
+/// Takes one of a creature's ideas as what it is: its subject goes into `creature.toml`, its
+/// picture becomes the creature's concept, and the lock is set back to the concept alone, so
+/// the next `cargo forge build ID` makes the model from the picture that was chosen. Nothing is
+/// spent here; the build that follows is paid as any other.
+pub fn take(id: &str, name: &str) -> Result<String> {
+    let dir = spec::dir(id);
+    let listed: BTreeMap<String, String> = spec::load(&dir.join("ideas.toml"))?;
+    let subject = listed.get(name).with_context(|| format!("no idea `{name}` in {}", dir.join("ideas.toml").display()))?;
+    let png = Path::new(".work").join("ideas").join(format!("{id}-{name}.png"));
+    anyhow::ensure!(png.exists(), "{} is not drawn yet: cargo forge ideas {id}", png.display());
+    let work = Path::new(".work").join(id);
+    std::fs::create_dir_all(&work)?;
+    std::fs::copy(&png, work.join("concept.png"))?;
+    image::open(&png)?.thumbnail(512, 512).to_rgb8().save(dir.join("concept.jpg"))?;
+    // creature.toml is written by hand: only its subject line is changed.
+    let path = dir.join("creature.toml");
+    let text = std::fs::read_to_string(&path)?;
+    anyhow::ensure!(text.lines().any(|l| l.starts_with("subject = ")), "{} has no subject line", path.display());
+    let lines: Vec<String> = text.lines().map(|l| if l.starts_with("subject = ") { format!("subject = {}", toml::Value::String(subject.trim().to_owned())) } else { l.to_owned() }).collect();
+    std::fs::write(&path, lines.join("\n") + "\n")?;
+    let lock_path = dir.join("forge.lock");
+    let mut lock: spec::Lock = if lock_path.exists() { spec::load(&lock_path)? } else { Default::default() };
+    lock.steps = vec!["concept".to_owned()];
+    spec::save(&lock_path, &lock, "# What `cargo forge build` has made at Tripo. Delete a step (and those after it) to make it again.\n")?;
+    Ok(format!("{id} is now `{name}`: {} · next: cargo forge build {id} (a model and a rig, about 65 credits)", dir.join("concept.jpg").display()))
+}
+
 /// Draws what is missing and writes `shots/looks.jpg`. Returns the one line to print.
 pub fn run(style: &Style) -> Result<String> {
     let root = Path::new(spec::ROOT);

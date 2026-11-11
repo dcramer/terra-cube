@@ -8,3 +8,9 @@ tinkerer = "a young tinkerer, a heavy leather work apron over a striped shirt wi
 wayfarer = "a young wayfarer from far away, a short poncho of bold woven stripes in indigo and saffron, loose trousers bound at the shin, a broad sash, soft wrapped boots, hair in one thick braid, a painted stripe across the nose, calm friendly face, androgynous build"
 stargazer = "a young stranger fallen from the sky, a snug quilted one-piece suit in cream with coral panels, a rounded soft collar like a deflated helmet, a small boxy pack fixed flat to the back, chunky magnetic boots, short cropped hair, wide-eyed friendly face, androgynous build"
 moss = "a young woodland dweller who looks half grown from the forest, a tunic of layered broad green leaves, bark bracers on the forearms, a short cloak of moss on the shoulders, twig-and-acorn necklace, bare feet wrapped in vine, freckled friendly face, androgynous build"
+
+# 2026-11-11: no pirates, no costume. An ordinary man, who could be anyone.
+plain = "an ordinary man in his thirties, a plain grey-green work shirt with the sleeves rolled to the elbow, brown canvas trousers, sturdy leather boots, short brown hair, a few days of stubble, calm plain face, average build"
+jacket = "an ordinary man in his thirties, a plain olive field jacket worn open over a grey shirt, dark blue trousers, brown hiking boots, short dark hair, clean-shaven, calm plain face, average build"
+henley = "an ordinary man in his thirties, a faded blue long-sleeved shirt with the sleeves pushed up, khaki trousers, worn brown boots, short sandy hair, a trimmed beard, calm plain face, average build"
+vest = "an ordinary man in his thirties, a plain off-white linen shirt under a dark grey wool waistcoat, brown trousers, leather ankle boots, short black hair, clean-shaven, calm plain face, average build"

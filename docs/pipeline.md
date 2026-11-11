@@ -144,7 +144,7 @@ Built 2026-11-10 (65 credits each): `player-carved` fails skin stretch in every 
 
 Tried 2026-11-10 on the player, wolf and troll (18 credits): `carved` (squared, chamfered block shapes: the nearest to the world), `flat` (strict flat-shaded low-poly; its wolf came back a flat drawing and its troll out of the T-pose) and `painted` (hand-painted and smooth, as Eco; its troll also out of the T-pose).
 
-**Taking an idea** (`cargo forge ideas ID` draws them): put the chosen subject in `creature.toml`, copy `.work/ideas/ID-NAME.png` to `.work/ID/concept.png` with a 512 px copy as `assets/creatures/ID/concept.jpg`, set the lock's steps to `["concept"]`, and `cargo forge build ID`: the model is made from the picture that was chosen. Done by hand once, for the player (the castaway, 2026-11-10); it wants to be `cargo forge ideas ID --take NAME` the second time.
+**Taking an idea**: `cargo forge ideas ID` draws every subject in the creature's `ideas.toml` (2 credits each, once); `cargo forge ideas ID --take NAME` makes one of them what the creature is (its subject into `creature.toml`, its picture as the concept, the lock set back to the concept alone), and `cargo forge build ID` then makes the model from the picture that was chosen. Done by hand the first time (the castaway, 2026-11-10) and by the command the second (the plain man, 2026-11-11).
 
 ## Cubes
 
