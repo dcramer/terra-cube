@@ -20,15 +20,15 @@ pub const SPAN: i32 = 8;
 /// Texels along a tile, and along the border round it that repeats the tile's far side, so
 /// a smooth sample at a tile's edge, and the smaller copies of the atlas, never take colour
 /// from the tile beside it.
-pub const TILE: usize = 64;
-pub const BORDER: usize = 8;
+pub const TILE: usize = 128;
+pub const BORDER: usize = 16;
 const ROOM: usize = TILE + 2 * BORDER;
 /// Tiles along the atlas, and how many smaller copies of it there are (each half the last,
 /// down to eight texels a tile and one of border).
 pub const ACROSS: usize = 4;
-pub const LEVELS: usize = 4;
+pub const LEVELS: usize = 5;
 /// How strongly the grain shows: 1 is as the shapes are written.
-pub const DEPTH: f32 = 1.7;
+pub const DEPTH: f32 = 1.45;
 /// The brightness every tile averages, of 1.
 pub const MEAN: f32 = 0.8;
 
@@ -101,11 +101,12 @@ fn hash(x: i32, y: i32, seed: u32) -> f32 {
     (h & 0xFFFF) as f32 / 65535.0
 }
 
-/// Smooth noise that repeats every tile: `size` texels from one lump to the next (a divisor
-/// of [`TILE`]), stretched by `sx` and `sy`.
-fn lumps(x: usize, y: usize, size: (usize, usize), seed: u32) -> f32 {
-    let (nx, ny) = ((TILE / size.0) as i32, (TILE / size.1) as i32);
-    let (fx, fy) = (x as f32 / size.0 as f32, y as f32 / size.1 as f32);
+/// Smooth noise that repeats every tile. The shapes are written on a tile 64 across (a unit
+/// is 3 cm) whatever its texels: `size` units from one lump to the next (a divisor of 64),
+/// each way.
+fn lumps(x: f32, y: f32, size: (usize, usize), seed: u32) -> f32 {
+    let (nx, ny) = ((64 / size.0) as i32, (64 / size.1) as i32);
+    let (fx, fy) = (x / size.0 as f32, y / size.1 as f32);
     let (x0, y0) = (fx.floor(), fy.floor());
     let (tx, ty) = (fx - x0, fy - y0);
     let (sx, sy) = (tx * tx * (3.0 - 2.0 * tx), ty * ty * (3.0 - 2.0 * ty));
@@ -114,10 +115,45 @@ fn lumps(x: usize, y: usize, size: (usize, usize), seed: u32) -> f32 {
     a * (1.0 - sy) + b * sy
 }
 
-/// How bright one texel of a grain is, about 1: lighter over, darker under. `y` runs down
-/// the tile, so on a block's side it is height. Shapes, not speckle: the smallest thing here
-/// is four texels (12 cm) over, and most are larger.
-fn texel(grain: Grain, x: usize, y: usize) -> f32 {
+/// What colour a point of a grain leans to, as a multiplier of the block's colour: grass has
+/// dry blades and lush ones, fallen leaves are russet and gold and brown, rock carries lichen
+/// and rust, bark carries moss. Brightness is [`texel`]'s; this is hue. Without it a surface
+/// was one colour made lighter and darker, which reads as plastic.
+fn hue(grain: Grain, x: f32, y: f32) -> [f32; 3] {
+    let seed = grain as u32 * 16 + 9;
+    let lump = |size: (usize, usize), n: u32| lumps(x, y, size, seed + n) - 0.5;
+    // Toward yellow (over 0) or toward blue-green (under).
+    let warm = |w: f32| [1.0 + w, 1.0 + w * 0.25, 1.0 - w * 1.3];
+    // Where a noise runs high, a patch of something else.
+    let patch = |size: (usize, usize), n: u32, over: f32, soft: f32| ((lump(size, n) - over) / soft).clamp(0.0, 1.0);
+    let blend = |a: [f32; 3], b: [f32; 3], t: f32| [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+    match grain {
+        Grain::Plain | Grain::Snow => [1.0; 3],
+        Grain::Grass => blend(warm(lump((8, 16), 1) * 0.5 + lump((2, 8), 2) * 0.35), [1.35, 1.12, 0.6], patch((4, 8), 3, 0.2, 0.08) * 0.7),
+        Grain::Soil => blend(warm(lump((16, 16), 1) * 0.25), [0.8, 0.82, 0.9], patch((4, 4), 2, 0.22, 0.05) * 0.7),
+        Grain::Rock | Grain::Strata => {
+            let rust = blend(warm(lump((32, 16), 1) * 0.12), [1.18, 0.95, 0.74], patch((8, 32), 2, 0.2, 0.1) * 0.55);
+            blend(rust, [0.82, 1.08, 0.62], patch((16, 16), 3, 0.17, 0.06) * 0.75)
+        }
+        Grain::Sand => warm(lump((16, 8), 1) * 0.18),
+        Grain::Pebbles => warm(lump((8, 8), 1) * 0.3),
+        Grain::Bark => blend(warm(lump((8, 32), 1) * 0.2), [0.7, 1.15, 0.55], patch((16, 16), 2, 0.16, 0.07) * 0.8),
+        Grain::BirchBark => blend([1.0; 3], [0.8, 1.0, 0.7], patch((16, 16), 2, 0.2, 0.08) * 0.5),
+        Grain::EndGrain => warm(lump((16, 16), 1) * 0.2),
+        Grain::Leaves => warm(lump((8, 8), 1) * 0.6 + lump((4, 4), 2) * 0.3),
+        Grain::Needles => warm(lump((8, 8), 1) * 0.3 - 0.04),
+        Grain::Litter => {
+            let russet = blend([0.95, 0.95, 1.0], [1.5, 0.95, 0.45], patch((8, 4), 1, 0.05, 0.1));
+            blend(russet, [1.6, 1.35, 0.5], patch((4, 8), 2, 0.22, 0.05) * 0.9)
+        }
+        Grain::Moss => warm(lump((8, 8), 1) * 0.6),
+    }
+}
+
+/// How bright one point of a grain is, about 1: lighter over, darker under. `y` runs down
+/// the tile, so on a block's side it is height. Broad shapes first, then the fine: blades,
+/// grit, the fibre of bark.
+fn texel(grain: Grain, x: f32, y: f32) -> f32 {
     let seed = grain as u32 * 16;
     let lump = |size: (usize, usize), n: u32| lumps(x, y, size, seed + n) - 0.5;
     // A soft dark line where a noise crosses its middle: a crack, a groove.
@@ -127,7 +163,16 @@ fn texel(grain: Grain, x: usize, y: usize) -> f32 {
     };
     // A noise pushed toward two tones with a soft edge between: a dab of the brush.
     let dab = |size: (usize, usize), n: u32, edge: f32| (lump(size, n) / edge).clamp(-1.0, 1.0) * 0.5;
-    match grain {
+    // The fine: what is seen from a step away.
+    let fine = match grain {
+        Grain::Plain | Grain::Snow => 0.0,
+        Grain::Grass | Grain::Needles => dab((1, 4), 30, 0.25) * 0.3 + lump((2, 2), 31) * 0.12,
+        Grain::Bark => dab((1, 8), 30, 0.3) * 0.3 + lump((2, 4), 31) * 0.15,
+        Grain::Strata => lump((8, 1), 30) * 0.22 + lump((2, 2), 31) * 0.14,
+        Grain::Leaves | Grain::Litter | Grain::Moss => dab((2, 2), 30, 0.2) * 0.3 + lump((1, 1), 31) * 0.12,
+        _ => lump((2, 2), 30) * 0.2 + lump((1, 1), 31) * 0.16,
+    };
+    fine + match grain {
         Grain::Plain => 1.0,
         // Tufts: long soft strokes leaning up the tile, over broad lighter and darker patches.
         Grain::Grass => 1.0 + dab((4, 16), 1, 0.2) * 0.22 + lump((16, 16), 2) * 0.3 + lump((32, 32), 3) * 0.2,
@@ -144,7 +189,7 @@ fn texel(grain: Grain, x: usize, y: usize) -> f32 {
         // Pale, with dark eyes and dashes lying across it.
         Grain::BirchBark => 1.0 + lump((32, 16), 1) * 0.08 - (dab((16, 4), 2, 0.05) + 0.5 - 0.82).max(0.0) * 3.4,
         // Rings.
-        Grain::EndGrain => 1.0 + ((((x as f32 - 32.0).powi(2) + (y as f32 - 32.0).powi(2)).sqrt() * 0.8).sin() * 0.12) + lump((16, 16), 1) * 0.15,
+        Grain::EndGrain => 1.0 + ((((x - 32.0).powi(2) + (y - 32.0).powi(2)).sqrt() * 0.8).sin() * 0.12) + lump((16, 16), 1) * 0.15,
         // Leaves: clusters catching the light, with pools of shade between.
         Grain::Leaves => 1.0 + dab((8, 8), 1, 0.18) * 0.34 + lump((16, 16), 2) * 0.25 - line((8, 8), 3, 0.04) * 0.2,
         // Sprays: finer, hanging.
@@ -157,53 +202,82 @@ fn texel(grain: Grain, x: usize, y: usize) -> f32 {
 }
 
 /// The atlas: every grain's tile in a square, then smaller copies of the whole, each half the
-/// size, as sRGB RGBA bytes one after another. A smaller copy is each four texels averaged,
-/// and a tile and its border halve with it.
+/// size, one after another. A smaller copy is each four texels averaged, and a tile and its
+/// border halve with it. Two pictures the same shape: `rgba` is the paint (sRGB), `relief`
+/// is which way each point of the surface faces (a normal map, linear), so a low sun rakes
+/// across bark and stone and picks out their grain.
 pub struct Atlas {
     /// Texels along the largest copy.
     pub size: usize,
     pub levels: usize,
     pub rgba: Vec<u8>,
+    pub relief: Vec<u8>,
 }
+
+/// How steep the relief is for a given change of brightness.
+const RELIEF: f32 = 2.0;
 
 pub fn atlas() -> Atlas {
     let size = ROOM * ACROSS;
-    let mut first = vec![MEAN; size * size];
+    let mut paint = vec![[MEAN; 3]; size * size];
+    let mut facing = vec![[0.0, 0.0, 1.0f32]; size * size];
+    let unit = 64.0 / TILE as f32;
     for (i, &grain) in Grain::ALL.iter().enumerate() {
         // The shapes are written gently and deepened here, in one place: at their written
         // strength the developer saw no texture at all.
-        let mut tile: Vec<f32> = (0..TILE * TILE).map(|t| (1.0 + (texel(grain, t % TILE, t / TILE) - 1.0) * DEPTH).max(0.05)).collect();
-        // Every tile to the same mean, so far off it is its block's colour and no other.
-        // (Nothing is brighter than 1, so a pale tile with dark marks takes a few rounds.)
+        let bright: Vec<f32> = (0..TILE * TILE).map(|t| (1.0 + (texel(grain, (t % TILE) as f32 * unit, (t / TILE) as f32 * unit) - 1.0) * DEPTH).max(0.05)).collect();
+        let mut tile: Vec<[f32; 3]> = (0..TILE * TILE).map(|t| hue(grain, (t % TILE) as f32 * unit, (t / TILE) as f32 * unit).map(|c| c * bright[t])).collect();
+        // Every tile to the same mean in each colour, so far off it is its block's colour
+        // and no other. (Nothing is brighter than 1, so a pale tile with dark marks takes a
+        // few rounds.)
         for _ in 0..12 {
-            let mean = tile.iter().sum::<f32>() / tile.len() as f32;
-            tile.iter_mut().for_each(|v| *v = (*v * MEAN / mean).min(1.0));
+            for c in 0..3 {
+                let mean = tile.iter().map(|v| v[c]).sum::<f32>() / tile.len() as f32;
+                tile.iter_mut().for_each(|v| v[c] = (v[c] * MEAN / mean).min(1.0));
+            }
         }
+        // Brighter is higher: the slope of brightness is the lean of the surface.
+        let high = |x: usize, y: usize| bright[x % TILE + y % TILE * TILE];
+        let lean: Vec<[f32; 3]> = (0..TILE * TILE).map(|t| {
+            let (x, y) = (t % TILE + TILE, t / TILE + TILE);
+            let (dx, dy) = (high(x + 1, y) - high(x - 1, y), high(x, y + 1) - high(x, y - 1));
+            let n = glam::Vec3::new(-dx * RELIEF, -dy * RELIEF, 1.0).normalize();
+            [n.x, n.y, n.z]
+        }).collect();
         // The tile with its border: the border is the tile carried round from its far side.
         let (ox, oy) = (i % ACROSS * ROOM, i / ACROSS * ROOM);
         for t in 0..ROOM * ROOM {
             let (x, y) = ((t % ROOM + TILE - BORDER) % TILE, (t / ROOM + TILE - BORDER) % TILE);
-            first[ox + t % ROOM + (oy + t / ROOM) * size] = tile[x + y * TILE];
+            paint[ox + t % ROOM + (oy + t / ROOM) * size] = tile[x + y * TILE];
+            facing[ox + t % ROOM + (oy + t / ROOM) * size] = lean[x + y * TILE];
         }
     }
-    let mut rgba = Vec::new();
-    let (mut level, mut side) = (first, size);
+    let (mut rgba, mut relief) = (Vec::new(), Vec::new());
+    let halve = |level: &[[f32; 3]], side: usize| -> Vec<[f32; 3]> {
+        let half = side / 2;
+        (0..half * half).map(|i| {
+            let (x, y) = (i % half * 2, i / half * 2);
+            let at = |dx: usize, dy: usize| level[x + dx + (y + dy) * side];
+            std::array::from_fn(|c| (at(0, 0)[c] + at(1, 0)[c] + at(0, 1)[c] + at(1, 1)[c]) / 4.0)
+        }).collect()
+    };
+    let mut side = size;
     for n in 0..LEVELS {
         // Linear light to sRGB, as the picture is read.
-        rgba.extend(level.iter().flat_map(|v| {
-            let s = (if *v <= 0.003_130_8 { v * 12.92 } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 } * 255.0).round() as u8;
-            [s, s, s, 255]
+        rgba.extend(paint.iter().flat_map(|v| {
+            let s = v.map(|v| (if v <= 0.003_130_8 { v * 12.92 } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 } * 255.0).round() as u8);
+            [s[0], s[1], s[2], 255]
+        }));
+        relief.extend(facing.iter().flat_map(|v| {
+            let n = glam::Vec3::from_array(*v).normalize();
+            [n.x, n.y, n.z].map(|c| ((c * 0.5 + 0.5) * 255.0).round() as u8).into_iter().chain([255])
         }));
         if n + 1 < LEVELS {
-            let half = side / 2;
-            level = (0..half * half).map(|i| {
-                let (x, y) = (i % half * 2, i / half * 2);
-                (level[x + y * side] + level[x + 1 + y * side] + level[x + (y + 1) * side] + level[x + 1 + (y + 1) * side]) / 4.0
-            }).collect();
-            side = half;
+            (paint, facing) = (halve(&paint, side), halve(&facing, side));
+            side /= 2;
         }
     }
-    Atlas { size, levels: LEVELS, rgba }
+    Atlas { size, levels: LEVELS, rgba, relief }
 }
 
 #[cfg(test)]

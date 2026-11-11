@@ -129,12 +129,16 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     // ground does not sparkle.
     let atlas = cube_voxel::texture::atlas();
     let side = atlas.size as u32;
-    let mut paint = Image::new_uninit(Extent3d { width: side, height: side, depth_or_array_layers: 1 }, TextureDimension::D2, TextureFormat::Rgba8UnormSrgb, RenderAssetUsages::RENDER_WORLD);
-    paint.texture_descriptor.mip_level_count = atlas.levels as u32;
-    paint.data = Some(atlas.rgba);
-    paint.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor { mag_filter: ImageFilterMode::Linear, min_filter: ImageFilterMode::Linear, mipmap_filter: ImageFilterMode::Linear, lod_max_clamp: (atlas.levels - 1) as f32, anisotropy_clamp: 4, ..default() });
-    let paint = images.add(paint);
-    let material = materials.add(StandardMaterial { base_color: Color::WHITE, base_color_texture: Some(paint), perceptual_roughness: 0.95, reflectance: 0.2, ..default() });
+    let mut picture = |bytes: Vec<u8>, format: TextureFormat| {
+        let mut image = Image::new_uninit(Extent3d { width: side, height: side, depth_or_array_layers: 1 }, TextureDimension::D2, format, RenderAssetUsages::RENDER_WORLD);
+        image.texture_descriptor.mip_level_count = atlas.levels as u32;
+        image.data = Some(bytes);
+        image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor { mag_filter: ImageFilterMode::Linear, min_filter: ImageFilterMode::Linear, mipmap_filter: ImageFilterMode::Linear, lod_max_clamp: (atlas.levels - 1) as f32, anisotropy_clamp: 4, ..default() });
+        images.add(image)
+    };
+    // The paint, and the relief that goes with it: which way each point of a surface faces.
+    let (paint, relief) = (picture(atlas.rgba, TextureFormat::Rgba8UnormSrgb), picture(atlas.relief, TextureFormat::Rgba8Unorm));
+    let material = materials.add(StandardMaterial { base_color: Color::WHITE, base_color_texture: Some(paint), normal_map_texture: Some(relief), perceptual_roughness: 0.95, reflectance: 0.2, ..default() });
     // Water is its own mesh and material: it is blended over what is under it.
     let water = materials.add(StandardMaterial { base_color: Color::WHITE, alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.25, reflectance: 0.5, ..default() });
     let mut voxels = voxels;
@@ -201,6 +205,7 @@ fn draw_level(commands: &mut Commands, meshes: &mut Assets<Mesh>, look: &Look, v
             .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
             .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, data.colors)
             .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, data.tangents)
             .with_inserted_indices(Indices::U32(data.indices));
         spawned.push(commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material.clone()), Transform::from_translation(middle), range.clone(), faces)).id());
     }

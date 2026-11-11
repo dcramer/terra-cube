@@ -58,10 +58,11 @@ The rule this protects: **the simulation never needs a window.** A big sandbox w
 
 ### Paint
 
-- **One atlas of grains, made in code at start** (`cube_voxel::texture`, 2026-11-11): fifteen tiles of 64 texels with a border of 8 that repeats the tile's far side, and three smaller copies each half the last. The border is what lets the picture be drawn smooth and shrunk with distance without a tile taking colour from its neighbour; a tile and its border halve cleanly three times. No art files, no engine types: the game wraps the bytes in an image.
+- **One atlas of grains, made in code at start** (`cube_voxel::texture`, 2026-11-11): fifteen tiles of 128 texels (1.5 cm) with a border of 16 that repeats the tile's far side, and four smaller copies each half the last. The border is what lets the picture be drawn smooth and shrunk with distance without a tile taking colour from its neighbour. No art files, no engine types: the game wraps the bytes in two images.
+- **A grain is three things**: brightness in broad shapes and fine ones (`texel`: blades, grit, the fibre of bark), hue (`hue`: dry and lush blades, russet and gold in fallen leaves, lichen and rust on rock, moss on bark), and relief (a normal map taken from the brightness, so a low sun rakes across bark and stone). The first grain was brightness alone in broad shapes, and the developer saw no texture at all: one colour made lighter and darker reads as plastic.
 - **The mesher gives every corner a place in it** from where the corner is in the world, not in its cube: tops lie flat, sides stand upright, and the tile repeats every eight cells, so bits, whole cells and the far levels of detail all show the same picture at the same place.
-- **A grain holds brightness only and every tile averages 0.8**; the mesher divides the block's colour by that. So the far levels need no other colours, and grain can be changed without touching a block.
-- **Still one material and one draw a chunk.** Not done: grain that differs by biome or wetness, normal or roughness maps (the art guide says base colour only), and merging faces (the per-cube shade is small now but still in the vertices).
+- **A grain multiplies the block's colour and every tile averages 0.8 in each of red, green and blue**; the mesher divides the block's colour by that. So the far levels need no other colours, and grain can be changed without touching a block.
+- **Still one material and one draw a chunk.** Not done: grain that differs by biome or wetness, more than one tile to a grain (a wall repeats every two metres), roughness maps, and merging faces (the per-cube shade is small now but still in the vertices).
 - **Every scene shot says what it cost** (`pace`): the middle and worst frame of the last sixty, the terrain faces in view, and what drew them. Frame times compare only on the same machine, and a scene may be held to the screen's 60 a second; faces in view compare anywhere.
 
 ## The world

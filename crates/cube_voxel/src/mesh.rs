@@ -14,6 +14,9 @@ pub struct MeshData {
     pub colors: Vec<[f32; 4]>,
     /// Where each corner is in the atlas of grains (`texture`).
     pub uvs: Vec<[f32; 2]>,
+    /// Which way the atlas's `u` runs along the surface at each corner, and the handedness
+    /// of its `v`: what the relief in the atlas is turned by.
+    pub tangents: Vec<[f32; 4]>,
     pub indices: Vec<u32>,
 }
 
@@ -39,6 +42,12 @@ fn uv(grain: Grain, n: IVec3, cube: IVec3, corner: IVec3, per: i32) -> [f32; 2] 
         let across = if n.x != 0 { along(cube.z, corner.z) } else { along(cube.x, corner.x) };
         grain.uv(across, SPAN as f32 - along(cube.y, corner.y))
     }
+}
+
+/// The tangent of a face that looks along `n`, to match [`uv`]: `u` runs along x on tops and
+/// on faces that look along z, along z on faces that look along x; `v` runs down a side.
+fn tangent(n: IVec3) -> [f32; 4] {
+    if n.x != 0 { [0.0, 0.0, 1.0, n.x as f32] } else if n.z != 0 { [1.0, 0.0, 0.0, -n.z as f32] } else { [1.0, 0.0, 0.0, -n.y as f32] }
 }
 
 /// How much one cube differs in shade from the next: little, so a wall is its grain and not a
@@ -367,6 +376,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                                 // blue of the sky overhead, and a forest floor is a grid of tiles.
                                 let facing = if low_riser { Vec3::Y } else { n.as_vec3() };
                                 m.normals.push(facing.to_array());
+                                m.tangents.push(tangent(n));
                                 let flat = uv(grain, n, cell, corner, 1);
                                 m.uvs.push(if n == IVec3::Y {
                                     flat
@@ -431,6 +441,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                         let facing = if eases(block) && n != IVec3::NEG_Y { eased.normal(corner - origin) } else { n.as_vec3() };
                         m.positions.push(at[i].to_array());
                         m.normals.push(facing.to_array());
+                        m.tangents.push(tangent(n));
                         m.uvs.push(uv(grain, n, cell, corner, 1));
                         let base = if eases(block) && n == IVec3::Y { eased.corner(corner - origin).1 } else { base };
                         m.colors.push([base[0] * k * (1.0 + warm), base[1] * k, base[2] * k * (1.0 - warm), alpha]);
@@ -441,6 +452,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                         m.normals.truncate(start as usize);
                         m.uvs.truncate(start as usize);
                         m.colors.truncate(start as usize);
+                        m.tangents.truncate(start as usize);
                         continue;
                     }
                     // Split the quad along the diagonal that keeps the AO gradient smooth.
@@ -492,6 +504,7 @@ fn bits(world: &World, cell: IVec3, m: &mut MeshData) {
                 let k = ao[i] * tint;
                 m.positions.push((corner.as_vec3() * CELL / SPLIT as f32).to_array());
                 m.normals.push(n.as_vec3().to_array());
+                m.tangents.push(tangent(n));
                 m.uvs.push(uv(grain, n, bit, corner, SPLIT));
                 m.colors.push([base[0] * k, base[1] * k, base[2] * k, 1.0]);
             }
@@ -519,6 +532,7 @@ fn blade(m: &mut MeshData, cell: IVec3, lo: IVec3, hi: IVec3, colour: [f32; 3]) 
         for (su, sv) in [(0, 0), (1, 0), (1, 1), (0, 1)] {
             m.positions.push(at(from + u * size * su + v * size * sv));
             m.normals.push(n.as_vec3().to_array());
+            m.tangents.push(tangent(n));
             m.uvs.push(Grain::Plain.uv(SPAN as f32 * 0.5, SPAN as f32 * 0.5));
             m.colors.push([colour[0] * shade / MEAN, colour[1] * shade / MEAN, colour[2] * shade / MEAN, 1.0]);
         }
@@ -665,6 +679,7 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
                         let facing = if eases(block) && normal != IVec3::NEG_Y { eased.normal(corner - origin) } else { normal.as_vec3() };
                         m.positions.push(at[i].to_array());
                         m.normals.push(facing.to_array());
+                        m.tangents.push(tangent(normal));
                         m.uvs.push(uv(grain, normal, cell, corner, 1));
                         let base = if eases(block) && normal == IVec3::Y { eased.corner(corner - origin).1 } else { base };
                         m.colors.push([base[0] * k * (1.0 + warm), base[1] * k, base[2] * k * (1.0 - warm), if liquid { 0.8 } else { 1.0 }]);
@@ -674,6 +689,7 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
                         m.normals.truncate(start as usize);
                         m.uvs.truncate(start as usize);
                         m.colors.truncate(start as usize);
+                        m.tangents.truncate(start as usize);
                         continue;
                     }
                     if ao[0] + ao[2] > ao[1] + ao[3] {
