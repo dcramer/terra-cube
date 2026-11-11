@@ -55,6 +55,9 @@ pub struct Args {
     pub seed: u32,
     /// Every surface's grain made in code, none photographed.
     pub plain: bool,
+    /// In a scene: draw what the player sees over the world too (`bar`, or with the `pack`
+    /// or `admin` window open).
+    pub hud: Option<String>,
     /// No sound.
     pub quiet: bool,
     /// The player starts with a torch lit.
@@ -105,6 +108,8 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
                                         the first of spring: 7 days a season (3 mid spring, 10 mid
                                         summer, 17 autumn, 24 winter), and a moon full on days 3, 10…
         … --torch                       the player carries a lit torch (T lights it and puts it out)
+        … --hud bar|pack|admin          in a scene with --play: the bar, health and clock drawn over it,
+                                        with the pack or the admin panel open
         … --quiet                       no sound
         … --plain                       every surface's grain made in code, none from a photograph
         … --cubes | --smooth            the ground as plain cubes, or eased smooth, not in blocks sized
@@ -189,6 +194,7 @@ fn parse_args() -> Args {
             }
             "--wild" => args.wild = true,
             "--plain" => args.plain = true,
+            "--hud" => args.hud = Some(it.next().unwrap_or_else(|| "bar".into())),
             "--quiet" => args.quiet = true,
             "--torch" => args.torch = true,
             "--cubes" => cube_voxel::mesh::GROUND.store(cube_voxel::mesh::Ground::Cubes as u8, std::sync::atomic::Ordering::Relaxed),
@@ -273,6 +279,9 @@ fn main() {
     .add_plugins(creatures::CreaturesPlugin);
     if scene {
         app.add_plugins((world::WorldPlugin, far::FarPlugin, air::AirPlugin, audio::SoundPlugin, motion::MotionPlugin, player::PlayPlugin, shot::ScenePlugin));
+        if app.world().resource::<Args>().hud.is_some() {
+            app.add_plugins((bevy_egui::EguiPlugin::default(), hud::HudPlugin));
+        }
     } else if shot {
         app.add_plugins(shot::ShotPlugin);
     } else {

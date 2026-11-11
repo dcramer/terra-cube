@@ -19,7 +19,7 @@ pub struct HudPlugin;
 
 impl Plugin for HudPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Admin>().add_systems(EguiPrimaryContextPass, (hud, pack, admin)).add_systems(Update, god);
+        app.init_resource::<Admin>().add_systems(EguiPrimaryContextPass, (hud, pack, admin)).add_systems(Update, (god, asked));
     }
 }
 
@@ -250,5 +250,14 @@ fn god(admin: Res<Admin>, mut live: Option<ResMut<Live>>, controlled: Query<&Mov
     {
         agent.health = 1.0e6;
         agent.dead = None;
+    }
+}
+
+/// `--hud pack` or `--hud admin`: a picture is wanted of that window.
+fn asked(args: Res<crate::Args>, mut menus: ResMut<Menus>) {
+    match args.hud.as_deref() {
+        Some("pack") => menus.pack = true,
+        Some("admin") => menus.admin = true,
+        _ => {}
     }
 }
