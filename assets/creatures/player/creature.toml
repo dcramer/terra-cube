@@ -1,7 +1,7 @@
 name = "Player"
 kind = "player"
 plan = "biped"
-subject = "a young adventurer with short hair wearing a plain fitted tunic, trousers and boots, bare hands, friendly face, androgynous build"
+subject = "a young castaway on a wild island, sun-bleached rolled-up trousers, a patched sailcloth shirt with one sleeve torn off, a thick rope belt, bare forearms wrapped in cloth, a red bandana tied round the head, barefoot in rope sandals, friendly weathered face, androgynous build"
 height = 1.75
 
 [life]
