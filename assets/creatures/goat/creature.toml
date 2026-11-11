@@ -6,6 +6,7 @@ height = 1.1
 
 [life]
 temper = "timid"
+voice = "goat"
 habitat = "rock"
 cover = "open"
 hours = "day"

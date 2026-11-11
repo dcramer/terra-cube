@@ -7,6 +7,7 @@ ease = 0.3
 
 [life]
 temper = "hunter"
+voice = "wolf"
 habitat = "rock"
 hours = "dusk"
 group = 1

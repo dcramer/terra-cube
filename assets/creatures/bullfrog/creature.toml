@@ -9,6 +9,7 @@ gait_gain = -0.6
 
 [life]
 temper = "timid"
+voice = "frog"
 habitat = "shore"
 water = "edge"
 hours = "dusk"

@@ -10,6 +10,7 @@
 //! overlay) · `camera` (free orbit) · `shot` (contact sheets and scene pictures).
 
 mod air;
+mod audio;
 mod camera;
 mod creatures;
 mod hud;
@@ -53,6 +54,8 @@ pub struct Args {
     pub seed: u32,
     /// Every surface's grain made in code, none photographed.
     pub plain: bool,
+    /// No sound.
+    pub quiet: bool,
     /// The player starts with a torch lit.
     pub torch: bool,
     /// The hour the world starts at, if not the usual mid afternoon.
@@ -101,6 +104,7 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
                                         the first of spring: 7 days a season (3 mid spring, 10 mid
                                         summer, 17 autumn, 24 winter), and a moon full on days 3, 10…
         … --torch                       the player carries a lit torch (T lights it and puts it out)
+        … --quiet                       no sound
         … --plain                       every surface's grain made in code, none from a photograph
         … --cubes | --smooth            the ground as plain cubes, or eased smooth, not in blocks sized
                                         by its slope
@@ -184,6 +188,7 @@ fn parse_args() -> Args {
             }
             "--wild" => args.wild = true,
             "--plain" => args.plain = true,
+            "--quiet" => args.quiet = true,
             "--torch" => args.torch = true,
             "--cubes" => cube_voxel::mesh::GROUND.store(cube_voxel::mesh::Ground::Cubes as u8, std::sync::atomic::Ordering::Relaxed),
             "--smooth" => cube_voxel::mesh::GROUND.store(cube_voxel::mesh::Ground::Smooth as u8, std::sync::atomic::Ordering::Relaxed),
@@ -266,11 +271,11 @@ fn main() {
     .insert_resource(args)
     .add_plugins(creatures::CreaturesPlugin);
     if scene {
-        app.add_plugins((world::WorldPlugin, air::AirPlugin, motion::MotionPlugin, player::PlayPlugin, shot::ScenePlugin));
+        app.add_plugins((world::WorldPlugin, air::AirPlugin, audio::SoundPlugin, motion::MotionPlugin, player::PlayPlugin, shot::ScenePlugin));
     } else if shot {
         app.add_plugins(shot::ShotPlugin);
     } else {
-        app.add_plugins((world::WorldPlugin, air::AirPlugin, camera::CameraPlugin, motion::MotionPlugin, player::PlayPlugin, ui::UiPlugin, hud::HudPlugin));
+        app.add_plugins((world::WorldPlugin, air::AirPlugin, audio::SoundPlugin, camera::CameraPlugin, motion::MotionPlugin, player::PlayPlugin, ui::UiPlugin, hud::HudPlugin));
     }
     app.run();
 }

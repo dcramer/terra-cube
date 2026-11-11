@@ -6,6 +6,7 @@ height = 1.2
 
 [life]
 temper = "hostile"
+voice = "goblin"
 habitat = "meadow"
 cover = "edge"
 hours = "night"

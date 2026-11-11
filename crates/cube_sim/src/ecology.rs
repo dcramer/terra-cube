@@ -199,6 +199,31 @@ impl Niche {
     }
 }
 
+/// What a place sounds like at an hour, each 0 to 1: the wind, birdsong, the insects of the
+/// night, and water. What the game plays is this and nothing else, so the sound of a place
+/// follows from what the place is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Ambience {
+    pub wind: f32,
+    pub birds: f32,
+    pub night: f32,
+    pub water: f32,
+}
+
+pub fn ambience(p: &Place, when: f32) -> Ambience {
+    let (day, warm) = (sky::daylight(when), (sky::warmth(when) + 1.0) / 2.0);
+    let land = if matches!(p.biome, Biome::Meadow | Biome::Forest | Biome::Shore) { 1.0 } else { 0.25 };
+    Ambience {
+        // More in the open and on high ground; a wood is sheltered.
+        wind: (0.3 + 0.35 * (1.0 - p.cover) + p.high.max(0.0) / 90.0).min(1.0),
+        // By day, most where there are trees to sing from, and little in winter.
+        birds: day * land * (0.25 + 0.75 * (p.cover / 0.6).min(1.0)) * (0.2 + 0.8 * warm),
+        // After dark, in the warm half of the year.
+        night: (1.0 - day) * land * ((warm - 0.25) / 0.4).clamp(0.0, 1.0),
+        water: band(p.water, 0.0, 4.0, 22.0),
+    }
+}
+
 /// The small life the game draws, that the simulation does not know one by one.
 pub const BUTTERFLY: Niche = Niche { name: "butterfly", biomes: &[(Biome::Meadow, 1.0), (Biome::Shore, 0.4), (Biome::Forest, 0.3)], water: Water::Any, cover: Cover::Open, hours: Hours::Day };
 pub const SONGBIRD: Niche = Niche { name: "songbird", biomes: &[(Biome::Forest, 1.0), (Biome::Meadow, 0.8)], water: Water::Any, cover: Cover::Edge, hours: Hours::Day };
@@ -231,6 +256,18 @@ mod tests {
         assert!(FISH.fit(&lake, sky::at(3, 3.0)) > 0.9 && FISH.fit(&glade, sky::at(3, 12.0)) == 0.0);
         // Leaves fall under trees, not in the open.
         assert!(FALLING_LEAF.suits(&deep_wood) > 0.9 && FALLING_LEAF.suits(&dry_meadow) < 0.05);
+    }
+
+    #[test]
+    fn a_place_sounds_like_what_it_is() {
+        let (glade, lake_shore, peak) = (place(Biome::Forest, 40.0, 0.6), place(Biome::Shore, 2.0, 0.1), Place { high: 60.0, ..place(Biome::Rock, 55.0, 0.0) });
+        let (noon, midnight, winter_noon) = (sky::at(3, 12.0), sky::at(10, 0.0), sky::at(24, 12.0));
+        // Birds by day in the wood, not at night, few in winter; insects on a summer night.
+        assert!(ambience(&glade, noon).birds > 0.5 && ambience(&glade, midnight).birds == 0.0 && ambience(&glade, winter_noon).birds < 0.3);
+        assert!(ambience(&glade, midnight).night > 0.8 && ambience(&glade, noon).night == 0.0 && ambience(&glade, sky::at(24, 0.0)).night == 0.0);
+        // Water where there is water; wind on the heights more than in the wood.
+        assert!(ambience(&lake_shore, noon).water > 0.9 && ambience(&glade, noon).water == 0.0);
+        assert!(ambience(&peak, noon).wind > ambience(&glade, noon).wind + 0.3);
     }
 
     #[test]

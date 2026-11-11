@@ -7,6 +7,7 @@ gait_gain = 0.42
 
 [life]
 temper = "timid"
+voice = "horse"
 habitat = "meadow"
 water = "near"
 cover = "open"

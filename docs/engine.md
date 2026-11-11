@@ -136,6 +136,16 @@ Built 2026-11-11, in the simulation (`cube_sim::life`, `items`) and tested there
 - **Tested without a window**: the rules in `cube_sim` tests; from the game, a scripted `--play --scene` prints `health=`, `held=` and `kills=` in its trace. The windows themselves (bar, pack, admin) are only seen by running the game: a scene is drawn to an image with no window, and they are not in it.
 - **Not done**: anything dropped by the dead, armour, blocking, ranged weapons, hit shapes per limb; animals do not flee a person who has hurt them any differently.
 
+## Sound
+
+Built 2026-11-11 (`cube_game::audio`); the files are CC0, in `assets/audio`, whose README gives each one's source.
+
+- **A sound is a set of files found by name**: `wolf` is `wolf_1.ogg` and `wolf_2.ogg`, one is picked and played a little off its pitch. A creature's voice is the name of a set, in `[life] voice` of its `creature.toml`.
+- **The air of a place is the ecology's** (`ecology::ambience`, tested): wind by how open and high it is, birdsong by day where there are trees and little in winter, insects on warm nights, water by nearness to it. Four loops play always and their loudness is eased to it.
+- **A creature is heard when the simulation says it does something**: its voice with a blow, a hit when wounded, a death; and its call now and then at the hours its niche says it is about. Heard from where it is, to 45 m. The player's feet sound for each stride by what is underfoot (grass, stone, shallows), with a splash going in and a stroke for each while swimming.
+- **Checked without listening**: every sound played is a line of the trace (`sound step_grass_2 vol=0.58 at 9,12,6`), so a scripted `--play --scene` run can be read for what was heard. `--quiet` for none.
+- **Not known:** how any of it sounds. The files were chosen by title and length by an agent that cannot hear, levels are not matched, and several loops' seams are unheard. A person must listen and prune. No fox bark or true wolf howl was to be had under CC0.
+
 ## Ecology
 
 Built 2026-11-11. One system decides what life a place has (`cube_sim::ecology`); `cargo world life` judges it.

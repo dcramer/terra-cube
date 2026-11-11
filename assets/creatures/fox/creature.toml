@@ -8,6 +8,7 @@ gait_gain = 0.05
 
 [life]
 temper = "hunter"
+voice = "wolf"
 habitat = "meadow"
 cover = "edge"
 hours = "dusk"

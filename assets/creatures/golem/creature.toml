@@ -10,6 +10,7 @@ made = ["attack"]
 
 [life]
 temper = "hostile"
+voice = "golem"
 habitat = "rock"
 water = "away"
 cover = "open"

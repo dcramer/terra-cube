@@ -6,6 +6,7 @@ height = 2.6
 
 [life]
 temper = "wary"
+voice = "deer"
 habitat = "forest"
 water = "near"
 cover = "edge"

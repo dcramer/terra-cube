@@ -62,6 +62,32 @@ pub struct Life {
     pub cover: crate::ecology::Cover,
     #[serde(default)]
     pub hours: crate::ecology::Hours,
+    /// The sound it makes: the name of a set of files in `assets/audio` (`wolf` for
+    /// `wolf_1.ogg`, `wolf_2.ogg`). None, and it is silent.
+    #[serde(default)]
+    pub voice: Option<Voice>,
+}
+
+/// A voice's name, short enough to copy about with the rest of a `Life`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Voice([u8; 16]);
+
+impl Voice {
+    pub fn name(&self) -> &str {
+        std::str::from_utf8(&self.0).unwrap_or("").trim_end_matches('\0')
+    }
+}
+
+impl<'de> Deserialize<'de> for Voice {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(d)?;
+        let mut bytes = [0u8; 16];
+        if name.len() > 16 {
+            return Err(serde::de::Error::custom("a voice's name is at most 16 letters"));
+        }
+        bytes[..name.len()].copy_from_slice(name.as_bytes());
+        Ok(Voice(bytes))
+    }
 }
 
 fn one() -> usize {
@@ -98,6 +124,7 @@ pub struct Kind {
     pub water: crate::ecology::Water,
     pub cover: crate::ecology::Cover,
     pub hours: crate::ecology::Hours,
+    pub voice: Option<Voice>,
 }
 
 impl Kind {
@@ -177,7 +204,7 @@ impl Kind {
                 }
             };
             // With no [life], a player is a person and anything else just stands its ground.
-            let life = spec.life.unwrap_or(Life { temper: if spec.kind == "player" { Temper::Person } else { Temper::Wary }, habitat: None, group: 1, groups: 0, water: Default::default(), cover: Default::default(), hours: Default::default() });
+            let life = spec.life.unwrap_or(Life { temper: if spec.kind == "player" { Temper::Person } else { Temper::Wary }, habitat: None, group: 1, groups: 0, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None });
             kinds.push(Kind {
                 id,
                 height: meta.height,
@@ -193,6 +220,7 @@ impl Kind {
                 water: life.water,
                 cover: life.cover,
                 hours: life.hours,
+                voice: life.voice,
             });
         }
         kinds
@@ -704,7 +732,7 @@ mod tests {
     use cube_voxel::Block;
 
     fn kind(id: &str, temper: Temper, height: f32, speeds: [f32; 3]) -> Kind {
-        Kind { id: id.into(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default() }
+        Kind { id: id.into(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None }
     }
 
     /// Rabbit, wolf, bear, goblin and a person, on a floor of stone 60 m square.

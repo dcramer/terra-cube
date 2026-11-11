@@ -6,6 +6,7 @@ height = 2.4
 
 [life]
 temper = "hostile"
+voice = "monster_die"
 habitat = "forest"
 water = "near"
 cover = "deep"

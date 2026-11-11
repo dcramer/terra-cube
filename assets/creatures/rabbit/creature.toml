@@ -8,6 +8,7 @@ gait_gain = 0.9
 
 [life]
 temper = "timid"
+voice = "rabbit"
 habitat = "meadow"
 cover = "open"
 hours = "dusk"
