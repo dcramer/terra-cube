@@ -598,7 +598,9 @@ impl Sim {
             // Guarded, and the blow comes from in front: most of it is turned.
             let from_front = Vec2::new(agent.facing.sin(), agent.facing.cos()).dot(-Vec2::new(hit.push.x, hit.push.z).normalize_or_zero()) > 0.3;
             let turned = agent.guard && from_front;
-            agent.health -= hit.harm * if turned { 0.3 } else { 1.0 };
+            // What is worn takes its share too.
+            let worn = agent.pack.as_ref().map_or(1.0, |p| p.slots.iter().flatten().map(|s| s.0.armour()).fold(1.0, f32::min));
+            agent.health -= hit.harm * worn * if turned { 0.3 } else { 1.0 };
             if turned {
                 agent.body.vel -= hit.push * 0.7;
             }
@@ -1025,6 +1027,20 @@ mod tests {
             100.0 - least
         };
         let (open, guarded, turned_away) = (hurt(false, 0.0), hurt(true, 0.0), hurt(true, std::f32::consts::PI));
+        // And a jerkin carried takes a quarter off.
+        let (world, mut sim) = stage();
+        let person = sim.add(&world, 4, at(0.0, 0.0), 0.0, Driver::Outside);
+        sim.agents.get_mut(&person).unwrap().pack.as_mut().unwrap().add(crate::items::Item::Jerkin, 1);
+        sim.add(&world, 3, at(0.0, 4.0), 0.0, Driver::Mind);
+        let mut least = 100.0f32;
+        for _ in 0..(6.0 / DT) as u32 {
+            sim.step(&world);
+            least = least.min(sim.agents[&person].health);
+            if least < 100.0 {
+                break;
+            }
+        }
+        assert!((100.0 - least - open * 0.75).abs() < 0.1, "armoured {} open {open}", 100.0 - least);
         assert!(open > 5.0, "the goblin never struck");
         assert!((guarded - open * 0.3).abs() < 0.1 && (turned_away - open).abs() < 0.1, "open {open} guarded {guarded} turned away {turned_away}");
     }

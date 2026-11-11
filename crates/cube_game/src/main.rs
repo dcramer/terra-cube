@@ -58,7 +58,7 @@ pub struct Args {
     pub plain: bool,
     /// Start from the save file (`--continue`).
     pub resume: bool,
-    /// On trial: water that reflects the land (deferred rendering, screen-space reflections).
+    /// Water reflects the land (deferred rendering, screen-space reflections); the default.
     pub reflect: bool,
     /// Trees drawn as the cubes they are in the simulation, not as shapes.
     pub blocky: bool,
@@ -117,7 +117,7 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
         … --torch                       the player carries a lit torch (T lights it and puts it out)
         … --hud bar|pack|admin          in a scene with --play: the bar, health and clock drawn over it,
                                         with the pack or the admin panel open
-        … --reflect                     on trial: deferred rendering and screen-space reflections on water
+        … --no-reflect                  forward rendering, and water that reflects only the sky
         … --continue                    start from terra-cube.save (F5 writes it, F9 reads it)
         … --quiet                       no sound
         … --plain                       every surface's grain made in code, none from a photograph
@@ -159,7 +159,7 @@ fn creature_ids() -> Vec<String> {
 }
 
 fn parse_args() -> Args {
-    let mut args = Args { view: "quarter".into(), cols: 6, yaw: -2.2, every: 0.1, script: player::ROUTE.into(), seed: cube_sim::terrain::SEED, at: (0.25, 0.25), ..default() };
+    let mut args = Args { view: "quarter".into(), cols: 6, yaw: -2.2, every: 0.1, script: player::ROUTE.into(), seed: cube_sim::terrain::SEED, at: (0.25, 0.25), reflect: true, ..default() };
     let mut it = std::env::args().skip(1);
     let mut script_given = false;
     let list = |v: Option<String>| v.map(|s| s.split(',').map(str::to_owned).collect::<Vec<_>>()).unwrap_or_default();
@@ -204,7 +204,7 @@ fn parse_args() -> Args {
             "--wild" => args.wild = true,
             "--plain" => args.plain = true,
             "--continue" => args.resume = true,
-            "--reflect" => args.reflect = true,
+            "--no-reflect" => args.reflect = false,
             "--blocky" => args.blocky = true,
             "--hud" => args.hud = Some(it.next().unwrap_or_else(|| "bar".into())),
             "--quiet" => args.quiet = true,

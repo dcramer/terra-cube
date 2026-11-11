@@ -13,10 +13,12 @@ pub enum Item {
     Meat,
     /// Shoots: what it hits is whatever is nearest in a narrow line ahead, a good way off.
     Bow,
+    /// Worn while it is carried: it takes a quarter off every blow.
+    Jerkin,
 }
 
 impl Item {
-    pub const ALL: [Item; 6] = [Item::Torch, Item::Sword, Item::Shovel, Item::Berries, Item::Meat, Item::Bow];
+    pub const ALL: [Item; 7] = [Item::Torch, Item::Sword, Item::Shovel, Item::Berries, Item::Meat, Item::Bow, Item::Jerkin];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -26,6 +28,7 @@ impl Item {
             Item::Berries => "Berries",
             Item::Meat => "Meat",
             Item::Bow => "Bow",
+            Item::Jerkin => "Leather jerkin",
         }
     }
 
@@ -49,7 +52,7 @@ impl Item {
             Item::Shovel => Some(12.0),
             Item::Torch => Some(9.0),
             Item::Bow => Some(16.0),
-            Item::Berries | Item::Meat => None,
+            Item::Berries | Item::Meat | Item::Jerkin => None,
         }
     }
 
@@ -57,6 +60,11 @@ impl Item {
     /// ahead (radians): a blade a step and a wide sweep, a bow thirty metres and a narrow line.
     pub fn reach(self) -> (f32, f32) {
         if self == Item::Bow { (30.0, 0.09) } else { (1.5, 1.0) }
+    }
+
+    /// How much of a blow gets through to someone carrying it, of 1.
+    pub fn armour(self) -> f32 {
+        if self == Item::Jerkin { 0.75 } else { 1.0 }
     }
 
     /// Whether it lights the way while it is held.

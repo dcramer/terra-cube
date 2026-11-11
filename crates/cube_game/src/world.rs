@@ -161,7 +161,9 @@ impl Plugin for WorldPlugin {
             // What screen-space reflections need, on every camera the moment it is made: a
             // camera a frame without its prepasses, with deferred materials about, is a panic.
             app.insert_resource(bevy::pbr::DefaultOpaqueRendererMethod::deferred()).add_observer(|add: On<Add<Camera3d>>, mut commands: Commands| {
-                commands.entity(add.entity).insert((bevy::pbr::ScreenSpaceReflections::default(), bevy::core_pipeline::prepass::DepthPrepass, bevy::core_pipeline::prepass::DeferredPrepass));
+                commands.entity(add.entity).insert((// A lake's far bank is forty metres off: more steps than the default ten, a thicker
+                // world, and no lower limit on how smooth a thing may be and still reflect.
+                bevy::pbr::ScreenSpaceReflections { min_perceptual_roughness: 0.0..0.0, linear_steps: 48, thickness: 1.5, ..default() }, bevy::core_pipeline::prepass::DepthPrepass, bevy::core_pipeline::prepass::DeferredPrepass, bevy::anti_alias::taa::TemporalAntiAliasing::default()));
             });
         }
         app.add_plugins(MaterialPlugin::<Windy>::default()).insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().add_systems(Startup, setup).add_systems(Update, (regions, stream).chain()).add_systems(Update, (sky, ripple, seasons));
@@ -236,7 +238,7 @@ fn ripple(time: Res<Time>, args: Res<crate::Args>, live: Option<Res<crate::motio
             // (Reflecting the land, it is kept as smooth as a mirror wants: `--reflect`.)
             let mirror = reflecting;
             water.perceptual_roughness = if mirror { 0.04 } else { 0.1 + 0.6 * dull };
-            water.reflectance = if mirror { 0.7 } else { 0.5 - 0.3 * dull };
+            water.reflectance = if mirror { 1.0 } else { 0.5 - 0.3 * dull };
             water.uv_transform = bevy::math::Affine2::from_translation(Vec2::new(-0.8, -0.6) * (time.elapsed_secs() * 0.07));
         }
     }
