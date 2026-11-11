@@ -1,7 +1,7 @@
 name = "Troll"
 kind = "monster"
 plan = "biped"
-subject = "a tall mossy stone troll with broad shoulders, long thick arms, a small head with tusks and a ragged loincloth"
+subject = "a tall mossy stone troll with broad shoulders, long thick arms, a small head with tusks and a ragged loincloth, both arms held straight out sideways at shoulder height"
 height = 3.0
 gait_gain = 0.6
 made = ["attack"]

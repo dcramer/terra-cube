@@ -1,11 +1,11 @@
 # Measured by `cargo forge finish`; do not edit.
 height = 3.0
-length = 1.0460256
-width = 1.2950541
-walk_speed = 1.8042957
-run_speed = 3.8623917
-sprint_speed = 6.690047
-triangles = 9795
+length = 0.9877449
+width = 1.4541472
+walk_speed = 1.7699215
+run_speed = 3.6301076
+sprint_speed = 6.4373913
+triangles = 7505
 joints = 65
 
 [clips.attack]
@@ -44,12 +44,12 @@ looping = false
 source = "made"
 
 [clips.run]
-seconds = 0.76666665
+seconds = 0.7
 looping = true
 source = "made"
 
 [clips.sprint]
-seconds = 0.56666666
+seconds = 0.5
 looping = true
 source = "made"
 
@@ -59,7 +59,7 @@ looping = true
 source = "made"
 
 [clips.walk]
-seconds = 0.9
+seconds = 0.8666667
 looping = true
 source = "made"
 

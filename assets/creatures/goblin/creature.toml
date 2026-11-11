@@ -1,7 +1,7 @@
 name = "Goblin"
 kind = "monster"
 plan = "biped"
-subject = "a green goblin raider with big pointed ears, a hunched wiry body, a leather loincloth and shoulder strap"
+subject = "a green goblin raider with big pointed ears, a hunched wiry body, a leather loincloth and shoulder strap, both arms held straight out sideways at shoulder height"
 height = 1.2
 
 [life]

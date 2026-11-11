@@ -1,9 +1,9 @@
 # What `cargo forge build` has made at Tripo. Delete a step (and those after it) to make it again.
-project = "e1894b2c-4fbf-4233-bbca-e28c73ef4d51"
+project = "5eac8f10-4ab1-46ca-8faa-040ca29cefaf"
 steps = ["concept", "model", "rig", "export"]
 
 [credits]
-concept = 2.0
-model = 45.0
-rig = 20.0
+concept = 4.0
 export = 0.0
+model = 90.0
+rig = 40.0

@@ -1,12 +1,12 @@
 # Measured by `cargo forge finish`; do not edit.
 height = 0.3
-length = 0.2801471
-width = 0.1400012
-walk_speed = 0.4669037
-run_speed = 0.9094472
-sprint_speed = 1.6268995
-triangles = 7001
-joints = 24
+length = 0.3003853
+width = 0.10156862
+walk_speed = 0.54171044
+run_speed = 1.0336239
+sprint_speed = 1.8490382
+triangles = 7306
+joints = 23
 
 [clips.attack]
 seconds = 0.8
@@ -49,12 +49,12 @@ looping = false
 source = "made"
 
 [clips.run]
-seconds = 0.2
+seconds = 0.23333333
 looping = true
 source = "made"
 
 [clips.sprint]
-seconds = 0.2
+seconds = 0.23333333
 looping = true
 source = "made"
 
@@ -64,16 +64,15 @@ looping = true
 source = "made"
 
 [clips.walk]
-seconds = 0.23333333
+seconds = 0.26666668
 looping = true
 source = "made"
 
 [bones]
-foot0 = "tripo::0_Left_Limb_2"
-foot1 = "tripo::0_Right_Limb_2"
-foot2 = "tripo::1_Left_Limb_3"
-foot3 = "tripo::1_Right_Limb_2"
-head = "tripo::Head_4"
-neck = "tripo::Head_3"
+foot0 = "tripo::0_Left_Limb_3"
+foot1 = "tripo::0_Right_Limb_3"
+foot2 = "bone_17"
+foot3 = "tripo::1_Left_Limb_5"
+head = "tripo::Head_1"
+neck = "tripo::Head_1"
 root = "tripo::Root"
-tail = "tripo::Spine_0"
