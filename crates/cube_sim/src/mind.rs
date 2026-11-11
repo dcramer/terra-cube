@@ -45,11 +45,13 @@ pub struct Mind {
     mark: Vec2,
     since_mark: f32,
     hit_done: bool,
+    /// How much it is about at this hour, 0 to 1 (its niche's hours): set each tick.
+    pub about: f32,
 }
 
 impl Mind {
     pub fn new(home: Vec2, rng: &mut Rng) -> Self {
-        Self { state: State::Rest, left: rng.between(0.0, 4.0), home, goal: home, target: None, tired: 0.0, veer: if rng.chance(0.5) { 1.0 } else { -1.0 }, mark: home, since_mark: 0.0, hit_done: false }
+        Self { state: State::Rest, left: rng.between(0.0, 4.0), home, goal: home, target: None, tired: 0.0, veer: if rng.chance(0.5) { 1.0 } else { -1.0 }, mark: home, since_mark: 0.0, hit_done: false, about: 1.0 }
     }
 }
 
@@ -299,6 +301,11 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
     let bearing = |p: Vec2| (p.x - me.x).atan2(p.y - me.y);
     match m.state {
         State::Rest => {
+            // Out of its hours it mostly stays where it is: a badger lies up by day, a pony
+            // stands the night out. (It still flees and fights: those are not chosen here.)
+            if m.left <= 0.0 && rng.unit() > m.about.max(0.12) {
+                m.left = rng.between(6.0, 14.0);
+            }
             if m.left <= 0.0 {
                 let grazes = matches!(kind.temper, Temper::Timid | Temper::Wary);
                 let roll = rng.unit();

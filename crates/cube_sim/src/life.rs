@@ -485,7 +485,14 @@ impl Sim {
         // Minds see the world as it was at the start of the tick.
         let seen: Vec<mind::Seen> = self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.awake).map(|(&id, a)| mind::Seen { id, pos: a.body.pos, vel: a.body.vel, temper: self.kinds[a.kind].temper, reach: a.body.half + a.body.long.length() }).collect();
         let mut hits = Vec::new();
+        let when = self.when;
         for (&id, agent) in self.agents.iter_mut().filter(|(_, a)| a.driver == Driver::Mind && a.dead.is_none() && a.awake) {
+            let k = &self.kinds[agent.kind];
+            agent.mind.about = crate::ecology::Niche { name: "", biomes: &[], water: k.water, cover: k.cover, hours: k.hours }.about(when);
+            // A beast of the dusk is about a good deal by day as well; a firefly is not.
+            if k.hours == crate::ecology::Hours::Dusk {
+                agent.mind.about = agent.mind.about.max(0.35);
+            }
             hits.extend(mind::think(id, agent, &self.kinds[agent.kind], &seen, world, &mut self.rng));
         }
         // A driven creature's blow: it lands part way through the swing on the nearest thing
