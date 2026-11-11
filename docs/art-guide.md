@@ -4,9 +4,20 @@ How terra-cube should look, what was decided and why, and what we tell the gener
 
 Status: the developer ruled on the look on 2026-11-10. What follows is decided unless it says otherwise.
 
+## The direction, as of 2026-11-11
+
+The developer looked at the cube world with its light, paint and life all in and said it was Minecraft imitated, not a style of its own, and not realistic terrain. What changed that day, and what everything below is to be read in the light of:
+
+- **The world is voxels underneath and shapes to look at.** The land is drawn eased into smooth ground. What grows is drawn as what it is: round tapering trunks and limbs, leaf in masses of small cards (`cube_game::flora`, from the shapes `cube_sim::plants` grew). Cells are still what is dug, built on, walked on and collided with.
+- **Cubes are for what a person builds.** A cube seen in the world should mean someone put it there.
+- **The reference is Eco's level of detail with a more realistic look**: real materials, natural colour, real light. Not flat block colour, not hard cube edges on natural things.
+- Still cubes and still to change: rocks (cut to the 5 cm bit, and reading as stepped blocks), flowers and mushrooms (little boxes), the far land's trees (plain boxes beyond 176 m).
+
+`--blocky` draws the trees as cubes again, `--stepped` and `--cubes` the ground: for comparison only.
+
 ## Pillars
 
-1. **The world is cubes; what lives in it is not.** The land is 0.25 m cubes that break into 5 cm bits. Creatures are stylised low-poly meshes that belong to it by style, not by being made of cubes. Never ask the generator for "voxel", "blocky" or "Minecraft".
+1. **The world is cells underneath; neither it nor what lives in it is drawn as cubes** (see The direction). The land is 0.25 m cells that break into 5 cm bits. Creatures are stylised low-poly meshes that belong to it by style, not by being made of cubes. Never ask the generator for "voxel", "blocky" or "Minecraft".
 2. **Real sizes.** A tree is the size of a tree, a moose of a moose, beside a player of 1.75 m. Things are drawn in cubes; they are not shrunk to suit them. This holds for the smallest things too: a butterfly is 9 cm across and a songbird 12 cm long, and they are not enlarged to show up in a picture (tried 2026-11-11, and ruled out).
 3. **Wild, not cute.** Proportions true to the animal, a head and eyes of natural size, lean and wary. A dangerous thing looks dangerous. Appealing is fine; a mascot is not.
 4. **Shape before detail.** Recognisable as a black silhouette. A few large faceted forms, nothing fiddly.

@@ -37,7 +37,7 @@ struct Grown(HashMap<(i32, i32), Entity>);
 /// Sides to a trunk; how much of a leaf mass's surface its cards cover; how big a card is.
 const SIDES: usize = 7;
 const COVER: f32 = 0.75;
-const CARD: f32 = 1.1;
+const CARD: f32 = 0.8;
 
 fn hash(a: u32, b: u32) -> f32 {
     let mut h = a.wrapping_mul(0x9E3779B1) ^ b.wrapping_mul(0x85EBCA77);
@@ -105,8 +105,8 @@ impl Shape {
         let grain = if leaf == Block::Needles { Grain::Needles } else { Grain::Leaves };
         // The surface of an ellipsoid, near enough.
         let area = 4.0 * std::f32::consts::PI * ((radii.x * radii.y).powf(1.6) + (radii.x * radii.z).powf(1.6) + (radii.y * radii.z).powf(1.6)).powf(1.0 / 1.6) / 3.0f32.powf(1.0 / 1.6);
-        let size = CARD.min(radii.min_element() * 1.6).max(0.35);
-        let cards = ((area * COVER / (size * size)) as u32).clamp(3, 160);
+        let size = CARD.min(radii.min_element() * 1.1).max(0.3);
+        let cards = ((area * COVER / (size * size)) as u32).clamp(4, 220);
         for i in 0..cards {
             let roll = |k: u32| hash(n.wrapping_mul(977).wrapping_add(i), k);
             // A point on the ball, pushed out to the surface or a little inside it.

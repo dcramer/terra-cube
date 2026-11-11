@@ -39,6 +39,14 @@ The rule this protects: **the simulation never needs a window.** A big sandbox w
 - **Deep water is harder to see through**: a water face's alpha grows with the water under it, so a ford shows its bed and the sea does not. The sea beyond the island is four plain sheets out past the fog.
 - **Not yet**: greedy meshing (measured elsewhere at 50 to 350 µs a chunk for plain meshing, so not urgent), meshing off the main thread, level of detail, chunk streaming, saving.
 
+### What grows is drawn as shapes
+
+- **`plants` says what shape it grew** (`plants::recorded`, `Form`): as it sets the cells of a trunk, a limb or a mass of leaf, it notes the limb (from, to, how thick at each end, what bark) or the clump (middle, reach, what leaf). The game records this as it makes each region (`world::regions`), keeps the shapes whose middle lies in the region (`flora::Forms`), and makes one mesh a region from them (`flora::grow`): a seven-sided tapering tube a limb, and for a clump some tens to two hundred small cards over an ellipsoid, each a piece of the leaf picture with its gaps, lit as the mass and not as a card, free to the wind.
+- **The mesher does not draw wood or leaf cells** when that is on (`mesh::MODELLED`), nor let them hide the ground under them. They are still cells: bodies stop at trunks, creatures do not climb crowns.
+- **Cost**: frames went from 11 ms to 8 in the meadow; cube crowns were more faces than the cards that replaced them.
+- **The ground is smooth by default again** (`Ground::Smooth`), now that nothing natural beside it is cubes; and the water's surface runs two cells on under the bank, so a shoreline is where smooth ground meets it and not a sawn edge.
+- **Not done**: beyond the made regions the far land still stands plain boxes for trees; rocks, flowers and mushrooms are still little cubes.
+
 ### The ground's blocks
 
 - **The land is drawn in blocks of the size its slope calls for** (`mesh::Eased::step`, 2026-11-11; `mesh::Ground::Stepped`, the default). Nearly level ground is cut in steps of a bit (5 cm), so a meadow rolls; a slope is whole cells; steep ground is blocks half a metre a side and a rock face blocks of a metre. The land gets blockier as it gets wilder, and no two hillsides are the same staircase, which is what every slope was when each was drawn as its 0.25 m cubes. It is voxels throughout: only the size varies.

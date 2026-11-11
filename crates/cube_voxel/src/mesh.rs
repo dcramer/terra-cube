@@ -360,12 +360,35 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
     let Some(data) = world.chunks.get(&chunk) else { return m };
     let near = Near::of(world, chunk);
     let origin = chunk * CHUNK;
+    // Whether there is any water in this chunk or beside it (only then is the bank looked at).
+    let wet = liquid && ground() == Ground::Smooth && (-1..=1).any(|dz| (-1..=1).any(|dx| world.chunks.get(&(chunk + IVec3::new(dx, 0, dz))).is_some_and(|c| c.has(Block::Water))));
     let mut eased = Eased { near: &near, reach: REACH, lifts: HashMap::new(), tops: HashMap::new(), origin: chunk * CHUNK };
     for y in 0..CHUNK {
         for z in 0..CHUNK {
             for x in 0..CHUNK {
                 let local = IVec3::new(x, y, z);
                 let block = data.get(local);
+                // The water's surface runs on two cells under the bank beside it. The ground is
+                // drawn eased, so where the two meet is then a smooth shoreline; ending the
+                // water at the last cell of water sawed the edge of every river into steps.
+                if liquid && block != Block::Water && wet {
+                    let at = |dx: i32, dz: i32, dy: i32| near.get(local + IVec3::new(dx, dy, dz));
+                    let beside = (-2..=2).any(|dz| (-2..=2).any(|dx| at(dx, dz, 0) == Block::Water && at(dx, dz, 1) != Block::Water));
+                    if beside {
+                        let cell = origin + local;
+                        let start = m.positions.len() as u32;
+                        let colour = Block::Water.colors().0.map(|c| (c + (0.36 - c) * 0.25) / MEAN);
+                        for (dx, dz) in [(0, 0), (0, 1), (1, 1), (1, 0)] {
+                            let corner = cell + IVec3::new(dx, 1, dz);
+                            m.positions.push((corner.as_vec3() * CELL).to_array());
+                            m.normals.push([0.0, 1.0, 0.0]);
+                            m.tangents.push(tangent(IVec3::Y));
+                            m.uvs.push([corner.x as f32 * CELL / WATER_TILE, corner.z as f32 * CELL / WATER_TILE]);
+                            m.colors.push([colour[0], colour[1], colour[2], 0.8]);
+                        }
+                        m.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
+                    }
+                }
                 if block == Block::Air || (block == Block::Water) != liquid || modelled(block) {
                     continue;
                 }

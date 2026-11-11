@@ -145,6 +145,11 @@ impl Default for Chunk {
 }
 
 impl Chunk {
+    /// Whether any cell of it is this block.
+    pub fn has(&self, b: Block) -> bool {
+        self.cells.contains(&b)
+    }
+
     #[inline]
     fn index(p: IVec3) -> usize {
         (p.x + p.z * CHUNK + p.y * CHUNK * CHUNK) as usize
