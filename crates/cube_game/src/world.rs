@@ -196,7 +196,7 @@ fn ripples() -> Image {
             dx += slope * kx;
             dy += slope * ky;
         }
-        Vec3::new(-dx * 0.022, -dy * 0.022, 1.0).normalize()
+        Vec3::new(-dx * 0.012, -dy * 0.012, 1.0).normalize()
     }).collect();
     // Smaller copies, each four texels averaged, down to one: far off the ripples flatten to
     // still water. With only the full picture, distant water took a different ripple at every
@@ -237,7 +237,7 @@ fn ripple(time: Res<Time>, args: Res<crate::Args>, live: Option<Res<crate::motio
         if let Some(mut water) = materials.get_mut(handle) {
             // (Reflecting the land, it is kept as smooth as a mirror wants: `--reflect`.)
             let mirror = reflecting;
-            water.perceptual_roughness = if mirror { 0.04 } else { 0.1 + 0.6 * dull };
+            water.perceptual_roughness = if mirror { 0.12 } else { 0.1 + 0.6 * dull };
             water.reflectance = if mirror { 1.0 } else { 0.5 - 0.3 * dull };
             water.uv_transform = bevy::math::Affine2::from_translation(Vec2::new(-0.8, -0.6) * (time.elapsed_secs() * 0.07));
         }
