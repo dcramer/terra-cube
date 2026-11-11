@@ -8,5 +8,8 @@ gait_gain = 0.6
 [life]
 temper = "wary"
 habitat = "forest"
+water = "near"
+cover = "edge"
+hours = "day"
 group = 1
 groups = 2

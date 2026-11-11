@@ -9,5 +9,7 @@ gait_gain = 0.05
 [life]
 temper = "hunter"
 habitat = "meadow"
+cover = "edge"
+hours = "dusk"
 group = 1
 groups = 2

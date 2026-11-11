@@ -27,6 +27,9 @@ cargo world dig [--holes 120]                     HOLES (120) holes and stones c
 cargo world grade [FILE] [--seed N]                where the ground is easy, steep and cliff, a line
                                                   for each band of height; with FILE, a picture of
                                                   it from above (green easy, yellow steep, red cliff)
+cargo world life [--seed N]                       the ecology: how much of the island suits each
+                                                  kind of small life and when it is about; where
+                                                  each animal's groups live against what it wants
 cargo world map FILE [--seconds 60] [--seed N]    a picture from above, with where each creature
                                                   went (dots: white person, yellow timid, red
                                                   hunter and hostile, orange wary)
@@ -344,6 +347,34 @@ fn grade_command(args: &Args) -> ! {
     std::process::exit(0)
 }
 
+/// The ecology in numbers: for each kind of small life, how much of the island suits it and
+/// how much it is about at four hours; then for each animal, where its groups ended up
+/// against what it asks for. A kind that fits nowhere, or an animal far from what it wants,
+/// is a line that says so.
+fn life_command(args: &Args) -> ! {
+    use cube_sim::ecology::{Ecology, SMALL_LIFE};
+    let (_, land, sim) = living(args);
+    let eco = Ecology::new(&land);
+    let span = land.span as f32 * CELL;
+    let places: Vec<_> = (0..(span as i32)).flat_map(|z| (0..(span as i32)).map(move |x| (x, z))).map(|(x, z)| eco.place(&land, x as f32 * 2.0 - span, z as f32 * 2.0 - span)).collect();
+    let mut checks = Checks(Vec::new());
+    for niche in SMALL_LIFE {
+        let home = places.iter().filter(|p| niche.suits(p) > 0.5).count() as f32 / places.len() as f32;
+        let hours: Vec<String> = [6.0, 12.0, 18.0, 23.0].iter().map(|h| format!("{:.0}h {:.0}%", h, niche.about(*h) * 100.0)).collect();
+        println!("{:<13} at home on {:>4.1}% of the island · about: {}", niche.name, home * 100.0, hours.join(" "));
+        checks.bar(niche.name, home, home >= 0.005, "somewhere to live: at least 0.5% of the island");
+    }
+    for (i, kind) in sim.kinds.iter().enumerate() {
+        let homes: Vec<_> = sim.agents.values().filter(|a| a.kind == i).map(|a| eco.place(&land, a.mind.home.x, a.mind.home.y)).collect();
+        if homes.is_empty() || kind.id == "player" {
+            continue;
+        }
+        let mean = |f: fn(&cube_sim::ecology::Place) -> f32| homes.iter().map(f).sum::<f32>() / homes.len() as f32;
+        println!("{:<13} ×{:<3} {:?} · water {:?}: {:.0}m off · cover {:?}: {:.0}% · hours {:?}", kind.id, homes.len(), kind.habitat, kind.water, mean(|p| p.water), kind.cover, mean(|p| p.cover) * 100.0, kind.hours);
+    }
+    checks.finish()
+}
+
 fn main() {
     let mut it = std::env::args().skip(1);
     let command = it.next().unwrap_or_default();
@@ -364,6 +395,7 @@ fn main() {
         "map" => map_command(&args),
         "dig" => dig_command(&args),
         "grade" => grade_command(&args),
+        "life" => life_command(&args),
         "who" => {
             let (_, land, sim) = living(&args);
             let mut groups: std::collections::BTreeMap<(usize, i32, i32), usize> = Default::default();

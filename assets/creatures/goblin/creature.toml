@@ -7,5 +7,7 @@ height = 1.2
 [life]
 temper = "hostile"
 habitat = "meadow"
+cover = "edge"
+hours = "night"
 group = 3
 groups = 1

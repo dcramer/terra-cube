@@ -8,5 +8,7 @@ gait_gain = 0.9
 [life]
 temper = "timid"
 habitat = "forest"
+cover = "deep"
+hours = "day"
 group = 2
 groups = 3

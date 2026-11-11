@@ -123,6 +123,16 @@ Built 2026-11-10. `cube_sim::life` and `mind`; `cargo world run` judges it.
 - **Random choices come from one seeded generator** in the `Sim`, and agents are visited in id order, so a seed replays exactly (tested).
 - **Judged by numbers** (`cargo world run`): no creature ends a tick inside the ground or falls out of the world, each kind walks into something for at most 8% of the time, is walled in for at most 10%, swims for at most 5%, and goes at least 3 m.
 
+## Ecology
+
+Built 2026-11-11. One system decides what life a place has (`cube_sim::ecology`); `cargo world life` judges it.
+
+- **A place is described once, for everything that might live there** (`Place`): its biome, metres to the nearest water, how deep the water is, tree cover from open sky to deep wood (the trees within eight metres), height over the sea. `Ecology::new` measures the island for it every two metres.
+- **A kind of life has a niche** (`Niche`): the biomes it lives in and how well each suits it, how near water it keeps (`edge`, `near`, `away`, `in`), how much cover it wants (`open`, `edge`, `deep`), and when it is about (`day`, `night`, `dusk`). `Niche::fit(place, hour)` is 0 to 1.
+- **Everything that puts life in the world asks it.** Animals: `[life]` in `creature.toml` carries `habitat`, `water`, `cover` and `hours`, and `Sim::populate` settles a group where its niche fits, the rare kinds first. Small life the game draws: butterflies, songbirds, swallows, dragonflies, fireflies, fish, falling leaves each have a niche in `ecology.rs`, and `air.rs` places every one through `settles`. A firefly is in damp woodland within reach of water from dusk; near the camera only if the camera is somewhere like that. Before, each kind had its own rule of the form "near the camera, on any dry ground".
+- **Why in the simulation:** where things live is a rule of the world, and the same answer must hold for a deer that can be hunted and a butterfly that is only seen.
+- **Not done:** an animal's `hours` are recorded and reported but do not yet change what it does (a badger does not sleep by day); nothing eats or drinks, so a deer keeps near water only because it was put there; no seasons or weather; the ogre has no home on this island (it wants level snow, and there is almost none since the mountain moved north).
+
 ## Seeing far
 
 Started 2026-11-10, when the island was drawn whole at full detail and hazed out from 80 m.

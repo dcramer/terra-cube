@@ -13,9 +13,9 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 | Path | What it is |
 |---|---|
 | `crates/cube_voxel` | Voxel data (cells, and the bits a cell breaks into) and chunk meshing. No engine types, so the simulation can use it headless. |
-| `crates/cube_sim` | The simulation, at a fixed 60 ticks a second, no engine types: how big everything is (`scale`: the one place sizes live), the world from a seed (`terrain`), bodies moving through voxels (`body`), what grows on it (`plants`), every creature and its mind (`life`, `mind`). |
+| `crates/cube_sim` | The simulation, at a fixed 60 ticks a second, no engine types: how big everything is (`scale`: the one place sizes live), the world from a seed (`terrain`), where and when each kind of life lives (`ecology`), bodies moving through voxels (`body`), what grows on it (`plants`), every creature and its mind (`life`, `mind`). |
 | `crates/cube_game` | The Bevy app: draws what the simulation holds, takes the player's keys. Sky, light, wind and what drifts in the air (`world`, `air`). Also the sandbox panel, contact sheets, scene pictures. |
-| `crates/world` | `cargo world`: the land and its creatures judged headless (`survey`, `run`, `map`, `grade`, `who`, `dig`). |
+| `crates/world` | `cargo world`: the land and its creatures judged headless (`survey`, `run`, `life`, `map`, `grade`, `who`, `dig`). |
 | `crates/forge` | The creature pipeline CLI. Each file's header says what it holds; `main.rs` has the map. |
 | `tools/tripo` | Tripo Studio CLI (TypeScript, Node ≥ 22.18, no dependencies). Forge drives it; see its README before calling it by hand. |
 | `assets/textures/` | Photographed surface materials (CC0), one per grain; its README says where each came from. |
@@ -37,6 +37,7 @@ cargo forge build wolf             # make what is missing, then finish and check
 cargo forge finish --all           # the free local half again, after changing clips.rs or style.toml
 cargo forge sheet wolf             # shots/wolf.png: every clip at six moments, one image
 cargo world survey                 # the land in numbers; `cargo world run`: its creatures living, in numbers
+cargo world life                   # the ecology: how much of the island suits each kind of life, when it is about, where each animal settled
 cargo world map shots/map.png      # one picture from above with where every creature went
 make slice                         # shots/slice/*.png: six fixed views (meadow at noon, dawn and night, forest, shore, from the air); look at all six after any change to the world's look
 cargo world grade shots/grade.png  # where the ground is easy, steep and cliff, by height and in a picture
@@ -70,6 +71,7 @@ A machine with no screen needs `DISPLAY=:1` (an Xvfb) for `sheet` and `sandbox`;
 
 ## Adding things
 
+- **Where and when anything lives:** its niche. For an animal, `habitat`, `water`, `cover` and `hours` in `[life]`; for small life the game draws, a `Niche` in `crates/cube_sim/src/ecology.rs`. Never a placement rule in the code that draws it. Then `cargo world life`.
 - **How a creature behaves:** `[life]` in its `creature.toml`; a new temper or state in `crates/cube_sim/src/mind.rs` with a test beside the others in `life.rs`, then `cargo world run`.
 - **A creature:** [docs/pipeline.md](docs/pipeline.md). Four commands, about 67 credits.
 - **Creatures are not made of cubes.** That was tried and parked (`cargo forge cubes`, [docs/pipeline.md](docs/pipeline.md#cubes)); They fit the world by style, and the style is the house style in `style.toml`: other looks were tried and it was kept.

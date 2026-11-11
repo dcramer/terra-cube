@@ -7,5 +7,7 @@ height = 0.5
 [life]
 temper = "hunter"
 habitat = "rock"
+cover = "open"
+hours = "day"
 group = 1
 groups = 2

@@ -8,5 +8,6 @@ ease = 0.3
 [life]
 temper = "hunter"
 habitat = "rock"
+hours = "dusk"
 group = 1
 groups = 2

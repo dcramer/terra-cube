@@ -7,5 +7,7 @@ height = 0.15
 [life]
 temper = "timid"
 habitat = "meadow"
+cover = "edge"
+hours = "night"
 group = 1
 groups = 3

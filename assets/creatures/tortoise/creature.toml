@@ -10,5 +10,8 @@ gait_gain = 0.45
 [life]
 temper = "timid"
 habitat = "shore"
+water = "edge"
+cover = "open"
+hours = "day"
 group = 1
 groups = 3

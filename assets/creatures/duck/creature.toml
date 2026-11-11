@@ -7,5 +7,7 @@ height = 0.4
 [life]
 temper = "timid"
 habitat = "shore"
+water = "edge"
+hours = "day"
 group = 3
 groups = 2

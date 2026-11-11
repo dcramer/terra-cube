@@ -7,5 +7,7 @@ height = 0.45
 [life]
 temper = "hunter"
 habitat = "forest"
+cover = "deep"
+hours = "night"
 group = 1
 groups = 2

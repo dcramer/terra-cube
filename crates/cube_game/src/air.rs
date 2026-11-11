@@ -9,7 +9,8 @@
 
 use crate::world::Terrain;
 use bevy::{light::NotShadowCaster, prelude::*};
-use cube_sim::terrain::Biome;
+use cube_sim::ecology;
+use std::sync::atomic::{AtomicU32, Ordering};
 use cube_voxel::CELL;
 use std::f32::consts::TAU;
 
@@ -17,8 +18,26 @@ pub struct AirPlugin;
 
 impl Plugin for AirPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup).add_systems(Update, (motes, leaves, butterflies, birds, glow, heavens, songbirds, dragonflies, fireflies, swallows, fish));
+        app.add_systems(Startup, setup).add_systems(Update, clock).add_systems(Update, (motes, leaves, butterflies, birds, glow, heavens, songbirds, dragonflies, fireflies, swallows, fish));
     }
+}
+
+/// The hour, for every system here: each asks the ecology whether its kind of life is about
+/// at this place and hour, and none of them should need the simulation handed to it for that.
+static HOUR: AtomicU32 = AtomicU32::new(0);
+
+fn hour() -> f32 {
+    f32::from_bits(HOUR.load(Ordering::Relaxed))
+}
+
+fn clock(live: Option<Res<crate::motion::Live>>) {
+    HOUR.store(live.map_or(cube_sim::sky::START, |l| l.0.hour).to_bits(), Ordering::Relaxed);
+}
+
+/// Whether one of a kind settles at a spot: the better the place and hour suit it
+/// (`ecology`), the likelier. Every kind of small life is placed through this.
+fn settles(niche: &ecology::Niche, terrain: &Terrain, x: f32, z: f32, state: &mut u32) -> bool {
+    roll(state) < terrain.fit(niche, x, z, hour())
 }
 
 /// How many of each there are round the camera.
@@ -347,7 +366,7 @@ fn leaves(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>, ter
             let first = if gusting { ((t * 0.11).floor() as usize).wrapping_mul(2_654_435_761) } else { (roll(&mut state) * 65_535.0) as usize * 7919 };
             // One of the trees near the camera, by its place in the list.
             let near: Vec<usize> = (0..trees.len()).filter(|&i| (Vec3::new(trees[i].x as f32, 0.0, trees[i].z as f32) * CELL - eye.with_y(0.0)).length() < 14.0).collect();
-            if let Some(&i) = near.get(first % near.len().max(1)) {
+            if let Some(&i) = near.get(first % near.len().max(1)).filter(|&&i| ecology::FALLING_LEAF.suits(&terrain.2.place(&terrain.1, trees[i].x as f32 * CELL, trees[i].z as f32 * CELL)) > 0.2) {
                 let foot = Vec3::new(trees[i].x as f32 + 0.5, trees[i].y as f32, trees[i].z as f32 + 0.5) * CELL;
                 let tall = terrain.1.grown.get(i).copied().unwrap_or(12.0);
                 let (turn, out) = (roll(&mut state) * TAU, roll(&mut state) * tall * 0.25);
@@ -366,13 +385,15 @@ fn butterflies(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>
     }
     let t = time.elapsed_secs();
     for (mut fly, mut at) in &mut flies {
-        // Kept close: a butterfly thirty metres off is nothing at all.
-        if fly.home.distance(eye) > 19.0 {
+        // Kept close: a butterfly thirty metres off is nothing at all. And gone when the
+        // hour or the place stops suiting it: none at night.
+        let gone = fly.home.y > -100.0 && terrain.fit(&ecology::BUTTERFLY, fly.home.x, fly.home.z, hour()) < 0.08;
+        if fly.home.distance(eye) > 19.0 || gone {
             fly.home = Vec3::new(0.0, -500.0, 0.0);
             for _ in 0..6 {
                 let (turn, out) = (roll(&mut state) * TAU, 3.0 + roll(&mut state) * 12.0);
                 let (x, z) = (eye.x + turn.cos() * out, eye.z + turn.sin() * out);
-                if matches!(terrain.1.biome((x / CELL).floor() as i32, (z / CELL).floor() as i32), Biome::Meadow | Biome::Forest | Biome::Shore) {
+                if settles(&ecology::BUTTERFLY, &terrain, x, z, &mut state) {
                     fly.home = Vec3::new(x, 0.0, z);
                     break;
                 }
@@ -456,7 +477,7 @@ fn fireflies(time: Res<Time>, live: Option<Res<crate::motion::Live>>, cameras: Q
                 let (turn, far) = (roll(&mut state) * TAU, if near_last { roll(&mut state) * 3.5 } else { 4.0 + roll(&mut state) * 16.0 });
                 let middle = if near_last { *gather } else { eye };
                 let (x, z) = (middle.x + turn.cos() * far, middle.z + turn.sin() * far);
-                if terrain.1.biome((x / CELL).floor() as i32, (z / CELL).floor() as i32) != Biome::Water {
+                if settles(&ecology::FIREFLY, &terrain, x, z, &mut state) {
                     fly.home = Vec3::new(x, terrain.ground(x, z), z);
                     if !near_last {
                         *gather = fly.home;
@@ -538,7 +559,8 @@ fn songbirds(
                     let (turn, out) = (roll(&mut state) * TAU, if lost { 4.0 + roll(&mut state) * 13.0 } else if scared { 12.0 + roll(&mut state) * 14.0 } else { 3.0 + roll(&mut state) * 8.0 });
                     let middle = if lost { eye } else { bird.to };
                     let (x, z) = (middle.x + turn.cos() * out, middle.z + turn.sin() * out);
-                    if matches!(terrain.1.biome((x / CELL).floor() as i32, (z / CELL).floor() as i32), Biome::Meadow | Biome::Forest) {
+                    // (By where it suits them, whatever the hour: at night they roost where they are.)
+                    if roll(&mut state) < ecology::SONGBIRD.suits(&terrain.2.place(&terrain.1, x, z)) {
                         let from = if lost { Vec3::new(x, terrain.ground(x, z) + 6.0, z) } else { at.translation };
                         (bird.from, bird.to, bird.since) = (from, Vec3::new(x, terrain.ground(x, z) + 0.04, z), t);
                         bird.flight = (bird.from.distance(bird.to) / 7.5).max(0.4);
@@ -592,7 +614,7 @@ fn dragonflies(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>
     }
     let t = time.elapsed_secs();
     let water = cube_sim::terrain::SEA_LEVEL;
-    let wet = |x: f32, z: f32| terrain.1.biome((x / CELL).floor() as i32, (z / CELL).floor() as i32) == Biome::Water;
+    let wet = |x: f32, z: f32| terrain.1.biome((x / CELL).floor() as i32, (z / CELL).floor() as i32) == cube_sim::terrain::Biome::Water && terrain.fit(&ecology::DRAGONFLY, x, z, hour()) > 0.3;
     for (mut fly, mut at) in &mut flies {
         if fly.over.distance(eye) > 45.0 {
             fly.over = Vec3::new(0.0, -500.0, 0.0);
@@ -634,7 +656,8 @@ fn swallows(time: Res<Time>, live: Option<Res<crate::motion::Live>>, cameras: Qu
     let day = cube_sim::sky::daylight(live.map_or(cube_sim::sky::START, |l| l.0.hour));
     let (t, dt) = (time.elapsed_secs(), time.delta_secs());
     for (mut bird, mut at) in &mut birds {
-        if day < 0.5 {
+        // Over open ground within reach of water, by day (`ecology::SWALLOW`).
+        if day < 0.5 || terrain.fit(&ecology::SWALLOW, eye.x, eye.z, hour()) < 0.25 {
             at.translation = Vec3::new(0.0, -500.0, 0.0);
             continue;
         }
@@ -672,7 +695,7 @@ fn fish(
     let t = time.elapsed_secs();
     let surface = cube_sim::terrain::SEA_LEVEL;
     let hidden = Vec3::new(0.0, -500.0, 0.0);
-    let deep = |x: f32, z: f32| terrain.ground(x, z) < surface - 0.5;
+    let deep = |x: f32, z: f32| terrain.fit(&ecology::FISH, x, z, hour()) > 0.5;
     for home in schools.0.iter_mut() {
         if home.distance(eye) > 42.0 {
             *home = hidden;

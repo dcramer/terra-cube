@@ -9,5 +9,7 @@ made = ["attack"]
 [life]
 temper = "hostile"
 habitat = "rock"
+cover = "open"
+hours = "night"
 group = 1
 groups = 1

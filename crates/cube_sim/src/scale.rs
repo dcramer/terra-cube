@@ -54,7 +54,7 @@ pub const RIVER: f32 = 130.0;
 pub const CONIFER_LINE: f32 = 17.0;
 pub const ROCK_LINE: f32 = 20.0;
 pub const MOSS_LINE: f32 = 34.0;
-pub const SNOW_LINE: f32 = 54.0;
+pub const SNOW_LINE: f32 = 44.0;
 
 /// From the smallest to the largest of a thing, metres.
 #[derive(Clone, Copy)]

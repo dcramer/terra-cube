@@ -54,6 +54,14 @@ pub struct Life {
     pub group: usize,
     #[serde(default)]
     pub groups: usize,
+    /// How near water it keeps, how much tree cover it wants, and when it is about
+    /// (`ecology`): `water = "edge"`, `cover = "deep"`, `hours = "night"`.
+    #[serde(default)]
+    pub water: crate::ecology::Water,
+    #[serde(default)]
+    pub cover: crate::ecology::Cover,
+    #[serde(default)]
+    pub hours: crate::ecology::Hours,
 }
 
 fn one() -> usize {
@@ -87,6 +95,9 @@ pub struct Kind {
     pub habitat: Biome,
     pub group: usize,
     pub groups: usize,
+    pub water: crate::ecology::Water,
+    pub cover: crate::ecology::Cover,
+    pub hours: crate::ecology::Hours,
 }
 
 impl Kind {
@@ -156,7 +167,7 @@ impl Kind {
                 }
             };
             // With no [life], a player is a person and anything else just stands its ground.
-            let life = spec.life.unwrap_or(Life { temper: if spec.kind == "player" { Temper::Person } else { Temper::Wary }, habitat: None, group: 1, groups: 0 });
+            let life = spec.life.unwrap_or(Life { temper: if spec.kind == "player" { Temper::Person } else { Temper::Wary }, habitat: None, group: 1, groups: 0, water: Default::default(), cover: Default::default(), hours: Default::default() });
             kinds.push(Kind {
                 id,
                 height: meta.height,
@@ -169,6 +180,9 @@ impl Kind {
                 habitat: life.habitat.map_or(Biome::Meadow, |h| h.0),
                 group: life.group,
                 groups: life.groups,
+                water: life.water,
+                cover: life.cover,
+                hours: life.hours,
             });
         }
         kinds
@@ -443,7 +457,14 @@ impl Sim {
     /// Anything that might hurt the player starts well away from the start. Returns how many.
     pub fn populate(&mut self, world: &World, land: &Land) -> usize {
         let mut placed = 0;
-        for kind in 0..self.kinds.len() {
+        // Where each kind's groups make their home is the ecology's to say: the biome it
+        // lives in, how near water, under how much cover.
+        let ecology = crate::ecology::Ecology::new(land);
+        // The rare first: one golem needs its rock before two dozen goats have taken every
+        // ledge, since what hunts and what is hunted do not make their homes side by side.
+        let mut order: Vec<usize> = (0..self.kinds.len()).collect();
+        order.sort_by_key(|&i| (self.kinds[i].groups * self.kinds[i].group, i));
+        for kind in order {
             let k = self.kinds[kind].clone();
             // How near the start a group may live: what does no harm, near; what hunts, far.
             // (At 60 m for everything but the timid, a player at the start saw nothing but a
@@ -457,13 +478,20 @@ impl Sim {
             // By the island's area: twice as wide is four times the ground.
             let wanted = k.groups * ((land.span as f32 * CELL / 96.0).powi(2).round() as usize).max(1);
             let mut groups = 0;
-            for _ in 0..4000 {
+            for _ in 0..80000 {
                 if groups == wanted {
                     break;
                 }
                 let (x, z) = (self.rng.below(land.span as usize * 2) as i32 - land.span, self.rng.below(land.span as usize * 2) as i32 - land.span);
                 let middle = Vec2::new(x as f32 + 0.5, z as f32 + 0.5) * CELL;
                 if land.biome(x, z) != k.habitat || land.slope(x, z) > 1 || middle.length() < keep_off {
+                    continue;
+                }
+                // The better a place suits it, the likelier it settles there.
+                let niche = crate::ecology::Niche { name: "", biomes: &[], water: k.water, cover: k.cover, hours: k.hours };
+                let place = ecology.place(land, middle.x, middle.y);
+                let suits = crate::ecology::Niche { biomes: &[(Biome::Water, 1.0), (Biome::Shore, 1.0), (Biome::Meadow, 1.0), (Biome::Forest, 1.0), (Biome::Rock, 1.0), (Biome::Snow, 1.0)], ..niche }.suits(&place);
+                if self.rng.between(0.0, 1.0) > suits.max(0.02) {
                     continue;
                 }
                 // The timid do not make their home beside what hunts them, nor the other way
@@ -521,7 +549,7 @@ mod tests {
     use cube_voxel::Block;
 
     fn kind(id: &str, temper: Temper, height: f32, speeds: [f32; 3]) -> Kind {
-        Kind { id: id.into(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3 }
+        Kind { id: id.into(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default() }
     }
 
     /// Rabbit, wolf, bear, goblin and a person, on a floor of stone 60 m square.

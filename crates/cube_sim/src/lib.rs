@@ -7,6 +7,7 @@
 //! them) · `mind` (what a creature decides to do) · `rng` (seeded randomness).
 
 pub mod body;
+pub mod ecology;
 pub mod life;
 pub mod mind;
 pub mod plants;

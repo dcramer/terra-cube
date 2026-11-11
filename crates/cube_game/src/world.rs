@@ -23,7 +23,7 @@ pub struct WorldPlugin;
 
 /// The voxel world, and the lie of the land it was made from (heights, biomes, trees).
 #[derive(Resource)]
-pub struct Terrain(pub Voxels, pub Land);
+pub struct Terrain(pub Voxels, pub Land, pub cube_sim::ecology::Ecology);
 
 /// The land's material: Bevy's own, with wind in what grows. The wind is in the two vertex
 /// shaders (`assets/shaders/wind.wesl` for the picture, `wind_prepass.wesl` for depth and
@@ -58,6 +58,11 @@ struct Look {
 }
 
 impl Terrain {
+    /// How well the spot at `x`, `z` suits a kind of life at this hour, 0 to 1 (`ecology`).
+    pub fn fit(&self, niche: &cube_sim::ecology::Niche, x: f32, z: f32, hour: f32) -> f32 {
+        niche.fit(&self.2.place(&self.1, x, z), hour)
+    }
+
     /// Digs (with air) or builds a ball in the world, to the bit, and marks what to redraw.
     pub fn ball(&mut self, dirty: &mut Dirty, middle: Vec3, radius: f32, block: Block) {
         self.0.ball(middle, radius, block);
@@ -388,7 +393,10 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     for (x, z, w, d) in [(0.0, -(edge + far) / 2.0, far, (far - edge) / 2.0), (0.0, (edge + far) / 2.0, far, (far - edge) / 2.0), (-(edge + far) / 2.0, 0.0, (far - edge) / 2.0, edge), ((edge + far) / 2.0, 0.0, (far - edge) / 2.0, edge)] {
         commands.spawn((Mesh3d(meshes.add(Plane3d::default().mesh().size(w * 2.0, d * 2.0))), MeshMaterial3d(sea.clone()), Transform::from_xyz(x, level, z)));
     }
-    commands.insert_resource(Terrain(voxels, land));
+    // The island measured for living in (`cube_sim::ecology`): what the small life the game
+    // draws is placed by.
+    let ecology = cube_sim::ecology::Ecology::new(&land);
+    commands.insert_resource(Terrain(voxels, land, ecology));
     spawn_sun(&mut commands, &mut mediums, &mut images);
 }
 

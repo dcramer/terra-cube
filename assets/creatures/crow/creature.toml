@@ -7,6 +7,8 @@ height = 0.35
 [life]
 temper = "timid"
 habitat = "meadow"
+cover = "edge"
+hours = "day"
 group = 3
 # 0 until the bird plan reads its skeleton and its clips pass: it is built but not fit to be seen.
 groups = 0
