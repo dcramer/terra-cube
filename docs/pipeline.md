@@ -144,6 +144,8 @@ Built 2026-11-10 (65 credits each): `player-carved` fails skin stretch in every 
 
 Tried 2026-11-10 on the player, wolf and troll (18 credits): `carved` (squared, chamfered block shapes: the nearest to the world), `flat` (strict flat-shaded low-poly; its wolf came back a flat drawing and its troll out of the T-pose) and `painted` (hand-painted and smooth, as Eco; its troll also out of the T-pose).
 
+**A recorded gait that only just fails**: forge keeps Tripo's walk and run only if the feet hold (slide at most 25%), and otherwise makes its own. The made run is a lumbering one, right for a troll and a jog on a person. Where a recorded gait misses the bar by a little, `slide = 0.32` in `creature.toml` allows it for that creature, with a comment saying what it measured (`FORGE_TRACE=1 cargo forge finish ID` prints each recorded gait's speed and slide). Used once, for the player: his run measured 25.4%.
+
 **Taking an idea**: `cargo forge ideas ID` draws every subject in the creature's `ideas.toml` (2 credits each, once); `cargo forge ideas ID --take NAME` makes one of them what the creature is (its subject into `creature.toml`, its picture as the concept, the lock set back to the concept alone), and `cargo forge build ID` then makes the model from the picture that was chosen. Done by hand the first time (the castaway, 2026-11-10) and by the command the second (the plain man, 2026-11-11).
 
 ## Cubes

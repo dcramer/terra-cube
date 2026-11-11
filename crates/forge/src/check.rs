@@ -103,7 +103,7 @@ fn stretch(s: &Skin, sk: &Skeleton, rest_len: &[f32], clip: &Clip) -> f32 {
     worst
 }
 
-pub fn check(done: &Finished, required: &[String], bars: &Bars, max_stretch: f32) -> Result<Vec<Line>> {
+pub fn check(done: &Finished, required: &[String], bars: &Bars, max_stretch: f32, max_slide: f32) -> Result<Vec<Line>> {
     let (sk, roles, meta) = (&done.skeleton, &done.roles, &done.meta);
     let mut out = Vec::new();
     out.push(line(meta.triangles <= bars.max_triangles, "triangles", meta.triangles.to_string(), format!("≤ {}", bars.max_triangles)));
@@ -162,10 +162,10 @@ pub fn check(done: &Finished, required: &[String], bars: &Bars, max_stretch: f32
         if pace > 0.0 && roles.legs.len() >= 2 {
             // Moved at its measured speed, a foot that is down should stay where it is put.
             let slide = crate::clips::slide(sk, roles, &clip.frames, pace / done.scale);
-            ok &= slide <= bars.max_slide;
+            ok &= slide <= max_slide;
             notes.push(format!("slide {:.0}%", slide * 100.0));
         }
-        out.push(line(ok, &format!("clip {}", clip.name), format!("{:.2}s {} · {}", clip.seconds(), clip.source, notes.join(" · ")), format!("stretch ≤ {:.0}%, gap ≤ {:.0}°, feet ≤ {:.0}%, slide ≤ {:.0}%", max_stretch * 100.0, bars.max_loop_gap.to_degrees(), bars.max_foot_error * 100.0, bars.max_slide * 100.0)));
+        out.push(line(ok, &format!("clip {}", clip.name), format!("{:.2}s {} · {}", clip.seconds(), clip.source, notes.join(" · ")), format!("stretch ≤ {:.0}%, gap ≤ {:.0}°, feet ≤ {:.0}%, slide ≤ {:.0}%", max_stretch * 100.0, bars.max_loop_gap.to_degrees(), bars.max_foot_error * 100.0, max_slide * 100.0)));
     }
     Ok(out)
 }

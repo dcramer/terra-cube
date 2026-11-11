@@ -76,7 +76,7 @@ fn finish_and_check_one(id: &str, style: &Style, write: bool) -> Result<bool> {
     let plan = style.plans.get(&creature.plan).with_context(|| format!("no plan `{}`", creature.plan))?;
     let done = if write { finish::run(id, style)? } else { finish::finish(&spec::work(id).join("rigged.glb"), &creature, plan, style.checks.max_slide)? };
     let wanted: Vec<String> = plan.clips.iter().filter(|c| !creature.without.contains(c)).cloned().collect();
-    let lines = check::check(&done, &wanted, &style.checks, plan.max_stretch.unwrap_or(style.checks.max_stretch))?;
+    let lines = check::check(&done, &wanted, &style.checks, plan.max_stretch.unwrap_or(style.checks.max_stretch), creature.slide.unwrap_or(style.checks.max_slide))?;
     let failed = lines.iter().filter(|l| !l.ok).count();
     println!("{id}: {} · {:.2} m tall, {:.2} m long · walk {:.2} m/s, run {:.2} m/s", if failed == 0 { "ok".into() } else { format!("{failed} FAILED") }, done.meta.height, done.meta.length, done.meta.walk_speed, done.meta.run_speed);
     for l in &lines {
@@ -162,7 +162,7 @@ fn run() -> Result<bool> {
             std::fs::create_dir_all(&dir)?;
             let mut name = id.replace(['-', '_'], " ");
             name[..1].make_ascii_uppercase();
-            let c = Creature { name, kind, plan, subject: subject.clone(), height, facing: "auto".into(), gait_gain: 1.0, ease: 1.0, made: Vec::new(), without: Vec::new(), look: None, look_of: None };
+            let c = Creature { name, kind, plan, subject: subject.clone(), height, facing: "auto".into(), gait_gain: 1.0, slide: None, ease: 1.0, made: Vec::new(), without: Vec::new(), look: None, look_of: None };
             spec::save(&dir.join("creature.toml"), &c, "")?;
             println!("wrote {}. Next: cargo forge build {id} --to concept", dir.join("creature.toml").display());
         }

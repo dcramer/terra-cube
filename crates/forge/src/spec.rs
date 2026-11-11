@@ -110,6 +110,11 @@ pub struct Creature {
     /// legs fold or tear (the stretch check says so).
     #[serde(default = "one", skip_serializing_if = "is_one")]
     pub gait_gain: f32,
+    /// How far this creature's feet may slide in a gait, where the style's bar is a hair too
+    /// strict for its body: a recorded run that misses by half a point is still a better run
+    /// than a made one. Say in `creature.toml` what it measured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slide: Option<f32>,
     /// Clips to make for this creature where its plan would take Tripo's preset: for a body
     /// the preset tears (the stretch check says so).
     /// Scales how far the made clips that are not gaits (idle, jump, swim, attack, eat…) turn

@@ -67,6 +67,7 @@ fn ground_speed(sk: &Skeleton, roles: &Roles, clip: &Clip) -> Option<f32> {
 }
 
 pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -> Result<Finished> {
+    let max_slide = creature.slide.unwrap_or(max_slide);
     let mut glb = Glb::read(source)?;
     let skeleton = Skeleton::read(&glb)?;
     let roles = Roles::read(&skeleton, Facing::parse(&creature.facing)?);
@@ -122,6 +123,9 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -
                 clip.speed = Some(pace);
             }
             let slid = clip.speed.map_or(1.0, |pace| clips::slide(&skeleton, &roles, &clip.frames, pace));
+            if std::env::var_os("FORGE_TRACE").is_some() {
+                eprintln!("{name} recorded at {:.2} m/s, feet slide {:.1}% (bar {:.0}%)", clip.speed.unwrap_or(0.0) * scale, slid * 100.0, max_slide * 100.0);
+            }
             if slid > max_slide {
                 let stand = out.iter().find(|c| c.name == "idle" && c.source == "tripo").map(|c| &c.frames[0]);
                 let made: Vec<Clip> = out.iter().filter(|c| c.source == "made").map(|c| Clip { name: c.name.clone(), looping: c.looping, frames: Vec::new(), source: "made", speed: c.speed }).collect();
