@@ -454,7 +454,13 @@ impl Shape {
                 let (u0, v0) = ((c.dot(u) as f32 * span).rem_euclid(room) + 0.02, (c.dot(v) as f32 * span).rem_euclid(room) + 0.02);
                 let start = self.positions.len() as u32;
                 for (su, sv) in [(0.0f32, 0.0f32), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
-                    self.point(corner + (u.as_vec3() * su + v.as_vec3() * sv) * g, n.as_vec3(), colour, grain.uv(u0 + su * span, v0 + sv * span), free);
+                    // A corner is in shade by how many cubes stand over it beside this face
+                    // (two along its edges, one across the corner): what gives a furrow, the
+                    // crook of a root or a ledge of stone its depth, at no cost to draw.
+                    let (du, dv) = (if su > 0.5 { u } else { -u }, if sv > 0.5 { v } else { -v });
+                    let over = set.contains(&(c + n + du)) as usize + set.contains(&(c + n + dv)) as usize + set.contains(&(c + n + du + dv)) as usize;
+                    let shade = [1.0, 0.8, 0.64, 0.5][over];
+                    self.point(corner + (u.as_vec3() * su + v.as_vec3() * sv) * g, n.as_vec3(), colour.map(|k| k * shade), grain.uv(u0 + su * span, v0 + sv * span), free);
                 }
                 self.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
             }
