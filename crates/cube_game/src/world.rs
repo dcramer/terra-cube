@@ -93,15 +93,15 @@ pub fn look() -> impl Bundle {
         },
         AtmosphereSettings::default(),
         // The sky fills shadows, but not so far that they stop being shadows.
-        AtmosphereEnvironmentMapLight { intensity: 0.9, ..default() },
+        AtmosphereEnvironmentMapLight { intensity: 1.0, ..default() },
         Exposure { ev100: DAY_EV },
         Tonemapping::TonyMcMapface,
-        Bloom::NATURAL,
+        Bloom { intensity: 0.06, ..Bloom::NATURAL },
         // Richer than the tonemapper leaves it, a little warm, with more between light and dark.
         ColorGrading {
-            global: ColorGradingGlobal { post_saturation: 1.12, ..default() },
-            shadows: ColorGradingSection { contrast: 1.04, ..default() },
-            midtones: ColorGradingSection { contrast: 1.04, ..default() },
+            global: ColorGradingGlobal::default(),
+            shadows: ColorGradingSection::default(),
+            midtones: ColorGradingSection::default(),
             highlights: ColorGradingSection::default(),
         },
         // Corners, the feet of trunks and the undersides of crowns are darker: depth that the
@@ -229,9 +229,9 @@ const MOONLIGHT: f32 = 1.6;
 fn exposure_for(sun_up: f32) -> f32 {
     let between = |lo: f32, hi: f32, from: f32, to: f32| from + (to - from) * ((sun_up - lo) / (hi - lo)).clamp(0.0, 1.0);
     if sun_up < 0.05 {
-        between(-0.105, 0.05, NIGHT_EV, 10.6)
+        between(-0.105, 0.05, NIGHT_EV, 10.0)
     } else if sun_up < 0.35 {
-        between(0.05, 0.35, 10.6, 13.0)
+        between(0.05, 0.35, 10.0, 13.0)
     } else {
         between(0.35, 0.85, 13.0, 14.0)
     }
@@ -261,14 +261,14 @@ fn sky(
         // hour of sun is weak and the sky's flat fill takes the picture; the gold of evening
         // is wanted more than the truth.
         let low = 1.0 - ((to_sun.y - 0.05) / 0.4).clamp(0.0, 1.0);
-        light.illuminance = lux::RAW_SUNLIGHT * up * (1.0 + 3.5 * low * low);
+        light.illuminance = lux::RAW_SUNLIGHT * up * (1.0 + 0.8 * low * low);
         // The air here reddens a low sun only a little; an evening wants amber.
-        light.color = Color::srgb(1.0, 1.0 - 0.28 * low * low, 1.0 - 0.55 * low * low);
+        light.color = Color::srgb(1.0, 1.0 - 0.08 * low * low, 1.0 - 0.18 * low * low);
         // Mist thins as the sun drops, or the low light floods it and whites the picture out,
         // and what is left takes the sun's colour.
         for mut mist in &mut mists {
             mist.density_factor = 0.0022 * (1.0 - 0.7 * low);
-            mist.light_tint = Color::srgb(1.0, 0.95 - 0.15 * low, 0.86 - 0.3 * low);
+            mist.light_tint = Color::srgb(1.0, 0.95 - 0.04 * low, 0.86 - 0.08 * low);
         }
         light.shadow_maps_enabled = up > 0.0;
     }
@@ -287,9 +287,8 @@ fn sky(
     for (mut exposure, mut fog, mut grade) in &mut cameras {
         exposure.ev100 = exposure_for(to_sun.y);
         // By moonlight there is little colour to see.
-        grade.global.post_saturation = 0.62 + 0.5 * day + 0.12 * low;
-        grade.midtones.contrast = 1.04 + 0.1 * low;
-        grade.shadows.contrast = 1.04 + 0.1 * low;
+        // No more colour than the light gives: the grade only takes some away at night.
+        grade.global.post_saturation = 0.6 + 0.4 * day;
         fog.color = Color::srgba((0.62 + 0.25 * low) * lit, (0.74 - 0.08 * low) * lit, (0.88 - 0.3 * low) * lit, 1.0);
         fog.directional_light_color = Color::srgba(1.0 * lit, (0.86 - 0.25 * low) * lit, (0.62 - 0.35 * low) * lit, 0.6);
     }
