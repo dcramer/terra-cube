@@ -7,6 +7,8 @@ gait_gain = 0.6
 
 [life]
 temper = "wary"
+diet = "all"
+lifespan = 20.0
 voice = "bear"
 habitat = "forest"
 winter = 0.1

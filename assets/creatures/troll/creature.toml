@@ -8,6 +8,7 @@ made = ["attack"]
 
 [life]
 temper = "hostile"
+share = 0.4
 voice = "troll"
 habitat = "rock"
 cover = "open"

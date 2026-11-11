@@ -6,6 +6,7 @@ height = 3.4
 
 [life]
 temper = "hostile"
+share = 0.4
 voice = "ogre"
 habitat = "snow"
 cover = "open"

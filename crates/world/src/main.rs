@@ -18,6 +18,9 @@ cargo world survey [--seed N] [--radius CHUNKS]   the land in numbers: ok, or FA
 cargo world run [--seconds 120] [--seed N]        the creatures living in it for a while, with a
                                                   person walking about the start: a line a kind,
                                                   then ok or FAIL lines
+cargo world years [N] [--seed N]                  the creatures by the day for N (3) years, nobody
+                                                  watching: births, deaths and of what, each kind's
+                                                  numbers year by year; FAIL if a kind dies out or overruns
 cargo world who [--seed N]                        where each group of creatures starts: kind, how
                                                   many, metres east and south of the start, biome
                                                   (for `cargo sandbox --wild --scene F --at X,Z`)
@@ -453,6 +456,48 @@ fn main() {
             for (x, z, depth) in found {
                 println!("{what} at {x:.0},{z:.0} · {:.0}m from the start{}", x.hypot(z), if depth > 0.0 { format!(" · {depth:.1}m of water") } else { String::new() });
             }
+        }
+        "years" => {
+            // The island's creatures by the day and nothing else (`Sim::day`), for years: who
+            // is born, who dies and of what, and whether the numbers hold.
+            let years: usize = args.file.as_deref().and_then(|v| v.parse().ok()).unwrap_or(3);
+            let (world, land, mut sim) = living(&args);
+            // Nobody is watching: nothing is lived by the second.
+            sim.agents.retain(|_, a| sim.kinds[a.kind].temper != cube_sim::life::Temper::Person);
+            sim.agents.values_mut().for_each(|a| a.awake = false);
+            let count = |sim: &Sim| {
+                let mut n = vec![0usize; sim.kinds.len()];
+                sim.agents.values().for_each(|a| n[a.kind] += 1);
+                n
+            };
+            let mut rows = vec![count(&sim)];
+            let mut all = cube_sim::life::Tally::default();
+            // From the first day of a spring, so a year is a year.
+            sim.when = sim.when.floor() - sim.when.floor().rem_euclid(cube_sim::sky::YEAR) + cube_sim::sky::YEAR;
+            for _ in 0..years {
+                for _ in 0..cube_sim::sky::YEAR as usize {
+                    let t = sim.day(&world, Some(&land));
+                    (all.born, all.old, all.hunted, all.starved, all.winter, all.moved) = (all.born + t.born, all.old + t.old, all.hunted + t.hunted, all.starved + t.starved, all.winter + t.winter, all.moved + t.moved);
+                    sim.when += 1.0;
+                }
+                rows.push(count(&sim));
+            }
+            let total = |row: &[usize]| row.iter().sum::<usize>();
+            println!("years {years} seed={}: {} creatures at the start, {} at the end · born {} · died of age {}, hunted {}, starved {}, of winter {} · groups that moved {}", args.seed, total(&rows[0]), total(&rows[years]), all.born, all.old, all.hunted, all.starved, all.winter, all.moved);
+            let mut checks = Checks(Vec::new());
+            for (k, kind) in sim.kinds.iter().enumerate() {
+                if rows[0][k] == 0 {
+                    continue;
+                }
+                let line: Vec<String> = rows.iter().map(|r| r[k].to_string()).collect();
+                println!("  {:<12} {:<7} {}", kind.id, format!("{:?}", kind.diet).to_lowercase(), line.join(" > "));
+                // A kind that began as more than a handful is still there, and none has overrun the island.
+                checks.bar(&format!("{} lasts", kind.id), rows[years][k] as f32, rows[0][k] < 6 || rows[years][k] >= 2, "a kind that began with six or more still has two");
+                checks.bar(&format!("{} holds", kind.id), rows[years][k] as f32, rows[years][k] <= rows[0][k] * 5 + 10, "no kind grows past five times what it began as");
+            }
+            let (first, last) = (total(&rows[0]) as f32, total(&rows[years]) as f32);
+            checks.bar("creatures", last, last > first * 0.4 && last < first * 3.0, "between two fifths and three times as many as at the start");
+            checks.finish()
         }
         "who" => {
             let (_, land, sim) = living(&args);

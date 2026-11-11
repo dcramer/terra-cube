@@ -9,6 +9,8 @@ gait_gain = 0.45
 
 [life]
 temper = "timid"
+lifespan = 40.0
+litter = 1.5
 voice = "grunt"
 habitat = "shore"
 winter = 0.0

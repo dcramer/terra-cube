@@ -162,7 +162,17 @@ fn drivers(mut live: ResMut<Live>, movers: Query<(&Mover, &Transform, Has<Contro
 /// hurt, but what is near the player is woken, so its model is there when the screen lifts.)
 fn tick(terrain: Option<Res<Terrain>>, loading: Res<crate::loading::Loading>, mut live: ResMut<Live>) {
     if let Some(terrain) = terrain {
-        if loading.up { live.0.wake(&terrain.0) } else { live.0.step(&terrain.0) }
+        if loading.up {
+            live.0.wake(&terrain.0)
+        } else {
+            let before = live.0.when.floor();
+            live.0.step(&terrain.0);
+            // As each day turns, the island's day: births, deaths and who moved on (`Sim::day`).
+            if live.0.when.floor() != before {
+                let day = live.0.day(&terrain.0, Some(&terrain.1));
+                info!("day {}: born {}, died of age {}, hunted {}, starved {}, of winter {}", live.0.when.floor(), day.born, day.old, day.hunted, day.starved, day.winter);
+            }
+        }
     }
 }
 
@@ -172,7 +182,7 @@ fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, terra
     let eye = cameras.iter().next().map(|c| c.translation());
     let dt = time.delta_secs();
     let between = fixed.overstep_fraction();
-    let Sim { agents, kinds, .. } = &mut live.0;
+    let Sim { agents, kinds, when, .. } = &mut live.0;
     for (mut m, mut creature, mut transform) in &mut movers {
         let Some(agent) = agents.get_mut(&m.id) else { continue };
         if agent.driver == Driver::Stand {
@@ -183,6 +193,8 @@ fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, terra
         // lag put the feet a third of a metre inside the hill.
         m.lift = ((m.lift - std::mem::take(&mut agent.stepped)) * (-22.0 * dt).exp()).clamp(-0.08, 0.08);
         transform.translation = agent.before.lerp(agent.body.pos, between) + Vec3::Y * m.lift;
+        // The young are small: born at under half their size, grown by the time they breed.
+        transform.scale = Vec3::splat((0.45 + 0.55 * (*when - agent.born) / cube_sim::sky::YEAR / kinds[agent.kind].maturity()).clamp(0.45, 1.0));
         // On the ground its feet are where the ground is drawn: the body stands on cubes, and
         // the cubes are drawn as a slope.
         // (Only near enough for it to be seen: working it out for every creature on the

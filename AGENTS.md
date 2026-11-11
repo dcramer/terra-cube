@@ -40,6 +40,7 @@ cargo forge finish --all           # the free local half again, after changing c
 cargo forge sheet wolf             # shots/wolf.png: every clip at six moments, one image
 cargo world survey                 # the land in numbers; `cargo world run`: its creatures living, in numbers
 cargo world life                   # the ecology: how much of the island suits each kind of life, when it is about, where each animal settled
+cargo world years 8                # the island by the day for eight years, nobody watching: each kind's numbers year by year; change `[life]` or `Sim::day` against this
 cargo world map shots/map.png      # one picture from above with where every creature went
 make window                        # the real window on an Xvfb, driven by real key presses (tools/xkeys), judged from the trace
 make prove                         # every judgment in one go, a line each: check, survey, run, life, sound levels, fight, swim, window, seasons

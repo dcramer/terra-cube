@@ -83,6 +83,7 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 
 seasons: ## no window: the meadow in summer and winter, judged by the ground's colour: green, then snow
 	@tools/seasons.sh
+	@cargo world years 8 | tail -1 | sed 's/^ok$$/ok years: eight years, no kind dies out or overruns/'
 
 swim: ## no window: the player is put in deep water in the real game; passes if he floats, swims and is heard
 	@tools/xkeys/swim.sh

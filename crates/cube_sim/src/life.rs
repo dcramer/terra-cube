@@ -70,6 +70,34 @@ pub struct Life {
     /// `wolf_1.ogg`, `wolf_2.ogg`). None, and it is silent.
     #[serde(default)]
     pub voice: Option<Voice>,
+    /// What it eats: `plants`, `meat` or `all`. Unsaid, the timid and the wary eat plants and
+    /// what hunts or is hostile eats meat.
+    #[serde(default)]
+    pub diet: Option<Diet>,
+    /// Young to a pair in a year; years it lives; and how many of its kind the ground it
+    /// ranges over will feed. Unsaid, each follows from its size ([`Kind`]).
+    #[serde(default)]
+    pub litter: Option<f32>,
+    #[serde(default)]
+    pub lifespan: Option<f32>,
+    #[serde(default)]
+    pub capacity: Option<usize>,
+    /// How common it is beside the usual for its `groups`: `share = 0.1` for a hunter, of
+    /// which a land carries one to every twenty or fifty of what it hunts.
+    #[serde(default = "whole")]
+    pub share: f32,
+}
+
+/// What a creature eats.
+#[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum Diet {
+    Plants,
+    Meat,
+    /// Feeds on what grows and hunts besides: it kills less often and does not starve for want of prey.
+    All,
+    /// Does not eat: a thing of stone, or one that is not alive.
+    None,
 }
 
 /// A voice's name, short enough to copy about with the rest of a `Life`.
@@ -134,6 +162,15 @@ pub struct Kind {
     pub hours: crate::ecology::Hours,
     pub voice: Option<Voice>,
     pub winter: f32,
+    pub diet: Diet,
+    /// Young to a pair in a year.
+    pub litter: f32,
+    /// Years it lives (a year is `sky::YEAR` days).
+    pub lifespan: f32,
+    /// How many of its kind the ground within its range will feed, and that range, metres.
+    pub capacity: usize,
+    pub range: f32,
+    pub share: f32,
 }
 
 impl Kind {
@@ -218,7 +255,15 @@ impl Kind {
                 }
             };
             // With no [life], a player is a person and anything else just stands its ground.
-            let life = spec.life.unwrap_or(Life { temper: if spec.kind == "player" { Temper::Person } else { Temper::Wary }, habitat: None, group: 1, groups: 0, water: Default::default(), cover: Default::default(), hours: Default::default(), winter: 1.0, voice: None });
+            let life = spec.life.unwrap_or(Life { temper: if spec.kind == "player" { Temper::Person } else { Temper::Wary }, habitat: None, group: 1, groups: 0, water: Default::default(), cover: Default::default(), hours: Default::default(), winter: 1.0, voice: None, diet: None, litter: None, lifespan: None, capacity: None, share: 1.0 });
+            let diet = life.diet.unwrap_or(match life.temper {
+                Temper::Hunter | Temper::Hostile => Diet::Meat,
+                Temper::Person => Diet::All,
+                _ => Diet::Plants,
+            });
+            // How far it ranges from where it lives: a hunter two and a half times as far as
+            // what it hunts, as in life, so a land holds few of them.
+            let range = (60.0 + meta.height * 40.0) * if diet == Diet::Meat { 2.5 } else { 1.0 };
             kinds.push(Kind {
                 id,
                 height: meta.height,
@@ -236,6 +281,18 @@ impl Kind {
                 hours: life.hours,
                 voice: life.voice,
                 winter: life.winter,
+                // What is not said follows from its size, as it does in life: the small breed
+                // fast and die young, the great are few, slow to breed and long-lived.
+                diet,
+                // (A thing that does not eat is not born and does not grow old.)
+                litter: life.litter.unwrap_or(if diet == Diet::None { 0.0 } else if life.temper == Temper::Hostile { 0.4 } else if meta.height < 0.4 { 4.0 } else if meta.height < 1.5 { 2.0 } else { 1.0 }),
+                lifespan: life.lifespan.unwrap_or(if diet == Diet::None { 10_000.0 } else if life.temper == Temper::Hostile { 25.0 } else if meta.height < 0.4 { 3.0 } else if meta.height < 1.5 { 8.0 } else { 15.0 }),
+                // What eats plants: three times a group to every 80 m of the ground it ranges
+                // over, which may hold several groups. What hunts keeps a territory to itself:
+                // one group, grown to twice its size at most before half must leave.
+                capacity: life.capacity.unwrap_or(if diet == Diet::Meat { (life.group * 2).max(4) } else { ((life.group * 3) as f32 * (range / 80.0f32).powi(2)).round().max(4.0) as usize }),
+                range,
+                share: life.share,
             });
         }
         kinds
@@ -354,6 +411,10 @@ pub struct Agent {
     /// Whether it is being lived this tick: near enough to whoever is watching, and with
     /// ground made under it. Asleep, it is as it was left.
     pub awake: bool,
+    /// When it was born (`Sim::when`, days): its age is the time since.
+    pub born: f32,
+    /// How long since it fed, in meals: at 1 it must eat, at 4 it starves (`Sim::day`).
+    pub hunger: f32,
     /// What it carries, if it is a person (`items`).
     pub pack: Option<crate::items::Pack>,
     landing: f32,
@@ -374,7 +435,6 @@ pub struct Hit {
 /// Seconds something lies where it fell before it is gone; seconds after that until another
 /// of its kind comes to live where it did; and seconds a person lies before waking at home.
 const LIES: f32 = 25.0;
-const RETURNS: f32 = 150.0;
 const WAKES: f32 = 5.0;
 /// How far from the watcher a creature is still lived, metres.
 pub const AWAKE: f32 = 110.0;
@@ -395,8 +455,6 @@ pub struct Sim {
     /// Where whoever is watching is. Only what is within [`AWAKE`] of it is lived; with
     /// none, everything is. A big island has thousands of creatures and one person.
     pub focus: Option<Vec3>,
-    /// The dead not yet replaced: kind, where it lived, and the tick it died.
-    graves: Vec<(usize, Vec2, u64)>,
     /// The time: days since the world began, the hour its fraction (`sky`).
     pub when: f32,
     pub rng: Rng,
@@ -415,7 +473,7 @@ fn turn_between(from: f32, to: f32) -> f32 {
 
 impl Sim {
     pub fn new(kinds: Vec<Kind>, seed: u64) -> Self {
-        Self { kinds, agents: BTreeMap::new(), tick: 0, focus: None, graves: Vec::new(), when: crate::sky::START, rng: Rng::new(seed), next: 1, trails: None }
+        Self { kinds, agents: BTreeMap::new(), tick: 0, focus: None, when: crate::sky::START, rng: Rng::new(seed), next: 1, trails: None }
     }
 
     /// A person's state as text, a thing a line: when it is, where they are, their health,
@@ -510,6 +568,8 @@ impl Sim {
     /// Puts a creature in the world with its feet at `pos`.
     pub fn add(&mut self, world: &World, kind: usize, pos: Vec3, facing: f32, driver: Driver) -> u32 {
         let k = self.kinds[kind].clone();
+        // Put down grown: somewhere in the prime of its life. (What is born says so after.)
+        let born = self.when - self.rng.between(0.15, 0.6) * k.lifespan * crate::sky::YEAR;
         let mut body = Body::new(pos, k.shape().0, k.height.max(0.3));
         // Put down astride a step, it stands on the higher part, not in it.
         for _ in 0..20 {
@@ -524,7 +584,7 @@ impl Sim {
         let mind = Mind::new(Vec2::new(pos.x, pos.z), &mut self.rng);
         self.agents.insert(
             id,
-            Agent { kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), guard: false, calm: 0.0, awake: true, pack: (k.temper == Temper::Person).then(crate::items::Pack::starting), stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
+            Agent { kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), guard: false, calm: 0.0, awake: true, born, hunger: 0.0, pack: (k.temper == Temper::Person).then(crate::items::Pack::starting), stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
         );
         id
     }
@@ -657,18 +717,11 @@ impl Sim {
                 gone.push(id);
             }
         }
+        // What has died is gone. Its kind comes back by being born (`day`), not by being put
+        // back: until 2026-11-11 the dead returned where they lived after two and a half
+        // minutes, and nothing that happened to a herd made any difference to it.
         for id in gone {
-            if let Some(agent) = self.agents.remove(&id) {
-                self.graves.push((agent.kind, agent.mind.home, self.tick));
-            }
-        }
-        let due = (RETURNS / DT) as u64;
-        let back: Vec<(usize, Vec2)> = self.graves.iter().filter(|g| self.tick - g.2 >= due).map(|g| (g.0, g.1)).collect();
-        self.graves.retain(|g| self.tick - g.2 < due);
-        for (kind, home) in back {
-            let facing = self.rng.between(0.0, std::f32::consts::TAU);
-            let id = self.add(world, kind, Vec3::new(home.x, world.ground_height(home.x, home.y), home.y), facing, Driver::Mind);
-            self.agents.get_mut(&id).unwrap().mind.home = home;
+            self.agents.remove(&id);
         }
 
         // Bodies out of each other: creatures standing about are pillars, movers share the push.
@@ -788,7 +841,7 @@ impl Sim {
                 _ => 22.0,
             };
             // By the island's area: twice as wide is four times the ground.
-            let wanted = k.groups * ((land.span as f32 * CELL / 96.0).powi(2).round() as usize).max(1);
+            let wanted = ((k.groups as f32 * (land.span as f32 * CELL / 96.0).powi(2) * k.share).round() as usize).max((k.groups > 0) as usize);
             let mut groups = 0;
             for _ in 0..80000 {
                 if groups == wanted {
@@ -860,6 +913,195 @@ impl Sim {
     }
 }
 
+/// What a day did to the island's creatures.
+#[derive(Default, Clone, Copy, Debug)]
+pub struct Tally {
+    pub born: u32,
+    /// Died of age, were killed and eaten, starved (for want of prey, or of ground to feed
+    /// on), and died of the winter.
+    pub old: u32,
+    pub hunted: u32,
+    pub starved: u32,
+    pub winter: u32,
+    /// Groups that outgrew their ground and sent half their number to find more.
+    pub moved: u32,
+}
+
+impl Sim {
+    /// How grown a creature is, from 0.45 (new-born) to 1: young are small.
+    pub fn grown(&self, agent: &Agent) -> f32 {
+        let kind = &self.kinds[agent.kind];
+        let age = (self.when - agent.born) / crate::sky::YEAR;
+        (0.45 + 0.55 * age / kind.maturity()).clamp(0.45, 1.0)
+    }
+
+    /// A day of the island's life, for every creature on it: called once as each day turns.
+    ///
+    /// The creatures near whoever is watching live second by second (`step`); the two
+    /// thousand elsewhere cannot, and need not: what matters of a day far off is who was
+    /// born, who died and of what. So once a day:
+    ///
+    /// - the old die: seldom past four fifths of their kind's years, soon past all of them;
+    /// - what eats meat grows hungry, a meal every three days. Hungry, it hunts what eats
+    ///   plants within its range and no more than half as big again as itself, and takes
+    ///   one six times in ten. Twelve days without, it starves;
+    /// - what eats plants dies for want of food where there are more of its kind than the
+    ///   ground feeds, the faster the more there are; and a few die of the winter;
+    /// - on the first day of spring, pairs have young (and the small, a second litter in
+    ///   summer): fewer the nearer the ground is to full, none when it is;
+    /// - a group grown to twice its size sends half its number to find ground of their
+    ///   own, in their own kind of country.
+    ///
+    /// So numbers are made by the island and not set: prey rises to what its ground feeds,
+    /// hunters to what the prey will bear, and a herd that is hunted out is gone until its
+    /// kind spreads back. (What is awake is not hunted here nor hunts here: it does that
+    /// for real.) `cargo world years` runs this by itself for years and prints the numbers.
+    pub fn day(&mut self, world: &World, land: Option<&Land>) -> Tally {
+        let mut tally = Tally::default();
+        let year = crate::sky::YEAR;
+        let day = self.when.floor() as i64;
+        let lives = |a: &Agent, kinds: &[Kind]| a.dead.is_none() && a.driver == Driver::Mind && kinds[a.kind].temper != Temper::Person;
+        let ids: Vec<u32> = self.agents.iter().filter(|(_, a)| lives(a, &self.kinds)).map(|(&id, _)| id).collect();
+
+        // The old.
+        for &id in &ids {
+            let agent = &self.agents[&id];
+            let (age, span) = ((self.when - agent.born) / year, self.kinds[agent.kind].lifespan);
+            let dies = if age > span { 0.25 } else if age > span * 0.8 { 0.012 } else { 0.0 };
+            if self.rng.unit() < dies {
+                self.agents.remove(&id);
+                tally.old += 1;
+            }
+        }
+
+        // The hunters and the hunted.
+        let hunters: Vec<u32> = ids.iter().copied().filter(|id| self.agents.get(id).is_some_and(|a| matches!(self.kinds[a.kind].diet, Diet::Meat | Diet::All) && self.kinds[a.kind].temper != Temper::Wary && !a.awake)).collect();
+        for id in hunters {
+            let Some(hunter) = self.agents.get_mut(&id) else { continue };
+            // A meal every six days; one that also feeds on what grows hunts a third as often.
+            let kind = self.kinds[hunter.kind].clone();
+            hunter.hunger += if kind.diet == Diet::All { 1.0 / 18.0 } else { 1.0 / 6.0 };
+            if hunter.hunger < 1.0 {
+                continue;
+            }
+            let (home, hunger, own) = (hunter.mind.home, hunter.hunger, hunter.kind);
+            // What it can take: a tenth its size to half as big again, and a pack takes larger.
+            let most = kind.height * 1.5 * (kind.group as f32).sqrt();
+            let prey: Vec<u32> = self
+                .agents
+                .iter()
+                .filter(|(_, a)| lives(a, &self.kinds) && !a.awake && matches!(self.kinds[a.kind].diet, Diet::Plants) && self.kinds[a.kind].height < most && self.kinds[a.kind].height > kind.height * 0.1 && a.mind.home.distance(home) < kind.range)
+                .map(|(&p, _)| p)
+                .collect();
+            if !prey.is_empty() && self.rng.unit() < 0.5 {
+                let taken = prey[self.rng.below(prey.len())];
+                let big = self.kinds[self.agents[&taken].kind].height >= kind.height * 0.6;
+                self.agents.remove(&taken);
+                // The kill feeds the one that made it, and if it is big, the pack.
+                for a in self.agents.values_mut().filter(|a| a.kind == own && a.mind.home.distance(home) < 1.0) {
+                    if big {
+                        a.hunger = 0.0;
+                    }
+                }
+                self.agents.get_mut(&id).unwrap().hunger = 0.0;
+                tally.hunted += 1;
+            } else if hunger >= 4.0 && kind.diet == Diet::Meat {
+                self.agents.remove(&id);
+                tally.starved += 1;
+            }
+        }
+
+        // What the ground will feed, and the winter.
+        let winter = crate::sky::season(self.when) == crate::sky::Season::Winter;
+        let near = |agents: &BTreeMap<u32, Agent>, kind: usize, home: Vec2, range: f32| agents.values().filter(|a| a.kind == kind && a.dead.is_none() && a.mind.home.distance(home) < range).count();
+        for &id in &ids {
+            let Some(agent) = self.agents.get(&id) else { continue };
+            let kind = &self.kinds[agent.kind];
+            if matches!(kind.diet, Diet::Meat | Diet::None) {
+                continue;
+            }
+            let crowd = near(&self.agents, agent.kind, agent.mind.home, kind.range) as f32 / kind.capacity as f32;
+            let (hungry, cold) = (((crowd - 1.0) * 0.03).clamp(0.0, 0.2), if winter { 0.004 } else { 0.0 });
+            let roll = self.rng.unit();
+            if roll < hungry {
+                self.agents.remove(&id);
+                tally.starved += 1;
+            } else if roll < hungry + cold {
+                self.agents.remove(&id);
+                tally.winter += 1;
+            }
+        }
+
+        // The young: on the first day of spring, and for the small again at midsummer.
+        let of_year = day.rem_euclid(year as i64);
+        let mut groups: BTreeMap<(usize, i32, i32), Vec<u32>> = BTreeMap::new();
+        for (&id, a) in self.agents.iter().filter(|(_, a)| lives(a, &self.kinds)) {
+            groups.entry((a.kind, (a.mind.home.x * 4.0) as i32, (a.mind.home.y * 4.0) as i32)).or_default().push(id);
+        }
+        for ((kind, _, _), members) in &groups {
+            let k = self.kinds[*kind].clone();
+            if !(of_year == 0 || (of_year == crate::sky::SEASON as i64 + 3 && k.lifespan <= 4.0)) {
+                continue;
+            }
+            let home = self.agents[&members[0]].mind.home;
+            let adults = members.iter().filter(|id| (self.when - self.agents[*id].born) / year >= k.maturity()).count();
+            // One that lives alone finds a mate if another of its kind lives within reach.
+            let kin = near(&self.agents, *kind, home, k.range * 2.0);
+            let pairs = if k.group > 1 { adults as f32 / 2.0 } else if kin > adults { adults as f32 * 0.5 } else { 0.0 };
+            let room = (1.0 - near(&self.agents, *kind, home, k.range) as f32 / k.capacity as f32).max(0.0);
+            let wanted = pairs * k.litter * room;
+            let young = wanted.floor() as usize + (self.rng.unit() < wanted.fract()) as usize;
+            let (at, facing) = (self.agents[&members[0]].body.pos, self.agents[&members[0]].facing);
+            for _ in 0..young {
+                let beside = Vec3::new(self.rng.between(-1.5, 1.5), 0.0, self.rng.between(-1.5, 1.5));
+                let id = self.add(world, *kind, at + beside, facing, Driver::Mind);
+                let (when, awake) = (self.when, self.agents[&members[0]].awake);
+                let born = self.agents.get_mut(&id).unwrap();
+                (born.mind.home, born.born, born.awake) = (home, when, awake);
+                tally.born += 1;
+            }
+        }
+
+        // A group grown too large for its ground sends half its number to find their own.
+        if let Some(land) = land {
+            for ((kind, _, _), members) in &groups {
+                let k = self.kinds[*kind].clone();
+                let here: Vec<u32> = members.iter().copied().filter(|id| self.agents.get(id).is_some_and(|a| !a.awake)).collect();
+                if k.group < 2 || here.len() < k.group * 2 {
+                    continue;
+                }
+                let home = self.agents[&here[0]].mind.home;
+                for _ in 0..12 {
+                    let (way, far) = (self.rng.between(0.0, std::f32::consts::TAU), k.range * self.rng.between(1.5, 3.0));
+                    let to = home + Vec2::new(way.cos(), way.sin()) * far;
+                    let (x, z) = ((to.x / CELL).floor() as i32, (to.y / CELL).floor() as i32);
+                    if land.biome(x, z) != k.habitat || land.slope(x, z) > 1 || near(&self.agents, *kind, to, k.range) > 0 {
+                        continue;
+                    }
+                    let ground = land.height(x, z) as f32 * CELL;
+                    for id in here.iter().skip(here.len() / 2) {
+                        let a = self.agents.get_mut(id).unwrap();
+                        a.mind.home = to;
+                        a.mind.goal = to;
+                        a.body.pos = Vec3::new(to.x, ground, to.y);
+                        a.before = a.body.pos;
+                    }
+                    tally.moved += 1;
+                    break;
+                }
+            }
+        }
+        tally
+    }
+}
+
+impl Kind {
+    /// Years before it is grown and breeds: a tenth of its life, a season at the least.
+    pub fn maturity(&self) -> f32 {
+        (self.lifespan * 0.1).clamp(0.25, 1.5)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -867,7 +1109,7 @@ mod tests {
     use cube_voxel::Block;
 
     fn kind(id: &str, temper: Temper, height: f32, speeds: [f32; 3]) -> Kind {
-        Kind { id: id.into(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None, winter: 1.0 }
+        Kind { id: id.into(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None, winter: 1.0, diet: if matches!(temper, Temper::Hunter | Temper::Hostile) { Diet::Meat } else { Diet::Plants }, litter: 2.0, lifespan: 8.0, capacity: 8, range: 80.0, share: 1.0 }
     }
 
     /// Rabbit, wolf, bear, goblin and a person, on a floor of stone 60 m square.
@@ -953,7 +1195,7 @@ mod tests {
         assert_eq!(sim.agents[&rabbit].health, full);
         run(&mut sim, &world, 0.2);
         assert_eq!(sim.agents[&rabbit].health, full - FISTS);
-        // With a blade, one more is enough; it lies, then is gone, then another lives there.
+        // With a blade, one more is enough; it lies, then is gone, and nothing is put in its place.
         sim.agents.get_mut(&person).unwrap().pack.as_mut().unwrap().hold(0);
         sim.agents.get_mut(&person).unwrap().doing = None;
         sim.swing(person);
@@ -963,8 +1205,8 @@ mod tests {
         assert_eq!(sim.agents[&person].pack.as_ref().unwrap().count(crate::items::Item::Meat), 1);
         run(&mut sim, &world, LIES + 1.0);
         assert!(!sim.agents.contains_key(&rabbit));
-        run(&mut sim, &world, RETURNS);
-        assert_eq!(sim.agents.values().filter(|a| a.kind == 0).count(), 1);
+        run(&mut sim, &world, 200.0);
+        assert_eq!(sim.agents.values().filter(|a| a.kind == 0).count(), 0);
         // A blow at nothing, or at what is behind, lands on nothing.
         let behind = sim.add(&world, 0, at(0.0, -1.0), 0.0, Driver::Stand);
         sim.agents.get_mut(&person).unwrap().doing = None;
@@ -1135,4 +1377,34 @@ mod tests {
         }
         assert!(a.agents.values().map(|agent| agent.log.moved).sum::<f32>() > 20.0);
     }
+
+    #[test]
+    fn a_herd_breeds_in_spring_and_a_hunter_with_no_prey_starves() {
+        // (The helper's kinds: 0 a rabbit, 1 a wolf.)
+        let (world, mut sim) = stage();
+        for i in 0..4 {
+            let id = sim.add(&world, 0, at(i as f32, 0.0), 0.0, Driver::Mind);
+            let rabbit = sim.agents.get_mut(&id).unwrap();
+            // (One herd: they keep to the one place.)
+            (rabbit.awake, rabbit.mind.home) = (false, Vec2::ZERO);
+        }
+        // The first day of a spring: pairs have young, born small.
+        sim.when = crate::sky::YEAR * 2.0;
+        sim.agents.values_mut().for_each(|a| a.born = sim.when - crate::sky::YEAR * 2.0);
+        let spring = sim.day(&world, None);
+        assert!(spring.born >= 1, "{spring:?}");
+        let young = sim.agents.values().find(|a| a.born == sim.when).unwrap();
+        assert!(sim.grown(young) < 0.5);
+        // A wolf alone, far from anything it could eat, goes hungry and dies of it.
+        let wolf = sim.add(&world, 1, at(900.0, 900.0), 0.0, Driver::Mind);
+        let w = sim.agents.get_mut(&wolf).unwrap();
+        (w.awake, w.mind.home, w.born) = (false, Vec2::new(900.0, 900.0), sim.when - crate::sky::YEAR);
+        let mut starved = 0;
+        for _ in 0..30 {
+            sim.when += 1.0;
+            starved += sim.day(&world, None).starved;
+        }
+        assert!(!sim.agents.contains_key(&wolf) && starved >= 1);
+    }
+
 }

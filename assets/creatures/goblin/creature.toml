@@ -6,6 +6,8 @@ height = 1.2
 
 [life]
 temper = "hostile"
+diet = "all"
+share = 0.3
 voice = "goblin"
 habitat = "meadow"
 cover = "edge"

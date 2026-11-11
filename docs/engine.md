@@ -168,6 +168,12 @@ The developer's rule (2026-11-11): what varies is data, and a new kind of anythi
 
 ## What lives in it
 
+- **Numbers are made by the island, not set** (`Sim::day`, 2026-11-11; the developer: "if the simulation isn't like real life we have failed. That means doing more than just putting a few creatures here"). The creatures near the player live second by second; the rest, a thousand and more, live by the day: the old die, what eats meat must find prey within its range or starve, what eats plants dies for want of food where it outnumbers what its ground feeds, a few die of the winter, pairs have young on the first day of spring (fewer the fuller the ground), and a group grown to twice its size sends half to find ground of their own. Nothing dead is put back: until this day the dead returned where they had lived after two and a half minutes.
+  - What a kind eats, its litter, its years and what its ground feeds are data (`[life]`: `diet`, `litter`, `lifespan`, `capacity`, `share`), and unsaid they follow from its size: the small breed fast and die young. A hunter ranges two and a half times as far as what it hunts and keeps a territory that holds one group; a pack shares a large kill. A thing of stone or one not alive (`diet = "none"`) neither eats, breeds nor ages.
+  - **`cargo world years N`** runs the island by the day for N years and prints each kind's numbers year by year, with what was born and what died of what; it fails if a kind that began as six or more dies out or one grows past five times its start. Its first run killed everything in a year: the island had been stocked with a hunter to every two of the hunted (84 wolves, 83 goblins). Hunters are now a tenth to a half as common (`share`), and eight years hold: rabbits and squirrels rise to what their ground feeds, deer and ponies fall a third under the wolves and steady, wolves number four to nine.
+  - The young are born small and grow (`Sim::grown`, drawn by `motion`).
+  - **Not yet**: what is awake does not yet feel hunger or thirst (a wolf near the player hunts whenever it sees prey, and nothing goes to water to drink); plants are not eaten down or regrown; nothing sleeps in a den or keeps a nest.
+
 - **A kind keeps its own ground** (`Sim::populate`): no group settles within 80 m of another of its kind (30 m for those that live alone). Herds went wherever suited them and three of ponies stood within a stone's throw: one cluster, to the developer. The pony is 1.6 m tall, not 1.45.
 
 Built 2026-11-10. `cube_sim::life` and `mind`; `cargo world run` judges it.
