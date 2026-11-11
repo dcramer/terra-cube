@@ -36,7 +36,7 @@ struct Grown(HashMap<(i32, i32), Entity>);
 
 /// Sides to a trunk; how much of a leaf mass's surface its cards cover; how big a card is.
 const SIDES: usize = 7;
-const COVER: f32 = 0.75;
+const COVER: f32 = 1.3;
 const CARD: f32 = 0.8;
 
 fn hash(a: u32, b: u32) -> f32 {
@@ -106,7 +106,7 @@ impl Shape {
         // The surface of an ellipsoid, near enough.
         let area = 4.0 * std::f32::consts::PI * ((radii.x * radii.y).powf(1.6) + (radii.x * radii.z).powf(1.6) + (radii.y * radii.z).powf(1.6)).powf(1.0 / 1.6) / 3.0f32.powf(1.0 / 1.6);
         let size = CARD.min(radii.min_element() * 1.1).max(0.3);
-        let cards = ((area * COVER / (size * size)) as u32).clamp(4, 220);
+        let cards = ((area * COVER / (size * size)) as u32).clamp(5, 300);
         for i in 0..cards {
             let roll = |k: u32| hash(n.wrapping_mul(977).wrapping_add(i), k);
             // A point on the ball, pushed out to the surface or a little inside it.
@@ -129,8 +129,10 @@ impl Shape {
             let (ou, ov) = (roll(9) * (SPAN as f32 - span - 0.02) + 0.01, roll(10) * (SPAN as f32 - span - 0.02) + 0.01);
             let half = size * (0.75 + 0.5 * roll(11)) * 0.5;
             let start = self.positions.len() as u32;
-            for (su, sv) in [(-1.0f32, -1.0f32), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
-                self.point(at + (u * su + v * sv) * half, lit, colour, grain.uv(ou + (su * 0.5 + 0.5) * span, ov + (sv * 0.5 + 0.5) * span), 0.45);
+            // A spray of leaf comes to points, not to corners: the card is a diamond, longer
+            // than it is wide. As squares, a crown near to was a heap of paper.
+            for (su, sv) in [(-1.3f32, 0.0f32), (0.0, -0.62), (1.3, 0.0), (0.0, 0.62)] {
+                self.point(at + (u * su + v * sv) * half, lit, colour, grain.uv(ou + (su / 2.6 + 0.5) * span, ov + (sv / 1.24 + 0.5) * span), 0.45);
             }
             self.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
         }

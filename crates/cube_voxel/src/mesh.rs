@@ -730,7 +730,26 @@ fn sprig(cell: IVec3, block: Block, m: &mut MeshData) {
             // Its head: white, yellow or violet by where it grows.
             let head = [[0.85, 0.82, 0.74], top, [0.48, 0.30, 0.62]][(roll(40) * 3.0) as usize % 3];
             // A bloom the size of a bloom: one bit, as crossed petals, not a box three across.
-            blade(m, cell, IVec3::new(x, tall, z), IVec3::new(x + 1, tall + 1, z + 1), head.map(|c| c * 1.5));
+            // A bloom the size of a bloom: six centimetres of petals lying open to the sky.
+            let unit = CELL / SPLIT as f32;
+            let middle = (cell * SPLIT).as_vec3() * unit + Vec3::new(x as f32 + 0.5, tall as f32 + 0.15, z as f32 + 0.5) * unit;
+            let start = m.positions.len() as u32;
+            for k in 0..6 {
+                let turn = k as f32 / 6.0 * std::f32::consts::TAU;
+                // Petals out and a little up; the middle is the first point.
+                for (out, up, shade) in [(0.0f32, 0.0f32, 0.6f32), (0.62, 0.25, 1.5)] {
+                    let _ = k;
+                    m.positions.push((middle + Vec3::new(turn.cos() * out, up, turn.sin() * out) * unit).to_array());
+                    m.normals.push([0.0, 1.0, 0.0]);
+                    m.tangents.push([1.0, 0.0, 0.0, 1.0]);
+                    m.uvs.push(Grain::Plain.uv(SPAN as f32 * 0.5, SPAN as f32 * 0.5));
+                    m.colors.push([head[0] * shade / MEAN, head[1] * shade / MEAN, head[2] * shade / MEAN, 0.2]);
+                }
+            }
+            for k in 0..6u32 {
+                let next = (k + 1) % 6;
+                m.indices.extend([start + k * 2, start + next * 2 + 1, start + k * 2 + 1]);
+            }
         }
     }
 }
