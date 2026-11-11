@@ -252,7 +252,9 @@ pub fn generate(seed: u32, radius: i32) -> (World, Land) {
                 None
             } else if under_cliff {
                 Some(Block::Gravel)
-            } else if damp > 0.47 && h < SEA + cells(scale::MOSS_LINE) && hash2(x, z, seed + 81) < 0.8 {
+            } else if damp > 0.47 && h < SEA + cells(scale::MOSS_LINE) && fbm(xm / 5.0, zm / 5.0, seed + 81) < 0.6 {
+                // (In patches a few metres over, bare stone between: cell by cell at random it
+                // was a floor of grey tiles.)
                 Some(Block::Moss)
             } else {
                 None
