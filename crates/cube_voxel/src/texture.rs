@@ -234,6 +234,8 @@ pub fn atlas_with(photo: impl Fn(Grain) -> Option<Photo>) -> Atlas {
     let size = ROOM * ACROSS;
     let mut paint = vec![[MEAN; 3]; size * size];
     let mut facing = vec![[0.0, 0.0, 1.0f32]; size * size];
+    // How much of each texel is there at all: 1 everywhere but in foliage, which has gaps.
+    let mut cover = vec![[1.0f32; 3]; size * size];
     let unit = 64.0 / TILE as f32;
     for (i, &grain) in Grain::ALL.iter().enumerate() {
         let taken = photo(grain).filter(|p| p.colour.len() == TILE * TILE && p.facing.len() == TILE * TILE);
@@ -259,6 +261,13 @@ pub fn atlas_with(photo: impl Fn(Grain) -> Option<Photo>) -> Atlas {
                 tile.iter_mut().for_each(|v| v[c] = (v[c] * MEAN / mean.max(1e-4)).min(1.0));
             }
         }
+        // A crown is not a solid block of leaf: the darkest part of its picture, the shade
+        // between leaves, is cut away, and light and the far side of the crown show through.
+        let gaps = matches!(grain, Grain::Leaves | Grain::Needles).then(|| {
+            let mut bright: Vec<f32> = tile.iter().map(|v| v[0] + v[1] + v[2]).collect();
+            bright.sort_by(f32::total_cmp);
+            bright[bright.len() * 3 / 10]
+        });
         let lean: Vec<[f32; 3]> = match taken {
             Some(p) => p.facing,
             None => {
@@ -278,6 +287,8 @@ pub fn atlas_with(photo: impl Fn(Grain) -> Option<Photo>) -> Atlas {
             let (x, y) = ((t % ROOM + TILE - BORDER) % TILE, (t / ROOM + TILE - BORDER) % TILE);
             paint[ox + t % ROOM + (oy + t / ROOM) * size] = tile[x + y * TILE];
             facing[ox + t % ROOM + (oy + t / ROOM) * size] = lean[x + y * TILE];
+            let v = tile[x + y * TILE];
+            cover[ox + t % ROOM + (oy + t / ROOM) * size] = [if gaps.is_some_and(|g| v[0] + v[1] + v[2] < g) { 0.0 } else { 1.0 }; 3];
         }
     }
     let (mut rgba, mut relief) = (Vec::new(), Vec::new());
@@ -292,16 +303,16 @@ pub fn atlas_with(photo: impl Fn(Grain) -> Option<Photo>) -> Atlas {
     let mut side = size;
     for n in 0..LEVELS {
         // Linear light to sRGB, as the picture is read.
-        rgba.extend(paint.iter().flat_map(|v| {
+        rgba.extend(paint.iter().zip(&cover).flat_map(|(v, there)| {
             let s = v.map(|v| (if v <= 0.003_130_8 { v * 12.92 } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 } * 255.0).round() as u8);
-            [s[0], s[1], s[2], 255]
+            [s[0], s[1], s[2], (there[0] * 255.0) as u8]
         }));
         relief.extend(facing.iter().flat_map(|v| {
             let n = glam::Vec3::from_array(*v).normalize();
             [n.x, n.y, n.z].map(|c| ((c * 0.5 + 0.5) * 255.0).round() as u8).into_iter().chain([255])
         }));
         if n + 1 < LEVELS {
-            (paint, facing) = (halve(&paint, side), halve(&facing, side));
+            (paint, facing, cover) = (halve(&paint, side), halve(&facing, side), halve(&cover, side));
             side /= 2;
         }
     }

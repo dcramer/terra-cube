@@ -356,7 +356,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                 // bed, the sea does not.
                 let depth = if liquid { (1..=crate::cells(4.0)).take_while(|d| near.get(local - IVec3::Y * *d) == Block::Water).count() } else { 0 };
                 // Of what is solid, alpha is how fast it is held against the wind: leaves give.
-                let alpha = if liquid { 0.58 + depth as f32 * CELL * 0.2 } else if block.foliage() { 1.0 - LEAF } else { 1.0 };
+                let alpha = if liquid { 0.7 + depth as f32 * CELL * 0.3 } else if block.foliage() { 1.0 - LEAF } else { 1.0 };
                 if matches!(block, Block::Grass | Block::Turf | Block::Moss | Block::Litter) || block.foliage() {
                     // Patches: lighter and yellower here, deeper there.
                     let drift = patch(cell) - 0.5;

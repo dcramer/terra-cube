@@ -362,7 +362,10 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     };
     // The paint, and the relief that goes with it: which way each point of a surface faces.
     let (paint, relief) = (picture(atlas.rgba, TextureFormat::Rgba8UnormSrgb), picture(atlas.relief, TextureFormat::Rgba8Unorm));
-    let material = windy.add(ExtendedMaterial { base: StandardMaterial { base_color: Color::WHITE, base_color_texture: Some(paint), normal_map_texture: Some(relief), perceptual_roughness: 0.95, reflectance: 0.2, ..default() }, extension: Wind {} });
+    let material = windy.add(ExtendedMaterial { base: StandardMaterial { base_color: Color::WHITE, base_color_texture: Some(paint), normal_map_texture: Some(relief), perceptual_roughness: 0.95, reflectance: 0.2,
+        // Foliage has gaps cut in it (the atlas's alpha), and through a gap the inside of the
+        // crown's far side is seen: so nothing is culled by which way it faces.
+        alpha_mode: AlphaMode::Mask(0.5), cull_mode: None, double_sided: true, ..default() }, extension: Wind {} });
     // Water is its own mesh and material: it is blended over what is under it.
     // And it moves: ripples, as a picture of which way the surface faces, slid across it by
     // `ripple`. Smooth enough to throw the sun back as a glitter path.
