@@ -184,6 +184,28 @@ impl Eased<'_> {
         (mean / size).round() * size
     }
 
+    /// Whether the column at `x`, `z` with its top at the level `t` is part of the land: at
+    /// least a quarter of the columns round it have ground near that level. A block standing
+    /// alone, a pillar, a wall one cell thick are not.
+    fn land(&mut self, x: i32, t: i32, z: i32) -> bool {
+        let lifts = self.lift(IVec3::new(x, t, z)) + self.lift(IVec3::new(x + 1, t, z)) + self.lift(IVec3::new(x, t, z + 1)) + self.lift(IVec3::new(x + 1, t, z + 1));
+        lifts / 4.0 > -0.75 * self.reach as f32
+    }
+
+    /// How high the top of the column at `x`, `z` is drawn (local cells), taking the end of its
+    /// ground nearest the level `t`. Worked out from that column's own level, so two columns
+    /// side by side agree which is the higher and one of them draws the riser between: asked
+    /// from the other's level across a tall cliff, they did not, and the cliff had holes.
+    fn top(&mut self, x: i32, t: i32, z: i32) -> f32 {
+        let near = self.near;
+        let ends = self.tops.entry((x, z)).or_insert_with(|| {
+            let ground = |y: i32| near.get(IVec3::new(x, y, z)).ground();
+            (1 - CHUNK..2 * CHUNK).filter(|&y| ground(y - 1) && !ground(y)).collect()
+        });
+        let Some(&level) = ends.iter().min_by_key(|&&y| (y - t).abs()) else { return (t - self.reach) as f32 };
+        level as f32 + if self.land(x, level, z) { self.step(x, level, z) } else { 0.0 }
+    }
+
     /// For a ground cell, the level its column's ground ends at over it and how far above
     /// that the column's top is drawn, if the column is land. Stone standing alone or built
     /// up is not: its top would be drawn far from where it is, so it is drawn as its cubes.
@@ -194,8 +216,7 @@ impl Eased<'_> {
             (1 - CHUNK..2 * CHUNK).filter(|&y| ground(y - 1) && !ground(y)).collect()
         });
         let level = *ends.iter().find(|&&y| y > c.y)?;
-        let high = self.step(c.x, level, c.z);
-        (high.abs() <= 2.5).then_some((level, high))
+        self.land(c.x, level, c.z).then(|| (level, self.step(c.x, level, c.z)))
     }
 
     /// How far above itself whatever stands on the ground at the cell `c` is drawn, in cells:
@@ -203,7 +224,8 @@ impl Eased<'_> {
     fn under(&mut self, c: IVec3) -> f32 {
         match ground() {
             Ground::Cubes => 0.0,
-            Ground::Stepped => Some(self.step(c.x, c.y, c.z)).filter(|h| h.abs() <= 2.5).unwrap_or(0.0),
+            Ground::Stepped if self.land(c.x, c.y, c.z) => self.step(c.x, c.y, c.z),
+            Ground::Stepped => 0.0,
             Ground::Smooth => (0..4).map(|i| self.lift(c + IVec3::new(i & 1, 0, i >> 1))).sum::<f32>() / 4.0,
         }
     }
@@ -229,8 +251,7 @@ pub fn eased_under(world: &World, feet: Vec3) -> Option<f32> {
     let mut eased = Eased { near: &near, reach: REACH, lifts: HashMap::new(), tops: HashMap::new() };
     let local = cell - chunk * CHUNK;
     if ground() == Ground::Stepped {
-        let high = eased.step(local.x, local.y, local.z);
-        return (high.abs() <= 2.5).then_some((level + high) * CELL);
+        return eased.land(local.x, local.y, local.z).then(|| (level + eased.step(local.x, local.y, local.z)) * CELL);
     }
     let (fx, fz) = (feet.x / CELL - cell.x as f32, feet.z / CELL - cell.z as f32);
     let mut lift = |dx: i32, dz: i32| eased.lift(local + IVec3::new(dx, 0, dz));
@@ -324,7 +345,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                         if n == IVec3::NEG_Y || (n == IVec3::Y && near.get(local + n).opaque()) {
                             continue;
                         }
-                        let low = if n == IVec3::Y { high } else { eased.step(x + n.x, level, z + n.z) };
+                        let low = if n == IVec3::Y { high } else { eased.top(x + n.x, level, z + n.z) - level as f32 };
                         if n != IVec3::Y && low > high - 1e-3 {
                             continue;
                         }
