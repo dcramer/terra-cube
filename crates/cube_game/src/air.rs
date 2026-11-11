@@ -58,6 +58,38 @@ const FLOCKS: usize = 3;
 const WIND: Vec3 = Vec3::new(0.8, 0.0, 0.6);
 const DRIFT: f32 = 0.45;
 
+/// A rounded body: a ball drawn out to its reach each way.
+fn ellipsoid(x: f32, y: f32, z: f32) -> Mesh {
+    Sphere::new(1.0).mesh().ico(2).unwrap().scaled_by(Vec3::new(x, y, z)).with_computed_normals()
+}
+
+/// A wing, a fin or a tail: a flat blade `span` long and `chord` deep at its widest, drawn to
+/// a point at each end and swept back, lying flat with its length along x.
+fn blade_mesh(span: f32, chord: f32) -> Mesh {
+    use bevy::{asset::RenderAssetUsages, mesh::Indices, render::render_resource::PrimitiveTopology};
+    const N: usize = 8;
+    let mut at: Vec<[f32; 3]> = Vec::new();
+    for i in 0..=N {
+        let t = i as f32 / N as f32;
+        // Fullest a third of the way along; the leading edge nearly straight, the trailing curved.
+        let deep = chord * (t * (1.0 - t)).sqrt() * 2.0 * (1.2 - 0.4 * t);
+        let sweep = chord * 0.35 * (t - 0.5).abs();
+        let x = (t - 0.5) * span;
+        at.push([x, 0.0, sweep - deep * 0.3]);
+        at.push([x, 0.0, sweep + deep * 0.7]);
+    }
+    let mut index = Vec::new();
+    for i in 0..N as u32 {
+        index.extend([i * 2, i * 2 + 1, i * 2 + 3, i * 2, i * 2 + 3, i * 2 + 2]);
+    }
+    let n = at.len();
+    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, at)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 1.0, 0.0]; n])
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.5, 0.5]; n])
+        .with_inserted_indices(Indices::U32(index))
+}
+
 /// 0 to 1, a different one each call.
 fn roll(state: &mut u32) -> f32 {
     *state ^= *state << 13;
@@ -240,31 +272,37 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
         commands.spawn((Leaf(spin, roll(&mut state) * 100.0), Mesh3d(chip.clone()), MeshMaterial3d(tones[i % 4].clone()), Transform::from_translation(far), NotShadowCaster));
     }
     // Butterflies: a body with two wings hinged along it, white, yellow or blue.
-    let wing = meshes.add(Cuboid::new(0.04, 0.002, 0.045));
+    let wing = meshes.add(blade_mesh(0.045, 0.06));
+    let (thorax, dusk) = (meshes.add(ellipsoid(0.004, 0.004, 0.022)), materials.add(StandardMaterial { base_color: Color::srgb(0.08, 0.07, 0.06), perceptual_roughness: 0.9, ..default() }));
     let coats = [Color::srgb(0.95, 0.93, 0.85), Color::srgb(0.95, 0.78, 0.2), Color::srgb(0.35, 0.5, 0.9)].map(|c| materials.add(StandardMaterial { base_color: c, perceptual_roughness: 0.8, double_sided: true, cull_mode: None, ..default() }));
     for i in 0..BUTTERFLIES {
         let own = roll(&mut state) * 100.0;
         commands.spawn((Butterfly { home: far, own }, Transform::from_translation(far), Visibility::default())).with_children(|body| {
+            body.spawn((Mesh3d(thorax.clone()), MeshMaterial3d(dusk.clone()), Transform::default(), NotShadowCaster));
             for side in [-1.0f32, 1.0] {
                 // Hinged at the body: the wing's mesh sits out from the hinge.
                 body.spawn((Wing { side, beat: 26.0 + own * 0.05, sweep: 1.1 }, Transform::default(), Visibility::default())).with_child((Mesh3d(wing.clone()), MeshMaterial3d(coats[i % 3].clone()), Transform::from_xyz(side * 0.022, 0.0, 0.0), NotShadowCaster));
             }
         });
     }
+    let (beak, horn) = (meshes.add(ellipsoid(0.005, 0.005, 0.014)), materials.add(StandardMaterial { base_color: Color::srgb(0.75, 0.6, 0.2), perceptual_roughness: 0.6, ..default() }));
     // Small birds: a round body, a head, and two short wings that fold when it is down.
-    let (breast, crown, pinion) = (meshes.add(Cuboid::new(0.06, 0.06, 0.12)), meshes.add(Cuboid::new(0.04, 0.04, 0.04)), meshes.add(Cuboid::new(0.09, 0.01, 0.06)));
+    let (breast, crown, pinion) = (meshes.add(ellipsoid(0.032, 0.034, 0.06)), meshes.add(ellipsoid(0.022, 0.022, 0.024)), meshes.add(blade_mesh(0.1, 0.06)));
     let plumage = [Color::srgb(0.45, 0.33, 0.22), Color::srgb(0.62, 0.3, 0.16), Color::srgb(0.3, 0.34, 0.4)].map(|c| materials.add(StandardMaterial { base_color: c, perceptual_roughness: 0.9, double_sided: true, cull_mode: None, ..default() }));
     for i in 0..SONGBIRDS {
         let coat = plumage[i % 3].clone();
         commands.spawn((Sings("bird"), Songbird { from: far, to: far, since: -100.0, flight: 0.0, own: roll(&mut state) * 100.0, facing: 0.0 }, Mesh3d(breast.clone()), MeshMaterial3d(coat.clone()), Transform::from_translation(far))).with_children(|body| {
-            body.spawn((Mesh3d(crown.clone()), MeshMaterial3d(coat.clone()), Transform::from_xyz(0.0, 0.045, -0.065)));
+            body.spawn((Mesh3d(crown.clone()), MeshMaterial3d(coat.clone()), Transform::from_xyz(0.0, 0.035, -0.06)));
+            // A beak, and a tail held out behind.
+            body.spawn((Mesh3d(beak.clone()), MeshMaterial3d(horn.clone()), Transform::from_xyz(0.0, 0.032, -0.088)));
+            body.spawn((Mesh3d(pinion.clone()), MeshMaterial3d(coat.clone()), Transform::from_xyz(0.0, 0.01, 0.085).with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)).with_scale(Vec3::new(0.7, 1.0, 0.5))));
             for side in [-1.0f32, 1.0] {
                 body.spawn((Wing { side, beat: 34.0, sweep: 1.0 }, Folds, Transform::from_xyz(side * 0.028, 0.02, 0.0), Visibility::default())).with_child((Mesh3d(pinion.clone()), MeshMaterial3d(coat.clone()), Transform::from_xyz(side * 0.045, 0.0, 0.0), NotShadowCaster));
             }
         });
     }
     // Dragonflies: a thin bright body and four clear wings held flat, too fast to see beat.
-    let (needle, pane) = (meshes.add(Cuboid::new(0.012, 0.012, 0.09)), meshes.add(Cuboid::new(0.11, 0.001, 0.022)));
+    let (needle, pane) = (meshes.add(ellipsoid(0.005, 0.005, 0.042)), meshes.add(blade_mesh(0.11, 0.02)));
     let enamel = [Color::srgb(0.1, 0.5, 0.75), Color::srgb(0.2, 0.6, 0.25), Color::srgb(0.75, 0.2, 0.15)].map(|c| materials.add(StandardMaterial { base_color: c, perceptual_roughness: 0.3, ..default() }));
     let clear = materials.add(StandardMaterial { base_color: Color::srgba(0.9, 0.95, 1.0, 0.35), alpha_mode: AlphaMode::Blend, double_sided: true, cull_mode: None, ..default() });
     for i in 0..DRAGONFLIES {
@@ -276,18 +314,21 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     }
     // Swallows: always a few on the wing near the camera, low and fast in long loops, so the
     // sky in any view has something crossing it. True to size, 17 cm long and 33 across.
-    let (dart, blade) = (meshes.add(Cuboid::new(0.045, 0.04, 0.17)), meshes.add(Cuboid::new(0.15, 0.008, 0.05)));
+    let (dart, blade) = (meshes.add(ellipsoid(0.022, 0.02, 0.085)), meshes.add(blade_mesh(0.16, 0.05)));
     let slate = materials.add(StandardMaterial { base_color: Color::srgb(0.1, 0.12, 0.2), perceptual_roughness: 0.6, double_sided: true, cull_mode: None, ..default() });
     for _ in 0..SWALLOWS {
         commands.spawn((Swallow { home: far, own: roll(&mut state) * 100.0, out: 6.0 + roll(&mut state) * 9.0, high: 2.5 + roll(&mut state) * 6.0 }, Mesh3d(dart.clone()), MeshMaterial3d(slate.clone()), Transform::from_translation(far))).with_children(|body| {
             for side in [-1.0f32, 1.0] {
+                if side < 0.0 {
+                    body.spawn((Mesh3d(blade.clone()), MeshMaterial3d(slate.clone()), Transform::from_xyz(0.0, 0.0, 0.11).with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)).with_scale(Vec3::new(0.55, 1.0, 0.5))));
+                }
                 body.spawn((Wing { side, beat: 13.0, sweep: 0.7 }, Transform::default(), Visibility::default())).with_child((Mesh3d(blade.clone()), MeshMaterial3d(slate.clone()), Transform::from_xyz(side * 0.09, 0.0, 0.0)));
             }
         });
     }
     // Fish: a body the length of a hand to a forearm, a tail that beats, dark on the back.
     // They keep just under the surface where they can be seen, a school together.
-    let (flank, fin) = (meshes.add(Cuboid::new(0.035, 0.05, 0.16)), meshes.add(Cuboid::new(0.008, 0.055, 0.06)));
+    let (flank, fin) = (meshes.add(ellipsoid(0.016, 0.028, 0.08)), meshes.add(ellipsoid(0.003, 0.03, 0.028)));
     let scales = [Color::srgb(0.22, 0.26, 0.2), Color::srgb(0.3, 0.3, 0.26), Color::srgb(0.42, 0.3, 0.16)].map(|c| materials.add(StandardMaterial { base_color: c, perceptual_roughness: 0.35, reflectance: 0.6, ..default() }));
     let ring = meshes.add(Annulus::new(0.9, 1.0).mesh().resolution(24));
     let ripple = materials.add(StandardMaterial { base_color: Color::srgba(0.9, 0.95, 1.0, 0.5), alpha_mode: AlphaMode::Blend, unlit: true, double_sided: true, cull_mode: None, ..default() });
@@ -303,7 +344,7 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     }
     commands.insert_resource(Schools(vec![far; SCHOOLS]));
     // Birds: dark, a body and two long wings, seen from below against the sky.
-    let (trunk, span) = (meshes.add(Cuboid::new(0.14, 0.1, 0.5)), meshes.add(Cuboid::new(0.55, 0.02, 0.22)));
+    let (trunk, span) = (meshes.add(ellipsoid(0.07, 0.06, 0.25)), meshes.add(blade_mesh(0.6, 0.24)));
     let dark = materials.add(StandardMaterial { base_color: Color::srgb(0.07, 0.07, 0.08), perceptual_roughness: 0.9, double_sided: true, cull_mode: None, ..default() });
     for _ in 0..FLOCKS {
         let turn = roll(&mut state) * TAU;
@@ -313,10 +354,34 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
             let bird = Bird { middle: middle + Vec3::Y * (roll(&mut state) - 0.5) * 6.0, out: out + (roll(&mut state) - 0.5) * 9.0, speed, at: b as f32 * 0.22 + roll(&mut state) * 0.2 };
             commands.spawn((Sings("crow"), bird, Mesh3d(trunk.clone()), MeshMaterial3d(dark.clone()), Transform::from_translation(far), NotShadowCaster)).with_children(|body| {
                 for side in [-1.0f32, 1.0] {
+                    if side < 0.0 {
+                        body.spawn((Mesh3d(span.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(0.0, 0.0, 0.32).with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)).with_scale(Vec3::new(0.5, 1.0, 0.6))));
+                    }
                     body.spawn((Wing { side, beat: 5.5, sweep: 0.55 }, Transform::default(), Visibility::default())).with_child((Mesh3d(span.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(side * 0.32, 0.0, 0.0), NotShadowCaster));
                 }
             });
         }
+    }
+    // `AIR_SHOW=1`: one of each set out still, a metre and a half up by the start, wings
+    // spread, to be looked at (`--at 3,0 --dist 2.2 --pitch 0.25`).
+    if std::env::var_os("AIR_SHOW").is_some() {
+        let mut show = |at: Vec3, body: &Handle<Mesh>, coat: &Handle<StandardMaterial>, wing: &Handle<Mesh>, wings: &Handle<StandardMaterial>, out: f32, tail: Option<f32>| {
+            commands.spawn((Mesh3d(body.clone()), MeshMaterial3d(coat.clone()), Transform::from_translation(at))).with_children(|b| {
+                for side in [-1.0f32, 1.0] {
+                    b.spawn((Mesh3d(wing.clone()), MeshMaterial3d(wings.clone()), Transform::from_xyz(side * out, 0.01, 0.0).with_rotation(Quat::from_rotation_z(side * 0.25))));
+                }
+                if let Some(back) = tail {
+                    b.spawn((Mesh3d(wing.clone()), MeshMaterial3d(wings.clone()), Transform::from_xyz(0.0, 0.0, back).with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)).with_scale(Vec3::new(0.55, 1.0, 0.5))));
+                }
+            });
+        };
+        let y = 13.2;
+        show(Vec3::new(2.4, y, 0.0), &thorax, &dusk, &wing, &coats[1], 0.022, None);
+        show(Vec3::new(2.7, y, 0.0), &breast, &plumage[1], &pinion, &plumage[1], 0.05, Some(0.085));
+        show(Vec3::new(3.1, y, 0.0), &dart, &slate, &blade, &slate, 0.09, Some(0.11));
+        show(Vec3::new(3.5, y, 0.0), &needle, &enamel[0], &pane, &clear, 0.055, None);
+        show(Vec3::new(4.3, y, 0.0), &trunk, &dark, &span, &dark, 0.32, Some(0.32));
+        commands.spawn((Mesh3d(flank.clone()), MeshMaterial3d(scales[0].clone()), Transform::from_xyz(3.8, y - 0.25, 0.0))).with_child((Mesh3d(fin.clone()), MeshMaterial3d(scales[0].clone()), Transform::from_xyz(0.0, 0.0, 0.1)));
     }
 }
 
