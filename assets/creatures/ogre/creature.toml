@@ -6,7 +6,7 @@ height = 3.4
 
 [life]
 temper = "hostile"
-voice = "troll"
+voice = "ogre"
 habitat = "snow"
 cover = "open"
 group = 1

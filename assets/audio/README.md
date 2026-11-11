@@ -83,6 +83,15 @@ Added 2026-11-11, so the hawks overhead stop calling as crows:
 | hawk_1.ogg | 2.60 | A hawk's call (0.45 to 3.05 s of an 8.5 s recording of a roadside hawk, Belize, 2023), rumble under 400 Hz taken off | https://commons.wikimedia.org/wiki/File:Roadside_Hawk_Belize.mp3 | Roadside_Hawk_Belize.mp3 | CC0 | Licensing section: CC0 1.0 dedication, no attribution required |
 | hawk_2.ogg | 2.60 | A hawk's call (4.0 to 6.6 s of an 8.5 s recording of a roadside hawk, Belize, 2023), rumble under 400 Hz taken off | https://commons.wikimedia.org/wiki/File:Roadside_Hawk_Belize.mp3 | Roadside_Hawk_Belize.mp3 | CC0 | Licensing section: CC0 1.0 dedication, no attribution required |
 
+Added 2026-11-11, each the loudest stretch of its recording, for animals that had another's voice:
+
+| File | Seconds | What it is | Source page | Original file | Licence | Where the licence is stated |
+|---|---|---|---|---|---|---|
+| moose_1.ogg | 2.00 | A moose (8.65 to 10.65 s of 56 s) | https://commons.wikimedia.org/wiki/File:Moose_sound_effect.wav | Moose sound effect.wav | CC0 | Licensing section: CC0 1.0 dedication, no attribution required |
+| hedgehog_1.ogg | 1.00 | A long-eared hedgehog's voice (17.05 to 18.05 s of 64 s) | https://commons.wikimedia.org/wiki/File:Hedgehog_O.ogg | Hedgehog O.ogg | CC0 | Licensing section: CC0 1.0 dedication, no attribution required |
+| toad_1.ogg | 1.40 | A common toad's mating call (7.05 to 8.45 s of 10 s); the giant toad has it played low | https://commons.wikimedia.org/wiki/File:Erdkr%C3%B6te_Paarungsruf.OGG | Erdkröte Paarungsruf.OGG | Public domain | Licensing section: released to the public domain, not copyrighted |
+| ogre_1.ogg | 1.80 | Monster growls, a voice (0.30 to 2.10 s of 54 s), from pdsounds.org | https://commons.wikimedia.org/wiki/File:Monster_growls.ogg | Monster growls.ogg | Public domain | Licensing section: public domain, not copyrighted |
+
 Made here, not recorded (2026-11-11), for creatures that had no sound of their own:
 
 | File | Seconds | What it is | Source | Original | Licence | Stated |

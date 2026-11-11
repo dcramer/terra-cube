@@ -179,6 +179,8 @@ fn creatures(mut commands: Commands, time: Res<Time>, mut bank: ResMut<Bank>, li
                 "troll" => 3.0,
                 "rabbit" => 0.3,
                 "frog" => 0.15,
+                // (A common toad, a hand long: the giant one is given the lowest it may have.)
+                "toad" => 0.1,
                 "goat" => 1.1,
                 "horse" => 1.6,
                 "goblin" => 1.2,

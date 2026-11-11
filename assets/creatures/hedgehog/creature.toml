@@ -6,7 +6,7 @@ height = 0.15
 
 [life]
 temper = "timid"
-voice = "rabbit"
+voice = "hedgehog"
 habitat = "meadow"
 winter = 0.05
 cover = "edge"

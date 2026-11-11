@@ -9,7 +9,7 @@ gait_gain = -0.4
 
 [life]
 temper = "hostile"
-voice = "frog"
+voice = "toad"
 habitat = "shore"
 winter = 0.05
 water = "edge"
