@@ -126,9 +126,10 @@ fn layout(
     stage.legend = format!("rows={} cols={cols} view={}", names.join(","), args.view);
 }
 
-fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, time: Res<Time>, rigs: Query<&Rig>, creatures: Query<(), With<Creature>>, mut exit: MessageWriter<AppExit>, mut waited: Local<f32>) {
-    // Every creature there is going to be has its model: the ones asked for, and any the world came with.
-    if !stage.laid_out || rigs.iter().count() < stage.expected.max(creatures.iter().count()) {
+fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, time: Res<Time>, rigs: Query<&Rig>, creatures: Query<(), With<Creature>>, drawn: Option<Res<world::Drawn>>, mut exit: MessageWriter<AppExit>, mut waited: Local<f32>) {
+    // Every creature there is going to be has its model (the ones asked for, and any the world
+    // came with), and every chunk in view has its mesh.
+    if !stage.laid_out || rigs.iter().count() < stage.expected.max(creatures.iter().count()) || drawn.is_some_and(|d| d.waiting > 0) {
         return;
     }
     stage.settled += 1;

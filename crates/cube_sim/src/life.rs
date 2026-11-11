@@ -442,10 +442,12 @@ impl Sim {
         let mut placed = 0;
         for kind in 0..self.kinds.len() {
             let k = self.kinds[kind].clone();
-            let keep_off = if k.temper == Temper::Timid { 12.0 } else { 45.0 };
+            let keep_off = if k.temper == Temper::Timid { 12.0 } else { 60.0 };
+            // A bigger island has more groups on it: as many again for each 96 m it runs out.
+            let wanted = k.groups * ((land.span as f32 * CELL / 96.0).round() as usize).max(1);
             let mut groups = 0;
             for _ in 0..4000 {
-                if groups == k.groups {
+                if groups == wanted {
                     break;
                 }
                 let (x, z) = (self.rng.below(land.span as usize * 2) as i32 - land.span, self.rng.below(land.span as usize * 2) as i32 - land.span);
@@ -562,7 +564,7 @@ mod tests {
 
     #[test]
     fn the_same_seed_lives_the_same_life_and_nothing_leaves_the_world() {
-        let (world, land) = terrain::generate(6, terrain::RADIUS);
+        let (world, land) = terrain::generate(6, terrain::RADIUS / 2);
         let live = || {
             let (_, mut sim) = stage();
             let placed = sim.populate(&world, &land);

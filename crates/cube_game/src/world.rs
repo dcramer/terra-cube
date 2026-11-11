@@ -20,10 +20,6 @@ pub struct Terrain(pub Voxels, pub Land);
 #[derive(Resource, Default)]
 pub struct Dirty(pub HashSet<IVec3>);
 
-/// On a chunk's mesh: which chunk it draws.
-#[derive(Component)]
-struct ChunkMesh(IVec3);
-
 /// The two materials every chunk is drawn with.
 #[derive(Resource)]
 struct Look {
@@ -62,7 +58,7 @@ pub const SKY: Color = Color::srgb(0.53, 0.72, 0.90);
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ClearColor(SKY)).init_resource::<Dirty>().add_systems(Startup, setup).add_systems(Update, remesh);
+        app.insert_resource(ClearColor(SKY)).init_resource::<Dirty>().init_resource::<Drawn>().add_systems(Startup, setup).add_systems(Update, stream);
     }
 }
 
@@ -87,11 +83,8 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
         let (lift, block) = if build { (across / 6.0, Block::Stone) } else { (across * 0.1, Block::Air) };
         voxels.ball(Vec3::new(x, ground + lift, z), across / 2.0, block);
     }
-    let look = Look { solid: material, water };
-    for &chunk in voxels.chunks.keys() {
-        draw_chunk(&mut commands, &mut meshes, &look, &voxels, chunk);
-    }
-    commands.insert_resource(look);
+    // The chunks are meshed as the camera comes near them (`stream`), not here.
+    commands.insert_resource(Look { solid: material, water });
     // The sea beyond the world's edge: four sheets round it at the water's level, out past the fog.
     let (edge, far, level) = (land.span as f32 * CELL, 1500.0, SEA as f32 * CELL - 0.01);
     let [r, g, b] = cube_voxel::Block::Water.colors().0;
@@ -106,46 +99,91 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
 /// The levels of detail a chunk is drawn at: how many cells a side are taken as one, and the
 /// metres from the camera between which that level shows. Each fades into the next across
 /// eight metres, so nothing pops. Up close every cell is drawn, with ground cover and the
-/// fine shape of broken cells; past 48 m the cells are half a metre, a quarter of the faces;
-/// past 112 m a metre, a sixteenth.
-pub const LEVELS: [(i32, f32, f32); 3] = [(1, 0.0, 48.0), (2, 48.0, 112.0), (4, 112.0, f32::MAX)];
+/// fine shape of broken cells; past 40 m the cells are half a metre, a quarter of the faces;
+/// past 104 m a metre, a sixteenth.
+pub const LEVELS: [(i32, f32, f32); 3] = [(1, 0.0, 40.0), (2, 40.0, 104.0), (4, 104.0, f32::MAX)];
 const FADE: f32 = 8.0;
 
-/// Meshes one chunk and spawns what it draws: its solid cells and its water, at every level.
-fn draw_chunk(commands: &mut Commands, meshes: &mut Assets<Mesh>, look: &Look, voxels: &Voxels, chunk: IVec3) {
-    // Every level of a chunk is drawn from the chunk's middle, so the camera's distance to it
-    // is the same whichever level is asked: the fade between two levels needs that.
-    let middle = ((chunk * CHUNK).as_vec3() + CHUNK as f32 / 2.0) * CELL;
-    for (step, from, to) in LEVELS {
-        let range = VisibilityRange { start_margin: (from - FADE).max(0.0)..from, end_margin: if to == f32::MAX { 1.0e9..1.1e9 } else { to - FADE..to }, use_aabb: false };
-        for (liquid, material) in [(false, &look.solid), (true, &look.water)] {
-            let mut data = if step == 1 { mesh_chunk(voxels, chunk, liquid) } else { mesh_chunk_far(voxels, chunk, liquid, step) };
-            data.positions.iter_mut().for_each(|p| *p = (Vec3::from_array(*p) - middle).to_array());
-            if data.indices.is_empty() {
-                continue;
-            }
-            let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
-                .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
-                .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
-                .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, data.colors)
-                .with_inserted_indices(Indices::U32(data.indices));
-            commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material.clone()), Transform::from_translation(middle), ChunkMesh(chunk), range.clone()));
-        }
-    }
+/// How far outside a level's range a chunk's mesh for it is made (so it is there before it is
+/// wanted) and, at twice this, thrown away.
+const KEEP: f32 = 12.0;
+
+/// The chunk meshes there are: for each chunk and level, what was spawned for it (nothing, for
+/// a chunk with no faces at that level). And how many are still wanted and not yet made.
+#[derive(Resource, Default)]
+pub struct Drawn {
+    made: std::collections::HashMap<(IVec3, usize), Vec<Entity>>,
+    pub waiting: usize,
 }
 
-/// Draws again the chunks that changed, the frame they changed.
-fn remesh(mut commands: Commands, mut dirty: ResMut<Dirty>, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, mut meshes: ResMut<Assets<Mesh>>, drawn: Query<(Entity, &ChunkMesh)>) {
-    let (Some(terrain), Some(look)) = (terrain, look) else { return };
-    if dirty.0.is_empty() {
-        return;
+fn middle_of(chunk: IVec3) -> Vec3 {
+    ((chunk * CHUNK).as_vec3() + CHUNK as f32 / 2.0) * CELL
+}
+
+/// Meshes one chunk at one level and spawns what it draws: its solid cells and its water.
+fn draw_level(commands: &mut Commands, meshes: &mut Assets<Mesh>, look: &Look, voxels: &Voxels, chunk: IVec3, level: usize) -> Vec<Entity> {
+    // Every level of a chunk is drawn from the chunk's middle, so the camera's distance to it
+    // is the same whichever level is asked: the fade between two levels needs that.
+    let middle = middle_of(chunk);
+    let (step, from, to) = LEVELS[level];
+    let range = VisibilityRange { start_margin: (from - FADE).max(0.0)..from, end_margin: if to == f32::MAX { 1.0e9..1.1e9 } else { to - FADE..to }, use_aabb: false };
+    let mut spawned = Vec::new();
+    for (liquid, material) in [(false, &look.solid), (true, &look.water)] {
+        let mut data = if step == 1 { mesh_chunk(voxels, chunk, liquid) } else { mesh_chunk_far(voxels, chunk, liquid, step) };
+        if data.indices.is_empty() {
+            continue;
+        }
+        data.positions.iter_mut().for_each(|p| *p = (Vec3::from_array(*p) - middle).to_array());
+        let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, data.colors)
+            .with_inserted_indices(Indices::U32(data.indices));
+        spawned.push(commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material.clone()), Transform::from_translation(middle), range.clone())).id());
     }
-    for (entity, chunk) in &drawn {
-        if dirty.0.contains(&chunk.0) {
-            commands.entity(entity).despawn();
+    spawned
+}
+
+/// Keeps the meshes there are in step with where the camera is: a chunk is meshed at a level
+/// when the camera comes within that level's range (nearest first, a few milliseconds' worth a
+/// frame), and its mesh is dropped when the camera is well outside it. A chunk that changed
+/// loses its meshes and is made again. So what is meshed and held is what can be seen, and
+/// the world can be bigger than that.
+fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, mut meshes: ResMut<Assets<Mesh>>, mut drawn: ResMut<Drawn>, mut dirty: ResMut<Dirty>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
+    let (Some(terrain), Some(look), Some(eye)) = (terrain, look, cameras.iter().next().map(|t| t.translation())) else { return };
+    for chunk in dirty.0.drain() {
+        for level in 0..LEVELS.len() {
+            for entity in drawn.made.remove(&(chunk, level)).into_iter().flatten() {
+                commands.entity(entity).despawn();
+            }
         }
     }
-    for chunk in dirty.0.drain() {
-        draw_chunk(&mut commands, &mut meshes, &look, &terrain.0, chunk);
+    let mut wanted: Vec<(f32, IVec3, usize)> = Vec::new();
+    for &chunk in terrain.0.chunks.keys() {
+        let away = eye.distance(middle_of(chunk));
+        for (level, &(_, from, to)) in LEVELS.iter().enumerate() {
+            let has = drawn.made.contains_key(&(chunk, level));
+            if !has && away > from - FADE - KEEP && away < to + KEEP {
+                wanted.push((away, chunk, level));
+            } else if has && (away < from - FADE - KEEP * 2.0 || away > to + KEEP * 2.0) {
+                for entity in drawn.made.remove(&(chunk, level)).into_iter().flatten() {
+                    commands.entity(entity).despawn();
+                }
+            }
+        }
+    }
+    wanted.sort_by(|a, b| a.0.total_cmp(&b.0));
+    drawn.waiting = wanted.len();
+    // A picture waits for the world, so it may take as long as it likes; a window gets a long
+    // slice while it first fills in, then a few milliseconds a frame.
+    let slice = if args.scene.is_some() || time.elapsed_secs() < 3.0 { 0.05 } else { 0.004 };
+    let started = std::time::Instant::now();
+    for (_, chunk, level) in wanted {
+        let spawned = draw_level(&mut commands, &mut meshes, &look, &terrain.0, chunk, level);
+        drawn.made.insert((chunk, level), spawned);
+        drawn.waiting -= 1;
+        if started.elapsed().as_secs_f32() > slice {
+            break;
+        }
     }
 }

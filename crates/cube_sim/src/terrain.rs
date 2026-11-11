@@ -49,9 +49,14 @@ fn mix(a: f32, b: f32, t: f32) -> f32 {
 pub const SEA_LEVEL: f32 = 8.0;
 pub const SEA: i32 = (SEA_LEVEL / CELL) as i32;
 /// The world the game starts in, and the one `cargo world` judges: its seed, and how many
-/// chunks it runs out from the origin (96 m each way).
+/// chunks it runs out from the origin (192 m each way).
 pub const SEED: u32 = 6;
-pub const RADIUS: i32 = (96.0 / (CELL * CHUNK as f32)) as i32;
+pub const RADIUS: i32 = (192.0 / (CELL * CHUNK as f32)) as i32;
+/// How big the land's shapes are: 1 is as they were first tuned, on an island 192 m across,
+/// where a hill was ten metres over and a mountain 38 m high and a person stood on it like a
+/// giant on a model. `SPREAD` widens every shape, `RISE` heightens it.
+pub const SPREAD: f32 = 2.0;
+pub const RISE: f32 = 1.7;
 
 /// What grows on a column, and so who lives there.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
@@ -133,14 +138,14 @@ impl Land {
     fn biome_of(&self, x: i32, z: i32) -> Biome {
         let h = self.height(x, z);
         let over_sea = (h - SEA) as f32 * CELL;
-        let moist = fbm(x as f32 * CELL / 35.0, z as f32 * CELL / 35.0, self.seed + 21);
+        let moist = fbm(x as f32 * CELL / (35.0 * SPREAD), z as f32 * CELL / (35.0 * SPREAD), self.seed + 21);
         if h < SEA {
             Biome::Water
-        } else if over_sea <= 0.5 {
+        } else if over_sea <= 0.6 {
             Biome::Shore
-        } else if over_sea > 28.0 {
+        } else if over_sea > 28.0 * RISE {
             Biome::Snow
-        } else if over_sea > 17.0 || self.slope(x, z) >= 3 {
+        } else if over_sea > 17.0 * RISE || self.slope(x, z) >= 3 {
             Biome::Rock
         } else if moist > 0.5 {
             Biome::Forest
@@ -155,8 +160,9 @@ impl Land {
 /// through where a slow noise crosses its middle; the edge falls away into the sea; the origin
 /// is a clearing. Nothing here knows the size of a cell.
 fn column(x: f32, z: f32, seed: u32, span: f32) -> f32 {
-    // The shapes were tuned in half metres, and are kept so.
-    let (x, z, span, sea) = (x * 2.0, z * 2.0, span * 2.0, SEA_LEVEL * 2.0);
+    // The shapes were tuned in half metres on a smaller island, and are kept so: the point is
+    // brought into that space, and the height taken back out.
+    let (x, z, span, sea) = (x * 2.0 / SPREAD, z * 2.0 / SPREAD, span * 2.0 / SPREAD, SEA_LEVEL * 2.0);
     // Bent coordinates, so nothing runs straight.
     let (wx, wz) = (x + (fbm(x / 70.0, z / 70.0, seed + 11) - 0.5) * 44.0, z + (fbm(x / 70.0, z / 70.0, seed + 12) - 0.5) * 44.0);
     let base = fbm(wx / 120.0, wz / 120.0, seed);
@@ -178,14 +184,15 @@ fn column(x: f32, z: f32, seed: u32, span: f32) -> f32 {
     h = mix(h, h.min(sea + 2.0), valley * 0.85);
     // The river is deep in places and a ford in others.
     let bed = mix(1.0, 4.5, smooth(0.42, 0.58, fbm(x / 45.0, z / 45.0, seed + 10)));
-    h = mix(h, sea - bed, channel);
+    // Its depth is not heightened with the land: a ford stays a ford.
+    h = mix(h, sea - bed / RISE, channel);
 
     let clearing = 1.0 - smooth(14.0, 40.0, from_origin);
     h = mix(h, sea + 4.0 + hills * 0.15, clearing);
 
     let out = from_origin / span + (fbm(x / 50.0, z / 50.0, seed + 15) - 0.5) * 0.25;
     h = mix(h, sea - 9.0, smooth(0.68, 0.95, out));
-    h * 0.5
+    SEA_LEVEL + (h * 0.5 - SEA_LEVEL) * RISE
 }
 
 /// A world `radius` chunks out from the origin in x and z, and the land it was made from.
@@ -211,13 +218,13 @@ pub fn generate(seed: u32, radius: i32) -> (World, Land) {
             };
             // On rock that is not steep: moss where it is low and damp, loose stone under a
             // cliff, bare stone elsewhere.
-            let damp = fbm(xm / 35.0, zm / 35.0, seed + 21);
+            let damp = fbm(xm / (35.0 * SPREAD), zm / (35.0 * SPREAD), seed + 21);
             let under_cliff = (-2..=2).any(|dz| (-2..=2).any(|dx| land.height(x + dx, z + dz) >= h + cells(1.5)));
             let cap = if biome != Biome::Rock || land.slope(x, z) > 1 {
                 None
             } else if under_cliff {
                 Some(Block::Gravel)
-            } else if damp > 0.47 && h < SEA + cells(22.0) && hash2(x, z, seed + 81) < 0.8 {
+            } else if damp > 0.47 && h < SEA + cells(22.0 * RISE) && hash2(x, z, seed + 81) < 0.8 {
                 Some(Block::Moss)
             } else {
                 None
@@ -270,7 +277,7 @@ fn plant(world: &mut World, land: &mut Land) {
                 continue;
             }
             let mut rng = Rng::new((seed as u64) << 40 ^ ((gx as u32 as u64) << 20) ^ gz as u32 as u64);
-            let high = h > SEA + cells(10.0);
+            let high = h > SEA + cells(10.0 * RISE);
             // By water: within six metres of it and little above it.
             let wet = h <= SEA + cells(1.5) && (-3..=3).any(|dz| (-3..=3).any(|dx| land.biome(x + dx * cells(2.0), z + dz * cells(2.0)) == Biome::Water));
             let (tree, under, boulder) = match biome {
@@ -357,7 +364,7 @@ mod tests {
 
     #[test]
     fn the_start_is_a_dry_clearing_and_the_edge_is_sea() {
-        let (world, land) = generate(7, 5);
+        let (world, land) = generate(7, 6);
         assert_eq!(land.biome(0, 0), Biome::Meadow);
         assert!(land.trees.iter().all(|t| Vec3::new(t.x as f32, 0.0, t.z as f32).length() * CELL >= CLEARING));
         assert_eq!(world.get(IVec3::new(0, land.height(0, 0), 0)), Block::Air);
