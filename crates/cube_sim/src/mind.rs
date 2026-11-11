@@ -388,7 +388,7 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
                 if let Some(t) = target.filter(|t| gap_to(t) < strike_at + 0.6) {
                     let away = (flat(t.pos) - me).try_normalize().unwrap_or(Vec2::X);
                     let force = 3.0 + kind.height * 2.0;
-                    hit = Some(Hit { on: t.id, push: Vec3::new(away.x * force, 3.0, away.y * force) });
+                    hit = Some(Hit { on: t.id, by: id, harm: kind.harm(), push: Vec3::new(away.x * force, 3.0, away.y * force) });
                 }
             }
             if m.left <= 0.0 {

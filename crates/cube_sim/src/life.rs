@@ -116,6 +116,16 @@ impl Kind {
     /// The highest ledge it walks up without jumping, metres: half a metre for anything up to
     /// a person's size, more for what is bigger. A golem twice a person's height does not hop
     /// up a kerb.
+    /// What it can take: by its size, a rabbit a blow and a golem a long fight. A person, 100.
+    pub fn health(&self) -> f32 {
+        if self.temper == Temper::Person { 100.0 } else { 12.0 + 55.0 * self.height.powf(1.4) }
+    }
+
+    /// What its blow takes: by its size. A person's is their fists', until they hold a weapon.
+    pub fn harm(&self) -> f32 {
+        if self.temper == Temper::Person { FISTS } else { 4.0 + 9.0 * self.height }
+    }
+
     pub fn step(&self) -> f32 {
         (self.height * 0.28).clamp(0.55, 1.25)
     }
@@ -215,10 +225,12 @@ pub enum Act {
     Eat,
     Attack,
     Hurt,
+    /// Down, and staying down.
+    Die,
 }
 
 impl Act {
-    pub const ALL: [Act; 11] = [Act::Idle, Act::Walk, Act::Run, Act::Sprint, Act::Jump, Act::Fall, Act::Land, Act::Swim, Act::Eat, Act::Attack, Act::Hurt];
+    pub const ALL: [Act; 12] = [Act::Idle, Act::Walk, Act::Run, Act::Sprint, Act::Jump, Act::Fall, Act::Land, Act::Swim, Act::Eat, Act::Attack, Act::Hurt, Act::Die];
     /// The clip, and the one to play where a creature has no such clip.
     pub fn clip(self) -> (&'static str, &'static str) {
         match self {
@@ -233,6 +245,7 @@ impl Act {
             Act::Eat => ("eat", "idle"),
             Act::Attack => ("attack", "idle"),
             Act::Hurt => ("hurt", "idle"),
+            Act::Die => ("die", "hurt"),
         }
     }
 }
@@ -243,7 +256,10 @@ pub struct Log {
     /// Metres over the ground.
     pub moved: f32,
     /// Seconds in each [`Act`].
-    pub acts: [f32; 11],
+    pub acts: [f32; 12],
+    /// Times it was killed, and what it has killed.
+    pub died: u32,
+    pub kills: u32,
     /// Seconds spent walking and getting nowhere: caught on something.
     pub stuck: f32,
     /// Seconds spent wanting to go somewhere with every way shut: a ledge, deep water.
@@ -281,6 +297,15 @@ pub struct Agent {
     pub stepped: f32,
     /// Seconds of flinching left after being hit.
     pub hurt: f32,
+    /// What it can take before it dies, of [`Kind::health`]; and once dead, for how long.
+    pub health: f32,
+    pub dead: Option<f32>,
+    /// Seconds until a blow it has begun lands (a driven creature's: a mind times its own).
+    pub swing: Option<f32>,
+    /// What its blow takes from what it hits: its kind's, or its weapon's.
+    pub power: f32,
+    /// Seconds since it was last hurt: left in peace, it mends.
+    pub calm: f32,
     landing: f32,
     airborne: f32,
     jumped: bool,
@@ -290,8 +315,24 @@ pub struct Agent {
 /// A blow landed this tick: who, and the push it gives.
 pub struct Hit {
     pub on: u32,
+    /// Who struck, and how much health the blow takes.
+    pub by: u32,
+    pub harm: f32,
     pub push: Vec3,
 }
+
+/// Seconds something lies where it fell before it is gone; seconds after that until another
+/// of its kind comes to live where it did; and seconds a person lies before waking at home.
+const LIES: f32 = 25.0;
+const RETURNS: f32 = 150.0;
+const WAKES: f32 = 5.0;
+/// A blow lands this long into a swing, reaches this far past the body, and to this far
+/// either side of straight ahead (radians).
+const SWING: f32 = 0.35;
+const REACH: f32 = 1.5;
+const ARC: f32 = 1.0;
+/// What a person does with bare hands.
+pub const FISTS: f32 = 6.0;
 
 #[derive(Clone)]
 pub struct Sim {
@@ -299,6 +340,8 @@ pub struct Sim {
     /// By id, in order, so a tick visits them the same way every run.
     pub agents: BTreeMap<u32, Agent>,
     pub tick: u64,
+    /// The dead not yet replaced: kind, where it lived, and the tick it died.
+    graves: Vec<(usize, Vec2, u64)>,
     /// The time: days since the world began, the hour its fraction (`sky`).
     pub when: f32,
     pub rng: Rng,
@@ -314,7 +357,15 @@ fn turn_between(from: f32, to: f32) -> f32 {
 
 impl Sim {
     pub fn new(kinds: Vec<Kind>, seed: u64) -> Self {
-        Self { kinds, agents: BTreeMap::new(), tick: 0, when: crate::sky::START, rng: Rng::new(seed), next: 1 }
+        Self { kinds, agents: BTreeMap::new(), tick: 0, graves: Vec::new(), when: crate::sky::START, rng: Rng::new(seed), next: 1 }
+    }
+
+    /// A driven creature begins a blow: it lands a third of a second on.
+    pub fn swing(&mut self, id: u32) {
+        if let Some(agent) = self.agents.get_mut(&id).filter(|a| a.dead.is_none() && a.swing.is_none()) {
+            agent.swing = Some(SWING);
+            agent.doing = Some((Act::Attack, 1.0));
+        }
     }
 
     pub fn kind(&self, id: &str) -> Option<usize> {
@@ -323,7 +374,7 @@ impl Sim {
 
     /// Puts a creature in the world with its feet at `pos`.
     pub fn add(&mut self, world: &World, kind: usize, pos: Vec3, facing: f32, driver: Driver) -> u32 {
-        let k = &self.kinds[kind];
+        let k = self.kinds[kind].clone();
         let mut body = Body::new(pos, k.shape().0, k.height.max(0.3));
         // Put down astride a step, it stands on the higher part, not in it.
         for _ in 0..20 {
@@ -338,7 +389,7 @@ impl Sim {
         let mind = Mind::new(Vec2::new(pos.x, pos.z), &mut self.rng);
         self.agents.insert(
             id,
-            Agent { kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
+            Agent { kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), calm: 0.0, stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
         );
         id
     }
@@ -348,18 +399,85 @@ impl Sim {
         self.tick += 1;
         self.when = crate::sky::later(self.when, DT);
         // Minds see the world as it was at the start of the tick.
-        let seen: Vec<mind::Seen> = self.agents.iter().map(|(&id, a)| mind::Seen { id, pos: a.body.pos, vel: a.body.vel, temper: self.kinds[a.kind].temper, reach: a.body.half + a.body.long.length() }).collect();
+        let seen: Vec<mind::Seen> = self.agents.iter().filter(|(_, a)| a.dead.is_none()).map(|(&id, a)| mind::Seen { id, pos: a.body.pos, vel: a.body.vel, temper: self.kinds[a.kind].temper, reach: a.body.half + a.body.long.length() }).collect();
         let mut hits = Vec::new();
-        for (&id, agent) in self.agents.iter_mut().filter(|(_, a)| a.driver == Driver::Mind) {
+        for (&id, agent) in self.agents.iter_mut().filter(|(_, a)| a.driver == Driver::Mind && a.dead.is_none()) {
             hits.extend(mind::think(id, agent, &self.kinds[agent.kind], &seen, world, &mut self.rng));
         }
-        for hit in hits {
-            if let Some(agent) = self.agents.get_mut(&hit.on) {
-                agent.hurt = 0.5;
-                agent.doing = None;
-                agent.body.vel += hit.push;
-                agent.log.struck += 1;
+        // A driven creature's blow: it lands part way through the swing on the nearest thing
+        // in reach in front of it.
+        for (&id, agent) in self.agents.iter_mut().filter(|(_, a)| a.dead.is_none()) {
+            let Some(left) = &mut agent.swing else { continue };
+            *left -= DT;
+            if *left > 0.0 {
+                continue;
             }
+            agent.swing = None;
+            let (me, ahead) = (Vec2::new(agent.body.pos.x, agent.body.pos.z), Vec2::new(agent.facing.sin(), agent.facing.cos()));
+            let reach = agent.body.half + agent.body.long.length() + REACH;
+            let struck = seen
+                .iter()
+                .filter(|s| s.id != id && (s.pos.y - agent.body.pos.y).abs() < 2.5)
+                .map(|s| (s, Vec2::new(s.pos.x, s.pos.z) - me))
+                .filter(|(s, to)| to.length() - s.reach < reach && (to.length() < 0.3 || to.normalize().dot(ahead) > ARC.cos()))
+                .min_by(|a, b| a.1.length().total_cmp(&b.1.length()));
+            if let Some((s, to)) = struck {
+                let away = to.try_normalize().unwrap_or(ahead);
+                hits.push(Hit { on: s.id, by: id, harm: agent.power, push: Vec3::new(away.x * 4.0, 2.5, away.y * 4.0) });
+            }
+        }
+        for hit in hits {
+            let Some(agent) = self.agents.get_mut(&hit.on).filter(|a| a.dead.is_none()) else { continue };
+            agent.hurt = 0.5;
+            agent.doing = None;
+            agent.body.vel += hit.push;
+            agent.log.struck += 1;
+            agent.calm = 0.0;
+            agent.health -= hit.harm;
+            if agent.health <= 0.0 {
+                (agent.health, agent.dead, agent.swing, agent.intent) = (0.0, Some(0.0), None, Intent::default());
+                agent.log.died += 1;
+                if let Some(killer) = self.agents.get_mut(&hit.by) {
+                    killer.log.kills += 1;
+                }
+            }
+        }
+        // The dead: a person wakes at home after a little; anything else lies a while, is
+        // gone, and in time another of its kind comes to live where it did.
+        let mut gone = Vec::new();
+        for (&id, agent) in self.agents.iter_mut() {
+            let Some(lain) = &mut agent.dead else {
+                agent.calm += DT;
+                if agent.calm > 8.0 {
+                    agent.health = (agent.health + 2.0 * DT).min(self.kinds[agent.kind].health());
+                }
+                continue;
+            };
+            *lain += DT;
+            agent.intent = Intent::default();
+            agent.act = Act::Die;
+            if self.kinds[agent.kind].temper == Temper::Person {
+                if *lain >= WAKES {
+                    let home = agent.mind.home;
+                    agent.body.pos = Vec3::new(home.x, world.ground_height(home.x, home.y), home.y);
+                    (agent.body.vel, agent.before, agent.dead, agent.health, agent.hurt) = (Vec3::ZERO, agent.body.pos, None, self.kinds[agent.kind].health(), 0.0);
+                }
+            } else if *lain >= LIES {
+                gone.push(id);
+            }
+        }
+        for id in gone {
+            if let Some(agent) = self.agents.remove(&id) {
+                self.graves.push((agent.kind, agent.mind.home, self.tick));
+            }
+        }
+        let due = (RETURNS / DT) as u64;
+        let back: Vec<(usize, Vec2)> = self.graves.iter().filter(|g| self.tick - g.2 >= due).map(|g| (g.0, g.1)).collect();
+        self.graves.retain(|g| self.tick - g.2 < due);
+        for (kind, home) in back {
+            let facing = self.rng.between(0.0, std::f32::consts::TAU);
+            let id = self.add(world, kind, Vec3::new(home.x, world.ground_height(home.x, home.y), home.y), facing, Driver::Mind);
+            self.agents.get_mut(&id).unwrap().mind.home = home;
         }
 
         // Bodies out of each other: creatures standing about are pillars, movers share the push.
@@ -377,8 +495,8 @@ impl Sim {
         for (agent, pushed) in self.agents.values_mut().filter(|a| a.driver != Driver::Stand).zip(bodies) {
             let (was, was_grounded) = (agent.body.pos, agent.body.grounded || agent.body.swimming);
             agent.body = pushed;
-            let mut intent = agent.intent;
-            intent.jump = agent.want_jump > 0.0;
+            let mut intent = if agent.dead.is_some() { Intent::default() } else { agent.intent };
+            intent.jump = agent.want_jump > 0.0 && agent.dead.is_none();
             intent.hold = agent.hold_jump;
             let fall = agent.body.vel.y;
             let tuning = Tuning { step: self.kinds[agent.kind].step(), ..Tuning::default() };
@@ -429,7 +547,9 @@ impl Sim {
                     agent.doing = None;
                 }
             }
-            agent.act = if agent.hurt > 0.0 {
+            agent.act = if agent.dead.is_some() {
+                Act::Die
+            } else if agent.hurt > 0.0 {
                 Act::Hurt
             } else if agent.body.swimming {
                 Act::Swim
@@ -602,6 +722,58 @@ mod tests {
         assert!(p.log.struck >= 1, "never hit: goblin {:?} at {}", g.mind.state, g.body.pos);
         assert!(p.body.pos.z < -0.3, "not knocked back: {}", p.body.pos);
         assert!(g.log.acts[Act::Attack as usize] > 0.3);
+    }
+
+    #[test]
+    fn a_blow_takes_health_and_the_dead_lie_then_return() {
+        let (world, mut sim) = stage();
+        let person = sim.add(&world, 4, at(0.0, 0.0), 0.0, Driver::Outside);
+        let rabbit = sim.add(&world, 0, at(0.0, 1.0), 0.0, Driver::Stand);
+        let full = sim.agents[&rabbit].health;
+        // Bare hands: a rabbit takes several blows. Each lands a third of a second on.
+        sim.swing(person);
+        run(&mut sim, &world, 0.3);
+        assert_eq!(sim.agents[&rabbit].health, full);
+        run(&mut sim, &world, 0.2);
+        assert_eq!(sim.agents[&rabbit].health, full - FISTS);
+        // With a blade, one more is enough; it lies, then is gone, then another lives there.
+        sim.agents.get_mut(&person).unwrap().power = 40.0;
+        sim.agents.get_mut(&person).unwrap().doing = None;
+        sim.swing(person);
+        run(&mut sim, &world, 1.0);
+        assert!(sim.agents[&rabbit].dead.is_some() && sim.agents[&rabbit].act == Act::Die);
+        assert_eq!(sim.agents[&person].log.kills, 1);
+        run(&mut sim, &world, LIES + 1.0);
+        assert!(!sim.agents.contains_key(&rabbit));
+        run(&mut sim, &world, RETURNS);
+        assert_eq!(sim.agents.values().filter(|a| a.kind == 0).count(), 1);
+        // A blow at nothing, or at what is behind, lands on nothing.
+        let behind = sim.add(&world, 0, at(0.0, -1.0), 0.0, Driver::Stand);
+        sim.agents.get_mut(&person).unwrap().doing = None;
+        sim.swing(person);
+        run(&mut sim, &world, 1.0);
+        assert_eq!(sim.agents[&behind].health, sim.kinds[0].health());
+    }
+
+    #[test]
+    fn a_person_killed_wakes_at_home_and_mends() {
+        let (world, mut sim) = stage();
+        let person = sim.add(&world, 4, at(0.0, 0.0), 0.0, Driver::Outside);
+        sim.add(&world, 3, at(0.0, 6.0), 0.0, Driver::Mind);
+        sim.agents.get_mut(&person).unwrap().health = 20.0;
+        let mut died = false;
+        for _ in 0..(40.0 / DT) as u32 {
+            sim.step(&world);
+            died |= sim.agents[&person].dead.is_some();
+        }
+        let p = &sim.agents[&person];
+        assert!(died && p.log.died >= 1, "the goblin never killed them: health {}", p.health);
+        // Hurt but left alone, health comes back.
+        let (world, mut sim) = stage();
+        let person = sim.add(&world, 4, at(0.0, 0.0), 0.0, Driver::Outside);
+        sim.agents.get_mut(&person).unwrap().health = 50.0;
+        run(&mut sim, &world, 20.0);
+        assert!(sim.agents[&person].health > 70.0);
     }
 
     #[test]
