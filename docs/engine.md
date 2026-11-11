@@ -159,6 +159,7 @@ Built 2026-11-11 (`cube_game::audio`); the files are CC0, in `assets/audio`, who
 - **A creature is heard when the simulation says it does something**: its voice with a blow, a hit when wounded, a death; and its call now and then at the hours its niche says it is about. Heard from where it is, to 45 m. The player's feet sound for each stride by what is underfoot (grass, stone, shallows), with a splash going in and a stroke for each while swimming.
 - **Checked without listening**: every sound played is a line of the trace (`sound step_grass_2 vol=0.58 at 9,12,6`), so a scripted `--play --scene` run can be read for what was heard. `--quiet` for none.
 - **Levels are measured, not heard** (`tools/audio/level.py`): every one-shot is brought to a mean of -20 dB and every loop to -27 dB, no peak over -1 dB; 37 of the 52 files were out, by up to 7 dB. Run it after adding a file.
+- **Loops join their own start, by measurement** (`tools/audio/loops.py`): the jump from a loop's last sample to its first must be no more than is usual between neighbouring samples inside it; one of the six failed and had its last second faded into its first.
 - **Not known:** how any of it sounds. The files were chosen by title and length by an agent that cannot hear, levels are not matched, and several loops' seams are unheard. A person must listen and prune. No fox bark or true wolf howl was to be had under CC0.
 
 ## Ecology

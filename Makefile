@@ -75,6 +75,7 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 	@cargo world run --seconds 300 | tail -1 | sed 's/^ok$$/ok run: five minutes of creatures/'
 	@cargo world life | tail -1 | sed 's/^ok$$/ok life: every kind has somewhere to live/'
 	@python3 tools/audio/level.py | tail -1
+	@python3 tools/audio/loops.py | tail -1
 	@$(MAKE) --no-print-directory fight
 	@$(MAKE) --no-print-directory swim
 	@$(MAKE) --no-print-directory window
