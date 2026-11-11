@@ -233,6 +233,34 @@ pub fn grounded(sk: &Skeleton, roles: &Roles, frames: &mut [Pose]) {
     }
 }
 
+/// Stands a recorded loop over the creature's own place: where its root sits ahead of, behind
+/// or beside where it rests, on average, is taken out (Tripo's run is recorded most of a
+/// metre ahead of its walk), so the body the game moves and the picture of it are in one place.
+pub fn centred(sk: &Skeleton, roles: &Roles, frames: &mut [Pose]) {
+    let rest = sk.rest().root_t;
+    let flat = |v: Vec3| {
+        let w = sk.base.transform_vector3(v);
+        sk.base.inverse().transform_vector3(Vec3::new(w.x, 0.0, w.z))
+    };
+    let n = frames.len() as f32;
+    let mean = frames.iter().map(|p| p.root_t - rest).sum::<Vec3>() / n;
+    let off = flat(mean);
+    for pose in frames.iter_mut() {
+        pose.root_t -= off;
+    }
+    // And on the floor it stands on at rest: the whole clip raised or lowered by one amount,
+    // so that its lowest foot at its lowest moment is there. (Not frame by frame: that
+    // would take the rise and fall out of the gait.)
+    if !roles.legs.is_empty() {
+        let floor = roles.legs.iter().map(|l| sk.position(l.foot()).y).fold(f32::MAX, f32::min);
+        let lowest = frames.iter().map(|p| { let w = sk.pose_world(p); roles.legs.iter().map(|l| w[l.foot()].w_axis.y).fold(f32::MAX, f32::min) }).fold(f32::MAX, f32::min);
+        let up = sk.base.inverse().transform_vector3(Vec3::Y * (floor - lowest));
+        for pose in frames.iter_mut() {
+            pose.root_t += up;
+        }
+    }
+}
+
 /// Makes a clip that should loop end where it began, by easing its last fifth into its first
 /// frame. Tripo's run does not close (19° on the biped).
 pub fn close_loop(frames: &mut [Pose]) {
@@ -469,7 +497,8 @@ fn quicker(name: &str, sk: &Skeleton, roles: &Roles, from: &Clip, time: f32, gai
             pose
         })
         .collect();
-    Clip { name: name.into(), looping: true, frames, source: "made", speed: None }
+    // It is what it was made from, quicker: recorded if that was, and that much faster.
+    Clip { name: name.into(), looping: true, frames, source: from.source, speed: from.speed.map(|s| s / time) }
 }
 
 /// A four-legged gait, as the numbers that tell one from another.
@@ -537,55 +566,6 @@ fn reach(sk: &Skeleton, roles: &Roles, pose: &mut Pose, leg: &crate::rig::Leg, t
     turn_now(sk, pose, knee, Quat::from_axis_angle(axis, want - now));
     let p = at(pose, tip);
     turn_now(sk, pose, hip, Quat::from_rotation_arc((p - h).normalize(), (target - h).normalize()));
-}
-
-/// Stops a recorded gait's feet skating. While a foot is down and going back it is held to
-/// one straight line along the ground at `pace` (file units a second), the leg bent to keep
-/// it there, eased in and out over two frames at each end so nothing pops. Everything else
-/// about the clip is left as it was. Tripo's presets are fitted to a body of other
-/// proportions, and on a short or bulky one the feet wander while they are meant to be still.
-pub fn planted(sk: &Skeleton, roles: &Roles, frames: &mut [Pose], pace: f32) {
-    let n = frames.len() - 1;
-    if n < 8 || pace <= 0.0 {
-        return;
-    }
-    let floor = roles.legs.iter().map(|l| sk.position(l.foot()).y).fold(f32::MAX, f32::min);
-    for leg in &roles.legs {
-        let at: Vec<Vec3> = frames[..n].iter().map(|p| sk.pose_world(p)[leg.foot()].w_axis.truncate()).collect();
-        let down: Vec<bool> = (0..n)
-            .map(|i| {
-                let back = -(at[(i + 1) % n] - at[i]).dot(roles.forward) * FPS;
-                at[i].y - floor < 0.05 * roles.height && back > 0.25 * pace
-            })
-            .collect();
-        if down.iter().all(|&d| d) || !down.iter().any(|&d| d) {
-            continue;
-        }
-        // Each run of frames with the foot down, starting from a frame where it is up.
-        let first_up = down.iter().position(|&d| !d).unwrap();
-        let mut i = 0;
-        while i < n {
-            let start = (first_up + i) % n;
-            if !down[start] {
-                i += 1;
-                continue;
-            }
-            let mut len = 0;
-            while len < n && down[(start + len) % n] {
-                len += 1;
-            }
-            let mid = at[(start + len / 2) % n];
-            for k in 0..len {
-                let f = (start + k) % n;
-                let line = mid - roles.forward * pace * (k as f32 - (len / 2) as f32) / FPS;
-                let held = Vec3::new(line.x, at[f].y, line.z);
-                let ease = ((k + 1) as f32 / 2.0).min((len - k) as f32 / 2.0).min(1.0);
-                reach(sk, roles, &mut frames[f], leg, leg.foot(), at[f].lerp(held, ease));
-            }
-            i += len;
-        }
-    }
-    frames[n] = frames[0].clone();
 }
 
 /// How fast planted feet move over the ground when a gait is played at `pace` (file units a

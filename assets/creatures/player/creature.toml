@@ -3,17 +3,6 @@ kind = "player"
 plan = "biped"
 subject = "an ordinary man in his thirties, a rough undyed homespun short-sleeved tunic tied at the waist with a leather strip, loose dark trousers bound at the ankle, simple stitched leather shoes, short brown hair, a few days of stubble, calm plain face, average build"
 height = 1.75
-# The recorded run slides 25.4% on this body and the sprint quickened from it 31%, against a
-# bar of 25%. The made gaits that would take their place are a jog of 2.6 m/s and a sprint
-# slower than this run; these are 4.5 and 6.3.
-slide = 0.32
 
 [life]
 temper = "person"
-
-# His walk and run are a recorded person's (the CMU motion capture library, free for any
-# use), put on his skeleton by Blender: `cargo forge motion player`. Each is a take and how
-# long one cycle of it may be, seconds.
-[motion]
-walk = "07_02:0.85-1.35"
-run = "09_02:0.5-0.9"

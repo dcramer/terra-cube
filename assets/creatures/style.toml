@@ -55,12 +55,6 @@ walk = "walk"
 run = "run"
 attack = "slash"
 # `slash` is a slow two-handed overhead chop inside 6.6 s: keep the wind-up and blow, at double speed.
-# Tripo's run is a jog (3.2 m/s on the player) and a sprint made by only quickening it had
-# legs that spun without covering ground. Both get a longer stride instead: the feet travel
-# this much further while down, at the cadence recorded.
-[plans.biped.stride]
-run = 1.25
-sprint = 1.12
 [plans.biped.trim]
 attack = [0.9, 3.3, 2.0]
 

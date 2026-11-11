@@ -37,7 +37,6 @@ cargo sandbox --help               # every way to start the game (--list names t
 cargo forge status                 # every creature: Tripo steps done, credits, model
 cargo forge build wolf             # make what is missing, then finish and check (spends credits once)
 cargo forge finish --all           # the free local half again, after changing clips.rs or style.toml
-cargo forge motion player          # a biped's `[motion]` clips from recorded people, by Blender (free; docs/pipeline.md#gaits)
 cargo forge sheet wolf             # shots/wolf.png: every clip at six moments, one image
 cargo world survey                 # the land in numbers; `cargo world run`: its creatures living, in numbers
 cargo world life                   # the ecology: how much of the island suits each kind of life, when it is about, where each animal settled
@@ -73,7 +72,7 @@ A machine with no screen needs `DISPLAY=:1` (an Xvfb) for `sheet` and `sandbox`;
 - **Numbers first, then one picture.** `cargo forge check` judges a model before anyone looks. Then look at one contact sheet (`cargo forge sheet`), not a run of screenshots. If you catch a defect by eye that the checks missed, add a check for it. Movement is judged the same way: forge's `slide` number, then one `--strip`. Every `--scene` shot ends with its `pace` (frame time, faces in view): look at it after any change to what is drawn. So are the world and behaviour: `cargo world survey` and `run`, then one `map`. Change terrain or minds against those, not by playing.
 - **Credits are real money.** `forge.lock` makes a build spend once. Look at the concept (`cargo forge build ID --to concept`, then `cargo forge concepts`) before paying for a model. Never delete a lock step to retry without a reason you can state.
 - **Bones have roles, not names.** Tripo's bone names are unreliable; clips are written against roles read from the skeleton's shape (`crates/forge/src/rig.rs`). Do not match on bone names for animals.
-- **Runs on Linux, Windows and macOS.** Build paths with `Path::join`, never a typed `/` or a home folder; no shell-outs beyond `node`, `cargo` and Blender's Python (`make blender`; only `cargo forge motion` starts it); anything one system needs sits behind `cfg!` with the reason. `make check` type-checks for Windows. In WSL the game is built as a Windows program and opened there (`make play` does it), so it must start from any folder: it finds `assets/` itself.
+- **Runs on Linux, Windows and macOS.** Build paths with `Path::join`, never a typed `/` or a home folder; no shell-outs beyond `node` and `cargo`; anything one system needs sits behind `cfg!` with the reason. `make check` type-checks for Windows. In WSL the game is built as a Windows program and opened there (`make play` does it), so it must start from any folder: it finds `assets/` itself.
 - **The simulation must not need a window.** Game rules go in crates with no rendering (`cube_voxel`, `cube_sim`), tested headless. `cube_game` only draws and takes input: it never moves a creature itself. Anything random comes from the `Sim`'s seeded generator, so a seed replays.
 - **Secrets:** `.env` (the Tripo login) lives in the main checkout, ignored by git. Never print it or commit it.
 - **Shaders** are for the environment only (terrain, water, sky, weather). Creatures use stock materials.

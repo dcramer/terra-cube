@@ -12,7 +12,6 @@ mod cubes;
 mod finish;
 mod glb;
 mod looks;
-mod motion;
 mod rig;
 mod shaped;
 mod spec;
@@ -34,8 +33,6 @@ cargo forge build ID… [--to STEP]       do what is missing: concept, model, ri
                                         paid once), then finish and check. --to concept stops
                                         after the free-ish image, to look before paying
 cargo forge finish ID…|--all            the local half again (after changing clips or style)
-cargo forge motion ID…                  captured motion for a biped, by Blender: the clips its [motion]
-                                        names, from the CMU library; then finish and check
 cargo forge check ID…|--all             the checks alone
 cargo forge sheet ID [--view side]      render shots/ID.png, every clip at six moments
 cargo forge cubes ID [--size 0.05] [--head 1.0]
@@ -79,14 +76,7 @@ fn finish_and_check(id: &str, style: &Style, write: bool) -> Result<bool> {
 fn finish_and_check_one(id: &str, style: &Style, write: bool) -> Result<bool> {
     let creature: Creature = spec::load(&spec::dir(id).join("creature.toml"))?;
     let plan = style.plans.get(&creature.plan).with_context(|| format!("no plan `{}`", creature.plan))?;
-    // Captured motion it asks for and has not got is made first, if Blender is here to make it.
-    if write && motion::wanted(id, &creature) {
-        match motion::run(id, &creature) {
-            Ok(line) => println!("{line}"),
-            Err(e) => eprintln!("{id}: finished without its captured motion: {e:#}"),
-        }
-    }
-    let done = if write { finish::run(id, style)? } else { finish::finish(&spec::source(id), &creature, plan, style.checks.max_slide)? };
+    let done = if write { finish::run(id, style)? } else { finish::finish(&spec::work(id).join("rigged.glb"), &creature, plan, style.checks.max_slide)? };
     let wanted: Vec<String> = plan.clips.iter().filter(|c| !creature.without.contains(c)).cloned().collect();
     let lines = check::check(&done, &wanted, &style.checks, plan.max_stretch.unwrap_or(style.checks.max_stretch), creature.slide.unwrap_or(style.checks.max_slide))?;
     let failed = lines.iter().filter(|l| !l.ok).count();
@@ -134,14 +124,6 @@ fn run() -> Result<bool> {
     match command.as_str() {
         "status" => status(&style()?)?,
         "doctor" => ok = doctor(),
-        "motion" => {
-            let style = style()?;
-            for id in targets(&args) {
-                let c: Creature = spec::load(&spec::dir(&id).join("creature.toml"))?;
-                println!("{}", motion::run(&id, &c)?);
-                ok &= finish_and_check(&id, &style, true)?;
-            }
-        }
         "looks" => println!("{}", looks::run(&style()?)?),
         "ideas" => {
             let style = style()?;
@@ -182,7 +164,7 @@ fn run() -> Result<bool> {
             std::fs::create_dir_all(&dir)?;
             let mut name = id.replace(['-', '_'], " ");
             name[..1].make_ascii_uppercase();
-            let c = Creature { name, kind, plan, subject: subject.clone(), height, span: None, built: None, motion: Default::default(), facing: "auto".into(), gait_gain: 1.0, slide: None, ease: 1.0, made: Vec::new(), without: Vec::new(), look: None, look_of: None };
+            let c = Creature { name, kind, plan, subject: subject.clone(), height, span: None, built: None, facing: "auto".into(), gait_gain: 1.0, slide: None, ease: 1.0, made: Vec::new(), without: Vec::new(), look: None, look_of: None };
             spec::save(&dir.join("creature.toml"), &c, "")?;
             println!("wrote {}. Next: cargo forge build {id} --to concept", dir.join("creature.toml").display());
         }
@@ -306,14 +288,6 @@ fn doctor() -> bool {
     let needed = cfg!(target_os = "linux");
     let detail = if !display.is_empty() { display.clone() } else if needed { "none; on a server run `Xvfb :1 -screen 0 1920x1080x24` and set DISPLAY=:1".into() } else { "native".into() };
     report(!needed || !display.is_empty(), "display", detail);
-
-    // Blender, for the creatures that ask for captured motion: wanted only if one does.
-    let asks = spec::ids().iter().any(|id| spec::load::<Creature>(&spec::dir(id).join("creature.toml")).is_ok_and(|c| !c.motion.is_empty()));
-    match motion::version() {
-        Some(v) => report(true, "blender", v),
-        None if asks => report(false, "blender", "not set up; `make blender` (several hundred MB, once)".into()),
-        None => {}
-    }
 
     let ids = spec::ids();
     let built = ids.iter().filter(|id| spec::dir(id).join("model.glb").exists()).count();

@@ -66,8 +66,31 @@ fn ground_speed(sk: &Skeleton, roles: &Roles, clip: &Clip) -> Option<f32> {
     None
 }
 
-pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -> Result<Finished> {
-    let max_slide = creature.slide.unwrap_or(max_slide);
+/// How fast a recorded two-legged gait goes, two ways. `stance`: the foot that is lower is the
+/// one carrying the body, and the body goes forward as fast as that foot goes back; the middle
+/// of those speeds. `steps`: how far apart the feet get, fore and aft, added up over the clip:
+/// each swing from one foot ahead to the other ahead is a step's travel. The first is right
+/// for a run too (a step's travel leaves out the flight); the second is the check on it.
+fn recorded_speed(sk: &Skeleton, roles: &Roles, clip: &Clip) -> Option<(f32, f32)> {
+    let [a, b] = [roles.legs.first()?.foot(), roles.legs.get(1)?.foot()];
+    let worlds: Vec<_> = clip.frames.iter().map(|p| sk.pose_world(p)).collect();
+    let (mut stance, mut swung) = (Vec::new(), 0.0);
+    for w in worlds.windows(2) {
+        let at = |m: &Vec<glam::Mat4>, j: usize| m[j].w_axis.truncate();
+        let (low, high) = if at(&w[0], a).y < at(&w[0], b).y { (a, b) } else { (b, a) };
+        if at(&w[0], high).y - at(&w[0], low).y > 0.01 * roles.height {
+            stance.push(-(at(&w[1], low) - at(&w[0], low)).dot(roles.forward) * clips::FPS);
+        }
+        let apart = |m: &Vec<glam::Mat4>| (at(m, a) - at(m, b)).dot(roles.forward);
+        swung += (apart(&w[1]) - apart(&w[0])).abs();
+    }
+    stance.retain(|v| *v > 0.0);
+    stance.sort_by(f32::total_cmp);
+    let steps = swung / 2.0 / clip.seconds();
+    Some((*stance.get(stance.len() / 2)?, steps))
+}
+
+pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) -> Result<Finished> {
     // A model built here of boxes has no file to read; any other is Tripo's export.
     let mut glb = match &creature.built {
         Some(built) => crate::built::model(built)?,
@@ -94,11 +117,6 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -
         None => creature.height / (hi.y - lo.y).max(1e-5),
     };
 
-    // Captured motion says how fast it goes (`motion.toml`, beside a file made by
-    // `tools/blender/retarget.py`): a clip with a speed given is taken at it, its feet not
-    // re-planted and no made gait put in its place. A person recorded walking has feet that
-    // hold the ground already; the speed read back from them came out at half.
-    let given: std::collections::BTreeMap<String, f32> = std::fs::read_to_string(source.with_extension("toml")).ok().and_then(|t| toml::from_str(&t).ok()).unwrap_or_default();
     // Clips: Tripo's under our names, then the made ones the plan asks for.
     let theirs = clips::read(&glb, &skeleton)?;
     let mut out: Vec<Clip> = Vec::new();
@@ -117,8 +135,9 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -
                 }
                 if looping {
                     clips::close_loop(&mut frames);
+                    clips::centred(&skeleton, &roles, &mut frames);
                 }
-                Clip { name: name.clone(), looping, frames, source: "tripo", speed: given.get(name).copied() }
+                Clip { name: name.clone(), looping, frames, source: "tripo", speed: None }
             }
             None => {
                 let stand = out.iter().find(|c| c.name == "idle" && c.source == "tripo").map(|c| &c.frames[0]);
@@ -130,28 +149,25 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -
         if matches!(name.as_str(), "jump" | "fall") && clip.source == "made" && creature.gait_gain != 1.0 {
             clips::gained(&skeleton, &mut clip.frames, (1.0 + creature.gait_gain) / 2.0);
         }
-        if matches!(name.as_str(), "walk" | "run" | "sprint") && !roles.legs.is_empty() && clip.speed.is_none() {
+        if matches!(name.as_str(), "walk" | "run" | "sprint") && !roles.legs.is_empty() && clip.speed.is_none() && clip.source == "made" {
             clips::grounded(&skeleton, &roles, &mut clip.frames);
         }
-        // A recorded gait: find its speed and hold its feet to it. If they still will not hold
-        // (the preset is fitted to another body's proportions), a made gait takes its place.
-        if matches!(name.as_str(), "walk" | "run" | "sprint") && clip.speed.is_none() && roles.legs.len() >= 2 {
-            let longer = plan.stride.get(name).copied().unwrap_or(1.0);
-            if let Some(pace) = ground_speed(&skeleton, &roles, &clip).map(|p| p * longer) {
-                clips::planted(&skeleton, &roles, &mut clip.frames, pace);
-                clip.speed = Some(pace);
-            }
-            let slid = clip.speed.map_or(1.0, |pace| clips::slide(&skeleton, &roles, &clip.frames, pace));
+        // A recorded gait is kept as it was recorded, and the game moves the body at the speed
+        // its feet say. Until 2026-11-11 its feet were then locked to a straight line at that
+        // speed, its stride lengthened, and the whole gait replaced by a made one where the
+        // feet still slid by our measure. Set side by side (three sheets of the player), the
+        // recorded walk was a person walking and what replaced it was a shuffle: an ankle
+        // does not travel at one speed while its foot is down (the heel lands, the foot
+        // rolls, the toe pushes off), so the measure failed a good clip.
+        if matches!(name.as_str(), "walk" | "run") && clip.source != "made" && clip.speed.is_none()
+            && let Some((stance, steps)) = recorded_speed(&skeleton, &roles, &clip)
+        {
             if std::env::var_os("FORGE_TRACE").is_some() {
-                eprintln!("{name} recorded at {:.2} m/s, feet slide {:.1}% (bar {:.0}%)", clip.speed.unwrap_or(0.0) * scale, slid * 100.0, max_slide * 100.0);
+                eprintln!("{name} recorded: {:.2} m/s by the foot that is down, {:.2} by its steps", stance * scale, steps * scale);
             }
-            if slid > max_slide {
-                let stand = out.iter().find(|c| c.name == "idle" && c.source == "tripo").map(|c| &c.frames[0]);
-                let made: Vec<Clip> = out.iter().filter(|c| c.source == "made").map(|c| Clip { name: c.name.clone(), looping: c.looping, frames: Vec::new(), source: "made", speed: c.speed }).collect();
-                if let Some(better) = clips::make(name, &skeleton, &roles, &made, stand, plan.upright, scale, (1.0 + creature.gait_gain) / 2.0, creature.ease).filter(|c| c.speed.is_some()) {
-                    clip = better;
-                }
-            }
+            // Where the two disagree by more than a quarter the body is not one the first
+            // can read (the troll's run: its lower foot is not always the one down).
+            clip.speed = Some(if (stance / steps - 1.0).abs() < 0.25 { stance } else { steps });
         }
         out.push(clip);
     }
@@ -209,7 +225,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -
 pub fn run(id: &str, style: &spec::Style) -> Result<Finished> {
     let creature: Creature = spec::load(&spec::dir(id).join("creature.toml"))?;
     let plan = style.plans.get(&creature.plan).with_context(|| format!("{id}: no plan `{}` in style.toml", creature.plan))?;
-    let source = spec::source(id);
+    let source = spec::work(id).join("rigged.glb");
     if !source.exists() && creature.built.is_none() {
         bail!("{id}: {} is missing; `cargo forge build {id}` fetches it", source.display());
     }

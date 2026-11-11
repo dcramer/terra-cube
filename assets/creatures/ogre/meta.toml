@@ -2,9 +2,9 @@
 height = 3.4
 length = 1.3271613
 width = 1.7446973
-walk_speed = 1.77172
-run_speed = 3.854268
-sprint_speed = 6.8349023
+walk_speed = 2.1532714
+run_speed = 6.0482373
+sprint_speed = 7.7541504
 triangles = 8895
 joints = 65
 
@@ -44,14 +44,14 @@ looping = false
 source = "made"
 
 [clips.run]
-seconds = 0.7
+seconds = 1.2666667
 looping = true
-source = "made"
+source = "tripo"
 
 [clips.sprint]
-seconds = 0.5
+seconds = 1.0
 looping = true
-source = "made"
+source = "tripo"
 
 [clips.swim]
 seconds = 1.6
@@ -59,9 +59,9 @@ looping = true
 source = "made"
 
 [clips.walk]
-seconds = 0.93333334
+seconds = 2.3333333
 looping = true
-source = "made"
+source = "tripo"
 
 [bones]
 foot0 = "mixamorig:LeftToe_End"
