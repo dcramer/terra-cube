@@ -10,3 +10,10 @@ slide = 0.32
 
 [life]
 temper = "person"
+
+# His walk and run are a recorded person's (the CMU motion capture library, free for any
+# use), put on his skeleton by Blender: `cargo forge motion player`. Each is a take and how
+# long one cycle of it may be, seconds.
+[motion]
+walk = "07_02:0.85-1.35"
+run = "09_02:0.5-0.9"

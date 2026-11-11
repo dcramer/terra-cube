@@ -94,6 +94,11 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -
         None => creature.height / (hi.y - lo.y).max(1e-5),
     };
 
+    // Captured motion says how fast it goes (`motion.toml`, beside a file made by
+    // `tools/blender/retarget.py`): a clip with a speed given is taken at it, its feet not
+    // re-planted and no made gait put in its place. A person recorded walking has feet that
+    // hold the ground already; the speed read back from them came out at half.
+    let given: std::collections::BTreeMap<String, f32> = std::fs::read_to_string(source.with_extension("toml")).ok().and_then(|t| toml::from_str(&t).ok()).unwrap_or_default();
     // Clips: Tripo's under our names, then the made ones the plan asks for.
     let theirs = clips::read(&glb, &skeleton)?;
     let mut out: Vec<Clip> = Vec::new();
@@ -113,7 +118,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -
                 if looping {
                     clips::close_loop(&mut frames);
                 }
-                Clip { name: name.clone(), looping, frames, source: "tripo", speed: None }
+                Clip { name: name.clone(), looping, frames, source: "tripo", speed: given.get(name).copied() }
             }
             None => {
                 let stand = out.iter().find(|c| c.name == "idle" && c.source == "tripo").map(|c| &c.frames[0]);
@@ -204,7 +209,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, max_slide: f32) -
 pub fn run(id: &str, style: &spec::Style) -> Result<Finished> {
     let creature: Creature = spec::load(&spec::dir(id).join("creature.toml"))?;
     let plan = style.plans.get(&creature.plan).with_context(|| format!("{id}: no plan `{}` in style.toml", creature.plan))?;
-    let source = spec::work(id).join("rigged.glb");
+    let source = spec::source(id);
     if !source.exists() && creature.built.is_none() {
         bail!("{id}: {} is missing; `cargo forge build {id}` fetches it", source.display());
     }

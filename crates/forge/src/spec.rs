@@ -111,6 +111,10 @@ pub struct Creature {
     /// A model made here of boxes, not at Tripo (`built`): the small life of air and water.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub built: Option<crate::built::Built>,
+    /// Captured motion for a biped's clips: clip name to a take of the CMU library and how
+    /// long one cycle of it may be, `walk = "07_02:0.85-1.35"` (`motion`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub motion: BTreeMap<String, String>,
     #[serde(default = "auto", skip_serializing_if = "is_auto")]
     pub facing: String,
     /// Scales how far Tripo's walk and run swing the limbs; under 1 for a bulky body whose
@@ -203,6 +207,13 @@ pub fn dir(id: &str) -> PathBuf {
 /// Scratch for a creature: Tripo's downloads. Ignored by git; rebuilt from the project.
 pub fn work(id: &str) -> PathBuf {
     Path::new(".work").join(id)
+}
+
+/// The file a creature is finished from: Tripo's export, or that export with captured motion
+/// put in it (`motion`), when there is one.
+pub fn source(id: &str) -> PathBuf {
+    let motion = work(id).join("motion.glb");
+    if motion.exists() { motion } else { work(id).join("rigged.glb") }
 }
 
 pub fn load<T: for<'a> Deserialize<'a>>(path: &Path) -> Result<T> {

@@ -17,6 +17,11 @@ help: ## this list
 setup: ## (plain `make`) check this machine: node, Tripo login, display, models
 	cargo forge doctor
 
+blender: ## Blender, as a Python module in .work/blender-venv (several hundred MB, once): for `cargo forge motion`
+	uv venv --python 3.11 .work/blender-venv
+	uv pip install --python .work/blender-venv bpy
+	@cargo forge doctor | head -1
+
 run: ## the sandbox window, one of each creature to pose and inspect (SPAWN=wolf,player for some)
 ifeq ($(WSL),1)
 	@$(MAKE) --no-print-directory windows ARGS="--spawn $(SPAWN)"
