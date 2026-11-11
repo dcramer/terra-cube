@@ -11,3 +11,12 @@ f -f lavfi -i "anoisesrc=color=white:duration=0.3:seed=5" -af "highpass=f=1500,l
 f -f lavfi -i "anoisesrc=color=brown:duration=0.3:seed=9" -af "lowpass=f=380,afade=t=in:d=0.04,afade=t=out:st=0.1:d=0.2" -ar 44100 -c:a libvorbis -q:a 4 grunt_1.ogg
 f -i splash_1.ogg -af "asetrate=44100*0.78,aresample=44100,atrim=0:0.7,afade=t=out:st=0.4:d=0.3" -c:a libvorbis -q:a 4 beaver_1.ogg
 echo "ok made: buzz hiss click grunt beaver"
+# A cricket's chirp, four of them: three or four pulses of a tone near 4.6 kHz with a little
+# of its octave, each pulse a fiftieth of a second. A field cricket's song is as plain as
+# that, and no recording of single crickets free of conditions was found.
+k() { f -f lavfi -i "aevalsrc='(sin(2*PI*$2*t)+0.2*sin(4*PI*$2*t))*pow(sin(PI*mod(t,$3)/($3*0.55)),2)*lt(mod(t,$3),$3*0.55)*lt(t,$3*$4)*0.5':d=0.32:s=44100" -af "afade=t=out:st=0.26:d=0.06" -c:a libvorbis -q:a 4 "cricket_$1.ogg"; }
+k 1 4600 0.042 3
+k 2 4350 0.046 3
+k 3 4900 0.040 4
+k 4 4150 0.050 3
+echo "ok made: cricket"

@@ -205,14 +205,23 @@ impl Niche {
 }
 
 /// What a place sounds like at an hour, each 0 to 1: the wind, birdsong, the insects of the
-/// night, and water. What the game plays is this and nothing else, so the sound of a place
-/// follows from what the place is.
+/// night, water, and the small sounds (leaves to stir, the insects of a summer's day, frogs,
+/// an owl). What the game plays is this and nothing else, so the sound of a place follows
+/// from what the place is.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ambience {
     pub wind: f32,
     pub birds: f32,
     pub night: f32,
     pub water: f32,
+    /// Leaves for a gust to stir: tree cover, and few left on them in winter.
+    pub leaves: f32,
+    /// Grasshoppers and bees: open ground, by day, in the warm of the year.
+    pub insects: f32,
+    /// Frogs: near water, from dusk through the night, in the warm half of the year.
+    pub frogs: f32,
+    /// An owl: among trees after dark, in any season.
+    pub owls: f32,
 }
 
 pub fn ambience(p: &Place, when: f32) -> Ambience {
@@ -227,6 +236,10 @@ pub fn ambience(p: &Place, when: f32) -> Ambience {
         night: (1.0 - day) * land * ((warm - 0.25) / 0.4).clamp(0.0, 1.0),
         // Running water is heard beside it, not across a meadow.
         water: band(p.water, 0.0, 2.0, 9.0),
+        leaves: (p.cover / 0.5).min(1.0) * (0.3 + 0.7 * warm),
+        insects: day * if matches!(p.biome, Biome::Meadow | Biome::Shore) { 1.0 } else { 0.0 } * (1.0 - p.cover).max(0.0) * ((warm - 0.55) / 0.25).clamp(0.0, 1.0),
+        frogs: (1.0 - day * day) * if p.biome == Biome::Snow { 0.0 } else { 1.0 } * band(p.water, 0.0, 6.0, 25.0) * ((warm - 0.35) / 0.3).clamp(0.0, 1.0),
+        owls: (1.0 - day) * land * (p.cover / 0.3).min(1.0),
     }
 }
 
@@ -278,6 +291,14 @@ mod tests {
         // Water where there is water; wind on the heights more than in the wood.
         assert!(ambience(&lake_shore, noon).water > 0.9 && ambience(&glade, noon).water == 0.0);
         assert!(ambience(&peak, noon).wind > ambience(&glade, noon).wind + 0.3);
+        // The small sounds: leaves where there are trees; grasshoppers in an open meadow on a
+        // summer's day and never in winter or at night; frogs by water after dark, not at
+        // noon; an owl in the wood at night.
+        let (meadow, summer_noon, summer_night) = (place(Biome::Meadow, 55.0, 0.0), sky::at(10, 12.0), sky::at(10, 0.0));
+        assert!(ambience(&glade, noon).leaves > 0.5 && ambience(&meadow, noon).leaves == 0.0 && ambience(&glade, winter_noon).leaves < ambience(&glade, summer_noon).leaves);
+        assert!(ambience(&meadow, summer_noon).insects > 0.8 && ambience(&meadow, winter_noon).insects == 0.0 && ambience(&meadow, summer_night).insects == 0.0 && ambience(&glade, summer_noon).insects == 0.0);
+        assert!(ambience(&lake_shore, summer_night).frogs > 0.8 && ambience(&lake_shore, summer_noon).frogs == 0.0 && ambience(&meadow, summer_night).frogs == 0.0);
+        assert!(ambience(&glade, midnight).owls > 0.8 && ambience(&glade, noon).owls == 0.0 && ambience(&meadow, midnight).owls == 0.0);
     }
 
     #[test]

@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -69,13 +69,14 @@ slice: ## no window: shots/slice/*.png, seven fixed views and two moving ones, t
 	$(SLICE)/forest-moving.gif --at 19,34 --dist 10 --pitch 0.1 --hour 15 --gif 6
 	$(SLICE)/meadow-walk.gif --play --script '1 fwd walk; 3 fwd run; 5 stop' --gif 7 --view three --hour 13
 
-prove: ## every judgment there is, a line each: code, land, creatures, ecology, sound levels, a fight, a swim, the real window
+prove: ## every judgment there is, a line each: code, land, creatures, ecology, sound levels, what is heard, a fight, a swim, the real window
 	@$(MAKE) --no-print-directory check > /dev/null 2>&1 && echo "ok check: tests, clippy, the Windows build" || echo "FAIL check (make check)"
 	@cargo world survey | tail -1 | sed 's/^ok$$/ok survey: the land/'
 	@cargo world run --seconds 300 | tail -1 | sed 's/^ok$$/ok run: five minutes of creatures/'
 	@cargo world life | tail -1 | sed 's/^ok$$/ok life: every kind has somewhere to live/'
 	@python3 tools/audio/level.py | tail -1
 	@python3 tools/audio/loops.py | tail -1
+	@$(MAKE) --no-print-directory sound
 	@$(MAKE) --no-print-directory fight
 	@$(MAKE) --no-print-directory swim
 	@$(MAKE) --no-print-directory window
@@ -84,6 +85,11 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 
 years: ## the island's creatures by the day for eight years: each kind's numbers year by year, and whether they hold
 	@cargo world years 8
+
+sound: ## no window: five minutes heard in a meadow by day and by a shore from dusk, judged from the trace: how many files, how loud against a footfall (tools/audio/listen.sh forest 21 for any place and hour)
+	@cargo build -q --release -p cube_game
+	@tools/audio/listen.sh meadow 10
+	@tools/audio/listen.sh shore 18 10 --busy 100
 
 seasons: ## no window: the meadow in summer and winter, judged by the ground's colour: green, then snow
 	@tools/seasons.sh

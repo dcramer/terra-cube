@@ -69,6 +69,8 @@ pub struct Args {
     pub hud: Option<String>,
     /// No sound.
     pub quiet: bool,
+    /// How many times as fast the world's clock runs: a long scripted run in a short wait.
+    pub speed: f32,
     /// The player starts with a torch lit.
     pub torch: bool,
     /// What grows drawn as low-poly shapes, not as cubes (`flora`): for comparison.
@@ -126,6 +128,7 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
         … --no-reflect                  forward rendering, and water that reflects only the sky
         … --continue                    start from terra-cube.save (F5 writes it, F9 reads it)
         … --quiet                       no sound
+        … --speed 6                     the clock six times as fast: five minutes heard in one (`make sound`)
         … --specimen oak                one thing that grows, alone at the start, to be looked at:
                                         oak birch pine willow snag young sapling bush log stump rock
         … --plain                       every surface's grain made in code, none from a photograph
@@ -218,6 +221,7 @@ fn parse_args() -> Args {
             "--blocky" => args.blocky = true,
             "--hud" => args.hud = Some(it.next().unwrap_or_else(|| "bar".into())),
             "--quiet" => args.quiet = true,
+            "--speed" => args.speed = it.next().and_then(|v| v.parse().ok()).unwrap_or(1.0),
             "--torch" => args.torch = true,
             "--shapes" => args.shapes = true,
             "--bits" => cube_voxel::mesh::BITS.store(true, std::sync::atomic::Ordering::Relaxed),
@@ -326,6 +330,10 @@ fn main() {
         if app.world().resource::<Args>().play {
             app.add_plugins(loading::LoadingPlugin);
         }
+    }
+    let speed = app.world().resource::<Args>().speed;
+    if speed > 0.0 && speed != 1.0 {
+        app.world_mut().resource_mut::<Time<Virtual>>().set_relative_speed(speed);
     }
     app.run();
 }

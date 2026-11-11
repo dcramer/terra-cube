@@ -17,7 +17,7 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 | `crates/cube_game` | The Bevy app: draws what the simulation holds, takes the player's keys. Sky, light, wind and what drifts in the air (`world`, `air`). Also the sandbox panel, contact sheets, scene pictures. |
 | `crates/world` | `cargo world`: the land and its creatures judged headless (`survey`, `run`, `life`, `map`, `grade`, `who`, `dig`). |
 | `crates/forge` | The creature pipeline CLI. Each file's header says what it holds; `main.rs` has the map. |
-| `tools/audio` | `level.py`: measures every sound's loudness and brings them to one level (ffmpeg). |
+| `tools/audio` | Sound judged by measurement (ffmpeg): `level.py` brings every file to one loudness, `loops.py` joins loops, `listen.sh` and `mix.py` judge five minutes of what the game played, `cut.py` and `cut.sh` cut calls from recordings. |
 | `tools/xkeys` | Real key presses and clicks on an X display, and `make window`'s test of the game's window with them. Python and libXtst, nothing to install. |
 | `tools/tripo` | Tripo Studio CLI (TypeScript, Node ≥ 22.18, no dependencies). Forge drives it; see its README before calling it by hand. |
 | `assets/textures/` | Photographed surface materials (CC0), one per grain; its README says where each came from. |
@@ -43,7 +43,8 @@ cargo world life                   # the ecology: how much of the island suits e
 cargo world years 8                # the island by the day for eight years, nobody watching: each kind's numbers year by year; change `[life]` or `Sim::day` against this
 cargo world map shots/map.png      # one picture from above with where every creature went
 make window                        # the real window on an Xvfb, driven by real key presses (tools/xkeys), judged from the trace
-make prove                         # every judgment in one go, a line each: check, survey, run, life, sound levels, fight, swim, window, seasons
+make prove                         # every judgment in one go, a line each: check, survey, run, life, sound levels, what is heard, fight, swim, window, seasons
+make sound                         # five minutes heard in a meadow by day and a shore from dusk, judged from the trace: files, repeats, level against a footfall (`tools/audio/listen.sh forest 21` for any place and hour)
 make swim                          # the player put in deep water in the real game: floats, swims, is heard (`cargo world find deep` finds it)
 make fight                         # the player fights a goblin in the real game, judged from the trace: hit, kill, sounds
 make grown                         # shots/grown/*.png: every kind of tree and rock alone, whole and close; `make floors`: the ground of a trail, forest, meadow and shore in one sheet
