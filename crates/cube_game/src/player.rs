@@ -21,6 +21,7 @@ pub struct PlayPlugin;
 impl Plugin for PlayPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Controls>().add_systems(Update, (start, keys, script, drive, follow, edit, cursor, trace).chain());
+        app.add_systems(Update, torch);
     }
 }
 
@@ -299,3 +300,44 @@ fn cursor(controlled: Query<(), With<Controlled>>, mut windows: Query<&mut Curso
         }
     }
 }
+
+/// The torch the controlled creature carries: a warm light at its shoulder that throws
+/// shadows and wavers as a flame does. T lights it and puts it out; `--torch` starts with it
+/// lit. Night is dark on purpose (docs/art-guide.md) and this is how it is played.
+#[derive(Component)]
+pub struct Torch;
+
+fn torch(
+    mut commands: Commands,
+    time: Res<Time>,
+    args: Res<crate::Args>,
+    keys: Option<Res<ButtonInput<KeyCode>>>,
+    bearers: Query<(&Transform, &crate::creatures::Creature), With<Controlled>>,
+    mut torches: Query<(Entity, &mut Transform, &mut PointLight), (With<Torch>, Without<Controlled>)>,
+    mut lit: Local<Option<bool>>,
+) {
+    let on = lit.get_or_insert(args.torch);
+    if keys.is_some_and(|k| k.just_pressed(KeyCode::KeyT)) {
+        *on = !*on;
+    }
+    let Some((bearer, _)) = bearers.iter().next().filter(|_| *on) else {
+        for (entity, ..) in &torches {
+            commands.entity(entity).despawn();
+        }
+        return;
+    };
+    // Held up and a little ahead, to the right.
+    let at = bearer.translation + bearer.rotation * Vec3::new(0.3, 1.55, -0.2);
+    let t = time.elapsed_secs();
+    let waver = 1.0 + 0.1 * (t * 11.0).sin() + 0.06 * (t * 23.0 + 1.3).sin() + 0.04 * (t * 5.3).sin();
+    if let Ok((_, mut place, mut light)) = torches.single_mut() {
+        place.translation = at + Vec3::new((t * 7.0).sin(), (t * 9.0).cos(), (t * 6.0).sin()) * 0.015;
+        light.intensity = TORCH * waver;
+    } else {
+        commands.spawn((Torch, PointLight { color: Color::srgb(1.0, 0.62, 0.28), intensity: TORCH, range: 16.0, radius: 0.05, shadow_maps_enabled: true, ..default() }, Transform::from_translation(at)));
+    }
+}
+
+/// How bright the torch is, lumens. Set for the camera as it is at night; by day it is lost
+/// in the sun, as a real one is.
+const TORCH: f32 = 2600.0;

@@ -226,6 +226,48 @@ pub struct Photo {
     pub facing: Vec<[f32; 3]>,
 }
 
+/// A crown's face, painted leaf by leaf: each a pointed blade with a midrib (or a needle),
+/// laid at its own angle from the back of the crown to the front, the back ones in shade and
+/// the front ones lit, some a little yellower or bluer. Where no leaf lies there is a gap.
+/// Its colour at every texel, how high (which is how lit), and whether anything is there.
+/// No scan of a crown was to be had; fallen leaves on the ground stood in for a while and
+/// looked like what they were.
+fn foliage(needles: bool) -> (Vec<[f32; 3]>, Vec<f32>, Vec<bool>) {
+    let (mut colour, mut high, mut there) = (vec![[0.3f32; 3]; TILE * TILE], vec![0.0f32; TILE * TILE], vec![false; TILE * TILE]);
+    // Leaves nine centimetres long; needles in sprays five long.
+    let (count, long, wide) = if needles { (9000, 13.0f32, 1.3f32) } else { (2300, 12.0, 5.5) };
+    let seed = if needles { 700 } else { 600 };
+    for i in 0..count {
+        let roll = |n: u32| hash(i, n as i32, seed);
+        let (cx, cy, turn) = (roll(0) * TILE as f32, roll(1) * TILE as f32, if needles { 1.2 + roll(2) * 0.8 } else { roll(2) * std::f32::consts::TAU });
+        let (sin, cos) = turn.sin_cos();
+        let (a, b) = (long * (0.7 + 0.6 * roll(3)), wide * (0.75 + 0.5 * roll(4)));
+        // Later ones lie over earlier ones and are nearer the light.
+        let depth = i as f32 / count as f32;
+        let lit = (0.32 + 0.85 * depth * depth) * (0.85 + 0.3 * roll(5));
+        let warm = (roll(6) - 0.5) * 0.3;
+        let reach = a.ceil() as i32 + 1;
+        for dy in -reach..=reach {
+            for dx in -reach..=reach {
+                let (u, v) = (dx as f32 * cos + dy as f32 * sin, dy as f32 * cos - dx as f32 * sin);
+                // A blade: widest a third along, pointed at both ends.
+                let across = b * (1.0 - (u / a) * (u / a)).max(0.0) * (1.0 - 0.3 * u / a);
+                if u.abs() >= a || v.abs() >= across {
+                    continue;
+                }
+                let at = (cx as i32 + dx).rem_euclid(TILE as i32) as usize + (cy as i32 + dy).rem_euclid(TILE as i32) as usize * TILE;
+                // Dark along the midrib and toward the edge, cupped.
+                let shape = if needles { 1.0 } else { (1.0 - 0.25 * (v.abs() / across.max(0.5)).powi(2)) * if v.abs() < 0.7 { 0.78 } else { 1.0 } };
+                let k = lit * shape;
+                colour[at] = [k * (1.0 + warm), k, k * (1.0 - warm * 1.4)];
+                high[at] = depth + 0.1 * (1.0 - v.abs() / across.max(0.5));
+                there[at] = true;
+            }
+        }
+    }
+    (colour, high, there)
+}
+
 pub fn atlas() -> Atlas {
     atlas_with(|_| None)
 }
@@ -238,10 +280,11 @@ pub fn atlas_with(photo: impl Fn(Grain) -> Option<Photo>) -> Atlas {
     let mut cover = vec![[1.0f32; 3]; size * size];
     let unit = 64.0 / TILE as f32;
     for (i, &grain) in Grain::ALL.iter().enumerate() {
-        let taken = photo(grain).filter(|p| p.colour.len() == TILE * TILE && p.facing.len() == TILE * TILE);
+        let painted = matches!(grain, Grain::Leaves | Grain::Needles).then(|| foliage(grain == Grain::Needles));
+        let taken = photo(grain).filter(|p| painted.is_none() && p.colour.len() == TILE * TILE && p.facing.len() == TILE * TILE);
         // The shapes are written gently and deepened here, in one place: at their written
         // strength the developer saw no texture at all.
-        let bright: Vec<f32> = if taken.is_some() { Vec::new() } else { (0..TILE * TILE).map(|t| (1.0 + (texel(grain, (t % TILE) as f32 * unit, (t / TILE) as f32 * unit) - 1.0) * DEPTH).max(0.05)).collect() };
+        let bright: Vec<f32> = if let Some((_, high, _)) = &painted { high.iter().map(|h| h * 0.5).collect() } else if taken.is_some() { Vec::new() } else { (0..TILE * TILE).map(|t| (1.0 + (texel(grain, (t % TILE) as f32 * unit, (t / TILE) as f32 * unit) - 1.0) * DEPTH).max(0.05)).collect() };
         let mut tile: Vec<[f32; 3]> = match &taken {
             // Sand, gravel and snow are fine and even in life; as scanned they are harsh, and
             // a lake bed of them seen through water was white speckle. They keep half their grain.
@@ -250,6 +293,7 @@ pub fn atlas_with(photo: impl Fn(Grain) -> Option<Photo>) -> Atlas {
                 let mean: [f32; 3] = std::array::from_fn(|c| p.colour.iter().map(|v| v[c]).sum::<f32>() / p.colour.len() as f32);
                 p.colour.iter().map(|v| std::array::from_fn(|c| mean[c] + (v[c] - mean[c]) * keep)).collect()
             }
+            None if painted.is_some() => painted.as_ref().unwrap().0.clone(),
             None => (0..TILE * TILE).map(|t| hue(grain, (t % TILE) as f32 * unit, (t / TILE) as f32 * unit).map(|c| c * bright[t])).collect(),
         };
         // Every tile to the same mean in each colour, so far off it is its block's colour
@@ -261,13 +305,6 @@ pub fn atlas_with(photo: impl Fn(Grain) -> Option<Photo>) -> Atlas {
                 tile.iter_mut().for_each(|v| v[c] = (v[c] * MEAN / mean.max(1e-4)).min(1.0));
             }
         }
-        // A crown is not a solid block of leaf: the darkest part of its picture, the shade
-        // between leaves, is cut away, and light and the far side of the crown show through.
-        let gaps = matches!(grain, Grain::Leaves | Grain::Needles).then(|| {
-            let mut bright: Vec<f32> = tile.iter().map(|v| v[0] + v[1] + v[2]).collect();
-            bright.sort_by(f32::total_cmp);
-            bright[bright.len() * 3 / 10]
-        });
         let lean: Vec<[f32; 3]> = match taken {
             Some(p) => p.facing,
             None => {
@@ -291,8 +328,7 @@ pub fn atlas_with(photo: impl Fn(Grain) -> Option<Photo>) -> Atlas {
             let (x, y) = ((t % ROOM + TILE - BORDER) % TILE, (t / ROOM + TILE - BORDER) % TILE);
             paint[ox + t % ROOM + (oy + t / ROOM) * size] = tile[x + y * TILE];
             facing[ox + t % ROOM + (oy + t / ROOM) * size] = lean[x + y * TILE];
-            let v = tile[x + y * TILE];
-            cover[ox + t % ROOM + (oy + t / ROOM) * size] = [if gaps.is_some_and(|g| v[0] + v[1] + v[2] < g) { 0.0 } else { 1.0 }; 3];
+            cover[ox + t % ROOM + (oy + t / ROOM) * size] = [if painted.as_ref().is_some_and(|p| !p.2[x + y * TILE]) { 0.0 } else { 1.0 }; 3];
         }
     }
     let (mut rgba, mut relief) = (Vec::new(), Vec::new());

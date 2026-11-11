@@ -53,10 +53,11 @@ map: ## no window: shots/map.png, the island from above with where each creature
 # The vertical slice: the same six places at the same hours, every time. Look at all of them
 # after any change to how the world is drawn; a view that got worse is a regression.
 SLICE = cargo sandbox --wild --scene shots/slice
-slice: ## no window: shots/slice/*.png, six fixed views and two moving ones, to judge any change to its look against
+slice: ## no window: shots/slice/*.png, seven fixed views and two moving ones, to judge any change to its look against
 	$(SLICE)/meadow-noon.png --play --script '2 fwd walk' --after 3 --view three --hour 13
 	$(SLICE)/meadow-dawn.png --play --script '2 fwd walk' --after 3 --view three --hour 6.4
 	$(SLICE)/meadow-night.png --play --script '2 fwd walk' --after 6 --view three --hour 21
+	$(SLICE)/meadow-torch.png --play --script '2 fwd walk' --after 6 --view three --hour 21 --torch
 	$(SLICE)/forest-day.png --at -15,85 --dist 10 --pitch 0.1 --hour 15 --after 8
 	$(SLICE)/shore-evening.png --at 17,165 --yaw 0.3 --dist 16 --pitch 0.35 --hour 17
 	$(SLICE)/island-high.png --view high --hour 15

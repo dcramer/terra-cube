@@ -445,9 +445,17 @@ impl Sim {
         let mut placed = 0;
         for kind in 0..self.kinds.len() {
             let k = self.kinds[kind].clone();
-            let keep_off = if k.temper == Temper::Timid { 12.0 } else { 60.0 };
-            // A bigger island has more groups on it: as many again for each 96 m it runs out.
-            let wanted = k.groups * ((land.span as f32 * CELL / 96.0).round() as usize).max(1);
+            // How near the start a group may live: what does no harm, near; what hunts, far.
+            // (At 60 m for everything but the timid, a player at the start saw nothing but a
+            // rabbit in the grass, and said so.)
+            let keep_off = match k.temper {
+                Temper::Timid => 12.0,
+                Temper::Hunter => 45.0,
+                Temper::Hostile => 70.0,
+                _ => 22.0,
+            };
+            // By the island's area: twice as wide is four times the ground.
+            let wanted = k.groups * ((land.span as f32 * CELL / 96.0).powi(2).round() as usize).max(1);
             let mut groups = 0;
             for _ in 0..4000 {
                 if groups == wanted {
