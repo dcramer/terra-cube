@@ -214,17 +214,10 @@ impl Land {
             }
             // By water: within six metres of it and little above it.
             let wet = h <= SEA + cells(1.5) && (-3..=3).any(|dz| (-3..=3).any(|dx| land.biome(x + dx * cells(2.0), z + dz * cells(2.0)) == Biome::Water));
-            let kind = match roll(3) {
-                _ if wet && !conifers => Tree::Willow,
-                r if r < 0.06 => Tree::Snag,
-                r if conifers => if r < 0.9 { Tree::Pine } else { Tree::Birch },
-                r if r < 0.5 => Tree::Oak,
-                r if r < 0.78 => Tree::Birch,
-                _ => Tree::Pine,
-            };
-            // Most trees in a wood are grown ones: more stand near their kind's full height
-            // than near its least. And one oak or pine in twenty is a giant.
-            let giant = matches!(kind, Tree::Oak | Tree::Pine) && roll(6) < scale::GIANTS;
+            // Which kind: as the table of trees says is found at such a place.
+            let site = if wet && !conifers { crate::flora::Site::Waterside } else if conifers { crate::flora::Site::High } else { crate::flora::Site::Low };
+            let kind = crate::flora::pick(site, roll(3));
+            let giant = kind.species().giant && roll(6) < scale::GIANTS;
             What::Tree(kind, if giant { scale::GIANT } else { roll(4).sqrt() })
         } else if pick < under {
             match roll(3) {
@@ -442,13 +435,8 @@ pub fn fill(world: &mut World, land: &Land, lo: (i32, i32), hi: (i32, i32)) {
     for gz in (lo.1 - CROWN).div_euclid(grid)..=(hi.1 + CROWN).div_euclid(grid) {
         for gx in (lo.0 - CROWN).div_euclid(grid)..=(hi.0 + CROWN).div_euclid(grid) {
             if let Some(Thing { foot, what: What::Tree(kind, age), .. }) = land.thing(0, gx, gz) {
-                let reach = plants::height(kind, age) * match kind {
-                    Tree::Oak | Tree::Willow => 0.5,
-                    Tree::Birch => 0.24,
-                    Tree::Pine => 0.2,
-                    Tree::Snag => 0.06,
-                };
-                crowns.push(((foot.x as f32 + 0.5) * CELL, (foot.z as f32 + 0.5) * CELL, reach, kind == Tree::Pine));
+                let reach = plants::height(kind, age) * kind.species().reach;
+                crowns.push(((foot.x as f32 + 0.5) * CELL, (foot.z as f32 + 0.5) * CELL, reach, kind.species().needles()));
             }
         }
     }

@@ -7,7 +7,7 @@
 use crate::world::{Look, Regions, Terrain};
 use bevy::{asset::RenderAssetUsages, mesh::Indices, prelude::*, render::render_resource::PrimitiveTopology};
 use cube_sim::{
-    plants::Tree,
+    flora::Habit,
     terrain::{self, Biome, SEA},
 };
 use cube_voxel::{Block, CELL, texture::{Grain, MEAN, SPAN}};
@@ -161,27 +161,29 @@ fn build(mut commands: Commands, terrain: Option<Res<Terrain>>, look: Option<Res
             for &t in trees.get(&(rx, rz)).into_iter().flatten() {
                 let (foot, tall, sort) = (land.trees[t], land.grown[t], land.sorts[t]);
                 let at = Vec3::new(foot.x as f32 * CELL - ox, foot.y as f32 * CELL - SUNK, foot.z as f32 * CELL - oz);
-                let bark = if sort == Tree::Birch { Block::Birch } else { Block::Wood }.colors().1;
-                let trunk = tall * 0.028;
+                let kind = sort.species();
+                let (bark, leaf) = (kind.bark().colors().1, kind.leaf().colors().0);
+                let trunk = tall * kind.girth.max(0.02);
                 let block = |shape: &mut Shape, from: f32, to: f32, wide: f32, colour: [f32; 3]| shape.block(at + Vec3::new(-wide, from * tall, -wide), at + Vec3::new(wide, to * tall, wide), colour);
                 let up = |part: f32| at + Vec3::Y * tall * part;
-                match sort {
-                    // A point of two tiers of cone.
-                    Tree::Pine => {
+                match kind.habit {
+                    // A point of two tiers of cone, as wide as the kind spreads.
+                    Habit::Whorled => {
                         block(&mut shape, 0.0, 0.3, trunk, bark);
-                        shape.cone(up(0.26), tall * 0.17, tall * 0.5, Block::Needles.colors().0);
-                        shape.cone(up(0.55), tall * 0.11, tall * 0.45, Block::Needles.colors().0);
+                        shape.cone(up(0.26), tall * 0.17 * kind.spread, tall * 0.5, leaf);
+                        shape.cone(up(0.55), tall * 0.11 * kind.spread, tall * 0.45, leaf);
                     }
-                    Tree::Snag => block(&mut shape, 0.0, 1.0, trunk * 1.2, bark),
-                    // A trunk and a rounded crown as wide as it is tall, or for a birch a narrow one.
-                    _ => {
-                        let (leaf, wide, from) = match sort {
-                            Tree::Birch => (Block::LeavesPale, 0.15, 0.45),
-                            Tree::Willow => (Block::LeavesPale, 0.38, 0.2),
-                            _ => (Block::Leaves, 0.33, 0.36),
+                    Habit::Dead => block(&mut shape, 0.0, 1.0, trunk * 1.2, bark),
+                    // A trunk and a crown: broad for what spreads, low and broad for what
+                    // weeps, narrow and high for what is slender.
+                    habit => {
+                        let (wide, from) = match habit {
+                            Habit::Slender => (0.15 * kind.spread, 0.45),
+                            Habit::Weeping => (0.38, 0.2),
+                            _ => (0.33 * kind.spread, 0.36),
                         };
                         block(&mut shape, 0.0, from + 0.1, trunk, bark);
-                        shape.crown(up((from + 1.0) / 2.0), Vec3::new(tall * wide, tall * (1.0 - from) / 2.0, tall * wide), leaf.colors().0, &crowns);
+                        shape.crown(up((from + 1.0) / 2.0), Vec3::new(tall * wide, tall * (1.0 - from) / 2.0, tall * wide), leaf, &crowns);
                     }
                 }
             }

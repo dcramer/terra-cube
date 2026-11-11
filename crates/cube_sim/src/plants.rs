@@ -14,19 +14,8 @@ use cube_voxel::{Block, CELL, World};
 use glam::{IVec3, Vec3};
 use std::f32::consts::TAU;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Tree {
-    /// Broad, heavy-limbed, the crown wider than it is tall.
-    Oak,
-    /// Slender and pale, its foliage light and high.
-    Birch,
-    /// A straight tapering trunk with whorls of drooping boughs.
-    Pine,
-    /// Short and thick by water, its crown hanging in curtains.
-    Willow,
-    /// Dead: a broken trunk and a few bare limbs.
-    Snag,
-}
+pub use crate::flora::Tree;
+use crate::flora::Habit;
 
 /// The shape of what was grown, for whoever draws it as a shape and not as cells: every limb
 /// (from, to, how thick at each end, of what bark) and every mass of leaf (its middle, how
@@ -172,14 +161,7 @@ fn bole(world: &mut World, foot: Vec3, top: Vec3, base: f32, tip: f32, bark: Blo
 
 /// How tall a tree of a kind and age stands, metres: what [`tree`] builds.
 pub fn height(kind: Tree, age: f32) -> f32 {
-    match kind {
-        Tree::Oak => scale::OAK,
-        Tree::Birch => scale::BIRCH,
-        Tree::Pine => scale::PINE,
-        Tree::Willow => scale::WILLOW,
-        Tree::Snag => scale::SNAG,
-    }
-    .at(age)
+    kind.species().tall(age)
 }
 
 /// Grows a tree with its foot on the cell `foot`. `age` is 0 for one just grown, 1 for an
@@ -188,37 +170,39 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
     let foot = (foot.as_vec3() + Vec3::new(0.5, 0.0, 0.5)) * CELL;
     let lean = |rng: &mut Rng, most: f32| Vec3::new(rng.between(-most, most), 0.0, rng.between(-most, most));
     let clear = foot.y + scale::UNDER_CROWN;
-    match kind {
-        Tree::Oak => {
+    // Its kind says how big, of what and how thick (`flora`); its habit, which shape.
+    let sp = kind.species();
+    let (tall, bark, leaf) = (sp.tall(age), sp.bark(), sp.leaf());
+    match sp.habit {
+        Habit::Spreading => {
             // As wide as it is tall. A short thick trunk forks low into heavy limbs that run
             // out, then up; each throws side branches, and every shoot ends in a mass of leaf.
             // The masses overlap into one broad dome with the limbs showing under it.
-            let tall = scale::OAK.at(age);
             // An old oak's leaves are deep; a younger one's the common green.
-            let leaf = if age > 0.55 && rng.chance(0.7) { Block::LeavesDeep } else { Block::Leaves };
-            let base = tall * 0.034;
+            let leaf = if age > 0.55 && rng.chance(0.7) { sp.old_leaf() } else { leaf };
+            let base = tall * sp.girth;
             let fork = foot + Vec3::Y * tall * 0.3 + lean(rng, tall * 0.03);
-            bole(world, foot, fork, base, base * 0.78, Block::Wood, rng);
+            bole(world, foot, fork, base, base * 0.78, bark, rng);
             let mass = |world: &mut World, at: Vec3, size: f32, rng: &mut Rng| clump(world, at + Vec3::Y * size * 0.2, Vec3::new(size, size * 0.7, size), leaf, clear, rng);
             let limbs = 5 + rng.below(3);
             let turn = rng.between(0.0, TAU);
             for i in 0..limbs {
                 let way = turn + i as f32 / limbs as f32 * TAU + rng.between(-0.3, 0.3);
-                let (rise, long) = (rng.between(0.3, 0.95), tall * rng.between(0.3, 0.42));
+                let (rise, long) = (rng.between(0.3, 0.95), tall * sp.spread * rng.between(0.3, 0.42));
                 let end = fork + Vec3::new(way.cos() * rise.cos(), rise.sin(), way.sin() * rise.cos()) * long;
                 let first = fork.lerp(end, 0.35) - Vec3::Y * 0.06 * long * rise.cos();
                 let second = fork.lerp(end, 0.7) + Vec3::Y * 0.04 * long;
                 let end = end + Vec3::Y * 0.16 * long;
-                limb(world, fork, first, base * 0.5, base * 0.4, Block::Wood);
-                limb(world, first, second, base * 0.4, base * 0.27, Block::Wood);
-                limb(world, second, end, base * 0.27, 0.07, Block::Wood);
+                limb(world, fork, first, base * 0.5, base * 0.4, bark);
+                limb(world, first, second, base * 0.4, base * 0.27, bark);
+                limb(world, second, end, base * 0.27, 0.07, bark);
                 mass(world, end, tall * rng.between(0.15, 0.19), rng);
                 for (from, thick, reach) in [(first, base * 0.3, 0.2), (second, base * 0.22, 0.16)] {
                     let off = way + rng.between(0.6, 1.3) * if rng.chance(0.5) { 1.0 } else { -1.0 };
                     let tip = from + Vec3::new(off.cos(), rng.between(0.5, 1.0), off.sin()).normalize() * tall * reach;
                     let mid = from.lerp(tip, 0.5) - Vec3::Y * tall * 0.012;
-                    limb(world, from, mid, thick, thick * 0.6, Block::Wood);
-                    limb(world, mid, tip, thick * 0.6, 0.05, Block::Wood);
+                    limb(world, from, mid, thick, thick * 0.6, bark);
+                    limb(world, mid, tip, thick * 0.6, 0.05, bark);
                     mass(world, tip, tall * rng.between(0.11, 0.15), rng);
                 }
             }
@@ -226,25 +210,24 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
             let size = tall * 0.16;
             let top = foot + Vec3::Y * (tall - size * 0.7) + lean(rng, tall * 0.04);
             let mid = fork.lerp(top, 0.5) + lean(rng, tall * 0.03);
-            limb(world, fork, mid, base * 0.5, base * 0.3, Block::Wood);
-            limb(world, mid, top, base * 0.3, 0.08, Block::Wood);
+            limb(world, fork, mid, base * 0.5, base * 0.3, bark);
+            limb(world, mid, top, base * 0.3, 0.08, bark);
             mass(world, top, size, rng);
             mass(world, mid, tall * 0.2, rng);
             tall
         }
-        Tree::Birch => {
+        Habit::Slender => {
             // A slender pale trunk that sways as it climbs. Its branches leave it steeply,
             // then tire and hang at their ends: a tall narrow crown of light leaf, open
             // enough to see the trunk through, longest in the middle and gathered at the top.
-            let tall = scale::BIRCH.at(age);
-            let base = tall * 0.018;
+            let base = tall * sp.girth;
             let bend = lean(rng, tall * 0.06);
             let low = foot + Vec3::Y * tall * 0.34 + bend * 0.9;
             let mid = foot + Vec3::Y * tall * 0.66 - bend * 0.3;
             let top = foot + Vec3::Y * tall * 0.95 + bend * 0.5;
-            bole(world, foot, low, base * 1.2, base * 0.85, Block::Birch, rng);
-            limb(world, low, mid, base * 0.85, base * 0.5, Block::Birch);
-            limb(world, mid, top, base * 0.5, 0.05, Block::Birch);
+            bole(world, foot, low, base * 1.2, base * 0.85, bark, rng);
+            limb(world, low, mid, base * 0.85, base * 0.5, bark);
+            limb(world, mid, top, base * 0.5, 0.05, bark);
             let along = |up: f32| if up < 0.34 { foot.lerp(low, up / 0.34) } else if up < 0.66 { low.lerp(mid, (up - 0.34) / 0.32) } else { mid.lerp(top, (up - 0.66) / 0.29) };
             let n = 10 + rng.below(6);
             let mut way = rng.between(0.0, TAU);
@@ -258,29 +241,28 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
                 let from = along(up);
                 let elbow = from + (out * 0.55 + Vec3::Y * 0.85) * long * 0.6;
                 let tip = elbow + (out * 0.9 - Vec3::Y * 0.45) * long * 0.7;
-                limb(world, from, elbow, base * 0.32 * (1.2 - part), 0.05, Block::Birch);
-                limb(world, elbow, tip, 0.05, 0.03, Block::Birch);
+                limb(world, from, elbow, base * 0.32 * (1.2 - part), 0.05, bark);
+                limb(world, elbow, tip, 0.05, 0.03, bark);
                 let size = long * rng.between(0.42, 0.55);
-                clump(world, elbow.lerp(tip, 0.3), Vec3::new(size, size * 0.7, size), Block::LeavesPale, clear, rng);
+                clump(world, elbow.lerp(tip, 0.3), Vec3::new(size, size * 0.7, size), leaf, clear, rng);
                 // The hanging end: longer down than across.
-                clump(world, tip - Vec3::Y * size * 0.6, Vec3::new(size * 0.6, size * 1.1, size * 0.6), Block::LeavesPale, clear, rng);
+                clump(world, tip - Vec3::Y * size * 0.6, Vec3::new(size * 0.6, size * 1.1, size * 0.6), leaf, clear, rng);
             }
-            clump(world, top, Vec3::new(tall * 0.055, tall * 0.075, tall * 0.055), Block::LeavesPale, clear, rng);
+            clump(world, top, Vec3::new(tall * 0.055, tall * 0.075, tall * 0.055), leaf, clear, rng);
             tall
         }
-        Tree::Pine => {
+        Habit::Whorled => {
             // A straight tapering trunk, bare for its first quarter, then whorls to a point.
-            let tall = scale::PINE.at(age);
-            let base = tall * 0.019;
+            let base = tall * sp.girth;
             let top = foot + Vec3::Y * tall + lean(rng, tall * 0.025);
-            bole(world, foot, top, base, 0.08, Block::Wood, rng);
-            let spread = tall * 0.16;
+            bole(world, foot, top, base, 0.08, bark, rng);
+            let spread = tall * 0.16 * sp.spread;
             let first = (tall * 0.28).max(scale::UNDER_CROWN);
             // Dead stubs under the green.
             for _ in 0..2 + rng.below(3) {
                 let (up, way) = (rng.between(1.6, first), rng.between(0.0, TAU));
                 let from = foot.lerp(top, up / tall);
-                limb(world, from, from + Vec3::new(way.cos(), -0.15, way.sin()) * rng.between(0.6, 1.6), 0.1, 0.05, Block::Wood);
+                limb(world, from, from + Vec3::new(way.cos(), -0.15, way.sin()) * rng.between(0.6, 1.6), 0.1, 0.05, bark);
             }
             // Whorls of boughs, each drooping, wide at the bottom and short at the top.
             let mut up = first;
@@ -294,24 +276,23 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
                     let from = foot.lerp(top, up / tall);
                     let long = long * rng.between(0.75, 1.1);
                     let end = from + Vec3::new(way.cos(), -0.3, way.sin()) * long;
-                    limb(world, from, end, tall * 0.006, 0.05, Block::Wood);
+                    limb(world, from, end, tall * 0.006, 0.05, bark);
                     // Needles in a flat spray along the outer part of the bough.
                     let spray = from.lerp(end, 0.62);
                     let flat = Vec3::new(long * 0.5 + 0.3, tall * 0.014 + 0.3, long * 0.5 + 0.3);
-                    clump(world, spray, flat * Vec3::new(0.55 + 0.45 * way.cos().abs(), 1.0, 0.55 + 0.45 * way.sin().abs()), Block::Needles, clear.min(foot.y + first - 0.5), rng);
+                    clump(world, spray, flat * Vec3::new(0.55 + 0.45 * way.cos().abs(), 1.0, 0.55 + 0.45 * way.sin().abs()), leaf, clear.min(foot.y + first - 0.5), rng);
                 }
                 up += tall * rng.between(0.042, 0.06);
                 turn += 0.6;
             }
-            clump(world, top - Vec3::Y * 0.3, Vec3::new(tall * 0.03, tall * 0.055, tall * 0.03), Block::Needles, clear, rng);
+            clump(world, top - Vec3::Y * 0.3, Vec3::new(tall * 0.03, tall * 0.055, tall * 0.03), leaf, clear, rng);
             tall
         }
-        Tree::Willow => {
+        Habit::Weeping => {
             // Short and thick, its limbs arching out and its leaves hanging to the ground.
-            let tall = scale::WILLOW.at(age);
-            let base = tall * 0.05;
+            let base = tall * sp.girth;
             let fork = foot + Vec3::Y * tall * 0.3 + lean(rng, 0.5);
-            bole(world, foot, fork, base, base * 0.8, Block::Wood, rng);
+            bole(world, foot, fork, base, base * 0.8, bark, rng);
             let limbs = 4 + rng.below(3);
             let turn = rng.between(0.0, TAU);
             for i in 0..limbs {
@@ -319,9 +300,9 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
                 let long = tall * 0.38;
                 let high = fork + Vec3::new(way.cos() * 0.6, 0.9, way.sin() * 0.6) * long * 0.6;
                 let end = high + Vec3::new(way.cos(), -0.1, way.sin()) * long * 0.6;
-                limb(world, fork, high, base * 0.5, base * 0.3, Block::Wood);
-                limb(world, high, end, base * 0.3, 0.08, Block::Wood);
-                clump(world, high.lerp(end, 0.5) + Vec3::Y * 0.3, Vec3::new(tall * 0.2, tall * 0.11, tall * 0.2), Block::LeavesPale, foot.y + 1.6, rng);
+                limb(world, fork, high, base * 0.5, base * 0.3, bark);
+                limb(world, high, end, base * 0.3, 0.08, bark);
+                clump(world, high.lerp(end, 0.5) + Vec3::Y * 0.3, Vec3::new(tall * 0.2, tall * 0.11, tall * 0.2), leaf, foot.y + 1.6, rng);
                 // Curtains: strands hanging from the limb's end almost to the ground.
                 for _ in 0..10 {
                     let at = end + Vec3::new(rng.between(-1.0, 1.0), 0.0, rng.between(-1.0, 1.0)) * tall * 0.13;
@@ -329,27 +310,26 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
                     // A strand, for whoever draws shapes: a thin hanging mass.
                     NOTED.with(|n| {
                         if let Some(form) = n.borrow_mut().as_mut() {
-                            form.clumps.push(Clump { middle: at - Vec3::Y * hang * 0.5, radii: Vec3::new(0.35, hang * 0.5, 0.35), leaf: Block::LeavesPale });
+                            form.clumps.push(Clump { middle: at - Vec3::Y * hang * 0.5, radii: Vec3::new(0.35, hang * 0.5, 0.35), leaf });
                         }
                     });
                     let c = cell(at);
                     for down in 0..(hang / CELL) as i32 {
                         let strand = c - IVec3::Y * down;
                         if world.get(strand) == Block::Air {
-                            world.set(strand, Block::LeavesPale);
+                            world.set(strand, leaf);
                         }
                     }
                 }
             }
             let size = tall * 0.24;
-            clump(world, foot + Vec3::Y * (tall - size * 0.6), Vec3::new(size, size * 0.6, size), Block::LeavesPale, foot.y + 2.0, rng);
+            clump(world, foot + Vec3::Y * (tall - size * 0.6), Vec3::new(size, size * 0.6, size), leaf, foot.y + 2.0, rng);
             tall
         }
-        Tree::Snag => {
-            let tall = scale::SNAG.at(age);
-            let base = tall * 0.035;
+        Habit::Dead => {
+            let base = tall * sp.girth;
             let top = foot + Vec3::Y * tall + lean(rng, tall * 0.08);
-            bole(world, foot, top, base, base * 0.45, Block::Wood, rng);
+            bole(world, foot, top, base, base * 0.45, bark, rng);
             for _ in 0..3 + rng.below(4) {
                 let (up, way) = (rng.between(0.35, 0.92), rng.between(0.0, TAU));
                 let from = foot.lerp(top, up);
@@ -357,13 +337,13 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
                 // Some limbs are whole and forked, most broken off short.
                 if rng.chance(0.4) {
                     let elbow = from + out * tall * rng.between(0.1, 0.18);
-                    limb(world, from, elbow, base * 0.4, base * 0.22, Block::Wood);
+                    limb(world, from, elbow, base * 0.4, base * 0.22, bark);
                     for turn in [-0.7f32, 0.6] {
                         let fork = Vec3::new((way + turn).cos(), rng.between(0.3, 0.9), (way + turn).sin());
-                        limb(world, elbow, elbow + fork * tall * rng.between(0.06, 0.13), base * 0.2, 0.04, Block::Wood);
+                        limb(world, elbow, elbow + fork * tall * rng.between(0.06, 0.13), base * 0.2, 0.04, bark);
                     }
                 } else {
-                    limb(world, from, from + out * rng.between(0.4, 1.1), base * 0.4, base * 0.3, Block::Wood);
+                    limb(world, from, from + out * rng.between(0.4, 1.1), base * 0.4, base * 0.3, bark);
                 }
             }
             tall
@@ -371,18 +351,11 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
     }
 }
 
-/// Grows one thing by name at `foot`, to be looked at on its own (`--specimen`): a tree
-/// (`oak`, `birch`, `pine`, `willow`, `snag`), `young`, `sapling`, `bush`, `log`, `stump`,
+/// Grows one thing by name at `foot`, to be looked at on its own (`--specimen`): any tree
+/// of `assets/world/flora.toml` by its name, `young`, `sapling`, `bush`, `log`, `stump`,
 /// `rock`. False if there is no such thing.
 pub fn specimen(world: &mut World, foot: IVec3, name: &str, rng: &mut Rng) -> bool {
-    let kind = match name {
-        "oak" => Some(Tree::Oak),
-        "birch" => Some(Tree::Birch),
-        "pine" => Some(Tree::Pine),
-        "willow" => Some(Tree::Willow),
-        "snag" => Some(Tree::Snag),
-        _ => None,
-    };
+    let kind = Tree::named(name);
     match (kind, name) {
         (Some(kind), _) => {
             tree(world, foot, kind, 0.8, rng);

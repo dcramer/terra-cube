@@ -154,6 +154,14 @@ Built 2026-11-10. `cube_sim::terrain` makes it; `cargo world survey` and `map` j
   - **Forest floor**: turf, leaf drifts, moss where it is dampest, ferns in colonies, mushrooms in troops on the litter. **Meadow**: flowers in drifts some metres over, long grass in its own patches, scrapes of bare earth, and the grass itself dry and straw-coloured in stretches and lush in others (`mesh::sward`). **Shore**: beds of pebbles in the sand, reeds in stands at the water, marram on the dry sand behind. **Rock**: grass in the cracks of low rock.
   - `make floors` pictures a trail, a forest floor, a meadow and a shore in one sheet; `cargo world find trail` says where an open stretch of trail is.
 
+## What is placed is data
+
+The developer's rule (2026-11-11): what varies is data, and a new kind of anything that is placed in the world by rule is added without touching the code that places it. Where this stands:
+
+- **Creatures**: `assets/creatures/ID/creature.toml` (`[life]`: temper, habitat, water, cover, hours, numbers, voice; `[built]` for those forge makes).
+- **Trees**: `assets/world/flora.toml` (`cube_sim::flora`). A kind is its name, its habit (one of five shapes, the only part in code: `plants::tree`), its height, girth, spread and reach, its bark and leaf, and how common it is on low ground, high ground and by water. Beech, aspen and spruce were added as data alone. The land picks by site from the table (`flora::pick`), the far stand-ins and the ground under a crown ask the kind what it is.
+- **Not yet data**: the biomes and what makes a place one or another; the undergrowth (young trees, bushes, logs, stumps); ground cover; rocks' classes are a table in `scale`; the small life of the air is a table of niches in `ecology` with its numbers in `air`. Each is to go the same way: a table in `assets/world/`, read once, with the rule that uses it written against the table.
+
 ## What lives in it
 
 - **A kind keeps its own ground** (`Sim::populate`): no group settles within 80 m of another of its kind (30 m for those that live alone). Herds went wherever suited them and three of ponies stood within a stone's throw: one cluster, to the developer. The pony is 1.6 m tall, not 1.45.

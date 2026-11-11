@@ -1,0 +1,109 @@
+# The trees of the world, as data: read by `cube_sim::flora`. A new kind of tree is a new
+# table here and nothing else: where it grows, how big, of what bark and leaf, and which of
+# the habits it grows in (the habit is the one thing written in code, `cube_sim::plants`):
+#
+#   spreading  a short thick trunk forking low into heavy limbs, a broad dome (an oak)
+#   slender    a thin swaying trunk, branches that rise and hang, a narrow open crown (a birch)
+#   whorled    a straight tapering trunk, whorls of drooping boughs to a point (a pine)
+#   weeping    short and thick, limbs arching out, leaf hanging in curtains (a willow)
+#   dead       a broken trunk, a few limbs and stubs
+#
+# height   metres, from one just grown to an old one
+# girth    how thick its trunk is at the foot (its radius), as a part of its height
+# spread   how far its limbs reach beside the habit's usual (1): under 1 is a narrower tree
+# reach    how far its crown shades the ground from its foot, as a part of its height
+# bark, leaf, old_leaf   the blocks it is made of (old_leaf: what most old ones turn to)
+# giant    whether one in twenty stands a quarter over its kind's tallest
+# low, high, waterside   how common it is among the trees of low ground, of high ground
+#          (over the conifer line, and on rock and snow) and beside water; a share of each
+
+[[tree]]
+name = "oak"
+habit = "spreading"
+height = [16.0, 30.0]
+girth = 0.034
+reach = 0.5
+bark = "wood"
+leaf = "leaves"
+old_leaf = "leaves_deep"
+giant = true
+low = 0.38
+
+[[tree]]
+name = "beech"
+habit = "spreading"
+height = [20.0, 34.0]
+girth = 0.026
+spread = 0.8
+reach = 0.42
+bark = "birch"
+leaf = "leaves_deep"
+low = 0.14
+
+[[tree]]
+name = "birch"
+habit = "slender"
+height = [13.0, 24.0]
+girth = 0.018
+reach = 0.24
+bark = "birch"
+leaf = "leaves_pale"
+low = 0.18
+high = 0.06
+
+[[tree]]
+name = "aspen"
+habit = "slender"
+height = [10.0, 18.0]
+girth = 0.016
+spread = 0.8
+reach = 0.2
+bark = "birch"
+leaf = "leaves"
+low = 0.07
+high = 0.05
+
+[[tree]]
+name = "pine"
+habit = "whorled"
+height = [22.0, 46.0]
+girth = 0.019
+reach = 0.2
+bark = "wood"
+leaf = "needles"
+giant = true
+low = 0.15
+high = 0.5
+
+[[tree]]
+name = "spruce"
+habit = "whorled"
+height = [18.0, 38.0]
+girth = 0.017
+spread = 0.68
+reach = 0.14
+bark = "wood"
+leaf = "needles"
+low = 0.03
+high = 0.33
+
+[[tree]]
+name = "willow"
+habit = "weeping"
+height = [9.0, 15.0]
+girth = 0.05
+reach = 0.5
+bark = "wood"
+leaf = "leaves_pale"
+waterside = 1.0
+
+[[tree]]
+name = "snag"
+habit = "dead"
+height = [7.0, 18.0]
+girth = 0.035
+reach = 0.06
+bark = "wood"
+leaf = "leaves"
+low = 0.05
+high = 0.06
