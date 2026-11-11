@@ -67,7 +67,7 @@ impl Plugin for MotionPlugin {
                 sim
             }))
             .add_systems(FixedUpdate, tick)
-            .add_systems(Update, (populate, enrol, drivers, show).chain())
+            .add_systems(Update, (populate, enrol, drivers, show, far_off).chain())
             .add_systems(Update, bodies);
     }
 }
@@ -143,7 +143,8 @@ fn tick(terrain: Option<Res<Terrain>>, mut live: ResMut<Live>) {
 
 /// Draws each body between ticks, tips the model into its turns, and plays the clip that
 /// fits what it is doing, at the rate that keeps its feet from sliding.
-fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, terrain: Option<Res<crate::world::Terrain>>, mut live: ResMut<Live>, mut movers: Query<(&mut Mover, &mut Creature, &mut Transform)>) {
+fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, terrain: Option<Res<crate::world::Terrain>>, cameras: Query<&GlobalTransform, With<Camera3d>>, mut live: ResMut<Live>, mut movers: Query<(&mut Mover, &mut Creature, &mut Transform)>) {
+    let eye = cameras.iter().next().map(|c| c.translation());
     let dt = time.delta_secs();
     let between = fixed.overstep_fraction();
     let Sim { agents, kinds, .. } = &mut live.0;
@@ -159,7 +160,10 @@ fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, terra
         transform.translation = agent.before.lerp(agent.body.pos, between) + Vec3::Y * m.lift;
         // On the ground its feet are where the ground is drawn: the body stands on cubes, and
         // the cubes are drawn as a slope.
-        if let (true, Some(terrain)) = (agent.body.grounded, &terrain) {
+        // (Only near enough for it to be seen: working it out for every creature on the
+        // island each frame was a tenth of the frame.)
+        let near = eye.is_none_or(|e| e.distance(transform.translation) < 50.0);
+        if let (true, true, Some(terrain)) = (near, agent.body.grounded, &terrain) {
             let at = Vec3::new(transform.translation.x, agent.body.pos.y, transform.translation.z);
             if let Some(y) = cube_voxel::mesh::eased_under(&terrain.0, at) {
                 transform.translation.y = y;
@@ -227,5 +231,30 @@ fn bodies(show: Res<ShowBodies>, live: Res<Live>, creatures: Query<(&Mover, &Tra
         }
         gizmos.line(at.translation + ahead, at.translation + ahead + Vec3::Y * kind.height, colour);
         gizmos.line(at.translation - ahead, at.translation - ahead + Vec3::Y * kind.height, colour);
+    }
+}
+
+/// How far off a creature is still drawn and its clip still played, metres. Beyond it a deer
+/// is a few pixels; the simulation goes on moving it all the same.
+const SEEN: f32 = 120.0;
+
+/// Creatures far from the camera are neither drawn nor animated. With every one of 280 posed
+/// and skinned each frame wherever it was, creatures were a quarter of the frame.
+fn far_off(cameras: Query<&GlobalTransform, With<Camera3d>>, mut movers: Query<(&Transform, &mut Visibility, Option<&crate::creatures::Rig>, Has<crate::player::Controlled>), With<Mover>>, mut players: Query<&mut AnimationPlayer>) {
+    let Some(eye) = cameras.iter().next().map(|c| c.translation()) else { return };
+    for (at, mut seen, rig, controlled) in &mut movers {
+        // The controlled creature's own showing is the player's to set (first person hides it).
+        if controlled {
+            continue;
+        }
+        let near = at.translation.distance(eye) < SEEN;
+        let want = if near { Visibility::Inherited } else { Visibility::Hidden };
+        if *seen == want {
+            continue;
+        }
+        *seen = want;
+        if let Some(Ok(mut player)) = rig.map(|r| players.get_mut(r.0)) {
+            if near { player.resume_all(); } else { player.pause_all(); }
+        }
     }
 }
