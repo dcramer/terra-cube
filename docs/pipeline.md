@@ -56,14 +56,30 @@ A gait is right when a foot that is down stays where it was put while the body g
 - **`meta.toml` speeds are the speeds the game moves at**, so a clip always plays at its own rate. To make a creature faster, change the gait, not a number in the game.
 - `gait_gain` in `creature.toml` (under 1) shortens stride, lift, rock and arm swing for a body whose skin tears at full reach: bear 0.6, boar 0.7, deer 0.4, troll 0.6.
 
-## The roster, and two plans that do not work yet
+## The roster
 
-2026-11-10: 36 creatures besides the player are wanted first (100 in the end). The 29 new ones have a `creature.toml` and a concept each (58 credits); `cargo forge status` lists them. The 13 four-legged and 3 two-legged ones use plans that work and can be bought as they are. The bird and crawler plans were tried on one creature each before buying the rest, and neither works:
+36 creatures besides the player are wanted first (100 in the end). `cargo forge status` lists them. Where they stand, 2026-11-10:
 
-- **`bird` (the crow, built, failing):** Tripo's rig for it reads as one leg, with a wing and the spine taken for arms; clips made on that tear the skin by up to 560%. The role reader needs to know a bird: two legs under a body that lies level, and wings that are not arms.
-- **`crawler` (the crab, rigged, not finished):** six legs are found of its eight and its claws, and making its run crashes forge (`quicker` is handed a clip with no frames: there is no gait for more than four legs).
+| | Creatures |
+|---|---|
+| In the world, passing | bear, boar beast, deer, goblin, rabbit, troll, wolf (the first seven); badger, beaver, hedgehog, moose, ogre, pony, squirrel |
+| In the world, one check failing | golem and monitor lizard (`swim` stretches the skin), lynx (`eat`), shambler (Tripo's idle floats it 11% off the floor; a made idle left it in a T-pose, which is worse) |
+| Bought, kept out of the world (`groups = 0`) | fox (seven clips tear: its head chain is an ear), tortoise (nine fail), bog toad and bullfrog (toes read as legs; the toad crashes the gait), mountain goat (rigged twice, a hind leg missing both times), crow, crab |
+| Concept only | the other five birds and six crawlers |
 
-Until those are fixed, no more birds or crawlers are bought, and the crow is kept out of the world (`groups = 0`). Nothing flies in the simulation either: a bird that worked would still only walk.
+What the batch of sixteen taught, all now in forge:
+
+- **Tripo's animal rig is sometimes short of a leg.** The moose came back with no front legs, the lynx and goat without a hind one. Rigging again (20 credits) mended the moose and the lynx and not the goat. Forge now refuses a four-legged creature that has not four legs, in a line, where it used to crash.
+- **A tail that reaches the floor was a fifth leg** (the fox's brush). Legs come in pairs of a length, so the odd one out is not a leg.
+- **Toes were legs** (frog, lizard, toad, bird): a low joint whose branches are all short is a foot, and the leg is the chain down to it. Good for the lizard; the frog and toad are still wrong.
+- **A leg must come down**: its tip low and a good drop from its root, so a tail lying on the ground is not one. And a limb that ends at the ground is not an arm.
+- **A leg of two bones has no knee**: the reach solve let its bounds cross and crashed.
+- **A crash in the clip maker is that creature's failure**, said in a line; `finish --all` goes on to the next.
+- **The head is still the highest chain**, which on a fox or a rabbit is an ear. Taking the joint the ears grow from instead was tried and made the fox, bear and deer worse, so it was backed out; it wants doing with the eat and attack recipes in hand.
+
+**Birds and crawlers do not work yet.** The crow's skeleton reads as two legs now, with a wing taken for an arm, and its clips still tear by up to 460%: the recipes do not know a body that lies level on two legs. The crab has no legs the reader will take (they go sideways and do not come down), and there is no gait for more than four. No more of either are bought until one of each passes. Nothing flies in the simulation either.
+
+**Stopping a batch loses what is in flight.** Four models were being made at Tripo when a batch was stopped on 2026-11-10: charged (180 credits) and never written to a lock. Let a batch finish, or stop it between creatures.
 
 ## Roles and made clips
 

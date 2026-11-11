@@ -8,4 +8,5 @@ height = 0.15
 temper = "wary"
 habitat = "shore"
 group = 2
-groups = 3
+# 0 until the crawler plan works.
+groups = 0

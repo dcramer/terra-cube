@@ -1,7 +1,7 @@
 # Measured by `cargo forge finish`; do not edit.
 height = 2.4
-length = 1.3357146
-width = 3.3146431
+length = 1.3566679
+width = 1.1468549
 walk_speed = 1.562092
 run_speed = 6.920383
 sprint_speed = 9.553686
@@ -29,9 +29,9 @@ looping = false
 source = "made"
 
 [clips.idle]
-seconds = 4.0
+seconds = 15.333333
 looping = true
-source = "made"
+source = "tripo"
 
 [clips.jump]
 seconds = 0.3
