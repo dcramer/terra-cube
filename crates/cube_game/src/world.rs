@@ -44,6 +44,9 @@ impl MaterialExtension for Wind {
     fn prepass_vertex_shader() -> ShaderRef {
         "shaders/wind_prepass.wesl".into()
     }
+    fn deferred_vertex_shader() -> ShaderRef {
+        "shaders/wind_prepass.wesl".into()
+    }
 }
 
 /// How many faces a chunk's mesh has: what a scene's `pace` adds up for the ones in view.
@@ -154,6 +157,13 @@ pub fn look() -> impl Bundle {
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
+        if app.world().resource::<crate::Args>().reflect {
+            // What screen-space reflections need, on every camera the moment it is made: a
+            // camera a frame without its prepasses, with deferred materials about, is a panic.
+            app.insert_resource(bevy::pbr::DefaultOpaqueRendererMethod::deferred()).add_observer(|add: On<Add<Camera3d>>, mut commands: Commands| {
+                commands.entity(add.entity).insert((bevy::pbr::ScreenSpaceReflections::default(), bevy::core_pipeline::prepass::DepthPrepass, bevy::core_pipeline::prepass::DeferredPrepass));
+            });
+        }
         app.add_plugins(MaterialPlugin::<Windy>::default()).insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().add_systems(Startup, setup).add_systems(Update, (regions, stream).chain()).add_systems(Update, (sky, ripple, seasons));
     }
 }
@@ -214,16 +224,19 @@ fn ripples() -> Image {
 }
 
 /// The ripples run downwind.
-fn ripple(time: Res<Time>, live: Option<Res<crate::motion::Live>>, waters: Option<Res<Waters>>, mut materials: ResMut<Assets<StandardMaterial>>) {
+fn ripple(time: Res<Time>, args: Res<crate::Args>, live: Option<Res<crate::motion::Live>>, waters: Option<Res<Waters>>, mut materials: ResMut<Assets<StandardMaterial>>) {
     let Some(waters) = waters else { return };
     // A low sun glances off every ripple at once and the lake breaks into white speckle:
     // the water is made duller as the sun drops, as haze over real water does.
     let up = cube_sim::sky::sun(live.map_or(cube_sim::sky::START, |l| l.0.when)).y;
     let dull = 1.0 - ((up - 0.1) / 0.45).clamp(0.0, 1.0);
+    let reflecting = args.reflect;
     for handle in &waters.0 {
         if let Some(mut water) = materials.get_mut(handle) {
-            water.perceptual_roughness = 0.1 + 0.6 * dull;
-            water.reflectance = 0.5 - 0.3 * dull;
+            // (Reflecting the land, it is kept as smooth as a mirror wants: `--reflect`.)
+            let mirror = reflecting;
+            water.perceptual_roughness = if mirror { 0.04 } else { 0.1 + 0.6 * dull };
+            water.reflectance = if mirror { 0.7 } else { 0.5 - 0.3 * dull };
             water.uv_transform = bevy::math::Affine2::from_translation(Vec2::new(-0.8, -0.6) * (time.elapsed_secs() * 0.07));
         }
     }
@@ -431,7 +444,10 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     // And it moves: ripples, as a picture of which way the surface faces, slid across it by
     // `ripple`. Smooth enough to throw the sun back as a glitter path.
     let waves = images.add(ripples());
-    let water = materials.add(StandardMaterial { base_color: Color::WHITE, alpha_mode: AlphaMode::Blend, perceptual_roughness: 0.3, reflectance: 0.4, normal_map_texture: Some(waves.clone()), ..default() });
+    let water = materials.add(StandardMaterial { base_color: Color::WHITE, // Not seen through: blended water writes no depth, so the mist behind it was
+        // measured to the lake's bed, and every terrace of the bed showed as a stripe across
+        // the water. The shallows are paler by colour instead.
+        alpha_mode: AlphaMode::Opaque, perceptual_roughness: 0.3, reflectance: 0.4, normal_map_texture: Some(waves.clone()), ..default() });
     for &(x, z, across, build) in &args.dug {
         let ground = land.height((x / CELL).floor() as i32, (z / CELL).floor() as i32) as f32 * CELL;
         // A hole is a bowl with its rim at the ground; a stone sits two thirds out of it.

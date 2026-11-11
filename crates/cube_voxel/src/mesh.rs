@@ -199,7 +199,9 @@ impl Eased<'_> {
     /// hillsides are the same staircase. The heights come from the eased ground, rounded to
     /// the size of the block.
     fn step(&mut self, x: i32, t: i32, z: i32) -> f32 {
-        let rough = rough(self.origin + IVec3::new(x, 0, z));
+        // (Nothing at or under the water is put in big blocks: rounded up to a metre, the bed
+        // stood out of the lake in bars.)
+        let rough = if t <= crate::cells(8.0) - self.origin.y + 2 { 0.0 } else { rough(self.origin + IVec3::new(x, 0, z)) };
         let mut lift = |x: i32, z: i32| self.lift(IVec3::new(x, t, z));
         // And by place as well as slope: the land has rough country, where even a modest slope
         // is broken into half-metre and metre blocks, and smooth country, cut fine. With slope
@@ -517,7 +519,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                     if beside {
                         let cell = origin + local;
                         let start = m.positions.len() as u32;
-                        let colour = Block::Water.colors().0.map(|c| (c + (0.36 - c) * 0.25) / MEAN);
+                        let colour = Block::Water.colors().0.map(|c| (c + (0.36 - c) * 0.12) / MEAN);
                         for (dx, dz) in [(0, 0), (0, 1), (1, 1), (1, 0)] {
                             let corner = cell + IVec3::new(dx, 1, dz);
                             m.positions.push((corner.as_vec3() * CELL).to_array());
@@ -559,13 +561,15 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                 // the water breaks on the shore; a metre down it is the lake's own colour.
                 let shallow = if liquid { (1.0 - depth as f32 * CELL / 1.0).clamp(0.0, 1.0) } else { 0.0 };
                 let (top, side) = if liquid {
-                    let foam = if depth == 0 { 0.12 } else { 0.0 };
-                    let pale = |c: [f32; 3]| [c[0] + (0.2 - c[0]) * shallow * 0.25 + foam * 0.5, c[1] + (0.36 - c[1]) * shallow * 0.25 + foam * 0.5, c[2] + (0.38 - c[2]) * shallow * 0.25 + foam * 0.45];
+                    let foam = if depth == 0 { 0.04 } else { 0.0 };
+                    let pale = |c: [f32; 3]| [c[0] + (0.2 - c[0]) * shallow * 0.12 + foam * 0.5, c[1] + (0.36 - c[1]) * shallow * 0.12 + foam * 0.5, c[2] + (0.38 - c[2]) * shallow * 0.12 + foam * 0.45];
                     (pale(top), pale(side))
                 } else {
                     (top, side)
                 };
-                let alpha = if liquid { 0.8 + 0.06 * (1.0 - shallow) + depth as f32 * CELL * 0.045 } else if block.foliage() { 1.0 - LEAF } else { 1.0 };
+                // Clear only in the shallows: by three quarters of a metre down nothing of the bed is
+                // seen. Clearer than that, a lake showed its bed's terraces as stripes across it.
+                let alpha = if liquid { (0.8 + depth as f32 * CELL * 0.28).min(1.0) } else if block.foliage() { 1.0 - LEAF } else { 1.0 };
                 if matches!(block, Block::Grass | Block::Turf | Block::Moss | Block::Litter) || block.foliage() {
                     // Patches: lighter and yellower here, deeper there.
                     let drift = patch(cell) - 0.5;

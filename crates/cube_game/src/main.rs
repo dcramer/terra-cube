@@ -56,6 +56,8 @@ pub struct Args {
     pub seed: u32,
     /// Every surface's grain made in code, none photographed.
     pub plain: bool,
+    /// On trial: water that reflects the land (deferred rendering, screen-space reflections).
+    pub reflect: bool,
     /// Trees drawn as the cubes they are in the simulation, not as shapes.
     pub blocky: bool,
     /// In a scene: draw what the player sees over the world too (`bar`, or with the `pack`
@@ -113,6 +115,7 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
         … --torch                       the player carries a lit torch (T lights it and puts it out)
         … --hud bar|pack|admin          in a scene with --play: the bar, health and clock drawn over it,
                                         with the pack or the admin panel open
+        … --reflect                     on trial: deferred rendering and screen-space reflections on water
         … --quiet                       no sound
         … --plain                       every surface's grain made in code, none from a photograph
         … --cubes | --smooth            the ground as plain cubes, or eased smooth, not in blocks sized
@@ -197,6 +200,7 @@ fn parse_args() -> Args {
             }
             "--wild" => args.wild = true,
             "--plain" => args.plain = true,
+            "--reflect" => args.reflect = true,
             "--blocky" => args.blocky = true,
             "--hud" => args.hud = Some(it.next().unwrap_or_else(|| "bar".into())),
             "--quiet" => args.quiet = true,
