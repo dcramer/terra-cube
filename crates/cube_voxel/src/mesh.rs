@@ -549,6 +549,27 @@ fn bits(world: &World, cell: IVec3, m: &mut MeshData) {
 /// One box, in bits from a cell's corner: five faces (not its underside), one colour.
 fn blade(m: &mut MeshData, cell: IVec3, lo: IVec3, hi: IVec3, colour: [f32; 3]) {
     let at = |p: IVec3| ((cell * SPLIT + p).as_vec3() * CELL / SPLIT as f32).to_array();
+    // A single blade (one bit across) is two planes crossed on its diagonals, seen from both
+    // sides: two faces where a box is five, and finer to look at. A meadow of boxes was more
+    // faces than all the land under it.
+    if hi.x - lo.x == 1 && hi.z - lo.z == 1 {
+        for (a, b) in [(IVec3::new(lo.x, 0, lo.z), IVec3::new(hi.x, 0, hi.z)), (IVec3::new(hi.x, 0, lo.z), IVec3::new(lo.x, 0, hi.z))] {
+            let start = m.positions.len() as u32;
+            for (foot, y) in [(a, lo.y), (b, lo.y), (b, hi.y), (a, hi.y)] {
+                let corner = IVec3::new(foot.x, y, foot.z);
+                m.positions.push(at(corner));
+                // Lit as the ground it grows from, not as a wall.
+                m.normals.push([0.0, 1.0, 0.0]);
+                m.tangents.push([1.0, 0.0, 0.0, 1.0]);
+                let along = |c: i32, p: i32| (c.rem_euclid(SPAN) as f32 + p as f32 / SPLIT as f32).min(SPAN as f32 - 0.01);
+                m.uvs.push(Grain::Grass.uv(along(cell.x, corner.x + corner.y), along(cell.z, corner.z + corner.y)));
+                let shade = if corner.y == 0 { 0.5 } else { 0.85 + 0.3 * (corner.y as f32 / SPLIT as f32).min(1.0) };
+                m.colors.push([colour[0] * shade / MEAN, colour[1] * shade / MEAN, colour[2] * shade / MEAN, 1.0 - (corner.y as f32 / SPLIT as f32).min(1.0)]);
+            }
+            m.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
+        }
+        return;
+    }
     for (n, u, v) in FACES {
         if n == IVec3::NEG_Y {
             continue;
@@ -603,7 +624,8 @@ fn sprig(cell: IVec3, block: Block, m: &mut MeshData) {
         blade(m, cell, IVec3::new(2, 0, 2), IVec3::new(3, 2, 3), side);
         return;
     }
-    let blades = if block == Block::Flower { 2 } else { 3 + (roll(0) * 3.0) as i32 };
+    // A tuft is a clump, not three sticks: five to eight blades.
+    let blades = if block == Block::Flower { 4 } else { 5 + (roll(0) * 4.0) as i32 };
     for i in 0..blades {
         let (x, z) = ((roll(i * 3 + 1) * SPLIT as f32) as i32 % SPLIT, (roll(i * 3 + 2) * SPLIT as f32) as i32 % SPLIT);
         let tall = match block {

@@ -370,8 +370,8 @@ fn plant(world: &mut World, land: &mut Land) {
             }
             let (thick, lot) = (fbm(x as f32 * CELL / 9.0, z as f32 * CELL / 9.0, seed + 70), hash2(x, z, seed + 71));
             let cover = match biome {
-                Biome::Meadow if lot < (thick - 0.35) * 0.9 => Some(if hash2(x, z, seed + 72) < 0.14 { Block::Flower } else { Block::Tuft }),
-                Biome::Forest if lot < (thick - 0.38) * 0.7 => Some(if hash2(x, z, seed + 72) < 0.75 { Block::Fern } else { Block::Tuft }),
+                Biome::Meadow if lot < (thick - 0.3) * 1.3 => Some(if hash2(x, z, seed + 72) < 0.14 { Block::Flower } else { Block::Tuft }),
+                Biome::Forest if lot < (thick - 0.34) * 1.0 => Some(if hash2(x, z, seed + 72) < 0.75 { Block::Fern } else { Block::Tuft }),
                 Biome::Forest if hash2(x, z, seed + 73) < 0.012 => Some(Block::Mushroom),
                 Biome::Rock if lot < 0.03 && world.get(on - IVec3::Y) == Block::Moss => Some(Block::Fern),
                 Biome::Shore if lot < 0.22 && land.height(x, z) <= SEA => Some(Block::Reed),
