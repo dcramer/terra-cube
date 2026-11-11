@@ -270,3 +270,18 @@ pub fn stump(world: &mut World, foot: IVec3, rng: &mut Rng) {
     let thick = rng.between(0.25, 0.45);
     bole(world, foot, foot + Vec3::Y * rng.between(0.35, 0.8), thick, thick * 0.9, Block::Wood, rng);
 }
+
+/// A boulder about `size` metres across, shaped to the bit (5 cm), not the cell: three or four
+/// rounded lumps run together and sunk a little into the ground, so it has shoulders and a
+/// lean and is not a ball.
+pub fn boulder(world: &mut World, foot: IVec3, size: f32, rng: &mut Rng) {
+    let foot = (foot.as_vec3() + Vec3::new(0.5, 0.0, 0.5)) * CELL;
+    let main = Vec3::new(size * rng.between(0.8, 1.15), size * rng.between(0.55, 0.85), size * rng.between(0.8, 1.15));
+    world.ellipsoid(foot + Vec3::Y * main.y * 0.45, main, Block::Stone, true);
+    for _ in 0..2 + rng.below(2) {
+        let way = rng.between(0.0, TAU);
+        let lump = main * rng.between(0.45, 0.7);
+        let at = foot + Vec3::new(way.cos() * main.x, 0.0, way.sin() * main.z) * rng.between(0.45, 0.8) + Vec3::Y * lump.y * rng.between(0.3, 0.9);
+        world.ellipsoid(at, lump, Block::Stone, true);
+    }
+}

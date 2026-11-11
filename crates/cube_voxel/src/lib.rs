@@ -188,26 +188,38 @@ impl World {
     }
 
     /// Makes everything within `radius` metres of a point `b`, to the bit: digging with air,
-    /// building with anything else. Cells wholly inside are set whole; only the ones the
-    /// surface cuts through break.
+    /// building with anything else.
     pub fn ball(&mut self, middle: Vec3, radius: f32, b: Block) {
-        let (lo, hi) = (((middle - radius) / CELL).floor().as_ivec3(), ((middle + radius) / CELL).floor().as_ivec3());
+        self.ellipsoid(middle, Vec3::splat(radius), b, false);
+    }
+
+    /// Makes everything inside an ellipsoid (metres) `b`, to the bit. Cells wholly inside are
+    /// set whole; only the ones the surface cuts through break. With `only_air` it fills air
+    /// and leaves what is there: a stone set on the ground, not through it.
+    pub fn ellipsoid(&mut self, middle: Vec3, radii: Vec3, b: Block, only_air: bool) {
+        let (lo, hi) = (((middle - radii) / CELL).floor().as_ivec3(), ((middle + radii) / CELL).floor().as_ivec3());
+        let inside = |p: Vec3| ((p - middle) / radii).length_squared() < 1.0;
         for y in lo.y..=hi.y {
             for z in lo.z..=hi.z {
                 for x in lo.x..=hi.x {
                     let cell = IVec3::new(x, y, z);
-                    // The cell's nearest and furthest points from the middle.
-                    let (near, far) = ((middle - (cell.as_vec3() + 0.5) * CELL).abs() - CELL / 2.0, (middle - (cell.as_vec3() + 0.5) * CELL).abs() + CELL / 2.0);
-                    if near.max(Vec3::ZERO).length() >= radius {
+                    let was = self.get(cell);
+                    if only_air && was != Block::Air && was != Block::Broken && was.solid() {
                         continue;
                     }
-                    if far.length() <= radius {
+                    // The cell's eight corners: all in, it is set whole; all out and its
+                    // middle out, it is left.
+                    let corners = (0..8).filter(|i| inside((cell + IVec3::new(i & 1, i >> 1 & 1, i >> 2 & 1)).as_vec3() * CELL)).count();
+                    if corners == 8 && (!only_air || !was.solid()) {
                         self.set(cell, b);
+                        continue;
+                    }
+                    if corners == 0 && !inside((cell.as_vec3() + 0.5) * CELL) && radii.min_element() > CELL {
                         continue;
                     }
                     for i in 0..SPLIT * SPLIT * SPLIT {
                         let bit = cell * SPLIT + IVec3::new(i % SPLIT, i / (SPLIT * SPLIT), i / SPLIT % SPLIT);
-                        if ((bit.as_vec3() + 0.5) * BIT).distance(middle) < radius {
+                        if inside((bit.as_vec3() + 0.5) * BIT) && (!only_air || !self.bit(bit).solid()) {
                             self.set_bit(bit, b);
                         }
                     }

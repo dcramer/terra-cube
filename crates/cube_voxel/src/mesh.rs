@@ -145,6 +145,11 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
 /// fine while broken cells are few.
 fn bits(world: &World, cell: IVec3, m: &mut MeshData) {
     let Some(data) = world.bits.get(&cell) else { return };
+    // A neighbour inside this cell is read from it; only the bits at its faces ask the world.
+    let near = |at: IVec3| {
+        let local = at - cell * SPLIT;
+        if local.cmpge(IVec3::ZERO).all() && local.cmplt(IVec3::splat(SPLIT)).all() { data[(local.x + local.z * SPLIT + local.y * SPLIT * SPLIT) as usize] } else { world.bit(at) }
+    };
     for (i, &block) in data.iter().enumerate() {
         if !block.solid() {
             continue;
@@ -154,7 +159,7 @@ fn bits(world: &World, cell: IVec3, m: &mut MeshData) {
         let (top, side) = block.colors();
         let tint = 0.9 + 0.2 * hash(bit);
         for (n, u, v) in FACES {
-            if world.bit(bit + n).solid() {
+            if near(bit + n).solid() {
                 continue;
             }
             let base = if n == IVec3::Y { top } else { side };
@@ -163,7 +168,7 @@ fn bits(world: &World, cell: IVec3, m: &mut MeshData) {
             for (i, (su, sv)) in [(0, 0), (1, 0), (1, 1), (0, 1)].into_iter().enumerate() {
                 let corner = bit + n.max(IVec3::ZERO) + u * su + v * sv;
                 let (du, dv) = (u * (su * 2 - 1), v * (sv * 2 - 1));
-                let occ = |d: IVec3| world.bit(bit + n + d).solid() as i32;
+                let occ = |d: IVec3| near(bit + n + d).solid() as i32;
                 let (a, b, c) = (occ(du), occ(dv), occ(du + dv));
                 let level = if a + b == 2 { 0 } else { 3 - (a + b + c) };
                 ao[i] = 0.45 + 0.55 * level as f32 / 3.0;

@@ -275,9 +275,7 @@ fn plant(world: &mut World, land: &mut Land) {
                     _ => plants::stump(world, foot, &mut rng),
                 }
             } else if pick < tree + under + boulder {
-                let on = foot.as_vec3() + Vec3::new(0.5, 0.0, 0.5);
-                let r = 0.6 + roll(4) * 1.1;
-                blob(world, on + Vec3::Y * r * 0.25 / CELL, Vec3::new(r, r * (0.6 + roll(5) * 0.4), r * (0.7 + roll(6) * 0.5)) / CELL, Block::Stone, seed);
+                plants::boulder(world, foot, 0.5 + roll(4) * 1.0, &mut rng);
             }
         }
     }
@@ -304,22 +302,6 @@ fn plant(world: &mut World, land: &mut Land) {
                     for up in 1..2 + (lot * 9.0) as i32 % 2 {
                         world.set(on + IVec3::Y * up, Block::Reed);
                     }
-                }
-            }
-        }
-    }
-}
-
-/// Fills the air inside an ellipsoid, its edge chipped so it is not a ball. In cells.
-fn blob(world: &mut World, middle: Vec3, radii: Vec3, block: Block, seed: u32) {
-    let (lo, hi) = ((middle - radii).floor().as_ivec3(), (middle + radii).ceil().as_ivec3());
-    for y in lo.y..=hi.y {
-        for z in lo.z..=hi.z {
-            for x in lo.x..=hi.x {
-                let cell = IVec3::new(x, y, z);
-                let d = ((cell.as_vec3() + 0.5 - middle) / radii).length_squared();
-                if d < 1.0 - hash2(x + y * 31, z - y * 17, seed + 60) * 0.3 && world.get(cell) == Block::Air {
-                    world.set(cell, block);
                 }
             }
         }
