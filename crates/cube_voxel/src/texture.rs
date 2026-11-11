@@ -20,13 +20,13 @@ pub const SPAN: i32 = 8;
 /// Texels along a tile, and along the border round it that repeats the tile's far side, so
 /// a smooth sample at a tile's edge, and the smaller copies of the atlas, never take colour
 /// from the tile beside it.
-pub const TILE: usize = 128;
-pub const BORDER: usize = 16;
+pub const TILE: usize = 512;
+pub const BORDER: usize = 64;
 const ROOM: usize = TILE + 2 * BORDER;
 /// Tiles along the atlas, and how many smaller copies of it there are (each half the last,
 /// down to eight texels a tile and one of border).
 pub const ACROSS: usize = 4;
-pub const LEVELS: usize = 5;
+pub const LEVELS: usize = 6;
 /// How strongly the grain shows: 1 is as the shapes are written.
 pub const DEPTH: f32 = 1.45;
 /// The brightness every tile averages, of 1.
@@ -217,33 +217,55 @@ pub struct Atlas {
 /// How steep the relief is for a given change of brightness.
 const RELIEF: f32 = 2.0;
 
+/// A surface as photographed: its colour at every texel of a tile (linear light, [`TILE`] a
+/// side, repeating) and which way each point faces (a normal map, y up). Where the game has
+/// one for a grain it takes the place of the grain made here; the block's colour still tints
+/// it, since every tile is brought to the same mean.
+pub struct Photo {
+    pub colour: Vec<[f32; 3]>,
+    pub facing: Vec<[f32; 3]>,
+}
+
 pub fn atlas() -> Atlas {
+    atlas_with(|_| None)
+}
+
+pub fn atlas_with(photo: impl Fn(Grain) -> Option<Photo>) -> Atlas {
     let size = ROOM * ACROSS;
     let mut paint = vec![[MEAN; 3]; size * size];
     let mut facing = vec![[0.0, 0.0, 1.0f32]; size * size];
     let unit = 64.0 / TILE as f32;
     for (i, &grain) in Grain::ALL.iter().enumerate() {
+        let taken = photo(grain).filter(|p| p.colour.len() == TILE * TILE && p.facing.len() == TILE * TILE);
         // The shapes are written gently and deepened here, in one place: at their written
         // strength the developer saw no texture at all.
-        let bright: Vec<f32> = (0..TILE * TILE).map(|t| (1.0 + (texel(grain, (t % TILE) as f32 * unit, (t / TILE) as f32 * unit) - 1.0) * DEPTH).max(0.05)).collect();
-        let mut tile: Vec<[f32; 3]> = (0..TILE * TILE).map(|t| hue(grain, (t % TILE) as f32 * unit, (t / TILE) as f32 * unit).map(|c| c * bright[t])).collect();
+        let bright: Vec<f32> = if taken.is_some() { Vec::new() } else { (0..TILE * TILE).map(|t| (1.0 + (texel(grain, (t % TILE) as f32 * unit, (t / TILE) as f32 * unit) - 1.0) * DEPTH).max(0.05)).collect() };
+        let mut tile: Vec<[f32; 3]> = match &taken {
+            Some(p) => p.colour.clone(),
+            None => (0..TILE * TILE).map(|t| hue(grain, (t % TILE) as f32 * unit, (t / TILE) as f32 * unit).map(|c| c * bright[t])).collect(),
+        };
         // Every tile to the same mean in each colour, so far off it is its block's colour
         // and no other. (Nothing is brighter than 1, so a pale tile with dark marks takes a
         // few rounds.)
         for _ in 0..12 {
             for c in 0..3 {
                 let mean = tile.iter().map(|v| v[c]).sum::<f32>() / tile.len() as f32;
-                tile.iter_mut().for_each(|v| v[c] = (v[c] * MEAN / mean).min(1.0));
+                tile.iter_mut().for_each(|v| v[c] = (v[c] * MEAN / mean.max(1e-4)).min(1.0));
             }
         }
-        // Brighter is higher: the slope of brightness is the lean of the surface.
-        let high = |x: usize, y: usize| bright[x % TILE + y % TILE * TILE];
-        let lean: Vec<[f32; 3]> = (0..TILE * TILE).map(|t| {
-            let (x, y) = (t % TILE + TILE, t / TILE + TILE);
-            let (dx, dy) = (high(x + 1, y) - high(x - 1, y), high(x, y + 1) - high(x, y - 1));
-            let n = glam::Vec3::new(-dx * RELIEF, -dy * RELIEF, 1.0).normalize();
-            [n.x, n.y, n.z]
-        }).collect();
+        let lean: Vec<[f32; 3]> = match taken {
+            Some(p) => p.facing,
+            None => {
+                // Brighter is higher: the slope of brightness is the lean of the surface.
+                let high = |x: usize, y: usize| bright[x % TILE + y % TILE * TILE];
+                (0..TILE * TILE).map(|t| {
+                    let (x, y) = (t % TILE + TILE, t / TILE + TILE);
+                    let (dx, dy) = (high(x + 1, y) - high(x - 1, y), high(x, y + 1) - high(x, y - 1));
+                    let n = glam::Vec3::new(-dx * RELIEF * 4.0, -dy * RELIEF * 4.0, 1.0).normalize();
+                    [n.x, n.y, n.z]
+                }).collect()
+            }
+        };
         // The tile with its border: the border is the tile carried round from its far side.
         let (ox, oy) = (i % ACROSS * ROOM, i / ACROSS * ROOM);
         for t in 0..ROOM * ROOM {

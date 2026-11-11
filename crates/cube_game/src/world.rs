@@ -309,7 +309,23 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     // The paint: grain for every surface, made in code (`cube_voxel::texture`). Drawn smooth,
     // so it reads as paint and not as pixels; far off the smaller copies take over, so distant
     // ground does not sparkle.
-    let atlas = cube_voxel::texture::atlas();
+    // Surfaces that have a photographed material (`assets/textures/NAME.jpg` and `NAME_n.jpg`,
+    // CC0 from ambientCG) use it; the rest, and all of them with `--plain`, are made in code.
+    let textures = std::path::Path::new(&crate::asset_root()).join("textures");
+    let plain = args.plain;
+    let atlas = cube_voxel::texture::atlas_with(|grain| {
+        if plain {
+            return None;
+        }
+        let name = format!("{grain:?}").to_lowercase();
+        let open = |file: String| image::open(textures.join(file)).ok().map(|i| i.resize_exact(cube_voxel::texture::TILE as u32, cube_voxel::texture::TILE as u32, image::imageops::FilterType::Triangle).to_rgb8());
+        let (colour, facing) = (open(format!("{name}.jpg"))?, open(format!("{name}_n.jpg"))?);
+        let linear = |v: u8| {
+            let v = v as f32 / 255.0;
+            if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+        };
+        Some(cube_voxel::texture::Photo { colour: colour.pixels().map(|p| p.0.map(linear)).collect(), facing: facing.pixels().map(|p| p.0.map(|v| v as f32 / 127.5 - 1.0)).collect() })
+    });
     let side = atlas.size as u32;
     let mut picture = |bytes: Vec<u8>, format: TextureFormat| {
         let mut image = Image::new_uninit(Extent3d { width: side, height: side, depth_or_array_layers: 1 }, TextureDimension::D2, format, RenderAssetUsages::RENDER_WORLD);

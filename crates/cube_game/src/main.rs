@@ -50,6 +50,8 @@ pub struct Args {
     pub after: f32,
     /// The world's seed.
     pub seed: u32,
+    /// Every surface's grain made in code, none photographed.
+    pub plain: bool,
     /// The hour the world starts at, if not the usual mid afternoon.
     pub hour: Option<f32>,
     /// The world starts with its creatures in it, living by their own minds.
@@ -91,6 +93,7 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
                                         right stop · walk run sprint · jump hop · dive surface ·
                                         attack eat hurt · dig put · first third
         … --hour 6.5                    the hour it is (0 to 24; the day starts at 15, a minute an hour)
+        … --plain                       every surface's grain made in code, none from a photograph
         … --cubes | --smooth            the ground as plain cubes, or eased smooth, not in blocks sized
                                         by its slope
         … --wild --at 47,28 [--dist 12] [--pitch 0.3] [--yaw 1.0] [--view high]
@@ -172,6 +175,7 @@ fn parse_args() -> Args {
                 args.yaw_given = true;
             }
             "--wild" => args.wild = true,
+            "--plain" => args.plain = true,
             "--cubes" => cube_voxel::mesh::GROUND.store(cube_voxel::mesh::Ground::Cubes as u8, std::sync::atomic::Ordering::Relaxed),
             "--smooth" => cube_voxel::mesh::GROUND.store(cube_voxel::mesh::Ground::Smooth as u8, std::sync::atomic::Ordering::Relaxed),
             "--dig" | "--build" => {

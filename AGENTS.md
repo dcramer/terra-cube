@@ -18,6 +18,7 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 | `crates/world` | `cargo world`: the land and its creatures judged headless (`survey`, `run`, `map`, `grade`, `who`, `dig`). |
 | `crates/forge` | The creature pipeline CLI. Each file's header says what it holds; `main.rs` has the map. |
 | `tools/tripo` | Tripo Studio CLI (TypeScript, Node ≥ 22.18, no dependencies). Forge drives it; see its README before calling it by hand. |
+| `assets/textures/` | Photographed surface materials (CC0), one per grain; its README says where each came from. |
 | `assets/shaders/` | Wind in what grows: two vertex shaders that must be changed together ([engine.md](docs/engine.md#wind-and-the-air)). |
 | `assets/creatures/style.toml` | The art style and body plans, as forge sends them. Change the look here, not per creature. |
 | `assets/creatures/<id>/` | `creature.toml` (written by hand; `[life]` is how it behaves and where it lives), `forge.lock` (what Tripo made), `meta.toml` and `model.glb` (made by forge; never edit). |
