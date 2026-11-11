@@ -75,3 +75,13 @@ Every file here is CC0 or public domain, fetched 2026-11-10 from Kenney.nl, Open
 
 
 Replaced 2026-11-11, after the developer listened: the first water loop was a seven-second "water loop" from a pack of splash effects and was heard as a drain; the first footfalls were made sounds from an interface pack. Both are now recordings of the thing itself. `tools/audio/steady.py` says how even a loop is and how much of it is low rumble; it could not tell the two water loops apart, so the choice rests on what each is a recording of, and still wants an ear.
+
+Made here, not recorded (2026-11-11), for creatures that had no sound of their own:
+
+| File | Seconds | What it is | Source | Original | Licence | Stated |
+|---|---|---|---|---|---|---|
+| buzz_1.ogg | 0.50 | A dragonfly's wings: three tones at 170 Hz and its multiples, beating 38 times a second | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
+| hiss_1.ogg | 0.63 | A lizard's hiss: noise between 2.5 and 7 kHz, quick in and slow out | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
+| click_1.ogg | 0.30 | A crab's claws: three short ticks of noise | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
+| grunt_1.ogg | 0.30 | A tortoise's grunt: a short low thud of noise under 380 Hz | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
+| beaver_1.ogg | 0.70 | A beaver's tail on the water: splash_1 lowered a fifth and cut short | made here: tools/audio/make.sh | none | ours (generated with ffmpeg; from splash_1.ogg, CC0) | n/a |

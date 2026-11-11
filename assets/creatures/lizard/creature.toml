@@ -8,6 +8,7 @@ gait_gain = 0.6
 
 [life]
 temper = "wary"
+voice = "hiss"
 habitat = "rock"
 winter = 0.05
 cover = "open"

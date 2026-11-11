@@ -6,6 +6,7 @@ height = 0.15
 
 [life]
 temper = "wary"
+voice = "click"
 habitat = "shore"
 water = "edge"
 cover = "open"

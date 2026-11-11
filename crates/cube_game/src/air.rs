@@ -250,12 +250,12 @@ fn setup(mut commands: Commands, registry: Res<Registry>, mut meshes: ResMut<Ass
     }
     // Dragonflies: their wings too fast to see beat.
     for _ in 0..DRAGONFLIES {
-        commands.spawn((Dragonfly { over: far, from: far, to: far, since: 0.0, own: roll(&mut state) * 100.0 }, Transform::from_translation(far), Visibility::default())).with_child(model(&registry, "darter", "fly", 4.0));
+        commands.spawn((Sings("buzz"), Dragonfly { over: far, from: far, to: far, since: 0.0, own: roll(&mut state) * 100.0 }, Transform::from_translation(far), Visibility::default())).with_child(model(&registry, "darter", "fly", 4.0));
     }
     // Swallows: always a few on the wing near the camera, low and fast in long loops, so the
     // sky in any view has something crossing it. True to size, 15 cm long and 33 across.
     for _ in 0..SWALLOWS {
-        commands.spawn((Swallow { home: far, own: roll(&mut state) * 100.0, out: 6.0 + roll(&mut state) * 9.0, high: 2.5 + roll(&mut state) * 6.0 }, Transform::from_translation(far), Visibility::default())).with_child(model(&registry, "swallow", "fly", 1.3));
+        commands.spawn((Sings("bird"), Swallow { home: far, own: roll(&mut state) * 100.0, out: 6.0 + roll(&mut state) * 9.0, high: 2.5 + roll(&mut state) * 6.0 }, Transform::from_translation(far), Visibility::default())).with_child(model(&registry, "swallow", "fly", 1.3));
     }
     // Fish: the length of a hand to a forearm, swimming by the tail. They keep just under
     // the surface where they can be seen, a school together.
@@ -666,6 +666,8 @@ fn fish(
     schools: Option<ResMut<Schools>>,
     mut fishes: Query<(&mut Fish, &mut Transform), Without<Ring>>,
     mut rings: Query<(&mut Ring, &mut Transform), Without<Fish>>,
+    mut commands: Commands,
+    mut bank: ResMut<crate::audio::Bank>,
     mut state: Local<u32>,
 ) {
     let (Some(eye), Some(terrain), Some(mut schools)) = (eye(&cameras), terrain, schools) else { return };
@@ -706,6 +708,11 @@ fn fish(
         // A leap: seldom, a third of a second up and a third down.
         if t - one.leapt > 9.0 && roll(&mut state) < 0.0006 {
             one.leapt = t;
+            // And is heard to, one leap in four: a small splash from where it came out. (Every
+            // leap of every fish was a splash every two seconds beside any water.)
+            if roll(&mut state) < 0.25 {
+                bank.play(&mut commands, "splash", Some(now), 0.2);
+            }
             if let Some((mut ring, _)) = rings.iter_mut().find(|(r, _)| r.school == one.school) {
                 ring.since = t + 0.55;
             }

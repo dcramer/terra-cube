@@ -6,6 +6,7 @@ height = 0.3
 
 [life]
 temper = "timid"
+voice = "beaver"
 habitat = "shore"
 winter = 0.4
 water = "edge"

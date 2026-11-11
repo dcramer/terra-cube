@@ -9,6 +9,7 @@ gait_gain = 0.45
 
 [life]
 temper = "timid"
+voice = "grunt"
 habitat = "shore"
 winter = 0.0
 water = "edge"
