@@ -113,7 +113,9 @@ impl Body {
                             let (from, to) = (b0.max(cell * SPLIT), b1.min(cell * SPLIT + SPLIT - 1));
                             (from.y..=to.y).any(|y| (from.z..=to.z).any(|z| (from.x..=to.x).any(|x| world.bit(IVec3::new(x, y, z)).solid())))
                         }
-                        block => block.solid(),
+                        // Leaf gives way: a person pushes through a crown or a bush and is
+                        // stopped by wood. (As a wall, every low bough and bush was one.)
+                        block => block.solid() && !block.foliage(),
                     }
                 })
             })

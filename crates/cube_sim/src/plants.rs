@@ -77,31 +77,104 @@ fn cell(p: Vec3) -> IVec3 {
 /// Wood from `a` to `b` (metres), `ra` thick at one end and `rb` at the other. It grows through
 /// air and foliage, not through the ground.
 fn limb(world: &mut World, a: Vec3, b: Vec3, ra: f32, rb: f32, bark: Block) {
-    NOTED.with(|n| {
-        if let Some(form) = n.borrow_mut().as_mut() {
-            form.limbs.push(Limb { a, b, ra, rb, bark, roots: 0 });
-        }
-    });
-    wood(world, a, b, ra, rb, bark);
+    grow(world, Limb { a, b, ra, rb, bark, roots: 0 });
 }
 
-/// The cells of a limb, and no note of its shape: for wood that whoever draws shapes draws
-/// as part of something else (the flare at a trunk's foot).
-fn wood(world: &mut World, a: Vec3, b: Vec3, ra: f32, rb: f32, bark: Block) {
-    let steps = ((a.distance(b) / (CELL * 0.5)).ceil() as i32).max(1);
-    for i in 0..=steps {
-        let t = i as f32 / steps as f32;
-        let (at, r) = (a.lerp(b, t), ra + (rb - ra) * t);
-        let reach = (r / CELL).ceil() as i32;
-        let middle = cell(at);
-        for y in -reach..=reach {
-            for z in -reach..=reach {
-                for x in -reach..=reach {
-                    let c = middle + IVec3::new(x, y, z);
-                    let d = ((c.as_vec3() + 0.5) * CELL).distance(at);
-                    // Never thinner than one cell: a twig is still there.
-                    if (d <= r || c == middle) && (world.get(c) == Block::Air || world.get(c).foliage() || world.get(c).sprig()) {
-                        world.set(c, bark);
+/// Notes a limb for whoever draws shapes, and fills its cells.
+fn grow(world: &mut World, limb: Limb) {
+    wood(world, &limb);
+    NOTED.with(|n| {
+        if let Some(form) = n.borrow_mut().as_mut() {
+            form.limbs.push(limb);
+        }
+    });
+}
+
+/// The cells of a limb: the same shape whoever draws it draws ([`Limb::fill`]), at the size
+/// of a cell. Wood grows through air, leaf and ground cover, not through the ground.
+fn wood(world: &mut World, limb: &Limb) {
+    limb.fill(CELL, |c| {
+        if world.get(c) == Block::Air || world.get(c).foliage() || world.get(c).sprig() {
+            world.set(c, limb.bark);
+        }
+    });
+}
+
+fn mix(seed: u32, k: u32) -> f32 {
+    let mut h = seed.wrapping_mul(0x9E3779B1) ^ k.wrapping_mul(0x85EBCA77);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2C1B3C6D);
+    h ^= h >> 12;
+    h = h.wrapping_mul(0x297A2D39);
+    h ^= h >> 15;
+    (h & 0xFFFF) as f32 / 65535.0
+}
+
+impl Limb {
+    /// How far under the ground a rooted trunk begins (`bole`).
+    pub const UNDER: f32 = 0.5;
+
+    /// The shape of the limb, in cubes `g` metres a side on the world's own grid: `put` is
+    /// given each cube it fills. It is round, tapers, wanders a little along its length and
+    /// is ridged along its grain; a rooted trunk swells toward the ground and runs out in
+    /// buttresses, each to its own length. Never thinner than one cube: a twig is still there.
+    ///
+    /// This is the one place a limb's shape is written. The simulation fills the world's
+    /// cells from it and the game draws finer cubes from it, so what stops a body is what is
+    /// seen, to the size of a cell. Before, cells were a plain cone and a few root sticks,
+    /// the picture had the swell, the buttresses and the bends, and a person walked into
+    /// wood he could see and was stopped by wood he could not.
+    pub fn fill(&self, g: f32, mut put: impl FnMut(IVec3)) {
+        let (a, b, ra, rb, roots) = (self.a, self.b, self.ra, self.rb, self.roots);
+        let seed = a.x.to_bits() ^ a.z.to_bits().rotate_left(13) ^ b.y.to_bits().rotate_left(7) ^ b.x.to_bits().rotate_left(19);
+        let thick = ra.max(rb);
+        let along = (b - a).normalize_or(Vec3::Y);
+        let side = along.any_orthonormal_vector();
+        let other = along.cross(side);
+        let length = a.distance(b);
+        let (lobes, phase) = (if roots > 0 { roots as u32 } else { 3 + (mix(seed, 2) * 3.0) as u32 }, mix(seed, 3) * TAU);
+        let slight = (ra / 0.35).clamp(0.3, 1.0);
+        let high = |t: f32| ((t * length - Self::UNDER + 0.12) / ra.max(0.05)).max(0.0);
+        let radius = |t: f32, turn: f32| {
+            let r = (ra + (rb - ra) * t).max(g * 0.56);
+            let mut ridge = 1.0 + 0.07 * (thick / 0.2).min(1.0) * (turn * lobes as f32 + phase).cos();
+            if roots > 0 {
+                let wave = (turn * lobes as f32 + phase + 0.5 * (turn * 2.0 + phase).sin()).cos();
+                let back = wave.max(0.0).powf(2.2);
+                let which = ((turn * lobes as f32 + phase) / TAU).round() as i32;
+                let reach = (1.5 + 1.6 * mix(seed, 300 + which.rem_euclid(lobes as i32) as u32)) * slight;
+                ridge = 1.0 + 0.45 * (-high(t) / 1.6).exp() + reach * back * (-high(t) / 0.75).exp() - 0.1 * (1.0 - back) * (-high(t) / 2.0).exp();
+            }
+            r * ridge
+        };
+        let most = |t: f32| (ra + (rb - ra) * t).max(g * 0.56) * if roots > 0 { 1.45 + 3.1 * slight * (-high(t) / 0.75).exp() } else { 1.1 };
+        let wander = |t: f32| (side * (t * 4.0 + mix(seed, 20) * 6.0).sin() + other * (t * 3.1 + mix(seed, 40) * 6.0).sin()) * thick.min(0.35) * 0.3 * (t * std::f32::consts::PI).sin();
+        let upright = along.y > 0.95;
+        let steps = ((length / (g * 0.5)).ceil() as i32).max(1);
+        for i in 0..=steps {
+            let t = i as f32 / steps as f32;
+            // (What is well under the ground is neither drawn nor in anyone's way.)
+            if roots > 0 && t * length < Self::UNDER - 0.3 {
+                continue;
+            }
+            let centre = a.lerp(b, t) + wander(t);
+            let k = (most(t) / g).ceil() as i32 + 1;
+            let m = (centre / g).floor().as_ivec3();
+            put(m);
+            let deep = if upright { 1 } else { k };
+            for dy in -deep..=deep {
+                for dz in -k..=k {
+                    for dx in -k..=k {
+                        let c = m + IVec3::new(dx, dy, dz);
+                        let p = (c.as_vec3() + 0.5) * g - centre;
+                        let axial = p.dot(along);
+                        if axial.abs() > g * 0.8 {
+                            continue;
+                        }
+                        let flat = p - along * axial;
+                        if flat.length() <= radius(t, flat.dot(other).atan2(flat.dot(side))) {
+                            put(c);
+                        }
                     }
                 }
             }
@@ -142,21 +215,10 @@ fn clump(world: &mut World, middle: Vec3, radii: Vec3, leaf: Block, floor: f32, 
 
 /// A trunk from the ground at `foot` to `top` (metres), flaring into roots at its base.
 fn bole(world: &mut World, foot: Vec3, top: Vec3, base: f32, tip: f32, bark: Block, rng: &mut Rng) {
+    // The swell and the roots are the trunk's own shape (`Limb::fill`): it is told only how
+    // many roots it has.
     let roots = 4 + rng.below(3);
-    NOTED.with(|n| {
-        if let Some(form) = n.borrow_mut().as_mut() {
-            form.limbs.push(Limb { a: foot - Vec3::Y * 0.5, b: top, ra: base, rb: tip, bark, roots: roots as u8 });
-        }
-    });
-    wood(world, foot - Vec3::Y * 0.5, top, base, tip, bark);
-    // The flare, and roots running out along the ground and into it.
-    wood(world, foot - Vec3::Y * 0.3, foot + Vec3::Y * base * 1.5, base * 1.5, base, bark);
-    let turn = rng.between(0.0, TAU);
-    for i in 0..roots {
-        let way = turn + i as f32 / roots as f32 * TAU + rng.between(-0.4, 0.4);
-        let out = Vec3::new(way.cos(), 0.0, way.sin()) * (base * 2.2 + rng.between(0.2, 0.7));
-        wood(world, foot + Vec3::Y * base * 0.8, foot + out - Vec3::Y * 0.2, base * 0.5, CELL * 0.4, bark);
-    }
+    grow(world, Limb { a: foot - Vec3::Y * Limb::UNDER, b: top, ra: base, rb: tip, bark, roots: roots as u8 });
 }
 
 /// How tall a tree of a kind and age stands, metres: what [`tree`] builds.

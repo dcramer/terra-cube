@@ -48,6 +48,10 @@ const CARD: f32 = 0.8;
 const FINE: f32 = 5.0;
 /// And beyond this, as a few broad cards and the largest masses' bodies: a tenth of the points.
 const MID: f32 = 46.0;
+/// And beyond this, as its bare outline: a trunk, and one box to each great mass of leaf.
+/// What is made is made out to 208 m so the land is seen far; at the third level's faces
+/// that was half as many again as everything nearer.
+const FAR: f32 = 104.0;
 
 fn hash(a: u32, b: u32) -> f32 {
     let mut h = a.wrapping_mul(0x9E3779B1) ^ b.wrapping_mul(0x85EBCA77);
@@ -200,6 +204,7 @@ impl Shape {
     /// A mass of leaf: cards over the outside of an ellipsoid and a few within, each a piece
     /// of the leaf picture with its gaps, lit as the mass it is part of and not as a flat card.
     fn clump(&mut self, middle: Vec3, radii: Vec3, leaf: Block, n: u32, ball: &[[Vec3; 3]], level: u8) {
+        let level = level.min(2);
         let (top, under) = leaf.colors();
         // No two masses the one green: each a little yellower or bluer, lighter or darker.
         let warm = hash(n, 90) - 0.5;
@@ -345,10 +350,10 @@ fn grow(mut commands: Commands, args: Res<crate::Args>, terrain: Option<Res<Terr
     let away = |r: &(i32, i32)| Vec2::new((eye.x - (r.0 as f32 + 0.5) * size).abs() - size / 2.0, (eye.z - (r.1 as f32 + 0.5) * size).abs() - size / 2.0).max(Vec2::ZERO).length();
     let level = |r: &(i32, i32)| {
         let far = away(r);
-        let now = if far < FINE { 0u8 } else if far < MID { 1 } else { 2 };
+        let now = if far < FINE { 0u8 } else if far < MID { 1 } else if far < FAR { 2 } else { 3 };
         match grown.0.get(r) {
             // Next to the line it is on, it stays as it is.
-            Some((_, was)) if was.abs_diff(now) == 1 && (far - if (*was).min(now) == 0 { FINE } else { MID }).abs() < 8.0 => *was,
+            Some((_, was)) if was.abs_diff(now) == 1 && (far - [FINE, MID, FAR][(*was).min(now) as usize]).abs() < 8.0 => *was,
             _ => now,
         }
     };
@@ -385,7 +390,7 @@ fn grow(mut commands: Commands, args: Res<crate::Args>, terrain: Option<Res<Terr
             }
         } else {
             for (n, limb) in form.limbs.iter().enumerate() {
-                shape.limb_cubes(limb.a - origin, limb.b - origin, limb.ra, limb.rb, limb.bark, n as u32, [ends[&key(limb.a)] == 1, ends[&key(limb.b)] == 1], limb.roots, level);
+                shape.limb_cubes(limb, origin, n as u32, [ends[&key(limb.a)] == 1, ends[&key(limb.b)] == 1], level);
             }
             for (n, stone) in form.stones.iter().enumerate() {
                 let mut stone = stone.clone();
@@ -408,7 +413,7 @@ fn grow(mut commands: Commands, args: Res<crate::Args>, terrain: Option<Res<Terr
         // (As cubes, the whole paint; as shapes, leaf is cards with gaps cut in them.)
         let entity = commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(if args.shapes { look.solid.clone() } else { look.whole.clone() }), Transform::from_translation(origin), faces)).id();
         // (What is far off throws no shadow of its own: its shadow would be a few texels.)
-        if level == 2 {
+        if level >= 2 {
             commands.entity(entity).insert(bevy::light::NotShadowCaster);
         }
         grown.0.insert(region, (entity, level));
@@ -441,7 +446,7 @@ fn hashed(c: IVec3, k: u32) -> f32 {
 impl Shape {
     /// The cubes of `set`, each `g` metres a side: every face that no other cube of the set
     /// covers, painted as `paint` says for that cube and face.
-    fn cubes(&mut self, set: &HashSet<IVec3>, g: f32, free: f32, paint: impl Fn(IVec3, IVec3) -> ([f32; 3], Grain)) {
+    fn cubes(&mut self, set: &HashSet<IVec3>, g: f32, shift: Vec3, free: f32, paint: impl Fn(IVec3, IVec3) -> ([f32; 3], Grain)) {
         let span = g / CELL;
         let room = SPAN as f32 - span - 0.04;
         for &c in set {
@@ -450,7 +455,7 @@ impl Shape {
                     continue;
                 }
                 let (colour, grain) = paint(c, n);
-                let corner = (c + n.max(IVec3::ZERO)).as_vec3() * g;
+                let corner = (c + n.max(IVec3::ZERO)).as_vec3() * g - shift;
                 // The grain by where the cube is, each face a piece of the tile its own size.
                 let (u0, v0) = ((c.dot(u) as f32 * span).rem_euclid(room) + 0.02, (c.dot(v) as f32 * span).rem_euclid(room) + 0.02);
                 let start = self.positions.len() as u32;
@@ -493,9 +498,16 @@ impl Shape {
     /// A limb as cubes: round, tapering, wandering a little, ridged along its grain, and a
     /// rooted trunk swelling into buttresses at the ground, all to the cube.
     #[allow(clippy::too_many_arguments)]
-    fn limb_cubes(&mut self, a: Vec3, b: Vec3, ra: f32, rb: f32, bark: Block, n: u32, cut: [bool; 2], roots: u8, level: u8) {
+    fn limb_cubes(&mut self, limb: &cube_sim::plants::Limb, origin: Vec3, n: u32, cut: [bool; 2], level: u8) {
+        let (a, b, ra, rb, bark, roots) = (limb.a, limb.b, limb.ra, limb.rb, limb.bark, limb.roots);
         let thick = ra.max(rb);
-        if (level == 1 && thick < 0.3) || (level == 2 && thick < 0.45) {
+        // What is dropped away from the camera: only what is hidden or is nothing at that
+        // distance. A bough that droops (a conifer's) lies under its own needles; a twig far
+        // off is under a pixel. Every other limb is drawn at every distance, as one line of
+        // cubes if it is thinner than a cube: with the lesser limbs dropped, a young tree was
+        // a crown in the air, and the developer saw floating leaves.
+        let droops = (b - a).normalize_or(Vec3::Y).y < -0.05;
+        if (level >= 1 && droops && thick < 0.3) || (level == 1 && thick < 0.04) || (level == 2 && thick < 0.09) || (level == 3 && thick < 0.22) {
             return;
         }
         // Up close a trunk or a heavy limb is cubes of 10 cm, round to the cube. A lesser
@@ -510,63 +522,20 @@ impl Shape {
             1 => 0.25,
             _ => 0.5,
         };
+        // Its shape is the simulation's (`Limb::fill`), on the world's own grid and finer
+        // than a cell: what is drawn is what a body is stopped by.
         let along = (b - a).normalize_or(Vec3::Y);
-        let side = along.any_orthonormal_vector();
-        let other = along.cross(side);
         let length = a.distance(b);
-        let (lobes, phase) = (if roots > 0 { roots as u32 } else { 3 + (hash(n, 2) * 3.0) as u32 }, hash(n, 3) * std::f32::consts::TAU);
-        const UNDER: f32 = 0.5;
-        let slight = (ra / 0.35).clamp(0.3, 1.0);
-        let high = |t: f32| ((t * length - UNDER + 0.12) / ra.max(0.05)).max(0.0);
-        let radius = |t: f32, turn: f32| {
-            let r = (ra + (rb - ra) * t).max(g * 0.56);
-            let mut ridge = 1.0 + 0.07 * (thick / 0.2).min(1.0) * (turn * lobes as f32 + phase).cos();
-            if roots > 0 {
-                let wave = (turn * lobes as f32 + phase + 0.5 * (turn * 2.0 + phase).sin()).cos();
-                let back = wave.max(0.0).powf(2.2);
-                let which = ((turn * lobes as f32 + phase) / std::f32::consts::TAU).round() as i32;
-                let reach = (1.5 + 1.6 * hash(n, 300 + which.rem_euclid(lobes as i32) as u32)) * slight;
-                ridge = 1.0 + 0.45 * (-high(t) / 1.6).exp() + reach * back * (-high(t) / 0.75).exp() - 0.1 * (1.0 - back) * (-high(t) / 2.0).exp();
-            }
-            r * ridge
-        };
-        let most = |t: f32| (ra + (rb - ra) * t).max(g * 0.56) * if roots > 0 { 1.45 + 3.1 * slight * (-high(t) / 0.75).exp() } else { 1.1 };
-        let wander = |t: f32| (side * (t * 4.0 + hash(n, 20) * 6.0).sin() + other * (t * 3.1 + hash(n, 40) * 6.0).sin()) * thick.min(0.35) * 0.3 * (t * std::f32::consts::PI).sin();
-        let upright = along.y > 0.95;
+        const UNDER: f32 = cube_sim::plants::Limb::UNDER;
         let mut set = HashSet::new();
-        let steps = ((length / (g * 0.5)).ceil() as i32).max(1);
-        for i in 0..=steps {
-            let t = i as f32 / steps as f32;
-            // (What is under the ground is not drawn.)
-            if roots > 0 && t * length < UNDER - 0.15 {
-                continue;
-            }
-            let centre = a.lerp(b, t) + wander(t);
-            let k = (most(t) / g).ceil() as i32 + 1;
-            let m = (centre / g).floor().as_ivec3();
-            let deep = if upright { 1 } else { k };
-            for dy in -deep..=deep {
-                for dz in -k..=k {
-                    for dx in -k..=k {
-                        let c = m + IVec3::new(dx, dy, dz);
-                        let p = (c.as_vec3() + 0.5) * g - centre;
-                        let axial = p.dot(along);
-                        if axial.abs() > g * 0.8 {
-                            continue;
-                        }
-                        let flat = p - along * axial;
-                        if flat.length() <= radius(t, flat.dot(other).atan2(flat.dot(side))) {
-                            set.insert(c);
-                        }
-                    }
-                }
-            }
-        }
+        limb.fill(g, |c| {
+            set.insert(c);
+        });
         let (colour, pale) = (bark.colors().1, bark.colors().0.map(|c| c * 1.5));
         let grain = if bark == Block::Birch { Grain::BirchBark } else { Grain::Bark };
         let moss = Block::Moss.colors().0;
         let free = ((0.16 - thick) / 0.16).clamp(0.0, 1.0) * 0.25;
-        self.cubes(&set, g, free, |c, face| {
+        self.cubes(&set, g, origin, free, |c, face| {
             let p = (c.as_vec3() + 0.5) * g;
             let axial = (p - a).dot(along);
             let end = face.as_vec3().dot(along);
@@ -601,18 +570,28 @@ impl Shape {
         let spray = radii.y < radii.x.min(radii.z) * 0.6;
         let grain = if leaf == Block::Needles { Grain::Needles } else { Grain::Leaves };
         let snap = |v: Vec3, to: f32| (v / to).round() * to;
-        // The heart: what is seen between the outer boxes is leaf in shade, not sky.
-        // (A bush away from the camera has none: its heart, cut to the world's cells, was the
-        // whole bush, one dark cube.)
-        if radii.min_element() > [0.45, 1.0, 1.1][level as usize] {
-            // (Three boxes near to; farther off, one.)
-            for k in 0..if level == 0 { 3u32 } else { 1 } {
-                let off = Vec3::new(hash(n, 100 + k) - 0.5, hash(n, 110 + k) - 0.5, hash(n, 120 + k) - 0.5) * radii * 0.5;
-                // (Away from the camera the heart is smaller: with few boxes over it, a bush was one cube.)
-                let half = snap(radii * if level > 0 { 0.45 } else if k == 0 { 0.6 } else { 0.42 }, 0.25).max(Vec3::splat(0.25));
-                let at = snap(middle + if k == 0 { Vec3::ZERO } else { off }, 0.25);
-                let dark = under.map(|c| c * 0.5);
-                self.boxed(at - half, at + half, dark.map(|c| c * 1.3), dark, dark.map(|c| c * 0.8), grain, Vec3::ZERO, 0.2, n * 7 + k);
+        // The body of the mass: three boxes crossed, a broad one, a tall one and a long one,
+        // which together are as near an egg as boxes come. The boxes below sit on it, half in
+        // and half out, so the mass is one rough lump. Without a body of its own shape the
+        // boxes hung in the air round a slab, and from under a tree they were confetti.
+        if level == 3 {
+            if spray && !n.is_multiple_of(3) || !spray && radii.min_element() < 0.8 {
+                return;
+            }
+            let half = snap(radii * if spray { Vec3::new(1.2, 1.0, 1.2) } else { Vec3::new(0.85, 0.7, 0.85) }, 0.5).max(Vec3::new(0.5, 0.25, 0.5));
+            let at = snap(middle, 0.5);
+            let shade = 0.8 + 0.25 * hash(n, 8);
+            self.boxed(at - half, at + half, top.map(|c| c * shade), top.map(|c| c * shade * 0.74), under.map(|c| c * 0.5), grain, Vec3::ZERO, 0.2, n);
+            return;
+        }
+        if !spray && radii.min_element() > 0.3 {
+            let grid = if level == 0 { 0.05 } else { 0.25 };
+            let at = snap(middle, grid);
+            for (k, part) in [Vec3::new(0.8, 0.5, 0.8), Vec3::new(0.56, 0.78, 0.56), Vec3::new(0.94, 0.3, 0.6), Vec3::new(0.6, 0.3, 0.94)].into_iter().enumerate() {
+                let half = snap(radii * part, grid).max(Vec3::splat(grid));
+                // Lit as leaf is: its top the leaf's own green, darker down its sides, dark under.
+                let shade = 0.78 + 0.1 * k as f32;
+                self.boxed(at - half, at + half, top.map(|c| c * shade), top.map(|c| c * shade * 0.72), under.map(|c| c * 0.5), grain, Vec3::ZERO, 0.2, n * 7 + k as u32);
             }
         }
         // A spray away from the camera is one plate, as wide as the spray: a few small
@@ -625,7 +604,7 @@ impl Shape {
             return;
         }
         let area = 4.0 * std::f32::consts::PI * ((radii.x * radii.y).powf(1.6) + (radii.x * radii.z).powf(1.6) + (radii.y * radii.z).powf(1.6)).powf(1.0 / 1.6) / 3.0f32.powf(1.0 / 1.6);
-        let unit = [0.45f32, 1.0, 1.6][level as usize].max(radii.min_element() * [0.14, 0.3, 0.45][level as usize]).min(radii.x.min(radii.z) * 0.9).max(0.15);
+        let unit = [0.45f32, 1.0, 1.6][level as usize].max(radii.min_element() * [0.2, 0.34, 0.5][level as usize]).min(radii.x.min(radii.z) * 0.9).max(0.15);
         // (Capped by level: a grown oak's masses are five metres through, and by area alone a
         // wood of them was three million faces.)
         let count = ((area * [0.17, 0.1, 0.05][level as usize] / (unit * unit)) as u32).clamp([4, 5, if n.is_multiple_of(2) { 1 } else { 0 }][level as usize], [90, 26, 8][level as usize]);
@@ -634,14 +613,15 @@ impl Shape {
             let (turn, up) = (roll(1) * std::f32::consts::TAU, roll(2) * 2.0 - 1.0);
             let round = (1.0 - up * up).sqrt();
             let out = Vec3::new(turn.cos() * round, up, turn.sin() * round);
-            let deep = 0.7 + 0.3 * roll(3).sqrt();
+            // (On the body's surface, a little in or out: each touches it.)
+            let deep = if spray { 0.7 + 0.3 * roll(3).sqrt() } else { 0.8 + 0.16 * roll(3) };
             let at = middle + out * radii * deep;
             // Sizes from a hand to the unit and half again, more small than large.
-            let size = unit * (0.3 + 1.2 * roll(4) * roll(4));
+            let size = unit * (0.45 + 1.0 * roll(4) * roll(4));
             let dims = snap(Vec3::new(size * (0.8 + 0.5 * roll(5)), size * if spray { 0.3 } else { 0.55 + 0.5 * roll(6) }, size * (0.8 + 0.5 * roll(7))), 0.05).max(Vec3::splat(0.1));
             let lo = snap(at - dims / 2.0, 0.05);
             // Deeper in and lower down is in the crown's own shade; no two boxes the one green.
-            let shade = (0.55 + 0.55 * (deep - 0.7) / 0.3) * (0.8 + 0.25 * (up * 0.5 + 0.5)) * (0.88 + 0.24 * roll(8));
+            let shade = (0.8 + 0.3 * roll(13)) * (0.8 + 0.25 * (up * 0.5 + 0.5)) * (0.88 + 0.24 * roll(8));
             let own = (roll(12) - 0.5) * 0.8;
             let lit = tint(if up > -0.3 { top } else { under }, own).map(|c| c * shade);
             self.boxed(lo, lo + dims, lit.map(|c| c * 1.18), lit.map(|c| c * 0.86), tint(under, own).map(|c| c * shade * 0.62), grain, -out, 0.4, n.wrapping_mul(31).wrapping_add(i));
@@ -661,7 +641,7 @@ impl Shape {
             1 => 0.25,
             _ => 0.5,
         };
-        if level == 2 && big < 0.5 {
+        if (level == 2 && big < 0.5) || (level == 3 && big < 1.2) {
             return;
         }
         let (sin, cos) = stone.turn.sin_cos();
@@ -682,7 +662,7 @@ impl Shape {
         }
         let (top, side) = stone.kind.colors();
         let (moss, mossy) = (Block::Moss.colors().0, hash(n, 5) < 0.6);
-        self.cubes(&set, g, 0.0, |c, face| {
+        self.cubes(&set, g, Vec3::ZERO, 0.0, |c, face| {
             // Beds a hand or two thick, each its own shade and tipped a little.
             let bed = ((c.y as f32 * g + (c.x as f32 * 0.12 + c.z as f32 * 0.07) * g) / 0.3).floor() as i32;
             let shade = (0.8 + 0.34 * hash(bed as u32, n)) * (0.92 + 0.16 * hashed(c, 7));

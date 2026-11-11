@@ -71,8 +71,8 @@ pub struct Regions {
 /// A region's cells are made when the camera comes within this of its middle, metres, and
 /// dropped when it is further than the other. Creatures are lived to 110 m
 /// (`cube_sim::life::AWAKE`), well inside.
-const MAKE: f32 = 176.0;
-const DROP: f32 = 240.0;
+const MAKE: f32 = 208.0;
+const DROP: f32 = 272.0;
 
 impl Regions {
     pub fn is_made(&self, region: (i32, i32)) -> bool {
@@ -296,7 +296,7 @@ fn spawn_sun(commands: &mut Commands, mediums: &mut Assets<ScatteringMedium>, im
     commands.spawn((Sun, DirectionalLight { illuminance: lux::RAW_SUNLIGHT, shadow_maps_enabled: true, ..default() }, shadows(), SunDisk::EARTH, VolumetricLight, DirectionalLightTexture { image: images.add(clouds()), tiled: true }));
     // Mist: thin lit air lying in the low ground and under the trees, so the sun comes
     // through the crowns in shafts and far woods stand in haze. Low, so the sky stays clear.
-    commands.spawn((FogVolume { density_factor: 0.0022, scattering: 0.4, absorption: 0.0, light_tint: Color::srgb(1.0, 0.95, 0.86), ..default() }, Transform::from_xyz(0.0, SEA as f32 * CELL + 11.0, 0.0).with_scale(Vec3::new(800.0, 24.0, 800.0))));
+    commands.spawn((FogVolume { density_factor: 0.0011, scattering: 0.4, absorption: 0.0, light_tint: Color::srgb(1.0, 0.95, 0.86), ..default() }, Transform::from_xyz(0.0, SEA as f32 * CELL + 11.0, 0.0).with_scale(Vec3::new(800.0, 24.0, 800.0))));
     commands.spawn((Moon, DirectionalLight { illuminance: 0.0, shadow_maps_enabled: false, color: Color::srgb(0.62, 0.74, 1.0), ..default() }, shadows()));
 }
 
@@ -352,7 +352,7 @@ fn sky(
         // Mist thins as the sun drops, or the low light floods it and whites the picture out,
         // and what is left takes the sun's colour.
         for mut mist in &mut mists {
-            mist.density_factor = 0.0022 * (1.0 - 0.7 * low);
+            mist.density_factor = 0.0011 * (1.0 - 0.7 * low);
             mist.light_tint = Color::srgb(1.0, 0.95 - 0.04 * low, 0.86 - 0.08 * low);
         }
         light.shadow_maps_enabled = up > 0.0;
@@ -483,8 +483,9 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
 /// metres from the camera between which that level shows. Each fades into the next across
 /// eight metres, so nothing pops. Up close every cell is drawn, with ground cover and the
 /// fine shape of broken cells; past 40 m the cells are half a metre, a quarter of the faces;
-/// past 104 m a metre, a sixteenth.
-pub const LEVELS: [(i32, f32, f32); 3] = [(1, 0.0, 40.0), (2, 40.0, 104.0), (4, 104.0, f32::MAX)];
+/// past 104 m a metre, a sixteenth; past 168 m two metres, so that the land can be made out
+/// to 208 m and seen far for little.
+pub const LEVELS: [(i32, f32, f32); 4] = [(1, 0.0, 40.0), (2, 40.0, 104.0), (4, 104.0, 168.0), (8, 168.0, f32::MAX)];
 const FADE: f32 = 8.0;
 
 /// How far outside a level's range a chunk's mesh for it is made (so it is there before it is
