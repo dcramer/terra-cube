@@ -187,7 +187,7 @@ Built 2026-11-11, in the simulation (`cube_sim::life`, `items`) and tested there
 
 ## Sound
 
-- **Mixed by ear, in the admin panel** (`audio::Mix`, F1: air, creatures' voices, footfalls). Nothing here can listen; the developer did, and found the birds in his face, the ambience and footfalls bad and the river like a drain. What was done without ears: all three kinds turned down by default; a bird's call is never played from nearer than twelve metres and comes less often; running water is heard within nine metres of it, not twenty-two. **Not done**: the samples themselves (the water loop, the footfalls) want replacing by someone who can hear them.
+- **Mixed by ear, in the admin panel** (`audio::Mix`, F1: air, creatures' voices, footfalls). Nothing here can listen; the developer did, and found the birds in his face, the ambience and footfalls bad and the river like a drain. What was done without ears: all three kinds turned down by default; a bird's call is never played from nearer than twelve metres and comes less often; running water is heard within nine metres of it, not twenty-two. The water loop and the footfalls were then replaced by recordings of the thing itself (a shallow stony river, public domain; steps on soft ground and on stone, CC0): the first water loop came from a pack of splash effects and the first steps from a pack of made sounds, which is what the ear had said. `tools/audio/steady.py` measures how even a loop is and how much of it is low rumble; the wind is all under 300 Hz and moves 6.6 dB, which may be why it reads as bad, and is not yet changed. None of this has been listened to since.
 
 Built 2026-11-11 (`cube_game::audio`); the files are CC0, in `assets/audio`, whose README gives each one's source.
 

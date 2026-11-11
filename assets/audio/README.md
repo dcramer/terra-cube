@@ -4,12 +4,18 @@ Every file here is CC0 or public domain, fetched 2026-11-10 from Kenney.nl, Open
 
 | File | Seconds | What it is | Source page | Original file | Licence | Where the licence is stated |
 |---|---|---|---|---|---|---|
-| step_grass_1.ogg | 0.78 | Footstep on grass | https://kenney.nl/assets/impact-sounds | footstep_grass_000.ogg | CC0 | License.txt in the zip; pack page says "CC0 licensed" |
-| step_grass_2.ogg | 0.67 | Footstep on grass | https://kenney.nl/assets/impact-sounds | footstep_grass_001.ogg | CC0 | License.txt in the zip; pack page says "CC0 licensed" |
-| step_grass_3.ogg | 0.69 | Footstep on grass | https://kenney.nl/assets/impact-sounds | footstep_grass_002.ogg | CC0 | License.txt in the zip; pack page says "CC0 licensed" |
-| step_grass_4.ogg | 0.67 | Footstep on grass | https://kenney.nl/assets/impact-sounds | footstep_grass_003.ogg | CC0 | License.txt in the zip; pack page says "CC0 licensed" |
-| step_stone_1.ogg | 0.11 | Footstep on concrete (stone) | https://kenney.nl/assets/impact-sounds | footstep_concrete_000.ogg | CC0 | License.txt in the zip; pack page says "CC0 licensed" |
-| step_stone_2.ogg | 0.11 | Footstep on concrete (stone) | https://kenney.nl/assets/impact-sounds | footstep_concrete_001.ogg | CC0 | License.txt in the zip; pack page says "CC0 licensed" |
+| step_grass_1.ogg | 0.3 | Footstep on soft ground, recorded (the pack's "sand", which it says serves for grass); silence trimmed | https://opengameart.org/content/fantozzis-footsteps-grasssand-stone | Fantozzi-footsteps.7z: flac/Fantozzi-SandL1.flac | CC0 | "License(s): CC0" box on the page |
+| step_grass_2.ogg | 0.3 | Footstep on soft ground, recorded (the pack's "sand", which it says serves for grass); silence trimmed | https://opengameart.org/content/fantozzis-footsteps-grasssand-stone | Fantozzi-footsteps.7z: flac/Fantozzi-SandR1.flac | CC0 | "License(s): CC0" box on the page |
+| step_grass_3.ogg | 0.3 | Footstep on soft ground, recorded (the pack's "sand", which it says serves for grass); silence trimmed | https://opengameart.org/content/fantozzis-footsteps-grasssand-stone | Fantozzi-footsteps.7z: flac/Fantozzi-SandL2.flac | CC0 | "License(s): CC0" box on the page |
+| step_grass_4.ogg | 0.3 | Footstep on soft ground, recorded (the pack's "sand", which it says serves for grass); silence trimmed | https://opengameart.org/content/fantozzis-footsteps-grasssand-stone | Fantozzi-footsteps.7z: flac/Fantozzi-SandR2.flac | CC0 | "License(s): CC0" box on the page |
+| step_grass_5.ogg | 0.3 | Footstep on soft ground, recorded (the pack's "sand", which it says serves for grass); silence trimmed | https://opengameart.org/content/fantozzis-footsteps-grasssand-stone | Fantozzi-footsteps.7z: flac/Fantozzi-SandL3.flac | CC0 | "License(s): CC0" box on the page |
+| step_grass_6.ogg | 0.3 | Footstep on soft ground, recorded (the pack's "sand", which it says serves for grass); silence trimmed | https://opengameart.org/content/fantozzis-footsteps-grasssand-stone | Fantozzi-footsteps.7z: flac/Fantozzi-SandR3.flac | CC0 | "License(s): CC0" box on the page |
+| step_stone_1.ogg | 0.3 | Footstep on stone, recorded; silence trimmed | https://opengameart.org/content/fantozzis-footsteps-grasssand-stone | Fantozzi-footsteps.7z: flac/Fantozzi-StoneL1.flac | CC0 | "License(s): CC0" box on the page |
+| step_stone_2.ogg | 0.3 | Footstep on stone, recorded; silence trimmed | https://opengameart.org/content/fantozzis-footsteps-grasssand-stone | Fantozzi-footsteps.7z: flac/Fantozzi-StoneR1.flac | CC0 | "License(s): CC0" box on the page |
+| step_stone_3.ogg | 0.3 | Footstep on stone, recorded; silence trimmed | https://opengameart.org/content/fantozzis-footsteps-grasssand-stone | Fantozzi-footsteps.7z: flac/Fantozzi-StoneL2.flac | CC0 | "License(s): CC0" box on the page |
+| step_stone_4.ogg | 0.3 | Footstep on stone, recorded; silence trimmed | https://opengameart.org/content/fantozzis-footsteps-grasssand-stone | Fantozzi-footsteps.7z: flac/Fantozzi-StoneR2.flac | CC0 | "License(s): CC0" box on the page |
+| step_stone_5.ogg | 0.3 | Footstep on stone, recorded; silence trimmed | https://opengameart.org/content/fantozzis-footsteps-grasssand-stone | Fantozzi-footsteps.7z: flac/Fantozzi-StoneL3.flac | CC0 | "License(s): CC0" box on the page |
+| step_stone_6.ogg | 0.3 | Footstep on stone, recorded; silence trimmed | https://opengameart.org/content/fantozzis-footsteps-grasssand-stone | Fantozzi-footsteps.7z: flac/Fantozzi-StoneR3.flac | CC0 | "License(s): CC0" box on the page |
 | splash_1.ogg | 1.38 | Water splash | https://opengameart.org/content/40-cc0-water-splash-slime-sfx | water-splash-slime-sfx.zip: splash_01.ogg | CC0 | "License(s): CC0" box on the page |
 | splash_2.ogg | 2.55 | Water splash, longer | https://opengameart.org/content/water-splash-and-sand-footsteps | splash1_0.wav | CC0 | "License(s): CC0" box on the page |
 | swim_1.ogg | 1.89 | Swim stroke | https://opengameart.org/content/skippy-fish-water-sound-collection | swim.ogg | CC0 | "License(s): CC0" box on the page |
@@ -28,7 +34,7 @@ Every file here is CC0 or public domain, fetched 2026-11-10 from Kenney.nl, Open
 | amb_wind.ogg | 18.00 | Mild wind, 18 s cut with a 2 s crossfade to loop | https://opengameart.org/content/mild-wind-background-noise | wind background noise 2.wav | CC0 | "License(s): CC0" box on the page |
 | amb_birds.ogg | 18.00 | Daytime birdsong, 18 s cut with a 2 s crossfade to loop | https://opengameart.org/content/ambient-bird-sounds | birds-isaiah658_0.ogg | CC0 | "License(s): CC0" box on the page |
 | amb_night.ogg | 11.45 | Night crickets loop (+12 dB) | https://opengameart.org/content/crickets-ambient-noise-loopable | crickets_1.mp3 | CC0 | "License(s): CC0" box on the page |
-| amb_water.ogg | 7.01 | Water loop | https://opengameart.org/content/40-cc0-water-splash-slime-sfx | water-splash-slime-sfx.zip: loop_water_02.ogg | CC0 | "License(s): CC0" box on the page |
+| amb_water.ogg | 17.9 | A shallow small river over a stony bed, recorded (2007); rumble under 250 Hz taken off | https://commons.wikimedia.org/wiki/File:Shallow_small_river_with_stony_riverbed.ogg | Shallow_small_river_with_stony_riverbed.ogg (from pdsounds.org) | Public domain | Licensing section: public domain, not copyrighted, no attribution required |
 | amb_rain.ogg | 15.99 | Rain, 16 s cut with a 2 s crossfade to loop | https://opengameart.org/content/rain-loopable | Rain OGG.zip: 1.ogg | CC0 | "License(s): CC0" box on the page |
 | wolf_1.ogg | 1.55 | Wolf-monster growl | https://opengameart.org/content/wolf-monster-sound | wolf_monster_6.mp3 | CC0 | "License(s): CC0" box on the page |
 | wolf_2.ogg | 0.72 | Creature howl (synthetic/voiced, short) | https://opengameart.org/content/80-cc0-creature-sfx | 80-CC0-creature-SFX_0.zip: howl.ogg | CC0 | "License(s): CC0" box on the page |
@@ -66,3 +72,6 @@ Every file here is CC0 or public domain, fetched 2026-11-10 from Kenney.nl, Open
 - Lake water lapping: `amb_water` is a generic water loop.
 - A dedicated monster death sound: `monster_die_*` are a roar and a short monster voice.
 - Wind in trees specifically: `amb_wind` is plain mild wind.
+
+
+Replaced 2026-11-11, after the developer listened: the first water loop was a seven-second "water loop" from a pack of splash effects and was heard as a drain; the first footfalls were made sounds from an interface pack. Both are now recordings of the thing itself. `tools/audio/steady.py` says how even a loop is and how much of it is low rumble; it could not tell the two water loops apart, so the choice rests on what each is a recording of, and still wants an ear.
