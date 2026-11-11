@@ -35,6 +35,19 @@ pub enum Tree {
 pub struct Form {
     pub limbs: Vec<Limb>,
     pub clumps: Vec<Clump>,
+    pub stones: Vec<Stone>,
+}
+
+/// A piece of rock: an ellipsoid (its middle, its reach along its own axes, turned so far
+/// about the upright) with flat faces struck off it, each a plane in the ellipsoid's own
+/// unit space (a direction, and how far out it lies), of one of the kinds of stone.
+#[derive(Clone, Debug)]
+pub struct Stone {
+    pub middle: Vec3,
+    pub radii: Vec3,
+    pub turn: f32,
+    pub faces: Vec<(Vec3, f32)>,
+    pub kind: Block,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -391,12 +404,17 @@ pub fn rock(world: &mut World, foot: IVec3, across: f32, rng: &mut Rng) {
         let (turn, long) = (rng.between(0.0, TAU), rng.between(1.0, 1.5));
         let (sin, cos) = turn.sin_cos();
         let middle = Vec3::new(at.x, ground(world, at) + radii.y * (0.55 - sunk), at.z);
+        NOTED.with(|n| {
+            if let Some(form) = n.borrow_mut().as_mut() {
+                form.stones.push(Stone { middle, radii: Vec3::new(radii.x * long, radii.y, radii.z), turn, faces: faces.clone(), kind: stone });
+            }
+        });
         let reach = Vec3::new(radii.x * long, radii.y, (radii.x * long).max(radii.z));
         world.shape(middle - reach, middle + reach, |p| {
             let d = p - middle;
             let q = Vec3::new((d.x * cos + d.z * sin) / (radii.x * long), d.y / radii.y, (d.z * cos - d.x * sin) / radii.z);
             q.length_squared() < 1.0 && faces.iter().all(|(n, d)| q.dot(*n) < *d)
-        }, stone, true);
+        }, Block::Rock, true);
     };
     // The form: how tall and deep-set it is for its width.
     let half = across * 0.5;

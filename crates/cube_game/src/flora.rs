@@ -137,6 +137,45 @@ impl Shape {
     }
 }
 
+impl Shape {
+    /// A piece of rock as the shape it is: a ball of points, each drawn in to the nearest of
+    /// the faces struck off the stone, and every facet lit flat, as broken rock is.
+    fn stone(&mut self, stone: &cube_sim::plants::Stone, ball: &[[Vec3; 3]], n: u32) {
+        let (sin, cos) = stone.turn.sin_cos();
+        let (top, side) = stone.kind.colors();
+        // Where the stone's surface is along a direction (in its own unit space), in the world.
+        let surface = |d: Vec3| {
+            let most = stone.faces.iter().filter(|(normal, _)| d.dot(*normal) > 1e-4).map(|(normal, far)| far / d.dot(*normal)).fold(1.0f32, f32::min);
+            let q = d * most * stone.radii;
+            stone.middle + Vec3::new(q.x * cos - q.z * sin, q.y, q.x * sin + q.z * cos)
+        };
+        for (f, corners) in ball.iter().enumerate() {
+            let at = corners.map(surface);
+            let normal = (at[1] - at[0]).cross(at[2] - at[0]).normalize_or(Vec3::Y);
+            // Each facet a little of its own shade; tops paler, as weathered stone is.
+            let shade = 0.85 + 0.3 * hash(n.wrapping_mul(131).wrapping_add(f as u32 / 4), 3);
+            let colour = if normal.y > 0.55 { top } else { side }.map(|c| c * shade);
+            let grain = if normal.y > 0.55 { Grain::Rock } else { Grain::Strata };
+            let start = self.positions.len() as u32;
+            for p in at {
+                // The stone's picture by where the point is, kept inside its tile.
+                let (u, v) = if normal.y.abs() > 0.55 { (p.x, p.z) } else if normal.x.abs() > normal.z.abs() { (p.z, -p.y) } else { (p.x, -p.y) };
+                let within = |m: f32| ((m - (if normal.y.abs() > 0.55 { at[0].x } else { at[0].y }).floor()) / CELL).rem_euclid(SPAN as f32 - 0.1) + 0.05;
+                self.point(p, normal, colour, grain.uv(within(u), within(v)), 0.0);
+            }
+            self.indices.extend([start, start + 1, start + 2]);
+        }
+    }
+}
+
+/// The faces of a ball of 320 triangles, each its three corners as directions.
+fn ball() -> Vec<[Vec3; 3]> {
+    let mesh = Sphere::new(1.0).mesh().ico(1).unwrap();
+    let Some(bevy::mesh::VertexAttributeValues::Float32x3(at)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) else { return Vec::new() };
+    let Some(Indices::U32(index)) = mesh.indices() else { return Vec::new() };
+    index.chunks(3).map(|t| [Vec3::from(at[t[0] as usize]).normalize(), Vec3::from(at[t[1] as usize]).normalize(), Vec3::from(at[t[2] as usize]).normalize()]).collect()
+}
+
 /// Keeps the meshes in step with the regions that are made.
 fn grow(mut commands: Commands, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, forms: Res<Forms>, mut grown: ResMut<Grown>, mut meshes: ResMut<Assets<Mesh>>) {
     let (Some(_), Some(look)) = (terrain, look) else { return };
@@ -156,6 +195,12 @@ fn grow(mut commands: Commands, terrain: Option<Res<Terrain>>, look: Option<Res<
         let mut shape = Shape::default();
         for (n, limb) in form.limbs.iter().enumerate() {
             shape.limb(limb.a - origin, limb.b - origin, limb.ra, limb.rb, limb.bark, n as u32);
+        }
+        let facets = ball();
+        for (n, stone) in form.stones.iter().enumerate() {
+            let mut stone = stone.clone();
+            stone.middle -= origin;
+            shape.stone(&stone, &facets, n as u32);
         }
         for (n, clump) in form.clumps.iter().enumerate() {
             shape.clump(clump.middle - origin, clump.radii, clump.leaf, n as u32 + 100_000);

@@ -77,6 +77,9 @@ pub enum Block {
     /// More ground cover: a fern's wide fronds, a mushroom.
     Fern,
     Mushroom,
+    /// A boulder's stone: solid like any other, but not the land (it is not eased into the
+    /// ground), and drawn as the shape of the rock it is part of, not as cubes.
+    Rock,
 }
 
 impl Block {
@@ -129,6 +132,7 @@ impl Block {
             Block::Litter => ([0.26, 0.17, 0.07], [0.20, 0.13, 0.07]),
             Block::Fern => ([0.10, 0.30, 0.10], [0.09, 0.27, 0.09]),
             Block::Mushroom => ([0.55, 0.14, 0.08], [0.70, 0.66, 0.56]),
+            Block::Rock => ([0.30, 0.30, 0.31], [0.26, 0.26, 0.275]),
         }
     }
 }

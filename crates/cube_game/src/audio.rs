@@ -203,7 +203,7 @@ fn footsteps(mut commands: Commands, mut bank: ResMut<Bank>, live: Option<Res<Li
         gone.0 = 0.0;
         let under = terrain.0.get((at / cube_voxel::CELL).floor().as_ivec3() - IVec3::Y);
         use cube_voxel::Block;
-        let stone = matches!(under, Block::Stone | Block::Slate | Block::Chalk | Block::Gravel | Block::Broken);
+        let stone = matches!(under, Block::Rock | Block::Stone | Block::Slate | Block::Chalk | Block::Gravel | Block::Broken);
         let wet = terrain.2.place(&terrain.1, at.x, at.z).depth > 0.0;
         bank.play(&mut commands, if wet { "splash" } else if stone { "step_stone" } else { "step_grass" }, Some(at), if wet { 0.35 } else { 0.35 + speed * 0.05 });
     }

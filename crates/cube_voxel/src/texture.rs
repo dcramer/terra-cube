@@ -68,7 +68,7 @@ impl Grain {
         match block {
             Block::Grass | Block::Turf => Grain::Grass,
             Block::Dirt => Grain::Soil,
-            Block::Stone | Block::Slate | Block::Chalk | Block::Broken => if top { Grain::Rock } else { Grain::Strata },
+            Block::Stone | Block::Slate | Block::Chalk | Block::Broken | Block::Rock => if top { Grain::Rock } else { Grain::Strata },
             Block::Sand => Grain::Sand,
             Block::Snow => Grain::Snow,
             Block::Gravel => Grain::Pebbles,

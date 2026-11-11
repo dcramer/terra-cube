@@ -620,6 +620,7 @@ fn regions(time: Res<Time>, args: Res<crate::Args>, terrain: Option<ResMut<Terra
         let within = |p: Vec3| (p.x / CELL) as i32 >= lo.0 && ((p.x / CELL) as i32) < hi.0 && (p.z / CELL) as i32 >= lo.1 && ((p.z / CELL) as i32) < hi.1;
         form.limbs.retain(|l| within((l.a + l.b) / 2.0));
         form.clumps.retain(|c| within(c.middle));
+        form.stones.retain(|s| within(s.middle));
         forms.0.insert(r, form);
         regions.made.insert(r);
         regions.waiting -= 1;

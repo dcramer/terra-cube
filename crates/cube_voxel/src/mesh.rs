@@ -316,7 +316,7 @@ pub fn eased_under(world: &World, feet: Vec3) -> Option<f32> {
 pub static MODELLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn modelled(block: Block) -> bool {
-    (block.foliage() || matches!(block, Block::Wood | Block::Birch)) && MODELLED.load(std::sync::atomic::Ordering::Relaxed)
+    (block.foliage() || matches!(block, Block::Wood | Block::Birch | Block::Rock)) && MODELLED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Whether a block, as it is drawn, hides what is behind it: one drawn elsewhere as a shape
@@ -575,7 +575,7 @@ fn bits(world: &World, cell: IVec3, m: &mut MeshData) {
         if local.cmpge(IVec3::ZERO).all() && local.cmplt(IVec3::splat(SPLIT)).all() { data[(local.x + local.z * SPLIT + local.y * SPLIT * SPLIT) as usize] } else { world.bit(at) }
     };
     for (i, &block) in data.iter().enumerate() {
-        if !block.solid() {
+        if !block.solid() || modelled(block) {
             continue;
         }
         let i = i as i32;
@@ -735,7 +735,8 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
                     for z in 0..step {
                         for x in 0..step {
                             let block = near.get(s * step + IVec3::new(x, y, z));
-                            let wanted = if liquid { block == Block::Water } else { block.solid() && !modelled(block) };
+                            // (A broken cell far off is a rock's edge or a hole's rim: neither is drawn from here.)
+                            let wanted = if liquid { block == Block::Water } else { block.solid() && !modelled(block) && !(block == Block::Broken && MODELLED.load(std::sync::atomic::Ordering::Relaxed)) };
                             if wanted && (found == Block::Air || eases(block)) {
                                 // The bits of a broken cell are not looked at from here: stone.
                                 found = if block == Block::Broken { Block::Stone } else { block };
