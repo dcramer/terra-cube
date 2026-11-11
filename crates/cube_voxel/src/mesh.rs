@@ -541,6 +541,26 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                         m.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
                     }
                 }
+                // Short grass over a meadow: where nothing taller grows, most cells of grass
+                // carry a few short blades, thick in some patches and thin in others. Drawn
+                // only, and only this near: the ground under it was a painted floor with tufts
+                // stood on it. (Not on the eased ground, which is not the default.)
+                if !liquid && !smooth && block == Block::Air && near.get(local - IVec3::Y) == Block::Grass {
+                    let cell = origin + local;
+                    let thick = patch(IVec3::new(cell.x * 3 + 5000, 0, cell.z * 3 - 3000));
+                    if hash(cell + IVec3::new(0, 311, 0)) < 0.25 + 1.1 * thick {
+                        let (from, lift) = (m.positions.len(), eased.under(local) * CELL);
+                        let (tint, warm) = sward(Block::Grass, cell - IVec3::Y, 1.0, 0.0);
+                        let green = Block::Grass.colors().0;
+                        for i in 0..4 + (thick * 3.0) as i32 {
+                            let roll = |k: i32| hash(cell + IVec3::new(k * 7 + 13, i * 5 + 400, k * 3));
+                            let (x, z) = ((roll(1) * SPLIT as f32) as i32 % SPLIT, (roll(2) * SPLIT as f32) as i32 % SPLIT);
+                            let k = tint * (0.9 + 0.35 * roll(4));
+                            blade(&mut m, cell, IVec3::new(x, 0, z), IVec3::new(x + 1, 1 + (roll(3) * 2.2) as i32, z + 1), [green[0] * k * (1.0 + warm), green[1] * k, green[2] * k * (1.0 - warm)]);
+                        }
+                        m.positions[from..].iter_mut().for_each(|p| p[1] += lift);
+                    }
+                }
                 if block == Block::Air || (block == Block::Water) != liquid || modelled(block) || (smooth && block.ground()) {
                     continue;
                 }

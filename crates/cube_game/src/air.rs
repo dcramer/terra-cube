@@ -412,6 +412,9 @@ fn motes(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>, terr
         if at.translation.y < floor {
             at.translation.y = floor + (own * 7.3).rem_euclid(3.0);
         }
+        // Not in the camera's face: a speck a hand from the lens glowed as a white ball the
+        // size of a head. It thins to nothing inside three metres.
+        at.scale = Vec3::splat(((at.translation.distance(eye) - 1.5) / 1.5).clamp(0.0, 1.0));
     }
 }
 
@@ -522,7 +525,7 @@ fn glow(pale: Option<Res<Pale>>, cameras: Query<&bevy::camera::Exposure, With<Ca
     let night = 1.0 - ((exposure.ev100 - 1.0) / 8.0).clamp(0.0, 1.0);
     let dim = 2.0f32.powf(exposure.ev100 - 13.4) * (0.1 + 0.9 * ((exposure.ev100 - 6.0) / 7.0).clamp(0.0, 1.0));
     if let Some(mut material) = materials.get_mut(&pale.0) {
-        material.emissive = LinearRgba::rgb(40.0 * dim, 36.0 * dim, 24.0 * dim);
+        material.emissive = LinearRgba::rgb(22.0 * dim, 20.0 * dim, 13.0 * dim);
     }
     if let Some(mut material) = materials.get_mut(&pale.1) {
         // Bright for the exposure it is seen at: dusk needs more than full night.

@@ -93,7 +93,8 @@ impl Shape {
         let (ra, rb) = (ra.max(0.03), rb.max(0.02));
         let (thick, length) = (ra.max(rb), a.distance(b));
         let sides = if roots > 0 { 24 } else if thick > 0.28 { 12 } else if thick > 0.1 { 8 } else { 5 };
-        let rings = ((length / (thick * 2.5).max(0.7)).ceil() as usize).clamp(1, 7);
+        // (Never more than a tile of bark between two rings: see where the picture is laid.)
+        let rings = ((length / (thick * 2.5).max(0.7)).ceil() as usize).clamp(1, 7).max((length / 1.9).ceil() as usize);
         // Where its rings are, along it. A rooted trunk has more of them low down, where it
         // spreads: it begins half a metre under the ground (`plants::bole`).
         let mut stations: Vec<f32> = (0..=rings).map(|j| j as f32 / rings as f32).collect();
@@ -105,9 +106,8 @@ impl Shape {
             stations.splice(1..1, low);
         }
         let rings = stations.len() - 1;
-        // The bark's picture once round, and along by its true length (to a tile at most).
-        let long = (length / CELL).min(SPAN as f32 - 0.02);
-        let from = hash(n, 1) * (SPAN as f32 - 0.02 - long);
+        // The bark's picture once round; each limb begins somewhere of its own in it.
+        let from = hash(n, 1) * SPAN as f32;
         // A twig gives a little to the wind; a trunk none.
         let free = |r: f32| ((0.16 - r) / 0.16).clamp(0.0, 1.0) * 0.25;
         // Ridges: three to five along a thick limb, deepest at the foot of an upright one.
@@ -116,7 +116,19 @@ impl Shape {
         let start = self.positions.len() as u32;
         let ring = sides as u32 + 1;
         let mut middles = [a, b];
+        // The bark's picture at its true size along the limb, whatever its length: each
+        // stretch between two rings takes its own piece of the tile, so every ring but the
+        // ends is laid twice, once as the top of one stretch and once as the foot of the
+        // next. One tile pulled the length of a pine was bark drawn out five times too long.
+        let cells = length / CELL;
+        let room = SPAN as f32 - 0.04;
+        let piece = |s: usize| {
+            let (lo, long) = ((stations[s] * cells + from).rem_euclid(room), ((stations[s + 1] - stations[s]) * cells).min(room));
+            let lo = if lo + long > room { room - long } else { lo };
+            (lo + 0.02, lo + long + 0.02)
+        };
         for (j, t) in stations.iter().copied().enumerate() {
+          for along in [(j > 0).then(|| piece(j - 1).1), (j < rings).then(|| piece(j).0)].into_iter().flatten() {
             let hold = (t * std::f32::consts::PI).sin();
             let wander = (side * (hash(n, 20 + j as u32) - 0.5) + other * (hash(n, 40 + j as u32) - 0.5)) * thick.min(0.35) * 0.7 * hold;
             let at = a.lerp(b, t) + wander;
@@ -147,12 +159,13 @@ impl Shape {
                 }
                 // Darker in the furrows and toward the ground, where it is damp.
                 let shade = (0.8 + 0.25 * hash(n, 7 + (k % sides) as u32)) * (0.86 + 0.6 * (ridge - 1.0).clamp(-0.2, 0.2)) * (1.0 - 0.25 * foot);
-                self.point(at + out * r * ridge, out, colour.map(|c| c * shade), grain.uv(k as f32 / sides as f32 * (SPAN as f32 - 0.02) + 0.01, from + t * long + 0.01), free(r));
+                self.point(at + out * r * ridge, out, colour.map(|c| c * shade), grain.uv(k as f32 / sides as f32 * (SPAN as f32 - 0.02) + 0.01, along), free(r));
             }
+          }
         }
         for j in 0..rings as u32 {
             for k in 0..sides as u32 {
-                let (lo, hi) = (start + j * ring + k, start + (j + 1) * ring + k);
+                let (lo, hi) = (start + 2 * j * ring + k, start + (2 * j + 1) * ring + k);
                 self.indices.extend([lo, hi, hi + 1, lo, hi + 1, lo + 1]);
             }
         }
@@ -166,7 +179,7 @@ impl Shape {
             // Where another limb goes on from here the end is rounded over, so a bend has no gap.
             let dome = if cut[end] { 0.08 } else { 0.6 };
             let across = (2.0 * r / CELL).min(SPAN as f32 - 0.1);
-            let first = start + if end == 0 { 0 } else { rings as u32 * ring };
+            let first = start + if end == 0 { 0 } else { (2 * rings as u32 - 1) * ring };
             let hub = self.point(middles[end] + face * r * dome, face, tint, paint.uv(0.05 + across / 2.0, 0.05 + across / 2.0), 0.0);
             let rim = self.positions.len() as u32;
             for k in 0..=sides as u32 {

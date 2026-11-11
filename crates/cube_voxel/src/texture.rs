@@ -187,7 +187,15 @@ fn texel(grain: Grain, x: f32, y: f32) -> f32 {
         // Ridges running up the trunk with deep grooves between.
         Grain::Bark => 1.0 + dab((8, 32), 1, 0.25) * 0.3 + lump((4, 16), 2) * 0.2 - line((8, 64), 3, 0.05) * 0.4,
         // Pale, with dark eyes and dashes lying across it.
-        Grain::BirchBark => 1.0 + lump((32, 16), 1) * 0.08 - (dab((16, 4), 2, 0.05) + 0.5 - 0.82).max(0.0) * 3.4,
+        // Pale and smooth, with what a birch has: short dark dashes lying across it (the
+        // picture goes once round a trunk, so they are drawn wide), faint bands where the
+        // paper peels, and here and there a black scar where a branch was. As soft dark
+        // blotches it was a cow.
+        Grain::BirchBark => {
+            let dash = ((lump((8, 1), 2) - 0.2) / 0.08).clamp(0.0, 1.0);
+            let scar = ((lump((16, 8), 4) - 0.3) / 0.05).clamp(0.0, 1.0);
+            1.0 + lump((32, 16), 1) * 0.06 + lump((32, 2), 5) * 0.12 - dash * 0.55 - scar * 0.8
+        }
         // Rings.
         Grain::EndGrain => 1.0 + ((((x - 32.0).powi(2) + (y - 32.0).powi(2)).sqrt() * 0.8).sin() * 0.12) + lump((16, 16), 1) * 0.15,
         // Leaves: clusters catching the light, with pools of shade between.
