@@ -17,12 +17,14 @@ pub struct AirPlugin;
 
 impl Plugin for AirPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup).add_systems(Update, (motes, leaves, butterflies, birds, glow, heavens));
+        app.add_systems(Startup, setup).add_systems(Update, (motes, leaves, butterflies, birds, glow, heavens, songbirds, dragonflies));
     }
 }
 
 /// How many of each there are round the camera.
-const MOTES: usize = 260;
+const MOTES: usize = 170;
+const SONGBIRDS: usize = 18;
+const DRAGONFLIES: usize = 12;
 const LEAVES: usize = 36;
 const BUTTERFLIES: usize = 14;
 const FLOCKS: usize = 3;
@@ -85,6 +87,32 @@ struct Wing {
     sweep: f32,
 }
 
+/// A small bird of the meadows and woods. It is either down, hopping and pecking where it
+/// landed (`to`), or in the air between `from` and `to` since `since` for `flight` seconds.
+#[derive(Component)]
+struct Songbird {
+    from: Vec3,
+    to: Vec3,
+    since: f32,
+    flight: f32,
+    own: f32,
+    facing: f32,
+}
+
+/// A wing that folds against the body when its bird is down.
+#[derive(Component)]
+struct Folds;
+
+/// A dragonfly: the water it keeps over, and the dart it is making or has made.
+#[derive(Component)]
+struct Dragonfly {
+    over: Vec3,
+    from: Vec3,
+    to: Vec3,
+    since: f32,
+    own: f32,
+}
+
 /// A bird in a flock that wheels round a point: how far out, how high, how fast, where in
 /// the circle.
 #[derive(Component)]
@@ -101,7 +129,7 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     // Pollen: lit like anything else, so it flares crossing a shaft of sun and dims in shade,
     // with a little light of its own so it is not lost there.
     let speck = meshes.add(Sphere::new(0.011).mesh().ico(1).unwrap());
-    let pale = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.96, 0.78), emissive: LinearRgba::rgb(260.0, 235.0, 150.0), perceptual_roughness: 1.0, ..default() });
+    let pale = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.96, 0.78), emissive: LinearRgba::rgb(120.0, 108.0, 70.0), perceptual_roughness: 1.0, ..default() });
     // One in six is a firefly: by day a speck like the rest, by night a slow green lamp.
     let lamp = materials.add(StandardMaterial { base_color: Color::srgb(0.9, 1.0, 0.6), perceptual_roughness: 1.0, ..default() });
     commands.insert_resource(Pale(pale.clone(), lamp.clone()));
@@ -144,6 +172,29 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
             for side in [-1.0f32, 1.0] {
                 // Hinged at the body: the wing's mesh sits out from the hinge.
                 body.spawn((Wing { side, beat: 26.0 + own * 0.05, sweep: 1.1 }, Transform::default(), Visibility::default())).with_child((Mesh3d(wing.clone()), MeshMaterial3d(coats[i % 3].clone()), Transform::from_xyz(side * 0.037, 0.0, 0.0), NotShadowCaster));
+            }
+        });
+    }
+    // Small birds: a round body, a head, and two short wings that fold when it is down.
+    let (breast, crown, pinion) = (meshes.add(Cuboid::new(0.07, 0.07, 0.11)), meshes.add(Cuboid::new(0.05, 0.05, 0.05)), meshes.add(Cuboid::new(0.1, 0.012, 0.07)));
+    let plumage = [Color::srgb(0.45, 0.33, 0.22), Color::srgb(0.62, 0.3, 0.16), Color::srgb(0.3, 0.34, 0.4)].map(|c| materials.add(StandardMaterial { base_color: c, perceptual_roughness: 0.9, double_sided: true, cull_mode: None, ..default() }));
+    for i in 0..SONGBIRDS {
+        let coat = plumage[i % 3].clone();
+        commands.spawn((Songbird { from: far, to: far, since: -100.0, flight: 0.0, own: roll(&mut state) * 100.0, facing: 0.0 }, Mesh3d(breast.clone()), MeshMaterial3d(coat.clone()), Transform::from_translation(far))).with_children(|body| {
+            body.spawn((Mesh3d(crown.clone()), MeshMaterial3d(coat.clone()), Transform::from_xyz(0.0, 0.05, -0.065)));
+            for side in [-1.0f32, 1.0] {
+                body.spawn((Wing { side, beat: 34.0, sweep: 1.0 }, Folds, Transform::from_xyz(side * 0.03, 0.02, 0.0), Visibility::default())).with_child((Mesh3d(pinion.clone()), MeshMaterial3d(coat.clone()), Transform::from_xyz(side * 0.05, 0.0, 0.0), NotShadowCaster));
+            }
+        });
+    }
+    // Dragonflies: a thin bright body and four clear wings held flat, too fast to see beat.
+    let (needle, pane) = (meshes.add(Cuboid::new(0.012, 0.012, 0.09)), meshes.add(Cuboid::new(0.11, 0.001, 0.022)));
+    let enamel = [Color::srgb(0.1, 0.5, 0.75), Color::srgb(0.2, 0.6, 0.25), Color::srgb(0.75, 0.2, 0.15)].map(|c| materials.add(StandardMaterial { base_color: c, perceptual_roughness: 0.3, ..default() }));
+    let clear = materials.add(StandardMaterial { base_color: Color::srgba(0.9, 0.95, 1.0, 0.35), alpha_mode: AlphaMode::Blend, double_sided: true, cull_mode: None, ..default() });
+    for i in 0..DRAGONFLIES {
+        commands.spawn((Dragonfly { over: far, from: far, to: far, since: 0.0, own: roll(&mut state) * 100.0 }, Mesh3d(needle.clone()), MeshMaterial3d(enamel[i % 3].clone()), Transform::from_translation(far), NotShadowCaster)).with_children(|body| {
+            for back in [-0.012f32, 0.012] {
+                body.spawn((Mesh3d(pane.clone()), MeshMaterial3d(clear.clone()), Transform::from_xyz(0.0, 0.008, back - 0.02), NotShadowCaster));
             }
         });
     }
@@ -226,7 +277,7 @@ fn leaves(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>, ter
 
 /// A butterfly keeps to a few metres of meadow near the camera, flying a loose looping path
 /// low over the grass, its wings beating too fast to count.
-fn butterflies(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>, terrain: Option<Res<Terrain>>, mut flies: Query<(&mut Butterfly, &mut Transform), Without<Wing>>, mut wings: Query<(&Wing, &mut Transform)>, mut state: Local<u32>) {
+fn butterflies(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>, terrain: Option<Res<Terrain>>, mut flies: Query<(&mut Butterfly, &mut Transform), Without<Wing>>, mut wings: Query<(&Wing, &mut Transform), Without<Folds>>, mut state: Local<u32>) {
     let (Some(eye), Some(terrain)) = (eye(&cameras), terrain) else { return };
     if *state == 0 {
         *state = 0x0BAD_5EED;
@@ -256,6 +307,7 @@ fn butterflies(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>
         at.look_to((soon - now).normalize_or(Vec3::X), Vec3::Y);
     }
     for (wing, mut hinge) in &mut wings {
+        // (A folding wing is its bird's to move: `songbirds`.)
         // Up from flat to nearly closed over the back, and down again.
         hinge.rotation = Quat::from_rotation_z(wing.side * (0.15 + wing.sweep * (t * wing.beat).sin().abs()));
     }
@@ -293,11 +345,11 @@ fn glow(time: Res<Time>, pale: Option<Res<Pale>>, cameras: Query<&bevy::camera::
     // Dimmer still by night: pollen is not fireflies.
     let dim = 2.0f32.powf(exposure.ev100 - 13.4) * (0.25 + 0.75 * ((exposure.ev100 - 6.0) / 7.0).clamp(0.0, 1.0));
     if let Some(mut material) = materials.get_mut(&pale.0) {
-        material.emissive = LinearRgba::rgb(260.0 * dim, 235.0 * dim, 150.0 * dim);
+        material.emissive = LinearRgba::rgb(120.0 * dim, 108.0 * dim, 70.0 * dim);
     }
     if let Some(mut material) = materials.get_mut(&pale.1) {
         let day = 2.0f32.powf(exposure.ev100 - 13.4);
-        material.emissive = LinearRgba::rgb(260.0 * day + 9.0 * night, 235.0 * day + 16.0 * night, 150.0 * day + 2.0 * night);
+        material.emissive = LinearRgba::rgb(120.0 * day + 9.0 * night, 108.0 * day + 16.0 * night, 70.0 * day + 2.0 * night);
     }
 }
 
@@ -324,5 +376,126 @@ fn heavens(live: Option<Res<crate::motion::Live>>, heavens: Option<Res<Heavens>>
     }
     if let Some(mut material) = materials.get_mut(&heavens.1) {
         material.emissive = LinearRgba::rgb(1.0, 0.97, 0.88) * (1.6 * night);
+    }
+}
+
+/// Small birds live on the ground near the camera: a few hops, a peck, a look round, and
+/// every so often a low flight to somewhere else. Anything that comes within a few metres
+/// (the player, here the camera's own ground) puts them up at once, and they go further.
+#[allow(clippy::type_complexity)]
+fn songbirds(
+    time: Res<Time>,
+    cameras: Query<&GlobalTransform, With<Camera3d>>,
+    terrain: Option<Res<Terrain>>,
+    live: Option<Res<crate::motion::Live>>,
+    mut birds: Query<(&mut Songbird, &mut Transform, &Children), Without<Wing>>,
+    mut wings: Query<(&Wing, &mut Transform), With<Folds>>,
+    mut state: Local<u32>,
+) {
+    let (Some(eye), Some(terrain)) = (eye(&cameras), terrain) else { return };
+    if *state == 0 {
+        *state = 0x5EED_B12D;
+    }
+    let t = time.elapsed_secs();
+    // What scares them: every creature that walks, the player among them.
+    let walkers: Vec<Vec3> = live.map(|l| l.0.agents.values().map(|a| a.body.pos).collect()).unwrap_or_default();
+    for (mut bird, mut at, children) in &mut birds {
+        let flying = t - bird.since < bird.flight;
+        if !flying {
+            let scared = walkers.iter().any(|w| w.distance(bird.to) < 4.5);
+            let restless = (t * 0.13 + bird.own).fract() < 0.004;
+            let lost = bird.to.distance(eye) > 40.0;
+            if scared || restless || lost {
+                // Somewhere else on dry ground: near if it is only restless, far if scared.
+                for _ in 0..6 {
+                    let (turn, out) = (roll(&mut state) * TAU, if lost { 6.0 + roll(&mut state) * 22.0 } else if scared { 12.0 + roll(&mut state) * 14.0 } else { 3.0 + roll(&mut state) * 8.0 });
+                    let middle = if lost { eye } else { bird.to };
+                    let (x, z) = (middle.x + turn.cos() * out, middle.z + turn.sin() * out);
+                    if matches!(terrain.1.biome((x / CELL).floor() as i32, (z / CELL).floor() as i32), Biome::Meadow | Biome::Forest) {
+                        let from = if lost { Vec3::new(x, terrain.ground(x, z) + 6.0, z) } else { at.translation };
+                        (bird.from, bird.to, bird.since) = (from, Vec3::new(x, terrain.ground(x, z) + 0.04, z), t);
+                        bird.flight = (bird.from.distance(bird.to) / 7.5).max(0.4);
+                        break;
+                    }
+                }
+            }
+        }
+        let flying = t - bird.since < bird.flight;
+        if flying {
+            // A low arc, quick to rise and gliding in.
+            let part = (t - bird.since) / bird.flight;
+            let eased = part * part * (3.0 - 2.0 * part);
+            let arc = bird.from.distance(bird.to) * 0.22 * (4.0 * part * (1.0 - part));
+            let now = bird.from.lerp(bird.to, eased) + Vec3::Y * arc;
+            let ahead = (bird.to - bird.from).with_y(0.0).normalize_or(Vec3::X);
+            bird.facing = ahead.x.atan2(ahead.z) + std::f32::consts::PI;
+            *at = Transform::from_translation(now).with_rotation(Quat::from_rotation_y(bird.facing) * Quat::from_rotation_x(0.5 - part));
+        } else {
+            // Down: hops in little bursts, turning between them, with a peck now and then.
+            let beat = t * 2.4 + bird.own;
+            let hopping = beat.fract() < 0.35 && (beat.floor() * 0.37 + bird.own).fract() < 0.6;
+            if beat.fract() < 0.02 {
+                bird.facing += (roll(&mut state) - 0.5) * 1.6;
+            }
+            let hop = if hopping { (beat.fract() / 0.35 * std::f32::consts::PI).sin() } else { 0.0 };
+            let forward = Quat::from_rotation_y(bird.facing) * Vec3::NEG_Z;
+            if hopping {
+                let step = forward * 0.25 * time.delta_secs();
+                let next = bird.to + step;
+                bird.to = Vec3::new(next.x, terrain.ground(next.x, next.z) + 0.04, next.z);
+            }
+            let peck = if !hopping && (beat.floor() * 0.61 + bird.own).fract() < 0.4 { (beat.fract() * TAU * 2.0).sin().max(0.0) * 0.7 } else { 0.0 };
+            *at = Transform::from_translation(bird.to + Vec3::Y * (0.035 + hop * 0.05)).with_rotation(Quat::from_rotation_y(bird.facing) * Quat::from_rotation_x(-peck));
+        }
+        for &child in children {
+            if let Ok((wing, mut hinge)) = wings.get_mut(child) {
+                // Beating in the air, folded down along the body on the ground.
+                hinge.rotation = if flying { Quat::from_rotation_z(wing.side * (wing.sweep * (t * wing.beat).sin())) } else { Quat::from_rotation_z(wing.side * -1.35) };
+            }
+        }
+    }
+}
+
+/// Dragonflies keep to water near the camera: hanging still in the air for a moment, then
+/// gone a couple of metres in a blink and hanging again.
+fn dragonflies(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>, terrain: Option<Res<Terrain>>, mut flies: Query<(&mut Dragonfly, &mut Transform)>, mut state: Local<u32>) {
+    let (Some(eye), Some(terrain)) = (eye(&cameras), terrain) else { return };
+    if *state == 0 {
+        *state = 0xD2A6_0F17;
+    }
+    let t = time.elapsed_secs();
+    let water = cube_sim::terrain::SEA_LEVEL;
+    let wet = |x: f32, z: f32| terrain.1.biome((x / CELL).floor() as i32, (z / CELL).floor() as i32) == Biome::Water;
+    for (mut fly, mut at) in &mut flies {
+        if fly.over.distance(eye) > 45.0 {
+            fly.over = Vec3::new(0.0, -500.0, 0.0);
+            for _ in 0..8 {
+                let (turn, out) = (roll(&mut state) * TAU, 4.0 + roll(&mut state) * 34.0);
+                let (x, z) = (eye.x + turn.cos() * out, eye.z + turn.sin() * out);
+                if wet(x, z) {
+                    fly.over = Vec3::new(x, water, z);
+                    (fly.from, fly.to, fly.since) = (fly.over + Vec3::Y * 0.6, fly.over + Vec3::Y * 0.6, t);
+                    break;
+                }
+            }
+        }
+        if fly.over.y < -100.0 {
+            at.translation = fly.over;
+            continue;
+        }
+        // Hang, then dart: a new place over the same water every second or so.
+        let hang = 0.7 + (fly.own * 3.7).fract() * 1.1;
+        if t - fly.since > hang {
+            let (turn, out) = (roll(&mut state) * TAU, 0.8 + roll(&mut state) * 2.6);
+            let mut to = fly.over + Vec3::new(turn.cos() * out, 0.25 + roll(&mut state) * 0.9, turn.sin() * out);
+            if !wet(to.x, to.z) {
+                to = fly.over + Vec3::Y * 0.5;
+            }
+            (fly.from, fly.to, fly.since) = (fly.to, to, t);
+        }
+        let dart = ((t - fly.since) / 0.16).clamp(0.0, 1.0);
+        let now = fly.from.lerp(fly.to, dart * dart * (3.0 - 2.0 * dart)) + Vec3::Y * 0.015 * (t * 31.0 + fly.own).sin();
+        let ahead = (fly.to - fly.from).with_y(0.0).normalize_or(Vec3::X);
+        *at = Transform::from_translation(now).looking_to(ahead, Vec3::Y);
     }
 }
