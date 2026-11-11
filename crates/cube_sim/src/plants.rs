@@ -28,6 +28,43 @@ pub enum Tree {
     Snag,
 }
 
+/// The shape of what was grown, for whoever draws it as a shape and not as cells: every limb
+/// (from, to, how thick at each end, of what bark) and every mass of leaf (its middle, how
+/// far it reaches each way, of what leaf).
+#[derive(Clone, Default, Debug)]
+pub struct Form {
+    pub limbs: Vec<Limb>,
+    pub clumps: Vec<Clump>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Limb {
+    pub a: Vec3,
+    pub b: Vec3,
+    pub ra: f32,
+    pub rb: f32,
+    pub bark: Block,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Clump {
+    pub middle: Vec3,
+    pub radii: Vec3,
+    pub leaf: Block,
+}
+
+thread_local! {
+    /// While something is being grown inside [`recorded`], its shapes are noted here.
+    static NOTED: std::cell::RefCell<Option<Form>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `grow` and says, with what it gives back, the shape of everything it grew.
+pub fn recorded<R>(grow: impl FnOnce() -> R) -> (R, Form) {
+    NOTED.with(|n| *n.borrow_mut() = Some(Form::default()));
+    let out = grow();
+    (out, NOTED.with(|n| n.borrow_mut().take()).unwrap_or_default())
+}
+
 fn cell(p: Vec3) -> IVec3 {
     (p / CELL).floor().as_ivec3()
 }
@@ -35,6 +72,11 @@ fn cell(p: Vec3) -> IVec3 {
 /// Wood from `a` to `b` (metres), `ra` thick at one end and `rb` at the other. It grows through
 /// air and foliage, not through the ground.
 fn limb(world: &mut World, a: Vec3, b: Vec3, ra: f32, rb: f32, bark: Block) {
+    NOTED.with(|n| {
+        if let Some(form) = n.borrow_mut().as_mut() {
+            form.limbs.push(Limb { a, b, ra, rb, bark });
+        }
+    });
     let steps = ((a.distance(b) / (CELL * 0.5)).ceil() as i32).max(1);
     for i in 0..=steps {
         let t = i as f32 / steps as f32;
@@ -59,6 +101,16 @@ fn limb(world: &mut World, a: Vec3, b: Vec3, ra: f32, rb: f32, bark: Block) {
 /// Foliage filling the air inside an ellipsoid (metres), its edge ragged, nothing lower than
 /// `floor`.
 fn clump(world: &mut World, middle: Vec3, radii: Vec3, leaf: Block, floor: f32, rng: &mut Rng) {
+    NOTED.with(|n| {
+        if let Some(form) = n.borrow_mut().as_mut() {
+            // Not the part of it under its floor.
+            let low = (middle.y - radii.y).max(floor);
+            let high = middle.y + radii.y;
+            if high > low {
+                form.clumps.push(Clump { middle: middle.with_y((low + high) / 2.0), radii: radii.with_y((high - low) / 2.0), leaf });
+            }
+        }
+    });
     let (lo, hi) = (cell(middle - radii), cell(middle + radii));
     let ragged = rng.bits() as u32;
     for y in lo.y..=hi.y {
@@ -226,6 +278,12 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
                 for _ in 0..10 {
                     let at = end + Vec3::new(rng.between(-1.0, 1.0), 0.0, rng.between(-1.0, 1.0)) * tall * 0.13;
                     let hang = rng.between(1.6, (at.y - foot.y - 0.8).max(1.7));
+                    // A strand, for whoever draws shapes: a thin hanging mass.
+                    NOTED.with(|n| {
+                        if let Some(form) = n.borrow_mut().as_mut() {
+                            form.clumps.push(Clump { middle: at - Vec3::Y * hang * 0.5, radii: Vec3::new(0.35, hang * 0.5, 0.35), leaf: Block::LeavesPale });
+                        }
+                    });
                     let c = cell(at);
                     for down in 0..(hang / CELL) as i32 {
                         let strand = c - IVec3::Y * down;

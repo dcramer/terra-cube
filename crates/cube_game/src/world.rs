@@ -389,15 +389,10 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     let land = Land::new(args.seed, terrain::RADIUS);
     let mut voxels = Voxels::default();
     let start = ((args.at.0 / CELL) as i32, (args.at.1 / CELL) as i32);
-    let mut first = Regions::default();
-    for rz in -1..=1 {
-        for rx in -1..=1 {
-            let r = (start.0.div_euclid(terrain::REGION) + rx, start.1.div_euclid(terrain::REGION) + rz);
-            terrain::fill(&mut voxels, &land, (r.0 * terrain::REGION, r.1 * terrain::REGION), ((r.0 + 1) * terrain::REGION, (r.1 + 1) * terrain::REGION));
-            first.made.insert(r);
-        }
-    }
+    let first = Regions::default();
+    let _ = start;
     commands.insert_resource(first);
+    cube_voxel::mesh::MODELLED.store(!args.blocky, std::sync::atomic::Ordering::Relaxed);
     // The paint: grain for every surface, made in code (`cube_voxel::texture`). Drawn smooth,
     // so it reads as paint and not as pixels; far off the smaller copies take over, so distant
     // ground does not sparkle.
@@ -593,7 +588,7 @@ fn seasons(live: Option<Res<crate::motion::Live>>, look: Option<Res<Look>>, mut 
 /// milliseconds' worth a frame; drops those it has left well behind, unless someone dug or
 /// built there. So what is held in cells is what is near, and the island can be a kilometre
 /// across (or ten) for the price of the ground underfoot.
-fn regions(time: Res<Time>, args: Res<crate::Args>, terrain: Option<ResMut<Terrain>>, mut regions: ResMut<Regions>, mut dirty: ResMut<Dirty>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
+fn regions(time: Res<Time>, args: Res<crate::Args>, terrain: Option<ResMut<Terrain>>, mut forms: ResMut<crate::flora::Forms>, mut regions: ResMut<Regions>, mut dirty: ResMut<Dirty>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
     let (Some(mut terrain), Some(eye)) = (terrain, cameras.iter().next().map(|t| t.translation())) else { return };
     let size = terrain::REGION as f32 * CELL;
     let away = |r: (i32, i32)| Vec2::new((r.0 as f32 + 0.5) * size - eye.x, (r.1 as f32 + 0.5) * size - eye.z).length();
@@ -618,7 +613,14 @@ fn regions(time: Res<Time>, args: Res<crate::Args>, terrain: Option<ResMut<Terra
     let started = std::time::Instant::now();
     for (_, r) in wanted {
         let Terrain(voxels, land, ..) = &mut *terrain;
-        terrain::fill(voxels, land, (r.0 * terrain::REGION, r.1 * terrain::REGION), ((r.0 + 1) * terrain::REGION, (r.1 + 1) * terrain::REGION));
+        let (lo, hi) = ((r.0 * terrain::REGION, r.1 * terrain::REGION), ((r.0 + 1) * terrain::REGION, (r.1 + 1) * terrain::REGION));
+        let ((), mut form) = cube_sim::plants::recorded(|| terrain::fill(voxels, land, lo, hi));
+        // Of the shapes grown, the ones whose middle is in this region are this region's to
+        // draw: a tree astride an edge is grown by both sides, and drawn half by each.
+        let within = |p: Vec3| (p.x / CELL) as i32 >= lo.0 && ((p.x / CELL) as i32) < hi.0 && (p.z / CELL) as i32 >= lo.1 && ((p.z / CELL) as i32) < hi.1;
+        form.limbs.retain(|l| within((l.a + l.b) / 2.0));
+        form.clumps.retain(|c| within(c.middle));
+        forms.0.insert(r, form);
         regions.made.insert(r);
         regions.waiting -= 1;
         redraw(&terrain.0, r, &mut dirty);
@@ -632,6 +634,7 @@ fn regions(time: Res<Time>, args: Res<crate::Args>, terrain: Option<ResMut<Terra
         terrain.0.chunks.retain(|c, _| (c.x.div_euclid(terrain::REGION / CHUNK), c.z.div_euclid(terrain::REGION / CHUNK)) != r);
         terrain.0.bits.retain(|cell, _| region_of(*cell) != r);
         regions.made.remove(&r);
+        forms.0.remove(&r);
     }
     regions.kept = terrain.3.clone();
 }

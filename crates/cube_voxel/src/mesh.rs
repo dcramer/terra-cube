@@ -311,6 +311,21 @@ pub fn eased_under(world: &World, feet: Vec3) -> Option<f32> {
     Some((level + a * (1.0 - fz) + b * fz) * CELL)
 }
 
+/// Whether what grows (wood, leaf) is drawn by someone else as shapes (`cube_game::flora`),
+/// and so not here as cubes. The cells are there all the same.
+pub static MODELLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn modelled(block: Block) -> bool {
+    (block.foliage() || matches!(block, Block::Wood | Block::Birch)) && MODELLED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Whether a block, as it is drawn, hides what is behind it: one drawn elsewhere as a shape
+/// (a trunk in the ground, a log lying on it) hides nothing here, or the ground under it is a
+/// hole.
+fn hides(block: Block) -> bool {
+    block.opaque() && !modelled(block)
+}
+
 /// How the ground is drawn. The cells are the same in all three; this is only the picture.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
@@ -324,7 +339,7 @@ pub enum Ground {
     Smooth,
 }
 
-pub static GROUND: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(Ground::Stepped as u8);
+pub static GROUND: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(Ground::Smooth as u8);
 
 fn ground() -> Ground {
     [Ground::Cubes, Ground::Stepped, Ground::Smooth][GROUND.load(std::sync::atomic::Ordering::Relaxed) as usize]
@@ -351,7 +366,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
             for x in 0..CHUNK {
                 let local = IVec3::new(x, y, z);
                 let block = data.get(local);
-                if block == Block::Air || (block == Block::Water) != liquid {
+                if block == Block::Air || (block == Block::Water) != liquid || modelled(block) {
                     continue;
                 }
                 let cell = origin + local;
@@ -407,7 +422,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                         continue;
                     }
                     for (n, u, v) in FACES {
-                        if n == IVec3::NEG_Y || (n == IVec3::Y && near.get(local + n).opaque()) {
+                        if n == IVec3::NEG_Y || (n == IVec3::Y && hides(near.get(local + n))) {
                             continue;
                         }
                         let low = if n == IVec3::Y { high } else { eased.top(x + n.x, level, z + n.z) - level as f32 };
@@ -461,7 +476,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                         continue;
                     }
                     let other = near.get(local + n);
-                    let hidden = if block == Block::Water { other != Block::Air } else { other.opaque() };
+                    let hidden = if block == Block::Water { other != Block::Air } else { hides(other) };
                     if hidden {
                         continue;
                     }
@@ -479,7 +494,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                         // On eased ground a step one cube high casts no shade: it is not there.
                         let occ = |d: IVec3| {
                             let by = near.get(local + n + d);
-                            (by.opaque() && !(eases(block) && n == IVec3::Y && by.ground() && !near.get(local + n + d + IVec3::Y).opaque())) as i32
+                            (hides(by) && !(eases(block) && n == IVec3::Y && by.ground() && !near.get(local + n + d + IVec3::Y).opaque())) as i32
                         };
                         let (a, b, c) = (occ(du), occ(dv), occ(du + dv));
                         let level = if a + b == 2 { 0 } else { 3 - (a + b + c) };
@@ -697,7 +712,7 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
                     for z in 0..step {
                         for x in 0..step {
                             let block = near.get(s * step + IVec3::new(x, y, z));
-                            let wanted = if liquid { block == Block::Water } else { block.solid() };
+                            let wanted = if liquid { block == Block::Water } else { block.solid() && !modelled(block) };
                             if wanted && (found == Block::Air || eases(block)) {
                                 // The bits of a broken cell are not looked at from here: stone.
                                 found = if block == Block::Broken { Block::Stone } else { block };
@@ -723,7 +738,7 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
             for sx in 0..n {
                 let s = IVec3::new(sx, sy, sz);
                 let block = groups[at_group(s)];
-                if block == Block::Air {
+                if block == Block::Air || modelled(block) {
                     continue;
                 }
                 let cell = origin + s * step;

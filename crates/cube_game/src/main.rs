@@ -14,6 +14,7 @@ mod audio;
 mod camera;
 mod creatures;
 mod far;
+mod flora;
 mod hud;
 mod motion;
 mod player;
@@ -55,6 +56,8 @@ pub struct Args {
     pub seed: u32,
     /// Every surface's grain made in code, none photographed.
     pub plain: bool,
+    /// Trees drawn as the cubes they are in the simulation, not as shapes.
+    pub blocky: bool,
     /// In a scene: draw what the player sees over the world too (`bar`, or with the `pack`
     /// or `admin` window open).
     pub hud: Option<String>,
@@ -194,11 +197,12 @@ fn parse_args() -> Args {
             }
             "--wild" => args.wild = true,
             "--plain" => args.plain = true,
+            "--blocky" => args.blocky = true,
             "--hud" => args.hud = Some(it.next().unwrap_or_else(|| "bar".into())),
             "--quiet" => args.quiet = true,
             "--torch" => args.torch = true,
             "--cubes" => cube_voxel::mesh::GROUND.store(cube_voxel::mesh::Ground::Cubes as u8, std::sync::atomic::Ordering::Relaxed),
-            "--smooth" => cube_voxel::mesh::GROUND.store(cube_voxel::mesh::Ground::Smooth as u8, std::sync::atomic::Ordering::Relaxed),
+            "--stepped" => cube_voxel::mesh::GROUND.store(cube_voxel::mesh::Ground::Stepped as u8, std::sync::atomic::Ordering::Relaxed),
             "--dig" | "--build" => {
                 let v: Vec<f32> = it.next().unwrap_or_default().split(',').filter_map(|v| v.parse().ok()).collect();
                 if v.len() != 3 {
@@ -285,14 +289,14 @@ fn main() {
         app.insert_resource(bevy::winit::WinitSettings { focused_mode: at_once, unfocused_mode: at_once });
     }
     if scene {
-        app.add_plugins((world::WorldPlugin, far::FarPlugin, air::AirPlugin, audio::SoundPlugin, motion::MotionPlugin, player::PlayPlugin, shot::ScenePlugin));
+        app.add_plugins((world::WorldPlugin, far::FarPlugin, flora::FloraPlugin, air::AirPlugin, audio::SoundPlugin, motion::MotionPlugin, player::PlayPlugin, shot::ScenePlugin));
         if app.world().resource::<Args>().hud.is_some() {
             app.add_plugins((bevy_egui::EguiPlugin::default(), hud::HudPlugin));
         }
     } else if shot {
         app.add_plugins(shot::ShotPlugin);
     } else {
-        app.add_plugins((world::WorldPlugin, far::FarPlugin, air::AirPlugin, audio::SoundPlugin, camera::CameraPlugin, motion::MotionPlugin, player::PlayPlugin, ui::UiPlugin, hud::HudPlugin));
+        app.add_plugins((world::WorldPlugin, far::FarPlugin, flora::FloraPlugin, air::AirPlugin, audio::SoundPlugin, camera::CameraPlugin, motion::MotionPlugin, player::PlayPlugin, ui::UiPlugin, hud::HudPlugin));
     }
     app.run();
 }
