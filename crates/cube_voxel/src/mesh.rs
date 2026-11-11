@@ -230,3 +230,94 @@ fn sprig(cell: IVec3, block: Block, m: &mut MeshData) {
         }
     }
 }
+
+/// A chunk seen from far off: its cells taken `step` at a time each way, so a mesh a quarter
+/// or a sixteenth the size. A group of cells is solid if any of them is, and is the block
+/// highest in it, so distant ground has no holes and trees keep their bulk; ground cover and
+/// the fine shape of broken cells are left out. Water is meshed apart, as up close: a group
+/// is water if any of it is.
+pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> MeshData {
+    let mut m = MeshData::default();
+    if !world.chunks.contains_key(&chunk) {
+        return m;
+    }
+    let mut near = Near([None; 27]);
+    for (i, slot) in near.0.iter_mut().enumerate() {
+        let i = i as i32;
+        *slot = world.chunks.get(&(chunk + IVec3::new(i % 3 - 1, i / 9 - 1, i / 3 % 3 - 1)));
+    }
+    let n = CHUNK / step;
+    let side = (n + 2) as usize;
+    // Every group in the chunk and one beyond each face, worked out once.
+    let mut groups = vec![Block::Air; side * side * side];
+    let at = |s: IVec3| ((s.x + 1) + (s.z + 1) * (n + 2) + (s.y + 1) * (n + 2) * (n + 2)) as usize;
+    for sy in -1..=n {
+        for sz in -1..=n {
+            for sx in -1..=n {
+                let s = IVec3::new(sx, sy, sz);
+                let mut found = Block::Air;
+                'group: for y in (0..step).rev() {
+                    for z in 0..step {
+                        for x in 0..step {
+                            let block = near.get(s * step + IVec3::new(x, y, z));
+                            let wanted = if liquid { block == Block::Water } else { block.solid() };
+                            if wanted {
+                                // The bits of a broken cell are not looked at from here: stone.
+                                found = if block == Block::Broken { Block::Stone } else { block };
+                                break 'group;
+                            }
+                        }
+                    }
+                }
+                groups[at(s)] = found;
+            }
+        }
+    }
+    let origin = chunk * CHUNK;
+    for sy in 0..n {
+        for sz in 0..n {
+            for sx in 0..n {
+                let s = IVec3::new(sx, sy, sz);
+                let block = groups[at(s)];
+                if block == Block::Air {
+                    continue;
+                }
+                let cell = origin + s * step;
+                let (top, side_colour) = block.colors();
+                let mut tint = 0.9 + 0.2 * hash(cell);
+                let mut warm = 0.0;
+                if matches!(block, Block::Grass | Block::Turf | Block::Leaves) {
+                    let drift = patch(cell) - 0.5;
+                    tint *= 1.0 + drift * 0.35;
+                    warm = drift * 0.25;
+                }
+                for (normal, u, v) in FACES {
+                    if (cell.y == 0 && normal == IVec3::NEG_Y) || groups[at(s + normal)] != Block::Air {
+                        continue;
+                    }
+                    let base = if normal == IVec3::Y { top } else { side_colour };
+                    let start = m.positions.len() as u32;
+                    let mut ao = [0.0f32; 4];
+                    for (i, (su, sv)) in [(0, 0), (1, 0), (1, 1), (0, 1)].into_iter().enumerate() {
+                        let corner = cell + (normal.max(IVec3::ZERO) + u * su + v * sv) * step;
+                        let (du, dv) = (u * (su * 2 - 1), v * (sv * 2 - 1));
+                        let occ = |d: IVec3| (!liquid && groups[at(s + normal + d)] != Block::Air) as i32;
+                        let (a, b, c) = (occ(du), occ(dv), occ(du + dv));
+                        let level = if a + b == 2 { 0 } else { 3 - (a + b + c) };
+                        ao[i] = 0.45 + 0.55 * level as f32 / 3.0;
+                        let k = ao[i] * tint;
+                        m.positions.push((corner.as_vec3() * CELL).to_array());
+                        m.normals.push(normal.as_vec3().to_array());
+                        m.colors.push([base[0] * k * (1.0 + warm), base[1] * k, base[2] * k * (1.0 - warm), if liquid { 0.8 } else { 1.0 }]);
+                    }
+                    if ao[0] + ao[2] > ao[1] + ao[3] {
+                        m.indices.extend([start, start + 1, start + 2, start, start + 2, start + 3]);
+                    } else {
+                        m.indices.extend([start + 1, start + 2, start + 3, start + 1, start + 3, start]);
+                    }
+                }
+            }
+        }
+    }
+    m
+}

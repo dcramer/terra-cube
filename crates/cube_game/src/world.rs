@@ -3,7 +3,11 @@
 
 use bevy::{asset::RenderAssetUsages, light::CascadeShadowConfigBuilder, mesh::Indices, prelude::*, render::render_resource::PrimitiveTopology};
 use cube_sim::terrain::{self, Land, SEA};
-use cube_voxel::{Block, CELL, CHUNK, World as Voxels, mesh::mesh_chunk};
+use bevy::camera::visibility::VisibilityRange;
+use cube_voxel::{
+    Block, CELL, CHUNK, World as Voxels,
+    mesh::{mesh_chunk, mesh_chunk_far},
+};
 use std::collections::HashSet;
 
 pub struct WorldPlugin;
@@ -51,7 +55,7 @@ impl Terrain {
 
 /// Far things fade into the sky: the island's far shore is hazy, the sea has no edge.
 pub fn fog() -> DistanceFog {
-    DistanceFog { color: SKY, falloff: FogFalloff::Linear { start: 80.0, end: 330.0 }, ..default() }
+    DistanceFog { color: SKY, falloff: FogFalloff::Linear { start: 180.0, end: 700.0 }, ..default() }
 }
 
 pub const SKY: Color = Color::srgb(0.53, 0.72, 0.90);
@@ -99,19 +103,34 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     spawn_lights(&mut commands, true);
 }
 
-/// Meshes one chunk and spawns what it draws: its solid cells, and its water.
+/// The levels of detail a chunk is drawn at: how many cells a side are taken as one, and the
+/// metres from the camera between which that level shows. Each fades into the next across
+/// eight metres, so nothing pops. Up close every cell is drawn, with ground cover and the
+/// fine shape of broken cells; past 48 m the cells are half a metre, a quarter of the faces;
+/// past 112 m a metre, a sixteenth.
+pub const LEVELS: [(i32, f32, f32); 3] = [(1, 0.0, 48.0), (2, 48.0, 112.0), (4, 112.0, f32::MAX)];
+const FADE: f32 = 8.0;
+
+/// Meshes one chunk and spawns what it draws: its solid cells and its water, at every level.
 fn draw_chunk(commands: &mut Commands, meshes: &mut Assets<Mesh>, look: &Look, voxels: &Voxels, chunk: IVec3) {
-    for (liquid, material) in [(false, &look.solid), (true, &look.water)] {
-        let data = mesh_chunk(voxels, chunk, liquid);
-        if data.indices.is_empty() {
-            continue;
+    // Every level of a chunk is drawn from the chunk's middle, so the camera's distance to it
+    // is the same whichever level is asked: the fade between two levels needs that.
+    let middle = ((chunk * CHUNK).as_vec3() + CHUNK as f32 / 2.0) * CELL;
+    for (step, from, to) in LEVELS {
+        let range = VisibilityRange { start_margin: (from - FADE).max(0.0)..from, end_margin: if to == f32::MAX { 1.0e9..1.1e9 } else { to - FADE..to }, use_aabb: false };
+        for (liquid, material) in [(false, &look.solid), (true, &look.water)] {
+            let mut data = if step == 1 { mesh_chunk(voxels, chunk, liquid) } else { mesh_chunk_far(voxels, chunk, liquid, step) };
+            data.positions.iter_mut().for_each(|p| *p = (Vec3::from_array(*p) - middle).to_array());
+            if data.indices.is_empty() {
+                continue;
+            }
+            let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
+                .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
+                .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
+                .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, data.colors)
+                .with_inserted_indices(Indices::U32(data.indices));
+            commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material.clone()), Transform::from_translation(middle), ChunkMesh(chunk), range.clone()));
         }
-        let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, data.colors)
-            .with_inserted_indices(Indices::U32(data.indices));
-        commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material.clone()), ChunkMesh(chunk)));
     }
 }
 

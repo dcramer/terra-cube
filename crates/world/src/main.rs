@@ -87,8 +87,21 @@ fn survey_command(args: &Args) -> ! {
     let s = survey::survey(&land);
     // What the game will have to draw: every chunk meshed as it meshes them.
     let faces: usize = world.chunks.keys().map(|&c| [false, true].map(|liquid| cube_voxel::mesh::mesh_chunk(&world, c, liquid).indices.len() / 6).iter().sum::<usize>()).sum();
+    // The same seen from far off, cells taken two and four at a time: what a distant chunk costs.
+    let far = |step: i32| world.chunks.keys().map(|&c| [false, true].map(|liquid| cube_voxel::mesh::mesh_chunk_far(&world, c, liquid, step).indices.len() / 6).iter().sum::<usize>()).sum::<usize>();
+    let (half, quarter) = (far(2), far(4));
+    // What is drawn from the middle of the island, each chunk at the level its distance gives.
+    let drawn: usize = world
+        .chunks
+        .keys()
+        .map(|&c| {
+            let away = ((c.as_vec3() + 0.5) * cube_voxel::CHUNK as f32 * CELL - Vec3::new(0.0, SEA as f32 * CELL, 0.0)).length();
+            let step = if away < 48.0 { 1 } else if away < 112.0 { 2 } else { 4 };
+            [false, true].map(|liquid| if step == 1 { cube_voxel::mesh::mesh_chunk(&world, c, liquid) } else { cube_voxel::mesh::mesh_chunk_far(&world, c, liquid, step) }.indices.len() / 6).iter().sum::<usize>()
+        })
+        .sum();
     let shares: Vec<String> = Biome::ALL.iter().map(|b| format!("{} {:.0}%", b.name(), s.share[*b as usize] * 100.0)).collect();
-    println!("land seed={} {:.0}m across, {:.2}m cells: {} · trees {} · highest {:.0}m · cliffs {:.0}% · reached on foot {:.0}%, swimming {:.0}% · {} chunks, {:.1}M faces to draw", args.seed, (land.span * 2) as f32 * CELL, CELL, shares.join(" "), s.trees, s.highest, s.cliffs * 100.0, s.on_foot * 100.0, s.swimming * 100.0, world.chunks.len(), faces as f32 / 1e6);
+    println!("land seed={} {:.0}m across, {:.2}m cells: {} · trees {} · highest {:.0}m · cliffs {:.0}% · reached on foot {:.0}%, swimming {:.0}% · {} chunks, {:.1}M faces in full ({:.2}M at half, {:.2}M at a quarter), {:.2}M drawn from the start", args.seed, (land.span * 2) as f32 * CELL, CELL, shares.join(" "), s.trees, s.highest, s.cliffs * 100.0, s.on_foot * 100.0, s.swimming * 100.0, world.chunks.len(), faces as f32 / 1e6, half as f32 / 1e6, quarter as f32 / 1e6, drawn as f32 / 1e6);
     let mut checks = Checks(Vec::new());
     let share = |b: Biome| s.share[b as usize];
     checks.bar("water", share(Biome::Water), (0.2..=0.6).contains(&share(Biome::Water)), "0.20 to 0.60 of the world");
@@ -99,6 +112,7 @@ fn survey_command(args: &Args) -> ! {
     checks.bar("highest", s.highest, s.highest >= 15.0, "at least 15 m");
     checks.bar("cliffs", s.cliffs, (0.03..=0.35).contains(&s.cliffs), "0.03 to 0.35 of the land");
     checks.bar("faces", faces as f32 / 1e6, faces <= 4_000_000, "at most 4 million");
+    checks.bar("drawn", drawn as f32 / 1e6, drawn <= 1_500_000, "at most 1.5 million from the start, with levels of detail");
     checks.bar("on-foot", s.on_foot, s.on_foot >= 0.5, "at least 0.50 of the land from the start");
     checks.bar("swimming", s.swimming, s.swimming >= 0.9, "at least 0.90 of the land from the start");
     checks.finish()

@@ -20,7 +20,7 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 | `tools/tripo` | Tripo Studio CLI (TypeScript, Node ≥ 22.18, no dependencies). Forge drives it; see its README before calling it by hand. |
 | `assets/creatures/style.toml` | The art style and body plans, as forge sends them. Change the look here, not per creature. |
 | `assets/creatures/<id>/` | `creature.toml` (written by hand; `[life]` is how it behaves and where it lives), `forge.lock` (what Tripo made), `meta.toml` and `model.glb` (made by forge; never edit). |
-| `docs/` | [engine.md](docs/engine.md) design and order of work · [pipeline.md](docs/pipeline.md) making creatures · [art-guide.md](docs/art-guide.md) how things should look · [development.md](docs/development.md) setup and commands · `research/` dated notes with sources. |
+| `docs/` | [engine.md](docs/engine.md) design and order of work · [pipeline.md](docs/pipeline.md) making creatures · [art-guide.md](docs/art-guide.md) how creatures and the land should look, and what was tried and dropped · [development.md](docs/development.md) setup and commands · `research/` dated notes with sources. |
 | `.work/`, `shots/` | Scratch: Tripo downloads and rendered sheets. Ignored by git; safe to delete. |
 
 ## Commands

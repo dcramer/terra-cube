@@ -69,6 +69,20 @@ Built 2026-11-10. `cube_sim::life` and `mind`; `cargo world run` judges it.
 - **Random choices come from one seeded generator** in the `Sim`, and agents are visited in id order, so a seed replays exactly (tested).
 - **Judged by numbers** (`cargo world run`): no creature ends a tick inside the ground or falls out of the world, each kind walks into something for at most 8% of the time, is walled in for at most 10%, swims for at most 5%, and goes at least 3 m.
 
+## Seeing far
+
+Started 2026-11-10, when the island was drawn whole at full detail and hazed out from 80 m.
+
+- **Three levels of detail a chunk, chosen by distance** (`world::LEVELS`): every cell to 48 m; cells taken two a side to 112 m (a quarter of the faces); four a side beyond (a sixteenth). `mesh_chunk_far` makes the coarse ones: a group of cells is solid if any is, and is the block highest in it, so distant ground has no holes and trees keep their bulk; ground cover and the bits of broken cells are left out. From the middle of the island this draws 1.4 million faces of the 3.3 million the full mesh has.
+- **Bevy's `VisibilityRange` does the switching**, with a fade of 8 m between levels so nothing pops. Every level of a chunk is drawn from an entity at the chunk's middle, with its vertices given from there: the fade is computed from the entity's origin, and with all chunks at the world's origin every one faded as if it stood there (the first try: half the island ghosted, the rest missing). `use_aabb` is not for crossfades.
+- **Haze from 180 m to 700 m**, so the island is clear from end to end and the sea has no edge.
+- **What this does not do.** Every level of every chunk is still meshed at the start and the whole world is still in memory (about 1.6 GB at its peak, four seconds to start), so the island cannot grow yet. In order:
+  1. Mesh a chunk only when it is first near enough to need that level, a few a frame and off the main thread; drop levels that are far behind.
+  2. Merge flat faces of one colour (greedy meshing). The per-cell tint has to move out of the vertices first (a small noise texture or a shader), or nothing merges.
+  3. Make and keep chunks only near the player, the rest as the seed and what has been changed: then the world is as big as wanted.
+  4. Beyond the last chunks, one coarse mesh drawn from `Land`'s height map and biome colours, to the horizon: mountains seen from kilometres off cost almost nothing.
+- **Judged by** `cargo world survey`: faces in full, at half and at a quarter, and what is drawn from the start (bar: 1.5 million).
+
 ## Creatures
 
 Full detail in [pipeline.md](pipeline.md). The design choices:
