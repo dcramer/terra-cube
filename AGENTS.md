@@ -17,6 +17,7 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 | `crates/cube_game` | The Bevy app: draws what the simulation holds, takes the player's keys. Sky, light, wind and what drifts in the air (`world`, `air`). Also the sandbox panel, contact sheets, scene pictures. |
 | `crates/world` | `cargo world`: the land and its creatures judged headless (`survey`, `run`, `life`, `map`, `grade`, `who`, `dig`). |
 | `crates/forge` | The creature pipeline CLI. Each file's header says what it holds; `main.rs` has the map. |
+| `tools/audio` | `level.py`: measures every sound's loudness and brings them to one level (ffmpeg). |
 | `tools/xkeys` | Real key presses and clicks on an X display, and `make window`'s test of the game's window with them. Python and libXtst, nothing to install. |
 | `tools/tripo` | Tripo Studio CLI (TypeScript, Node ≥ 22.18, no dependencies). Forge drives it; see its README before calling it by hand. |
 | `assets/textures/` | Photographed surface materials (CC0), one per grain; its README says where each came from. |
@@ -41,6 +42,7 @@ cargo world survey                 # the land in numbers; `cargo world run`: its
 cargo world life                   # the ecology: how much of the island suits each kind of life, when it is about, where each animal settled
 cargo world map shots/map.png      # one picture from above with where every creature went
 make window                        # the real window on an Xvfb, driven by real key presses (tools/xkeys), judged from the trace
+make prove                         # every judgment in one go, a line each: check, survey, run, life, sound levels, fight, swim, window
 make swim                          # the player put in deep water in the real game: floats, swims, is heard (`cargo world find deep` finds it)
 make fight                         # the player fights a goblin in the real game, judged from the trace: hit, kill, sounds
 make slice                         # shots/slice/*.png: six fixed views (meadow at noon, dawn and night, forest, shore, from the air); look at all six after any change to the world's look
