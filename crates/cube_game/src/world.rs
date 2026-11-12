@@ -35,7 +35,15 @@ pub struct Wind {
     /// The season, for the shader: the tint of leaves and grass (rgb) and how much snow lies.
     #[uniform(100)]
     pub season: Vec4,
+    /// How hard the wind blows, 0 to 1, in x.
+    #[uniform(101)]
+    pub wind: Vec4,
 }
+
+/// How hard the wind blows now, 0 to 1 (`cube_sim::sky::wind`, or `--wind`): the one wind,
+/// for the leaves, for what is heard and for what drifts.
+#[derive(Resource, Default)]
+pub struct Breeze(pub f32);
 
 impl MaterialExtension for Wind {
     fn vertex_shader() -> ShaderRef {
@@ -195,7 +203,7 @@ impl Plugin for WorldPlugin {
                 bevy::pbr::ScreenSpaceReflections { min_perceptual_roughness: 0.0..0.0, linear_steps: 48, thickness: 1.5, ..default() }, bevy::core_pipeline::prepass::DepthPrepass, bevy::core_pipeline::prepass::DeferredPrepass, bevy::anti_alias::taa::TemporalAntiAliasing::default()));
             });
         }
-        app.add_plugins(MaterialPlugin::<Windy>::default()).insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().init_resource::<Cost>().add_systems(Startup, setup).add_systems(Update, (regions, stream).chain()).add_systems(Update, (sky, ripple, seasons));
+        app.add_plugins(MaterialPlugin::<Windy>::default()).insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().init_resource::<Cost>().init_resource::<Breeze>().add_systems(Startup, setup).add_systems(Update, (regions, stream).chain()).add_systems(Update, (sky, ripple, seasons));
     }
 }
 
@@ -467,11 +475,11 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     };
     // The paint, and the relief that goes with it: which way each point of a surface faces.
     let (paint, relief) = (picture(atlas.rgba, TextureFormat::Rgba8UnormSrgb), picture(atlas.relief, TextureFormat::Rgba8Unorm));
-    let whole = windy.add(ExtendedMaterial { base: StandardMaterial { base_color: Color::WHITE, base_color_texture: Some(paint.clone()), normal_map_texture: Some(relief.clone()), perceptual_roughness: 0.95, reflectance: 0.2, ..default() }, extension: Wind { season: Vec4::new(1.0, 1.0, 1.0, 0.0) } });
+    let whole = windy.add(ExtendedMaterial { base: StandardMaterial { base_color: Color::WHITE, base_color_texture: Some(paint.clone()), normal_map_texture: Some(relief.clone()), perceptual_roughness: 0.95, reflectance: 0.2, ..default() }, extension: Wind { season: Vec4::new(1.0, 1.0, 1.0, 0.0), wind: Vec4::splat(0.4) } });
     let material = windy.add(ExtendedMaterial { base: StandardMaterial { base_color: Color::WHITE, base_color_texture: Some(paint), normal_map_texture: Some(relief), perceptual_roughness: 0.95, reflectance: 0.2,
         // Foliage has gaps cut in it (the atlas's alpha), and through a gap the inside of the
         // crown's far side is seen: so nothing is culled by which way it faces.
-        alpha_mode: AlphaMode::Mask(0.5), cull_mode: None, double_sided: true, ..default() }, extension: Wind { season: Vec4::new(1.0, 1.0, 1.0, 0.0) } });
+        alpha_mode: AlphaMode::Mask(0.5), cull_mode: None, double_sided: true, ..default() }, extension: Wind { season: Vec4::new(1.0, 1.0, 1.0, 0.0), wind: Vec4::splat(0.4) } });
     // Water is its own mesh and material: it is blended over what is under it.
     // And it moves: ripples, as a picture of which way the surface faces, slid across it by
     // `ripple`. Smooth enough to throw the sun back as a glitter path.
@@ -731,16 +739,17 @@ pub fn season_look(when: f32) -> Vec4 {
     tint.extend(snow)
 }
 
-fn seasons(live: Option<Res<crate::motion::Live>>, look: Option<Res<Look>>, mut windy: ResMut<Assets<Windy>>, mut was: Local<Vec4>) {
+fn seasons(args: Res<crate::Args>, live: Option<Res<crate::motion::Live>>, look: Option<Res<Look>>, mut windy: ResMut<Assets<Windy>>, mut breeze: ResMut<Breeze>, mut was: Local<(Vec4, f32)>) {
     let (Some(live), Some(look)) = (live, look) else { return };
     let now = season_look(live.0.when);
-    if now.distance(*was) < 0.004 {
+    breeze.0 = args.wind.unwrap_or_else(|| cube_sim::sky::wind(live.0.when));
+    if now.distance(was.0) < 0.004 && (breeze.0 - was.1).abs() < 0.004 {
         return;
     }
-    *was = now;
+    *was = (now, breeze.0);
     for handle in [&look.solid, &look.whole] {
         if let Some(mut material) = windy.get_mut(handle) {
-            material.extension.season = now;
+            (material.extension.season, material.extension.wind) = (now, Vec4::splat(breeze.0));
         }
     }
 }

@@ -212,24 +212,18 @@ struct Beds {
     said: f32,
 }
 
-/// The wind's strength from moment to moment, 0 to 1: three slow swells that never fall into
-/// step, so it rises and drops as wind does and a gust can be told (for the leaves).
-fn gust(t: f32) -> f32 {
-    0.5 + 0.5 * (0.5 * (t * 0.11).sin() + 0.3 * (t * 0.29 + 1.3).sin() + 0.2 * (t * 0.67 + 4.1).sin())
-}
-
 /// The air of the place the camera is in, as the ecology gives it. Each bed is quiet, and is
 /// never one file going round: every half minute or so another recording of the set comes in
 /// under the one playing, at a speed a little its own, and that one goes out. A bed that is
 /// not heard here is not played at all.
-fn air(mut commands: Commands, time: Res<Time>, mut bank: ResMut<Bank>, live: Option<Res<Live>>, terrain: Option<Res<Terrain>>, cameras: Query<&GlobalTransform, With<Camera3d>>, torches: Query<(), With<Torch>>, mut beds: Query<(Entity, &mut Bed, Option<&mut AudioSink>)>, mut state: Local<Beds>) {
+fn air(mut commands: Commands, time: Res<Time>, mut bank: ResMut<Bank>, live: Option<Res<Live>>, terrain: Option<Res<Terrain>>, cameras: Query<&GlobalTransform, With<Camera3d>>, torches: Query<(), With<Torch>>, breeze: Res<crate::world::Breeze>, mut beds: Query<(Entity, &mut Bed, Option<&mut AudioSink>)>, mut state: Local<Beds>) {
     let (Some(live), Some(terrain), Some(eye)) = (live, terrain, cameras.iter().next().map(|c| c.translation())) else { return };
     let a = ecology::ambience(&terrain.2.place(&terrain.1, eye.x, eye.z), live.0.when);
     let (t, dt) = (time.elapsed_secs(), time.delta_secs());
     // Of a file levelled to -27 dB: with the air's 0.3 and the master's 0.8, the wind of an
     // open meadow lies between -62 dB in a lull and -53 in a gust, a summer night's bed of
     // insects at -56 (the crickets heard one by one are over it), a river at its bank at -53. A footfall is near -38.
-    let want = [a.wind * 0.3 * (0.35 + 0.65 * gust(t)), a.night * 0.14, a.water * 0.22, if torches.is_empty() { 0.0 } else { 0.25 }];
+    let want = [a.wind * 0.3 * (0.2 + 1.1 * breeze.0).min(1.0), a.night * 0.14, a.water * 0.22, if torches.is_empty() { 0.0 } else { 0.25 }];
     let ease = 1.0 - (-1.5 * dt).exp();
     let say = bank.said && t >= state.said;
     if say {
@@ -485,7 +479,7 @@ fn about(bank: &mut Bank, near: f32, far: f32, low: f32, high: f32) -> Vec3 {
 /// stir when the wind gusts; grasshoppers and bees on a summer's day in the open; frogs by
 /// water from dusk; an owl in the wood at night, and the crickets of a warm one. How often is the ecology's (`ambience`):
 /// nothing here knows the place or the hour.
-fn small(mut commands: Commands, time: Res<Time>, mut bank: ResMut<Bank>, live: Option<Res<Live>>, terrain: Option<Res<Terrain>>, singers: Query<(&crate::air::Sings, &Transform)>, mut due: Local<Small>) {
+fn small(mut commands: Commands, time: Res<Time>, mut bank: ResMut<Bank>, live: Option<Res<Live>>, terrain: Option<Res<Terrain>>, singers: Query<(&crate::air::Sings, &Transform)>, breeze: Res<crate::world::Breeze>, mut due: Local<Small>) {
     let (Some(live), Some(terrain)) = (live, terrain) else { return };
     let (t, eye) = (time.elapsed_secs(), bank.ear);
     let place = terrain.2.place(&terrain.1, eye.x, eye.z);
@@ -587,8 +581,8 @@ fn small(mut commands: Commands, time: Res<Time>, mut bank: ResMut<Bank>, live: 
         }
     }
     // Leaves, as a gust comes on.
-    let wind = gust(t);
-    if a.leaves > 0.1 && wind > 0.6 && wind > due.wind && t >= due.rustle {
+    let wind = breeze.0;
+    if a.leaves > 0.1 && wind > 0.5 && wind > due.wind && t >= due.rustle {
         due.rustle = t + 4.0 + bank.roll() * 8.0;
         let from = about(&mut bank, 5.0, 25.0, 2.0, 10.0);
         bank.far(&mut commands, "rustle", from, 0.55 * a.leaves * wind, 1.0);

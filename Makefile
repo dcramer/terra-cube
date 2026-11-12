@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: wind feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -84,6 +84,7 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 	@tools/pace.sh --yaw 0.7
 	@tools/feet.sh player -60,20 2.0
 	@tools/seasons.sh
+	@tools/wind.sh
 	@cargo world years 24 | tail -1 | sed 's/^ok$$/ok years: twenty-four years, no kind dies out and each settles/'
 
 years: ## the island's creatures by the day for twenty-four years: each kind's numbers year by year, whether each lasts and settles, and who hunted what fell
@@ -96,6 +97,9 @@ sound: ## no window: five minutes heard in a meadow by day and by a shore from d
 
 seasons: ## no window: the meadow in summer and winter, judged by the ground's colour: green, then snow
 	@tools/seasons.sh
+
+wind: ## no window: a wood pictured half a second apart in still air and in a hard wind: the leaves must move in the one and not the other
+	@tools/wind.sh
 
 pace: ## no window: the player run across the world for half a minute on the graphics card: how long the world took to be ready, and every frame's time while he ran, against bars
 	@tools/pace.sh --yaw 0.7

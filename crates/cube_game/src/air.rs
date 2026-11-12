@@ -55,9 +55,9 @@ const BUTTERFLIES: usize = 20;
 const FLOCKS: usize = 3;
 
 /// The wind, as in `assets/shaders/wind.wesl`: which way, and metres a second for what
-/// drifts on it.
+/// drifts on it when it blows its hardest (`world::Breeze` says how hard it blows now).
 const WIND: Vec3 = Vec3::new(0.8, 0.0, 0.6);
-const DRIFT: f32 = 0.45;
+const DRIFT: f32 = 1.0;
 
 /// 0 to 1, a different one each call.
 fn roll(state: &mut u32) -> f32 {
@@ -289,14 +289,14 @@ fn eye(cameras: &Query<&GlobalTransform, With<Camera3d>>) -> Option<Vec3> {
 
 /// Pollen drifts downwind and wanders, kept in a box round the camera: one that leaves by
 /// one side comes in by the other, so there is always some wherever the camera goes.
-fn motes(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>, terrain: Option<Res<Terrain>>, mut motes: Query<(&Mote, &mut Transform)>) {
+fn motes(time: Res<Time>, breeze: Res<crate::world::Breeze>, cameras: Query<&GlobalTransform, With<Camera3d>>, terrain: Option<Res<Terrain>>, mut motes: Query<(&Mote, &mut Transform)>) {
     let (Some(eye), Some(terrain)) = (eye(&cameras), terrain) else { return };
     let (t, dt) = (time.elapsed_secs(), time.delta_secs());
     let reach = Vec3::new(13.0, 5.0, 13.0);
     for (mote, mut at) in &mut motes {
         let own = mote.0;
         let wander = Vec3::new((t * 0.7 + own).sin(), (t * 0.9 + own * 1.7).sin() * 0.6, (t * 0.6 + own * 2.3).cos()) * 0.18;
-        at.translation += (WIND * DRIFT + wander) * dt;
+        at.translation += (WIND * DRIFT * (0.1 + breeze.0) + wander) * dt;
         let mut off = at.translation - eye;
         // Far off (at the start, or after the camera jumps): anywhere in the box, by its number.
         if off.abs().max_element() > reach.x * 3.0 {
@@ -317,7 +317,7 @@ fn motes(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>, terr
 
 /// A leaf tumbles down in a wood, swinging as it falls; on the ground it is gone, and
 /// another starts from the crowns somewhere near the camera.
-fn leaves(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>, terrain: Option<Res<Terrain>>, mut leaves: Query<(&Leaf, &mut Transform)>, mut state: Local<u32>) {
+fn leaves(time: Res<Time>, breeze: Res<crate::world::Breeze>, cameras: Query<&GlobalTransform, With<Camera3d>>, terrain: Option<Res<Terrain>>, mut leaves: Query<(&Leaf, &mut Transform)>, mut state: Local<u32>) {
     let (Some(eye), Some(terrain)) = (eye(&cameras), terrain) else { return };
     if *state == 0 {
         *state = 0x1234_5679;
@@ -326,14 +326,14 @@ fn leaves(time: Res<Time>, cameras: Query<&GlobalTransform, With<Camera3d>>, ter
     for (leaf, mut at) in &mut leaves {
         let own = leaf.1;
         let swing = Vec3::new((t * 1.9 + own).sin(), 0.0, (t * 1.6 + own * 1.3).cos()) * 0.5;
-        at.translation += (WIND * DRIFT * 1.4 + swing + Vec3::NEG_Y * (0.8 + 0.3 * (t * 2.3 + own).sin())) * dt;
+        at.translation += (WIND * DRIFT * 1.4 * (0.1 + breeze.0) + swing + Vec3::NEG_Y * (0.8 + 0.3 * (t * 2.3 + own).sin())) * dt;
         at.rotation *= Quat::from_scaled_axis(leaf.0 * dt);
         let ground = terrain.ground(at.translation.x, at.translation.z);
         if at.translation.y < ground + 0.03 || at.translation.distance(eye) > 45.0 {
             // It waits out of sight until a tree near the camera lets some go: now and then a
             // gust takes a flurry from one crown, and between gusts one comes down alone.
             at.translation = Vec3::new(0.0, -500.0, 0.0);
-            let gusting = (t * 0.11).fract() < 0.18;
+            let gusting = breeze.0 > 0.55;
             if roll(&mut state) > if gusting { 0.25 } else { 0.012 } {
                 continue;
             }

@@ -16,15 +16,17 @@ import bevy_render::globals::Globals;
 // with (the default, since water reflects the land), so the season's tint and the snow have
 // to be here too: left out, a year went by in one green.
 @group(constants::MATERIAL_BIND_GROUP) @binding(100) var<uniform> season: vec4<f32>;
+// How hard the wind blows now, 0 to 1 (x), from the game (`cube_sim::sky::wind`).
+@group(constants::MATERIAL_BIND_GROUP) @binding(101) var<uniform> wind: vec4<f32>;
 
-const REACH: f32 = 0.16;
+const REACH: f32 = 0.3;
 const DIR: vec2<f32> = vec2<f32>(0.8, 0.6);
 
 fn sway(world: vec3<f32>, free: f32, t: f32) -> vec3<f32> {
     let along = dot(world.xz, DIR);
     let gust = 0.35 + 0.65 * (0.5 + 0.5 * sin(along * 0.15 - t * 1.3 + sin(world.z * 0.05 + t * 0.2) * 2.0));
     let flutter = sin(world.x * 2.3 + world.z * 1.7 + world.y * 1.1 + t * 3.7) * 0.4 + sin(world.z * 3.1 - world.x * 1.3 + t * 5.9) * 0.25;
-    let push = REACH * free * gust * (0.6 + flutter);
+    let push = REACH * wind.x * free * gust * (0.6 + flutter);
     return vec3<f32>(DIR.x * push, -abs(push) * 0.2, DIR.y * push);
 }
 

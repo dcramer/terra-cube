@@ -78,6 +78,8 @@ pub struct Args {
     pub speed: f32,
     /// The player starts with a torch lit.
     pub torch: bool,
+    /// How hard the wind blows, 0 to 1, in place of the weather's.
+    pub wind: Option<f32>,
     /// What grows drawn as low-poly shapes, not as cubes (`flora`): for comparison.
     pub shapes: bool,
     /// One thing that grows, stood alone at the start to be looked at (`plants::specimen`).
@@ -229,6 +231,7 @@ fn parse_args() -> Args {
             "--quiet" => args.quiet = true,
             "--speed" => args.speed = it.next().and_then(|v| v.parse().ok()).unwrap_or(1.0),
             "--torch" => args.torch = true,
+            "--wind" => args.wind = it.next().and_then(|v| v.parse().ok()),
             "--shapes" => args.shapes = true,
             "--bits" => cube_voxel::mesh::BITS.store(true, std::sync::atomic::Ordering::Relaxed),
             "--blades" => cube_voxel::mesh::BLADES.store(true, std::sync::atomic::Ordering::Relaxed),

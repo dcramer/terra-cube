@@ -36,6 +36,20 @@ pub enum Season {
     Winter,
 }
 
+/// How hard the wind blows, from 0 (still air) to 1 (as hard as it gets): the weather, which
+/// changes over hours and days (a still morning, a blowing afternoon, a windy week), and on
+/// it the gusts, three swells of some seconds that never fall into step. The one wind:
+/// what bends the leaves, what is heard and what drifts all take it from here. (Until
+/// 2026-11-11 each of the three made its own, and leaves were heard to gust while they
+/// were seen to hang still.)
+pub fn wind(when: f32) -> f32 {
+    use std::f32::consts::TAU;
+    let weather = 0.58 + 0.25 * (when * TAU * 0.37 + 0.8).sin() + 0.15 * (when * TAU * 1.9 + 2.0).sin();
+    let t = when * DAY;
+    let gust = 0.5 + 0.5 * (0.5 * (t * 0.11).sin() + 0.3 * (t * 0.29 + 1.3).sin() + 0.2 * (t * 0.67 + 4.1).sin());
+    weather * (0.3 + 0.7 * gust)
+}
+
 /// `when` after `seconds` more.
 pub fn later(when: f32, seconds: f32) -> f32 {
     when + seconds / DAY
@@ -112,6 +126,17 @@ pub fn moonlight(when: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_wind_is_never_still_for_long_nor_always_blowing() {
+        // Over a season, by the second: it stays in its range, there are lulls and blows,
+        // and it never jumps (what sways by it would jump too).
+        let all: Vec<f32> = (0..(super::SEASON * super::DAY) as u32).map(|s| super::wind(3.0 + s as f32 / super::DAY)).collect();
+        let (low, high) = (all.iter().copied().fold(1.0, f32::min), all.iter().copied().fold(0.0, f32::max));
+        let (lull, blow) = (all.iter().filter(|w| **w < 0.2).count() as f32 / all.len() as f32, all.iter().filter(|w| **w > 0.6).count() as f32 / all.len() as f32);
+        let jump = all.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0, f32::max);
+        assert!(low >= 0.0 && high <= 1.0 && lull > 0.05 && blow > 0.05 && jump < 0.12, "wind {low:.2} to {high:.2}, lulls {lull:.2}, blows {blow:.2}, jump {jump:.3}");
+    }
+
     use super::*;
 
     #[test]
