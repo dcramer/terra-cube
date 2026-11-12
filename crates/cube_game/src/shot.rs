@@ -23,7 +23,7 @@ pub struct ShotPlugin;
 
 impl Plugin for ShotPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ClearColor(Color::srgb(0.62, 0.66, 0.72))).init_resource::<Stage>().add_systems(Startup, setup).add_systems(Update, (layout, capture).chain());
+        app.insert_resource(ClearColor(Color::srgb(0.62, 0.66, 0.72))).init_resource::<Stage>().add_systems(Startup, setup).add_systems(Update, (layout, capture, ride).chain());
     }
 }
 
@@ -38,6 +38,10 @@ pub struct Stage {
     /// then every frame's time while the strip ran.
     pub load: Option<(f32, world::Cost)>,
     pub ran: Vec<f32>,
+    /// The camera's height each of those frames.
+    pub rode: Vec<f32>,
+    /// How far the foot that stood lowest was above the ground drawn under it, each frame.
+    pub stood: Vec<f32>,
     laid_out: bool,
     expected: usize,
     settled: u32,
@@ -218,6 +222,24 @@ fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, ti
     }
 }
 
+/// While a strip runs: how the camera rode and how the feet stood, each frame, for `gather` to say.
+fn ride(mut stage: ResMut<Stage>, eyes: Query<&GlobalTransform, With<Camera3d>>, terrain: Option<Res<world::Terrain>>, walkers: Query<(&crate::feet::Legs, &Transform, &crate::motion::Mover), With<crate::player::Controlled>>, live: Option<Res<crate::motion::Live>>, bones: Query<&GlobalTransform>) {
+    if stage.load.is_none() {
+        return;
+    }
+    if let Some(camera) = eyes.iter().next() {
+        stage.rode.push(camera.translation().y);
+    }
+    // (Only while it stands on the ground, and not at the lip of a drop, where the ground
+    // under a foot is another level altogether.)
+    if let (Some(terrain), Some((legs, at, _))) = (&terrain, walkers.iter().next().filter(|(.., m)| live.as_ref().and_then(|l| l.agent(m)).is_some_and(|a| a.body.grounded && !a.body.swimming))) {
+        let gaps = legs.legs.iter().filter_map(|[.., tip]| bones.get(*tip).ok()).filter_map(|g| crate::feet::ground_at(terrain, g.translation().x, g.translation().z, at.translation.y).map(|ground| g.translation().y - ground));
+        if let Some(lowest) = gaps.reduce(f32::min).filter(|g| g.abs() < 0.45) {
+            stage.stood.push(lowest);
+        }
+    }
+}
+
 /// One picture of a strip arriving. When the last is in they are set side by side and saved.
 fn gather(shot: On<bevy::render::view::screenshot::ScreenshotCaptured>, args: Res<Args>, cost: Option<Res<world::Cost>>, mut stage: ResMut<Stage>, mut exit: MessageWriter<AppExit>) {
     let Ok(picture) = shot.image.clone().try_into_dynamic() else { return };
@@ -233,6 +255,21 @@ fn gather(shot: On<bevy::render::view::screenshot::ScreenshotCaptured>, args: Re
         ran.sort_by(f32::total_cmp);
         let at = |part: f32| ran.get(((ran.len() as f32 * part) as usize).min(ran.len().saturating_sub(1))).copied().unwrap_or(0.0) * 1000.0;
         println!("load {took:.1}s · {}", at_load.since(&world::Cost::default()));
+        // How the camera rode: the most it rose or fell in one frame, and how unevenly (the
+        // middle change, frame to frame, of how fast its height was changing). A camera that
+        // takes each block of the ground as a step is rough; one that glides is not.
+        let moved: Vec<f32> = stage.rode.windows(2).map(|w| w[1] - w[0]).collect();
+        let mut jolts: Vec<f32> = moved.windows(2).map(|w| (w[1] - w[0]).abs()).collect();
+        jolts.sort_by(f32::total_cmp);
+        println!("camera worst-step={:.1}cm rough={:.2}cm p99={:.1}cm", moved.iter().fold(0.0f32, |m, v| m.max(v.abs())) * 100.0, jolts.get(jolts.len() / 2).copied().unwrap_or(0.0) * 100.0, jolts.get(jolts.len() * 99 / 100).copied().unwrap_or(0.0) * 100.0);
+        // How its feet stood: the foot that is lowest is the one on the ground, and it
+        // should be the same little way above the ground drawn under it whatever the
+        // slope. The middle of that, and how far it strays either way.
+        let mut stood = stage.stood.clone();
+        stood.sort_by(f32::total_cmp);
+        if let (Some(low), Some(mid), Some(high)) = (stood.get(stood.len() / 20), stood.get(stood.len() / 2), stood.get(stood.len() * 19 / 20)) {
+            println!("feet stance-gap mid={:.1}cm from={:.1}cm to={:.1}cm spread={:.1}cm", mid * 100.0, low * 100.0, high * 100.0, (high - low) * 100.0);
+        }
         println!("frames n={} p50={:.1}ms p99={:.1}ms worst={:.0}ms over33={} in {:.0}s · {}", ran.len(), at(0.5), at(0.99), at(1.0), ran.iter().filter(|f| **f > 1.0 / 30.0).count(), ran.iter().sum::<f32>(), cost.since(&at_load));
     }
     if let Some(dir) = std::path::Path::new(&stage.path).parent() {
@@ -274,7 +311,7 @@ pub struct ScenePlugin;
 
 impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Stage>().add_systems(Update, (scene, capture).chain());
+        app.init_resource::<Stage>().add_systems(Update, (scene, capture, ride).chain());
     }
 }
 

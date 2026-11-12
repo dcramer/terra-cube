@@ -344,9 +344,21 @@ fn follow(
     loading: Res<crate::loading::Loading>,
     controlled: Query<(&Controlled, &Creature, &Transform), Without<Orbit>>,
     mut cameras: Query<(&mut Orbit, &mut Transform)>,
+    time: Res<Time>,
+    mut steady: Local<Option<(f32, f32)>>,
 ) {
     let (Ok((c, creature, at)), Some(terrain)) = (controlled.single(), terrain) else { return };
     let def = &registry.0[creature.def];
+    // The camera rides a height of its own that comes after the body's: the ground is blocks,
+    // each a step of a hand or more, and a camera fixed to the body took every one of them as
+    // a jolt (the developer: "the camera shakes a lot when moving up and down terrain"). It
+    // is never more than half a metre behind, and a long drop or a waking elsewhere is taken
+    // at once.
+    let dt = time.delta_secs();
+    let (mut height, mut out) = steady.unwrap_or((at.translation.y, f32::MAX));
+    let behind = at.translation.y - height;
+    height = if behind.abs() > 3.0 || std::env::var_os("CAMERA_RAW").is_some() { at.translation.y } else { at.translation.y - (behind * (-(if c.first_person { 12.0 } else { 7.0 }) * dt).exp()).clamp(-0.5, 0.5) };
+    let at = &Transform { translation: at.translation.with_y(height), ..*at };
     for (mut orbit, mut transform) in &mut cameras {
         if args.scene.is_none() && !menus.open() && !loading.up {
             orbit.yaw -= motion.delta.x * 0.003;
@@ -373,10 +385,14 @@ fn follow(
             continue;
         }
         orbit.focus = at.translation + Vec3::Y * def.meta.height * 0.85;
-        let clear = terrain.0.raycast(orbit.focus, back, orbit.distance + 0.3).map_or(orbit.distance, |hit| (hit - 0.3).max(0.4));
-        transform.translation = orbit.focus + back * clear.min(orbit.distance);
+        // Ground in the way pulls it in quickly and lets it out slowly: on a slope the ground
+        // behind comes and goes with every step, and the camera went in and out with it.
+        let clear = terrain.0.raycast(orbit.focus, back, orbit.distance + 0.3).map_or(orbit.distance, |hit| (hit - 0.3).max(0.4)).min(orbit.distance);
+        out = if out == f32::MAX { clear } else { (out + (clear - out) * (1.0 - (-(if clear < out { 22.0 } else { 2.5 }) * dt).exp())).min(orbit.distance) };
+        transform.translation = orbit.focus + back * out;
         transform.look_at(orbit.focus, Vec3::Y);
     }
+    *steady = Some((height, out));
 }
 
 /// How far the controlled creature reaches to dig or build, and how big a hole and a lump are,

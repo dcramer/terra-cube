@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -81,6 +81,7 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 	@$(MAKE) --no-print-directory swim
 	@$(MAKE) --no-print-directory window
 	@tools/pace.sh --yaw 0.5
+	@tools/feet.sh player -60,20 2.0
 	@tools/seasons.sh
 	@cargo world years 24 | tail -1 | sed 's/^ok$$/ok years: twenty-four years, no kind dies out and each settles/'
 
@@ -109,6 +110,10 @@ fight: ## no window: the player fights a goblin in the real game; passes if he i
 
 sheet: need-id ## no window: shots/ID.png, every clip of one creature (ID=wolf)
 	cargo forge sheet $(ID)
+
+feet: ## no window: the player and a deer walked over a hillside with feet as the clip has them and then put on the ground: how far the standing foot strays each way (tools/feet.sh ID X,Z YAW for another)
+	@tools/feet.sh player -60,20 2.0
+	@tools/feet.sh deer 30,-40 0.5
 
 held: ## no window: shots/held.png, the sword and the torch in the player's hand, standing, walking and striking
 	@tools/held.sh

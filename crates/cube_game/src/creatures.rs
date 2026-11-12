@@ -40,6 +40,9 @@ pub struct Meta {
     pub joints: usize,
     #[serde(default)]
     pub clips: std::collections::HashMap<String, ClipMeta>,
+    /// Bones by role, as forge read them off the skeleton: `root`, `leg0`… (`feet`).
+    #[serde(default)]
+    pub bones: std::collections::HashMap<String, String>,
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]

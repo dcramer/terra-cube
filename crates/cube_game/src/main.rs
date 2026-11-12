@@ -15,6 +15,7 @@ mod audio;
 mod camera;
 mod creatures;
 mod far;
+mod feet;
 mod held;
 mod flora;
 mod hud;
@@ -51,6 +52,9 @@ pub struct Args {
     pub bodies: bool,
     /// Print the controlled body four times a second.
     pub trace: bool,
+    /// `--loose-feet`: feet as the clip has them, not put on the ground that is there: to set
+    /// beside the usual.
+    pub loose_feet: bool,
     /// The creature to control instead of the player.
     pub play_as: Option<String>,
     /// Seconds into a scene at which its picture is taken.
@@ -195,6 +199,7 @@ fn parse_args() -> Args {
             "--clips" => args.clips = list(it.next()),
             "--play" => args.play = true,
             "--trace" => args.trace = true,
+            "--loose-feet" => args.loose_feet = true,
             "--bodies" => args.bodies = true,
             "--script" => {
                 args.script = it.next().unwrap_or_default();
@@ -312,7 +317,7 @@ fn main() {
     .set(TaskPoolPlugin { task_pool_options: TaskPoolOptions { async_compute: bevy::app::TaskPoolThreadAssignmentPolicy { min_threads: 2, max_threads: usize::MAX, percent: 0.6, on_thread_spawn: None, on_thread_destroy: None }, ..default() } }))
     .insert_resource(args)
     .init_resource::<loading::Loading>()
-    .add_plugins((creatures::CreaturesPlugin, held::HeldPlugin));
+    .add_plugins((creatures::CreaturesPlugin, held::HeldPlugin, feet::FeetPlugin));
     if shot {
         // With no window the loop would idle at sixty a second, and every `pace` would read
         // 17 ms whatever the frame cost: run flat out, so the number is the work.

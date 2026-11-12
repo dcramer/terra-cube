@@ -218,6 +218,16 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
     }
     for (i, leg) in roles.legs.iter().enumerate() {
         bones.insert(format!("foot{i}"), skeleton.joints[leg.foot()].name.clone());
+        // For the game to put the foot on the ground that is there (`cube_game::feet`): the
+        // hip, the knee, and what stands on the ground (an upright figure's ankle, an
+        // animal's toe), as the made gaits take them. A leg whose bones' names are not its
+        // own (Tripo has given two bones one name) is left out.
+        let tip = if plan.upright && leg.chain.len() >= 4 { leg.chain[2] } else { leg.foot() };
+        let chain = [leg.chain[0], leg.chain[1.min(leg.chain.len() - 1)], tip].map(|j| skeleton.joints[j].name.clone());
+        let own = |n: &String| skeleton.joints.iter().filter(|j| &j.name == n).count() == 1;
+        if leg.chain.len() >= 3 && chain.iter().all(own) && chain[0] != chain[1] && chain[1] != chain[2] {
+            bones.insert(format!("leg{i}"), chain.join(">"));
+        }
     }
     // Its size as it stands (the first frame of idle), not as it rests: a T-pose is all arms.
     let stand = out.iter().find(|c| c.name == "idle").map_or_else(|| skeleton.rest(), |c| c.frames[0].clone());
