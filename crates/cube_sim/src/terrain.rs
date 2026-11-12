@@ -272,19 +272,8 @@ impl Land {
         let h = self.height(x, z);
         let over_sea = (h - SEA) as f32 * CELL;
         let moist = fbm(x as f32 * CELL / DAMP, z as f32 * CELL / DAMP, self.seed + 21);
-        if h < SEA {
-            Biome::Water
-        } else if over_sea <= 0.6 {
-            Biome::Shore
-        } else if over_sea > scale::SNOW_LINE {
-            Biome::Snow
-        } else if over_sea > scale::ROCK_LINE || self.slope(x, z) >= 3 {
-            Biome::Rock
-        } else if moist > 0.5 {
-            Biome::Forest
-        } else {
-            Biome::Meadow
-        }
+        // (An over-sea of nothing is the shore: only what is under the sea is water.)
+        crate::cover::biome(if h < SEA { over_sea.min(-1e-3) } else { over_sea.max(0.0) }, self.slope(x, z), moist)
     }
 }
 

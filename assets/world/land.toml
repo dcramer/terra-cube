@@ -2,6 +2,13 @@
 # Change the numbers here, or add a rule, and the world is made differently; no code places
 # anything by a rule of its own.
 #
+# [[biome]]         which biome a place is. The first rule that fits is taken; the last has
+#                   no test and is what is left. A rule fits where every test it gives holds:
+#                     below   under so many metres over the sea
+#                     upto    at or under so many
+#                     above   over so many
+#                     steep   it rises or falls so many cells or more to the next column
+#                     moist   how damp, between two numbers (0 dry, 1 wet)
 # [density.BIOME]   how thick the standing things are: of the places a tree could stand (one
 #                   to 6.5 m), the part that has one; of the places a small thing could (one
 #                   to 3.5 m), the part with undergrowth and the part with a rock.
@@ -29,6 +36,34 @@
 #   pick     a second roll must fall under this, plus `bloom` (a patch noise, 0 to 1) * adds
 #   scatter  a third roll must fall under this (times `bloom`, if the rule has one)
 #   tall     cover only: it stands this many cells, from one number to the other
+
+[[biome]]
+is = "water"
+below = 0.0
+
+[[biome]]
+is = "shore"
+upto = 0.6
+
+[[biome]]
+is = "snow"
+above = 105.0
+
+[[biome]]
+is = "rock"
+above = 55.0
+
+# A slope too steep to hold soil is bare rock at any height.
+[[biome]]
+is = "rock"
+steep = 3
+
+[[biome]]
+is = "forest"
+moist = [0.5, 1.0]
+
+[[biome]]
+is = "meadow"
 
 [density.forest]
 trees = 0.8

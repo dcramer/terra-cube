@@ -105,8 +105,20 @@ pub struct Undergrowth {
     pub young_conifers: f32,
 }
 
+/// A rule for which biome a place is (`[[biome]]`).
+#[derive(Deserialize, Clone, Debug)]
+struct Kind {
+    is: String,
+    below: Option<f32>,
+    upto: Option<f32>,
+    above: Option<f32>,
+    steep: Option<i32>,
+    moist: Option<[f32; 2]>,
+}
+
 #[derive(Deserialize)]
 struct File {
+    biome: Vec<Kind>,
     density: BTreeMap<String, Density>,
     undergrowth: Undergrowth,
     ground: Vec<Rule>,
@@ -122,6 +134,7 @@ struct Ready {
 }
 
 struct Land {
+    biomes: Vec<(Biome, Kind)>,
     density: [Density; 6],
     undergrowth: Undergrowth,
     ground: Vec<Ready>,
@@ -170,8 +183,20 @@ fn land() -> &'static Land {
         for (name, d) in &file.density {
             density[Biome::named(name).unwrap_or_else(|| panic!("assets/world/land.toml: no biome `{name}`")) as usize] = *d;
         }
-        Land { density, undergrowth: file.undergrowth, ground: ready(file.ground), cover: ready(file.cover) }
+        let biomes = file.biome.iter().map(|k| (Biome::named(&k.is).unwrap_or_else(|| panic!("assets/world/land.toml: no biome `{}`", k.is)), k.clone())).collect();
+        Land { biomes, density, undergrowth: file.undergrowth, ground: ready(file.ground), cover: ready(file.cover) }
     })
+}
+
+/// Which biome a place is: how many metres it stands over the sea, how many cells it rises
+/// or falls to the next column, how damp it is. The rules of `land.toml`, the first that
+/// fits. Until 2026-11-11 this was a chain of `if`s in `terrain`, its numbers in `scale`.
+pub fn biome(over: f32, slope: i32, moist: f32) -> Biome {
+    land()
+        .biomes
+        .iter()
+        .find(|(_, k)| k.below.is_none_or(|v| over < v) && k.upto.is_none_or(|v| over <= v) && k.above.is_none_or(|v| over > v) && k.steep.is_none_or(|v| slope >= v) && within(k.moist, moist))
+        .map_or(Biome::Meadow, |(b, _)| *b)
 }
 
 pub fn density(biome: Biome) -> Density {
@@ -249,5 +274,7 @@ mod tests {
         assert!(found(Biome::Meadow, Block::Tuft, false) && found(Biome::Meadow, Block::Flower, false) && found(Biome::Forest, Block::Fern, false));
         assert!((0..4000).any(|i| cover(&Site { x: i % 97, z: i / 97, wet: true, on: Block::Sand, ..site(Biome::Shore) }).is_some_and(|c| c.0 == Block::Reed && (2..=3).contains(&c.1))));
         assert!(density(Biome::Forest).trees > density(Biome::Meadow).trees && undergrowth().bush > 0.0);
+        // And which biome a place is: under the sea, at its edge, the heights, a cliff, wet and dry.
+        assert_eq!([biome(-1.0, 0, 0.9), biome(0.5, 0, 0.9), biome(120.0, 0, 0.2), biome(60.0, 0, 0.9), biome(10.0, 3, 0.9), biome(10.0, 0, 0.6), biome(10.0, 0, 0.4)], [Biome::Water, Biome::Shore, Biome::Snow, Biome::Rock, Biome::Rock, Biome::Forest, Biome::Meadow]);
     }
 }
