@@ -441,11 +441,11 @@ fn idle(sk: &Skeleton, roles: &Roles) -> Clip {
     Clip::made("idle", true, 4.0, sk, |t, pose| {
         let a = t * TAU;
         for &j in &roles.spine {
-            pose.rotations[j] = sk.turned(j, pitch(roles, 0.012 * a.sin()));
+            pose.rotations[j] = sk.turned(j, pitch(roles, 0.022 * a.sin()));
         }
         for (i, &j) in roles.head.iter().enumerate() {
             let share = 1.0 / roles.head.len() as f32;
-            let look = yaw(0.22 * share * a.sin()) * pitch(roles, 0.06 * share * (2.0 * a + 0.7).sin());
+            let look = yaw(0.3 * share * a.sin()) * pitch(roles, 0.12 * share * (2.0 * a + 0.7).sin());
             pose.rotations[j] = sk.turned(j, if i == 0 || roles.head.len() <= 2 { look } else { pitch(roles, 0.0) * look });
         }
         for (i, &j) in roles.tail.iter().enumerate() {
@@ -456,7 +456,12 @@ fn idle(sk: &Skeleton, roles: &Roles) -> Clip {
                 pose.rotations[j] = sk.turned(j, roll(roles, 0.02 * a.sin()));
             }
         }
-        pose.root_t = sk.root_moved(Vec3::Y * -0.006 * roles.height * (0.5 - 0.5 * a.cos()));
+        pose.root_t = sk.root_moved(Vec3::Y * -0.012 * roles.height * (0.5 - 0.5 * (2.0 * a).cos()));
+        // Its weight goes from one side to the other, and its feet stay put.
+        if roles.legs.len() >= 4 {
+            pose.rotations[sk.root] = sk.turned(sk.root, roll(roles, 0.03 * a.sin()));
+            stand(sk, roles, pose);
+        }
     })
 }
 
@@ -884,14 +889,34 @@ fn attack(sk: &Skeleton, roles: &Roles, st: &Stance) -> Clip {
     })
 }
 
+/// Puts every foot back where it stands at rest, bending the leg to reach it: for a clip that
+/// moves the trunk and must not drag the feet with it. (A leg of two bones has no knee to
+/// bend, and the solve gives no number: such a leg is left as it was. The moose and the
+/// hedgehog vanished while they ate.)
+fn stand(sk: &Skeleton, roles: &Roles, pose: &mut Pose) {
+    for leg in &roles.legs {
+        let was = pose.rotations.clone();
+        reach(sk, roles, pose, leg, leg.foot(), sk.position(leg.foot()));
+        if pose.rotations.iter().any(|r| !r.is_finite()) {
+            pose.rotations = was;
+        }
+    }
+}
+
 /// A flinch away from a blow.
 fn hurt(sk: &Skeleton, roles: &Roles) -> Clip {
     Clip::made("hurt", false, 0.5, sk, |t, pose| {
         let k = pulse(t, 0.0, 0.2, 0.3, 1.0);
-        pose.rotations[sk.root] = sk.turned(sk.root, roll(roles, 0.14 * k) * pitch(roles, -0.08 * k));
-        curl(sk, pose, &roles.head, |a| pitch(roles, a) * yaw(a * 0.6), -0.3 * k);
-        curl(sk, pose, &roles.tail, |a| pitch(roles, a), 0.3 * k);
-        pose.root_t = sk.root_moved(-roles.forward * roles.length * 0.05 * k - Vec3::Y * roles.height * 0.02 * k);
+        // It shies: back and down on its legs, the trunk twisting away, the head thrown up
+        // and aside. (At half this, and with the feet dragged along, a wolf struck by a
+        // sword showed nothing.) An animal's feet stay where they stand.
+        pose.rotations[sk.root] = sk.turned(sk.root, roll(roles, 0.2 * k) * pitch(roles, -0.14 * k));
+        curl(sk, pose, &roles.head, |a| pitch(roles, a) * yaw(a * 0.6), -0.5 * k);
+        curl(sk, pose, &roles.tail, |a| pitch(roles, a), 0.4 * k);
+        pose.root_t = sk.root_moved(-roles.forward * roles.length * 0.09 * k - Vec3::Y * roles.height * 0.06 * k);
+        if roles.legs.len() >= 4 {
+            stand(sk, roles, pose);
+        }
     })
 }
 
@@ -934,14 +959,6 @@ fn eat(sk: &Skeleton, roles: &Roles) -> Clip {
         }
         // Its feet stay where they stand: the bow turns the forequarters, and without this
         // the fore feet swung off the ground by a fifth of its height.
-        for leg in &roles.legs {
-            // (A leg of two bones has no knee to bend, and the solve gives no number: such a
-            // leg is left as it was. The moose and the hedgehog vanished while they ate.)
-            let was = pose.rotations.clone();
-            reach(sk, roles, pose, leg, leg.foot(), sk.position(leg.foot()));
-            if pose.rotations.iter().any(|r| !r.is_finite()) {
-                pose.rotations = was;
-            }
-        }
+        stand(sk, roles, pose);
     })
 }
