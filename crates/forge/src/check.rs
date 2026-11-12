@@ -52,6 +52,19 @@ fn skin(glb: &Glb) -> Result<Skin> {
     Ok(s)
 }
 
+/// Where the muzzle is, as the model stands: the corner of its skin furthest forward and
+/// low, and the bone it follows most. No bone ends at a muzzle, so nothing in the skeleton
+/// says where one is; and not of the head's skin alone, since a goat's one head bone turned
+/// out to carry only its horns.
+pub fn nose(glb: &Glb, sk: &Skeleton, roles: &crate::rig::Roles) -> Option<(usize, Vec3)> {
+    let s = skin(glb).ok()?;
+    let at = posed(&s, sk, &sk.rest());
+    let most = |i: usize| (0..4).max_by(|a, b| s.weights[i][*a].total_cmp(&s.weights[i][*b])).map(|k| s.joints[i][k]).unwrap_or(0);
+    let score = |i: &usize| at[*i].dot(roles.forward) - 0.3 * at[*i].y;
+    let pick = (0..at.len()).max_by(|a, b| score(a).total_cmp(&score(b)))?;
+    Some((most(pick), at[pick]))
+}
+
 fn posed(s: &Skin, sk: &Skeleton, pose: &Pose) -> Vec<Vec3> {
     let mats: Vec<Mat4> = sk.pose_world(pose).iter().zip(&sk.inverse_bind).map(|(w, ib)| *w * *ib).collect();
     s.positions

@@ -176,6 +176,9 @@ pub struct Roles {
     pub floor: f32,
     pub height: f32,
     pub length: f32,
+    /// The bone the muzzle follows and where the muzzle is as the model stands, where the
+    /// skin has been looked at (`check::nose`): the skeleton alone does not say.
+    pub nose: Option<(usize, Vec3)>,
 }
 
 /// Which way a model faces: read from the skeleton, or told.
@@ -386,7 +389,7 @@ impl Roles {
                 arms.push(Leg { front: true, left, chain: path });
             }
         }
-        Roles { forward, side, legs, head, tail, spine, others, arms, floor, height, length }
+        Roles { forward, side, legs, head, tail, spine, others, arms, floor, height, length, nose: None }
     }
 
     /// One line a role, for `forge inspect`.

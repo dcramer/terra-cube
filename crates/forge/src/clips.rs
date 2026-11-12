@@ -939,26 +939,84 @@ fn die(sk: &Skeleton, roles: &Roles, upright: bool) -> Clip {
 
 /// Head down to graze, nibbling, and up again.
 fn eat(sk: &Skeleton, roles: &Roles) -> Clip {
-    // How far the neck must dip to bring the muzzle near the ground, found once: a fixed dip
-    // left a deer, a goat and a pony nibbling the air at the height of their own chests.
-    let muzzle = roles.head.last().or(roles.spine.last()).copied();
-    let low = |dip: f32| {
-        let mut pose = sk.rest();
-        curl(sk, &mut pose, &roles.head, |a| pitch(roles, a), 0.5);
-        bow(sk, roles, &mut pose, dip);
-        muzzle.map_or(0.0, |j| sk.pose_world(&pose)[j].w_axis.y - roles.floor)
+    // The neck is whatever of the spine and head lies ahead of the shoulders or a little
+    // behind them (so the forequarters dip too, the fore legs giving: a pony's neck alone is
+    // too short to bring its mouth to the grass, as a real one's nearly is), whatever the
+    // rig calls it (a deer's whole spine is two bones named for its head; a goat's head is
+    // one bone): it swings down from its root, each bone its share, and the last turns back
+    // up a little so the face is carried in line with the neck and not tucked under it.
+    // (Until 2026-11-11 one bone at the shoulders took the whole dip and the head bones
+    // curled: a pony's neck rolled up under its chest and a goat's hardly moved.)
+    let along = |j: usize| sk.position(j).dot(roles.forward);
+    let shoulder = roles.legs.iter().filter(|l| l.front).map(|l| along(l.chain[0])).fold(f32::MIN, f32::max);
+    let mut neck: Vec<usize> = roles.spine.iter().chain(&roles.head).copied().filter(|&j| roles.head.contains(&j) || Some(&j) == roles.spine.last() || (shoulder > f32::MIN && along(j) > shoulder - 0.2 * roles.length)).collect();
+    // (No further than the bone the muzzle follows: a goat's last "head" bone is its horns.)
+    if let Some(end) = roles.nose.and_then(|(j, _)| neck.iter().position(|&n| n == j)) {
+        neck.truncate(end + 1);
+    }
+    let hips = |pose: &Pose| {
+        let world = sk.pose_world(pose);
+        let hind: Vec<Vec3> = roles.legs.iter().filter(|l| !l.front).map(|l| world[l.chain[0]].w_axis.truncate()).collect();
+        (!hind.is_empty()).then(|| hind.iter().sum::<Vec3>() / hind.len() as f32)
     };
-    let dip = (0..=15).map(|i| 0.4 + i as f32 * 0.04).find(|d| low(*d) < 0.12 * roles.height).unwrap_or(1.0);
+    let lower = |total: f32, pose: &mut Pose| {
+        // Past what the neck does well alone the whole body tips forward about its hips,
+        // the fore legs giving under it: what brings a short-necked goat's mouth down.
+        // (Not where a leg has no knee to give with: a moose's fore feet went through the floor.)
+        let tip = if roles.legs.iter().all(|l| l.chain.len() >= 3) { ((total - 0.6) * 0.4).clamp(0.0, 0.3) } else { 0.0 };
+        if let (true, Some(stood)) = (tip > 0.0, hips(&sk.rest())) {
+            pose.rotations[sk.root] = sk.turned(sk.root, pitch(roles, tip));
+            if let Some(now) = hips(pose) {
+                pose.root_t -= sk.base.inverse().transform_vector3(now - stood);
+            }
+        }
+        let (n, mut so_far) = (neck.len(), tip);
+        for (i, &j) in neck.iter().enumerate() {
+            // Most of it at the root of the neck, which swings it down; the last bone back up a little.
+            let share = match (n, i) {
+                (1, _) => 1.0,
+                (2, 0) => 1.2,
+                (_, 0) => 0.7,
+                (_, i) if i == n - 1 => -0.2,
+                _ => 0.5 / (n - 2) as f32,
+            };
+            // (A bone behind the shoulders carries the chest: it gives a little and no more. Turned
+            // as far as a neck, a bear folded in half and a toad's fore legs were pulled out.)
+            let most = if shoulder > f32::MIN && along(j) < shoulder - 0.05 * roles.length { 0.45 } else { 1.4 };
+            let turn = (total * share).clamp(-most, most);
+            pose.rotations[j] = sk.turned(j, pitch(roles, turn));
+            so_far += turn;
+            // Tripo hangs an animal's forelegs from a neck bone: they stay upright.
+            for leg in roles.legs.iter().filter(|l| sk.joints[l.chain[0]].parent == Some(j)) {
+                pose.rotations[leg.chain[0]] = sk.turned(leg.chain[0], pitch(roles, -so_far));
+            }
+        }
+    };
+    // Where the muzzle is: where the skin says (`check::nose`), on whichever bone it follows;
+    // failing that, past the last bone as far again as that bone is from the one before.
+    let rest = sk.pose_world(&sk.rest());
+    let nose = roles.nose.map(|(j, at)| (j, rest[j].inverse().transform_point3(at))).or_else(|| {
+        let j = *neck.last()?;
+        let from = sk.joints[j].parent?;
+        Some((j, rest[j].inverse().transform_point3(rest[j].w_axis.truncate() * 2.0 - rest[from].w_axis.truncate())))
+    });
+    let low = |total: f32| {
+        let mut pose = sk.rest();
+        lower(total, &mut pose);
+        nose.map_or(0.0, |(j, off)| sk.pose_world(&pose)[j].transform_point3(off).y - roles.floor)
+    };
+    // As far as brings the muzzle to the grass; where no turn does, the turn that brings it lowest.
+    let tries = (0..=30).map(|i| 0.3 + i as f32 * 0.05);
+    let dip = tries.clone().find(|d| low(*d) < 0.1 * roles.height).unwrap_or_else(|| tries.min_by(|a, b| low(*a).total_cmp(&low(*b))).unwrap_or(1.0));
     Clip::made("eat", true, 4.0, sk, |t, pose| {
         let down = pulse(t, 0.0, 0.2, 0.8, 1.0);
         let nibble = 0.05 * (t * TAU * 6.0).sin() * down;
-        curl(sk, pose, &roles.head, |a| pitch(roles, a), 0.5 * down + nibble);
-        bow(sk, roles, pose, dip * down);
+        lower(dip * down + nibble, pose);
         for (i, &j) in roles.tail.iter().enumerate() {
             pose.rotations[j] = sk.turned(j, yaw(0.15 * (t * TAU * 2.0 - i as f32 * 0.7).sin()));
         }
-        // Its feet stay where they stand: the bow turns the forequarters, and without this
-        // the fore feet swung off the ground by a fifth of its height.
+        // Its feet stay where they stand: the neck's root turns the forequarters, and
+        // without this the fore feet swung off the ground by a fifth of its height.
         stand(sk, roles, pose);
     })
 }
