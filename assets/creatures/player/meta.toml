@@ -2,9 +2,9 @@
 height = 1.75
 length = 0.66656286
 width = 0.6905998
-walk_speed = 1.1318102
-run_speed = 3.619543
-sprint_speed = 5.4293146
+walk_speed = 0.94889575
+run_speed = 5.213713
+sprint_speed = 6.517142
 triangles = 8364
 joints = 65
 

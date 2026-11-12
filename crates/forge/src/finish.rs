@@ -292,16 +292,32 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         }
         // Its own speed over the ground: the library's, where the library says (its figure's, by this one's size).
         if matches!(name.as_str(), "walk" | "run" | "sprint") {
-            let said = library.as_ref().filter(|_| clip.source == "library" && plan.rig == "humanoid").and_then(|lib| Some(lib.travels(plan.library.get(name)?)? * lib.tall(&skeleton)));
+            // (By its size, and not in step with it: a figure twice as tall takes strides twice
+            // as long and takes them slower, by the root of its size, as anything heavy does.
+            // Its clips are played that much slower. At the same rate as a person's, a troll
+            // three metres tall ran at 8.6 m/s with a person's quick steps.)
+            let said = library.as_ref().filter(|_| clip.source == "library" && plan.rig == "humanoid").and_then(|lib| {
+                let big = lib.tall(&skeleton);
+                Some((lib.travels(plan.library.get(name)?)? * big, 1.0 / (big * scale).max(0.05).sqrt()))
+            });
+            if let Some((_, slower)) = said.filter(|(_, slower)| (slower - 1.0).abs() > 0.05) {
+                clip.frames = clips::trimmed(&clip, 0.0, clip.seconds(), slower);
+            }
+            let said = said.map(|(pace, slower)| if (slower - 1.0).abs() > 0.05 { pace * slower } else { pace });
             // (The library's own figure goes at the library's own speeds: it is there to be the clips as they were made.)
             let authored = (creature.plan == "authored").then(|| crate::library::Library::read().ok()).flatten().and_then(|lib| lib.travels(plan.presets.get(name)?));
             if let Some(pace) = authored {
                 clip.speed = Some(pace);
             }
-            // (`FORGE_OWN_SPEEDS=1`: a person goes at its clips' own speeds, not the game's: to
-            // see a figure of ours beside the library's with nothing but the carrying between them.)
-            if let (Some(pace), true) = (said, std::env::var_os("FORGE_OWN_SPEEDS").is_some()) {
-                clip.speed = Some(pace);
+            // A person goes at its clips' own speeds: its walk and its run are the library's,
+            // played as they are with nothing mixed in. (Until 2026-11-12 it went at the speeds
+            // Tripo's walk and run had gone, 3.6 m/s at a run where the clip is 5.2, and the
+            // run was a mix of walk and run: set beside the library's own figure it was the
+            // less natural, and at the clips' speeds the developer called the two about
+            // equal.) Its sprint is a quarter faster than its run, a mix of the run and the
+            // sprint: the sprint's own 8 m/s crosses the island in two minutes.
+            if let Some(pace) = said {
+                clip.speed = Some(if name == "sprint" { paces.get("run").map_or(pace, |run| (run * 1.25).min(pace)) } else { pace });
             }
             if let Some(pace) = said.or(clip.speed) {
                 paces.insert(name.clone(), pace);
