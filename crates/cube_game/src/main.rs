@@ -305,7 +305,10 @@ fn main() {
         WindowPlugin { primary_window: None, exit_condition: bevy::window::ExitCondition::DontExit, ..default() }
     } else {
         WindowPlugin { primary_window: Some(Window { title: "terra-cube sandbox".into(), resolution: (1600, 900).into(), ..default() }), ..default() }
-    }).set(bevy::asset::AssetPlugin { file_path: assets, ..default() }))
+    }).set(bevy::asset::AssetPlugin { file_path: assets, ..default() })
+    // The world is made on the threads the engine keeps for long work, and by default it
+    // keeps a quarter of the machine's and no more than four: most of them, here.
+    .set(TaskPoolPlugin { task_pool_options: TaskPoolOptions { async_compute: bevy::app::TaskPoolThreadAssignmentPolicy { min_threads: 2, max_threads: usize::MAX, percent: 0.6, on_thread_spawn: None, on_thread_destroy: None }, ..default() } }))
     .insert_resource(args)
     .init_resource::<loading::Loading>()
     .add_plugins(creatures::CreaturesPlugin);

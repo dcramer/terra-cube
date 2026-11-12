@@ -164,20 +164,115 @@ impl Chunk {
     pub fn set(&mut self, p: IVec3, b: Block) {
         self.cells[Self::index(p)] = b;
     }
+    /// Puts `other`'s cells wherever this chunk has air.
+    pub fn fill_air(&mut self, other: &Chunk) {
+        for (mine, theirs) in self.cells.iter_mut().zip(other.cells.iter()) {
+            if *mine == Block::Air {
+                *mine = *theirs;
+            }
+        }
+    }
     pub fn is_empty(&self) -> bool {
         self.cells.iter().all(|&b| b == Block::Air)
     }
 }
 
+/// A hash for a cell's or a chunk's place: three multiplies. Every read and write of a cell
+/// looks its chunk up by place, millions of times a region; the standard hash, made to
+/// withstand an attacker's keys, took most of the time a tree took to grow.
+#[derive(Default, Clone, Copy)]
+pub struct PlaceHasher(u64);
+
+impl std::hash::Hasher for PlaceHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.write_u32(b as u32);
+        }
+    }
+    fn write_u32(&mut self, v: u32) {
+        self.0 = (self.0.rotate_left(5) ^ v as u64).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+    fn write_i32(&mut self, v: i32) {
+        self.write_u32(v as u32);
+    }
+    fn write_u64(&mut self, v: u64) {
+        self.write_u32(v as u32);
+        self.write_u32((v >> 32) as u32);
+    }
+    fn write_usize(&mut self, v: usize) {
+        self.write_u64(v as u64);
+    }
+}
+
+/// A map keyed by a place in the grid.
+pub type ByPlace<T> = HashMap<IVec3, T, std::hash::BuildHasherDefault<PlaceHasher>>;
+/// The same quick hash for any key made of whole numbers.
+pub type Quick = std::hash::BuildHasherDefault<PlaceHasher>;
+
 /// Chunks by chunk position (cell position / CHUNK, floored).
 #[derive(Default)]
 pub struct World {
-    pub chunks: HashMap<IVec3, Chunk>,
+    /// (Shared, and copied when written while shared: a chunk being meshed on another thread
+    /// is the chunk as it was when the meshing began, [`World::around`].)
+    pub chunks: ByPlace<std::sync::Arc<Chunk>>,
     /// The cells that are [`Block::Broken`], by cell position, and what each bit is.
-    pub bits: HashMap<IVec3, Box<Bits>>,
+    pub bits: ByPlace<Box<Bits>>,
 }
 
 impl World {
+    /// The world round a chunk as it is now, to be read on another thread: the chunk's
+    /// column and the eight columns round it, from the bottom to the top (what a mesh of that
+    /// chunk reads: its neighbours' faces, and the height of the ground about it), and the
+    /// broken cells in them. Nothing is copied but the broken cells. `top` is [`World::top`],
+    /// asked once for however many chunks are copied: it is a look at every chunk there is.
+    pub fn around(&self, chunk: IVec3, top: i32) -> World {
+        let mut out = World::default();
+        for dz in -1..=1 {
+            for dx in -1..=1 {
+                for y in 0..=top {
+                    let at = IVec3::new(chunk.x + dx, y, chunk.z + dz);
+                    if let Some(c) = self.chunks.get(&at) {
+                        out.chunks.insert(at, c.clone());
+                    }
+                }
+            }
+        }
+        if !self.bits.is_empty() {
+            let (lo, hi) = ((chunk - IVec3::ONE) * CHUNK, (chunk + IVec3::splat(2)) * CHUNK);
+            out.bits = self.bits.iter().filter(|(c, _)| c.x >= lo.x && c.x < hi.x && c.z >= lo.z && c.z < hi.z).map(|(c, b)| (*c, b.clone())).collect();
+        }
+        out
+    }
+
+/// Takes in a part of the world that was made apart from it (a region, on another
+    /// thread). A chunk `own` says is that part's own replaces what was here, keeping
+    /// whatever had reached into its air from outside (a bush astride the edge of the
+    /// part beside it); a chunk that is not its own is what reached out of the part, and
+    /// goes into the air of what is here. So the parts can arrive in any order.
+    pub fn join(&mut self, part: World, own: impl Fn(IVec3) -> bool) {
+        for (at, mut chunk) in part.chunks {
+            match self.chunks.get_mut(&at) {
+                Some(here) if own(at) => {
+                    std::sync::Arc::make_mut(&mut chunk).fill_air(here);
+                    *here = chunk;
+                }
+                Some(here) => std::sync::Arc::make_mut(here).fill_air(&chunk),
+                None => {
+                    self.chunks.insert(at, chunk);
+                }
+            }
+        }
+        self.bits.extend(part.bits);
+    }
+
+    /// The highest chunk there is.
+    pub fn top(&self) -> i32 {
+        self.chunks.keys().map(|c| c.y).max().unwrap_or(0)
+    }
+
     pub fn split(cell: IVec3) -> (IVec3, IVec3) {
         (cell.div_euclid(IVec3::splat(CHUNK)), cell.rem_euclid(IVec3::splat(CHUNK)))
     }
@@ -188,7 +283,7 @@ impl World {
     /// Makes a cell one whole block (never [`Block::Broken`]: use [`World::set_bit`]).
     pub fn set(&mut self, cell: IVec3, b: Block) {
         let (c, l) = Self::split(cell);
-        let chunk = self.chunks.entry(c).or_default();
+        let chunk = std::sync::Arc::make_mut(self.chunks.entry(c).or_default());
         if chunk.get(l) == Block::Broken {
             self.bits.remove(&cell);
         }
@@ -280,7 +375,7 @@ impl World {
         let mut y = from;
         while y < to {
             let (c, l) = Self::split(IVec3::new(x, y, z));
-            let chunk = self.chunks.entry(c).or_default();
+            let chunk = std::sync::Arc::make_mut(self.chunks.entry(c).or_default());
             for ly in l.y..CHUNK.min(l.y + to - y) {
                 chunk.set(IVec3::new(l.x, ly, l.z), block(y));
                 y += 1;

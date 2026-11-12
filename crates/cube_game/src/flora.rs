@@ -28,11 +28,11 @@ impl Plugin for FloraPlugin {
 /// The shapes of what grows in each region whose cells are made: put here when the region is
 /// made and taken away when it is dropped (`world::regions`).
 #[derive(Resource, Default)]
-pub struct Forms(pub HashMap<(i32, i32), Form>);
+pub struct Forms(pub HashMap<(i32, i32), std::sync::Arc<Form>>);
 
 /// The meshes made from them.
 #[derive(Resource, Default)]
-pub struct Grown(HashMap<(i32, i32), (Entity, u8)>);
+pub struct Grown(HashMap<(i32, i32), (Entity, u8)>, HashMap<(i32, i32), (u8, bevy::tasks::Task<Shape>)>);
 
 impl Grown {
     /// Whether a region's trees and rocks have their meshes.
@@ -64,7 +64,7 @@ fn hash(a: u32, b: u32) -> f32 {
 }
 
 #[derive(Default)]
-struct Shape {
+pub struct Shape {
     positions: Vec<[f32; 3]>,
     normals: Vec<[f32; 3]>,
     colors: Vec<[f32; 4]>,
@@ -332,8 +332,9 @@ fn ball_of(times: u32) -> Vec<[Vec3; 3]> {
 }
 
 /// Keeps the meshes in step with the regions that are made.
-fn grow(mut commands: Commands, args: Res<crate::Args>, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, forms: Res<Forms>, mut grown: ResMut<Grown>, mut meshes: ResMut<Assets<Mesh>>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
+fn grow(mut commands: Commands, args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, forms: Res<Forms>, mut grown: ResMut<Grown>, mut meshes: ResMut<Assets<Mesh>>, mut cost: ResMut<crate::world::Cost>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
     let (Some(terrain), Some(look)) = (terrain, look) else { return };
+    let began = std::time::Instant::now();
     grown.0.retain(|region, (entity, _)| {
         let keep = forms.0.contains_key(region);
         if !keep {
@@ -357,57 +358,21 @@ fn grow(mut commands: Commands, args: Res<crate::Args>, terrain: Option<Res<Terr
             _ => now,
         }
     };
-    // A few a frame, nearest first: a region's trees are some tens of thousands of points.
+    // Nearest first, each worked out on another thread (a region's trees are some tens of
+    // thousands of points); what a region showed before stays until its new mesh is ready.
     let mut wanted: Vec<((i32, i32), u8)> = forms.0.keys().map(|r| (*r, level(r))).filter(|(r, level)| grown.0.get(r).is_none_or(|(_, was)| was != level)).collect();
     wanted.sort_by(|a, b| away(&a.0).total_cmp(&away(&b.0)));
-    for (region, level) in wanted.into_iter().take(3) {
+    grown.1.retain(|r, (level, _)| wanted.iter().any(|w| w.0 == *r && w.1 == *level));
+    // (The nearest first, and in play two a frame: each is a big mesh for the card to take.)
+    let mut ready: Vec<(i32, i32)> = grown.1.iter().filter(|(_, (_, task))| task.is_finished()).map(|(r, _)| *r).collect();
+    ready.sort_by(|a, b| away(a).total_cmp(&away(b)));
+    for region in ready.into_iter().take(if loading.up || args.scene.is_some() { 8 } else { 2 }) {
+        let Some((level, shape)) = grown.1.get_mut(&region).and_then(|(level, task)| bevy::tasks::futures::check_ready(task).map(|s| (*level, s))) else { continue };
+        grown.1.remove(&region);
         if let Some((old, _)) = grown.0.remove(&region) {
             commands.entity(old).despawn();
         }
-        let form = &forms.0[&region];
         let origin = Vec3::new(region.0 as f32 * size, 0.0, region.1 as f32 * size);
-        let mut shape = Shape::default();
-        // An end is cut wood if no other limb starts or stops there.
-        let key = |p: Vec3| p.to_array().map(f32::to_bits);
-        let mut ends: HashMap<[u32; 3], u32> = HashMap::new();
-        for limb in &form.limbs {
-            *ends.entry(key(limb.a)).or_default() += 1;
-            *ends.entry(key(limb.b)).or_default() += 1;
-        }
-        if args.shapes {
-            for (n, limb) in form.limbs.iter().enumerate() {
-                shape.limb(limb.a - origin, limb.b - origin, limb.ra, limb.rb, limb.bark, n as u32, [ends[&key(limb.a)] == 1, ends[&key(limb.b)] == 1], limb.roots);
-            }
-            let facets = ball();
-            let coarse = ball_of(0);
-            for (n, stone) in form.stones.iter().enumerate() {
-                let mut stone = stone.clone();
-                stone.middle -= origin;
-                shape.stone(&stone, &facets, n as u32);
-            }
-            for (n, clump) in form.clumps.iter().enumerate() {
-                shape.clump(clump.middle - origin, clump.radii, clump.leaf, n as u32 + 100_000, &coarse, level);
-            }
-        } else {
-            for (n, limb) in form.limbs.iter().enumerate() {
-                shape.limb_cubes(limb, origin, terrain.ground(limb.a.x, limb.a.z), n as u32, [ends[&key(limb.a)] == 1, ends[&key(limb.b)] == 1], level);
-            }
-            let wood = shape.indices.len() / 6;
-            for (n, stone) in form.stones.iter().enumerate() {
-                let mut stone = stone.clone();
-                stone.middle -= origin;
-                shape.stone_cubes(&stone, n as u32, level);
-            }
-            let stone = shape.indices.len() / 6 - wood;
-            for (n, clump) in form.clumps.iter().enumerate() {
-                shape.clump_cubes(clump.middle - origin, clump.radii, clump.leaf, n as u32 + 100_000, level);
-            }
-            // `FLORA_TRACE=1`: what each region's trees and rocks cost, by level and part, a
-            // line a region as it is made: add them up to find where the faces are.
-            if std::env::var_os("FLORA_TRACE").is_some() {
-                println!("flora level={level} wood={wood} stone={stone} leaf={} limbs={} clumps={} stones={}", shape.indices.len() / 6 - wood - stone, form.limbs.len(), form.clumps.len(), form.stones.len());
-            }
-        }
         // Counted with the ground's faces in a picture's `pace`.
         let faces = crate::world::Faces((shape.indices.len() / 6) as u32);
         let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
@@ -424,7 +389,68 @@ fn grow(mut commands: Commands, args: Res<crate::Args>, terrain: Option<Res<Terr
             commands.entity(entity).insert(bevy::light::NotShadowCaster);
         }
         grown.0.insert(region, (entity, level));
+        cost.grows += 1;
     }
+    let pool = bevy::tasks::AsyncComputeTaskPool::get();
+    for (region, level) in wanted {
+        if grown.1.len() >= 8 {
+            break;
+        }
+        if let std::collections::hash_map::Entry::Vacant(slot) = grown.1.entry(region) {
+            let (form, land, shapes) = (forms.0[&region].clone(), terrain.1.clone(), args.shapes);
+            let origin = Vec3::new(region.0 as f32 * size, 0.0, region.1 as f32 * size);
+            slot.insert((level, pool.spawn(async move { shape_of(&form, &land, origin, level, shapes) })));
+        }
+    }
+    cost.grow += began.elapsed().as_secs_f32();
+}
+
+/// The mesh of everything that grows in a region, at one level of detail.
+fn shape_of(form: &Form, land: &cube_sim::terrain::Land, origin: Vec3, level: u8, shapes: bool) -> Shape {
+    let ground = |x: f32, z: f32| land.height((x / CELL).floor() as i32, (z / CELL).floor() as i32) as f32 * CELL;
+    let mut shape = Shape::default();
+    // An end is cut wood if no other limb starts or stops there.
+    let key = |p: Vec3| p.to_array().map(f32::to_bits);
+    let mut ends: HashMap<[u32; 3], u32> = HashMap::new();
+    for limb in &form.limbs {
+        *ends.entry(key(limb.a)).or_default() += 1;
+        *ends.entry(key(limb.b)).or_default() += 1;
+    }
+    if shapes {
+        for (n, limb) in form.limbs.iter().enumerate() {
+            shape.limb(limb.a - origin, limb.b - origin, limb.ra, limb.rb, limb.bark, n as u32, [ends[&key(limb.a)] == 1, ends[&key(limb.b)] == 1], limb.roots);
+        }
+        let facets = ball();
+        let coarse = ball_of(0);
+        for (n, stone) in form.stones.iter().enumerate() {
+            let mut stone = stone.clone();
+            stone.middle -= origin;
+            shape.stone(&stone, &facets, n as u32);
+        }
+        for (n, clump) in form.clumps.iter().enumerate() {
+            shape.clump(clump.middle - origin, clump.radii, clump.leaf, n as u32 + 100_000, &coarse, level);
+        }
+    } else {
+        for (n, limb) in form.limbs.iter().enumerate() {
+            shape.limb_cubes(limb, origin, ground(limb.a.x, limb.a.z), n as u32, [ends[&key(limb.a)] == 1, ends[&key(limb.b)] == 1], level);
+        }
+        let wood = shape.indices.len() / 6;
+        for (n, stone) in form.stones.iter().enumerate() {
+            let mut stone = stone.clone();
+            stone.middle -= origin;
+            shape.stone_cubes(&stone, n as u32, level);
+        }
+        let stone = shape.indices.len() / 6 - wood;
+        for (n, clump) in form.clumps.iter().enumerate() {
+            shape.clump_cubes(clump.middle - origin, clump.radii, clump.leaf, n as u32 + 100_000, level);
+        }
+        // `FLORA_TRACE=1`: what each region's trees and rocks cost, by level and part, a
+        // line a region as it is made: add them up to find where the faces are.
+        if std::env::var_os("FLORA_TRACE").is_some() {
+            println!("flora level={level} wood={wood} stone={stone} leaf={} limbs={} clumps={} stones={}", shape.indices.len() / 6 - wood - stone, form.limbs.len(), form.clumps.len(), form.stones.len());
+        }
+    }
+    shape
 }
 
 /// The faces of a cube: which way each looks, and the two ways along it.

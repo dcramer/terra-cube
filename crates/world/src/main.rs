@@ -24,6 +24,8 @@ cargo world years [N] [--seed N]                  the creatures by the day for N
 cargo world who [--seed N]                        where each group of creatures starts: kind, how
                                                   many, metres east and south of the start, biome
                                                   (for `cargo sandbox --wild --scene F --at X,Z`)
+cargo world cost [--seed N]                       what making the world costs: a region's cells by part
+                                                  (ground, what stands, cover) and a chunk's mesh, ms
 cargo world dig [--holes 120]                     HOLES (120) holes and stones cut to the 5 cm bit all
                                                   over the land: what broken cells cost, and whether
                                                   creatures still live among them
@@ -299,6 +301,28 @@ fn map_command(args: &Args) -> ! {
 /// Holes dug all over the land, to the bit, and what they cost: the cells that broke, the
 /// memory for them, the faces added, how long a chunk takes to draw again, and whether the
 /// creatures still live without ending up in the ground.
+/// What making the world costs, on one thread: the sixteen regions round the start made one
+/// at a time and every chunk of them meshed, as the game does it.
+fn cost_command(args: &Args) -> ! {
+    let land = Land::new(args.seed, args.radius);
+    let mut world = World::default();
+    let r = cube_sim::terrain::REGION;
+    cube_sim::terrain::fill_cost();
+    let started = std::time::Instant::now();
+    for rz in -2..2 {
+        for rx in -2..2 {
+            cube_sim::terrain::fill(&mut world, &land, (rx * r, rz * r), ((rx + 1) * r, (rz + 1) * r));
+        }
+    }
+    let (all, parts) = (started.elapsed().as_secs_f64() * 1000.0 / 16.0, cube_sim::terrain::fill_cost().map(|s| s * 1000.0 / 16.0));
+    let chunks: Vec<IVec3> = world.chunks.keys().copied().collect();
+    let started = std::time::Instant::now();
+    let faces: usize = chunks.iter().map(|&c| [false, true].map(|liquid| cube_voxel::mesh::mesh_chunk(&world, c, liquid).indices.len() / 6).iter().sum::<usize>()).sum();
+    let mesh = started.elapsed().as_secs_f64() * 1000.0 / chunks.len().max(1) as f64;
+    println!("cost: a region's cells {all:.0} ms (ground {:.0}, what stands {:.0} of which wood {:.0} and leaf {:.0}, cover {:.0}) · a chunk's mesh {mesh:.2} ms ({} chunks, {:.2}M faces)", parts[0], parts[1], parts[3], parts[4], parts[2], chunks.len(), faces as f64 / 1e6);
+    std::process::exit(0)
+}
+
 fn dig_command(args: &Args) -> ! {
     let (mut world, land, mut sim) = living(args);
     let faces = |world: &World, chunk: IVec3| [false, true].map(|liquid| cube_voxel::mesh::mesh_chunk(world, chunk, liquid).indices.len() / 6).iter().sum::<usize>();
@@ -426,6 +450,7 @@ fn main() {
         "run" => run_command(&args),
         "map" => map_command(&args),
         "dig" => dig_command(&args),
+        "cost" => cost_command(&args),
         "grade" => grade_command(&args),
         "life" => life_command(&args),
         "find" => {

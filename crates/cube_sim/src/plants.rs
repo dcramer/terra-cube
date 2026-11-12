@@ -63,6 +63,29 @@ thread_local! {
     static NOTED: std::cell::RefCell<Option<Form>> = const { std::cell::RefCell::new(None) };
 }
 
+thread_local! {
+    /// The columns a tree being grown may write to (x and z, from and up to), where there is
+    /// such a bound ([`only`]).
+    static ONLY: std::cell::Cell<Option<[i32; 4]>> = const { std::cell::Cell::new(None) };
+}
+
+/// Runs `grow` with every tree it grows writing only the cells of the columns from `lo` up to
+/// `hi`. A region being made grows the trees round it too, for the limbs and leaf that reach
+/// in, and used to write each of those trees whole, into ground that was not its own: a tree
+/// near an edge was written by every region near it, and four fifths of the time a region
+/// took went on trees that were another's. Each cell is now written once, by its own region,
+/// and a limb or a mass of leaf that does not reach the bound is passed over.
+pub fn only<R>(lo: (i32, i32), hi: (i32, i32), grow: impl FnOnce() -> R) -> R {
+    let before = ONLY.replace(Some([lo.0, lo.1, hi.0, hi.1]));
+    let out = grow();
+    ONLY.set(before);
+    out
+}
+
+fn open(c: IVec3) -> bool {
+    ONLY.get().is_none_or(|b| c.x >= b[0] && c.x < b[2] && c.z >= b[1] && c.z < b[3])
+}
+
 /// Runs `grow` and says, with what it gives back, the shape of everything it grew.
 pub fn recorded<R>(grow: impl FnOnce() -> R) -> (R, Form) {
     NOTED.with(|n| *n.borrow_mut() = Some(Form::default()));
@@ -93,11 +116,18 @@ fn grow(world: &mut World, limb: Limb) {
 /// The cells of a limb: the same shape whoever draws it draws ([`Limb::fill`]), at the size
 /// of a cell. Wood grows through air, leaf and ground cover, not through the ground.
 fn wood(world: &mut World, limb: &Limb) {
-    limb.fill(CELL, |c| {
-        if world.get(c) == Block::Air || world.get(c).foliage() || world.get(c).sprig() {
+    let clock = std::time::Instant::now();
+    let bound = ONLY.get();
+    limb.fill_in(CELL, bound, |c| {
+        if !open(c) {
+            return;
+        }
+        let was = world.get(c);
+        if was == Block::Air || was.foliage() || was.sprig() {
             world.set(c, limb.bark);
         }
     });
+    crate::terrain::spent(3, clock);
 }
 
 fn mix(seed: u32, k: u32) -> f32 {
@@ -124,7 +154,13 @@ impl Limb {
     /// seen, to the size of a cell. Before, cells were a plain cone and a few root sticks,
     /// the picture had the swell, the buttresses and the bends, and a person walked into
     /// wood he could see and was stopped by wood he could not.
-    pub fn fill(&self, g: f32, mut put: impl FnMut(IVec3)) {
+    pub fn fill(&self, g: f32, put: impl FnMut(IVec3)) {
+        self.fill_in(g, None, put)
+    }
+
+    /// [`Limb::fill`], passing over the lengths of the limb that reach no column from
+    /// `only[0], only[1]` up to `only[2], only[3]` (cubes of `g`, x and z).
+    pub fn fill_in(&self, g: f32, only: Option<[i32; 4]>, mut put: impl FnMut(IVec3)) {
         let (a, b, ra, rb, roots) = (self.a, self.b, self.ra, self.rb, self.roots);
         let seed = a.x.to_bits() ^ a.z.to_bits().rotate_left(13) ^ b.y.to_bits().rotate_left(7) ^ b.x.to_bits().rotate_left(19);
         let thick = ra.max(rb);
@@ -160,6 +196,9 @@ impl Limb {
             let centre = a.lerp(b, t) + wander(t);
             let k = (most(t) / g).ceil() as i32 + 1;
             let m = (centre / g).floor().as_ivec3();
+            if only.is_some_and(|b| m.x + k < b[0] || m.x - k >= b[2] || m.z + k < b[1] || m.z - k >= b[3]) {
+                continue;
+            }
             put(m);
             let deep = if upright { 1 } else { k };
             for dy in -deep..=deep {
@@ -195,8 +234,12 @@ fn clump(world: &mut World, middle: Vec3, radii: Vec3, leaf: Block, floor: f32, 
             }
         }
     });
-    let (lo, hi) = (cell(middle - radii), cell(middle + radii));
+    let clock = std::time::Instant::now();
+    let (mut lo, mut hi) = (cell(middle - radii), cell(middle + radii));
     let ragged = rng.bits() as u32;
+    if let Some(b) = ONLY.get() {
+        (lo.x, lo.z, hi.x, hi.z) = (lo.x.max(b[0]), lo.z.max(b[1]), hi.x.min(b[2] - 1), hi.z.min(b[3] - 1));
+    }
     for y in lo.y..=hi.y {
         if (y as f32) * CELL < floor {
             continue;
@@ -205,12 +248,14 @@ fn clump(world: &mut World, middle: Vec3, radii: Vec3, leaf: Block, floor: f32, 
             for x in lo.x..=hi.x {
                 let c = IVec3::new(x, y, z);
                 let d = (((c.as_vec3() + 0.5) * CELL - middle) / radii).length_squared();
-                if d < 1.0 - crate::terrain::hash2(x + y * 31, z - y * 17, ragged) * 0.35 && world.get(c) == Block::Air {
+                // (Outside the mass no roll is needed, nor well inside it.)
+                if d < 1.0 && (d < 0.65 || d < 1.0 - crate::terrain::hash2(x + y * 31, z - y * 17, ragged) * 0.35) && world.get(c) == Block::Air {
                     world.set(c, leaf);
                 }
             }
         }
     }
+    crate::terrain::spent(4, clock);
 }
 
 /// A trunk from the ground at `foot` to `top` (metres), flaring into roots at its base.
@@ -378,7 +423,7 @@ pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng)
                     let c = cell(at);
                     for down in 0..(hang / CELL) as i32 {
                         let strand = c - IVec3::Y * down;
-                        if world.get(strand) == Block::Air {
+                        if open(strand) && world.get(strand) == Block::Air {
                             world.set(strand, leaf);
                         }
                     }

@@ -414,6 +414,28 @@ const CLEARING: f32 = 22.0;
 /// made is built with it, so no crown is cut off at the part's edge.
 const CROWN: i32 = (19.0 / CELL) as i32;
 
+thread_local! {
+    /// Seconds `fill` has spent on this thread in each of its three parts: the ground, what
+    /// stands on it, the ground cover (`fill_cost`).
+    static SPENT: std::cell::Cell<[f64; 5]> = const { std::cell::Cell::new([0.0; 5]) };
+}
+
+/// What `fill` has cost on this thread since this was last asked, seconds: the ground, what
+/// stands on it, the ground cover; and of what stands, its wood and its leaf. For `cargo
+/// world cost`.
+pub fn fill_cost() -> [f64; 5] {
+    SPENT.replace([0.0; 5])
+}
+
+pub(crate) fn spent(part: usize, since: std::time::Instant) -> std::time::Instant {
+    SPENT.with(|s| {
+        let mut all = s.get();
+        all[part] += since.elapsed().as_secs_f64();
+        s.set(all);
+    });
+    std::time::Instant::now()
+}
+
 /// Makes the cells of the columns from `lo` to `hi` (cells, x and z; `hi` not included):
 /// the ground, what stands on it, and the ground cover. The same call makes the same cells
 /// whatever has been made round it and in whatever order, so the world can be made and
@@ -423,6 +445,7 @@ pub fn fill(world: &mut World, land: &Land, lo: (i32, i32), hi: (i32, i32)) {
     // over half a metre down.
     let (snow, soil, deep) = (cells(0.5), cells(2.0), cells(1.0));
     let seed = land.seed;
+    let clock = std::time::Instant::now();
     // The trees whose crowns are over this ground: where each stands, how far its crown
     // reaches, and whether it drops needles. The ground under a tree is that tree's.
     let mut crowns: Vec<(f32, f32, f32, bool)> = Vec::new();
@@ -502,6 +525,7 @@ pub fn fill(world: &mut World, land: &Land, lo: (i32, i32), hi: (i32, i32)) {
             });
         }
     }
+    let clock = spent(0, clock);
     // What stands on it. Trees whose crowns reach in from outside are built too; the small
     // things only where their own ground has been made.
     for (pass, room) in [scale::TREE_ROOM, scale::SMALL_ROOM].into_iter().enumerate() {
@@ -516,7 +540,7 @@ pub fn fill(world: &mut World, land: &Land, lo: (i32, i32), hi: (i32, i32)) {
                 let mut rng = Rng::new(thing.seed);
                 match thing.what {
                     What::Tree(kind, age) => {
-                        plants::tree(world, foot, kind, age, &mut rng);
+                        plants::only(lo, hi, || plants::tree(world, foot, kind, age, &mut rng));
                     }
                     // A trunk or a root is already here.
                     _ if world.get(foot) != Block::Air => {}
@@ -529,6 +553,7 @@ pub fn fill(world: &mut World, land: &Land, lo: (i32, i32), hi: (i32, i32)) {
             }
         }
     }
+    let clock = spent(1, clock);
     // Ground cover: long grass and flowers in the open, ferns under trees, reeds at the
     // water's edge. In patches, not sprinkled: a slow noise says where it is thick.
     for z in lo.1..hi.1 {
@@ -549,11 +574,47 @@ pub fn fill(world: &mut World, land: &Land, lo: (i32, i32), hi: (i32, i32)) {
             }
         }
     }
+    spent(2, clock);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn regions_made_apart_in_any_order_are_the_land_made_at_once() {
+        // Two regions side by side in a wood, where trees stand astride the line between.
+        let land = Land::new(6, 48);
+        let r = REGION;
+        let edge = land.span / r - 1;
+        let wooded = |i: i32, j: i32| (0..16).filter(|k| land.biome(i * r - r + k * 16, j * r + 64) == Biome::Forest).count() >= 12;
+        let (i, j) = (-edge + 1..edge).flat_map(|j| (-edge + 1..edge).map(move |i| (i, j))).find(|&(i, j)| wooded(i, j)).expect("no wood two regions wide");
+        let (at, row) = (i * r, j * r);
+        let whole = {
+            let mut w = World::default();
+            fill(&mut w, &land, (at - r, row), (at + r, row + r));
+            w
+        };
+        for order in [[0, 1], [1, 0]] {
+            let mut apart = World::default();
+            for i in order {
+                fill(&mut apart, &land, (at - r + i * r, row), (at + i * r, row + r));
+            }
+            let mut wood = 0;
+            for (place, chunk) in &whole.chunks {
+                for y in 0..CHUNK {
+                    for z in 0..CHUNK {
+                        for x in 0..CHUNK {
+                            let c = IVec3::new(x, y, z);
+                            wood += (chunk.get(c) == Block::Wood) as u32;
+                            assert_eq!(chunk.get(c), apart.chunks.get(place).map_or(Block::Air, |ch| ch.get(c)), "cell {c} of chunk {place}, order {order:?}");
+                        }
+                    }
+                }
+            }
+            assert!(wood > 500 && apart.chunks.len() <= whole.chunks.len(), "no trees to speak of ({wood} cells of wood)");
+        }
+    }
 
     #[test]
     fn the_same_seed_makes_the_same_world() {

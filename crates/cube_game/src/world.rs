@@ -23,7 +23,7 @@ pub struct WorldPlugin;
 
 /// The voxel world, and the lie of the land it was made from (heights, biomes, trees).
 #[derive(Resource)]
-pub struct Terrain(pub Voxels, pub Land, pub cube_sim::ecology::Ecology, pub HashSet<(i32, i32)>);
+pub struct Terrain(pub Voxels, pub std::sync::Arc<Land>, pub cube_sim::ecology::Ecology, pub HashSet<(i32, i32)>);
 
 /// The land's material: Bevy's own, with wind in what grows. The wind is in the two vertex
 /// shaders (`assets/shaders/wind.wesl` for the picture, `wind_prepass.wesl` for depth and
@@ -63,9 +63,34 @@ pub struct Dirty(pub HashSet<IVec3>);
 #[derive(Resource, Default)]
 pub struct Regions {
     made: HashSet<(i32, i32)>,
+    /// Regions being made on other threads: their cells, and the shapes of what grew.
+    pending: std::collections::HashMap<(i32, i32), bevy::tasks::Task<(Voxels, cube_sim::plants::Form)>>,
     pub kept: HashSet<(i32, i32)>,
-    /// Regions wanted and not yet made.
+    /// Regions wanted and not yet made, and which.
     pub waiting: usize,
+    unmade: HashSet<(i32, i32)>,
+}
+
+/// What making the world has cost so far, seconds and how many: regions' cells, chunks'
+/// meshes (and how many of those were thrown away and made again), regions' trees and rocks.
+/// A scripted strip says it (`shot`), so where a slow load or a slow frame comes from is
+/// read, not guessed.
+#[derive(Resource, Default, Clone, Copy)]
+pub struct Cost {
+    pub fill: f32,
+    pub fills: u32,
+    pub mesh: f32,
+    pub meshes: u32,
+    pub remade: u32,
+    pub grow: f32,
+    pub grows: u32,
+}
+
+impl Cost {
+    /// What was spent since `then`, in a few words.
+    pub fn since(&self, then: &Cost) -> String {
+        format!("cells {:.2}s/{} · meshes {:.2}s/{} ({} remade) · trees {:.2}s/{}", self.fill - then.fill, self.fills - then.fills, self.mesh - then.mesh, self.meshes - then.meshes, self.remade - then.remade, self.grow - then.grow, self.grows - then.grows)
+    }
 }
 
 /// A region's cells are made when the camera comes within this of its middle, metres, and
@@ -170,7 +195,7 @@ impl Plugin for WorldPlugin {
                 bevy::pbr::ScreenSpaceReflections { min_perceptual_roughness: 0.0..0.0, linear_steps: 48, thickness: 1.5, ..default() }, bevy::core_pipeline::prepass::DepthPrepass, bevy::core_pipeline::prepass::DeferredPrepass, bevy::anti_alias::taa::TemporalAntiAliasing::default()));
             });
         }
-        app.add_plugins(MaterialPlugin::<Windy>::default()).insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().add_systems(Startup, setup).add_systems(Update, (regions, stream).chain()).add_systems(Update, (sky, ripple, seasons));
+        app.add_plugins(MaterialPlugin::<Windy>::default()).insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().init_resource::<Cost>().add_systems(Startup, setup).add_systems(Update, (regions, stream).chain()).add_systems(Update, (sky, ripple, seasons));
     }
 }
 
@@ -475,7 +500,7 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     // The island measured for living in (`cube_sim::ecology`): what the small life the game
     // draws is placed by.
     let ecology = cube_sim::ecology::Ecology::new(&land);
-    commands.insert_resource(Terrain(voxels, land, ecology, HashSet::new()));
+    commands.insert_resource(Terrain(voxels, std::sync::Arc::new(land), ecology, HashSet::new()));
     spawn_sun(&mut commands, &mut mediums, &mut images);
 }
 
@@ -496,7 +521,21 @@ const KEEP: f32 = 12.0;
 /// a chunk with no faces at that level). And how many are still wanted and not yet made.
 #[derive(Resource, Default)]
 pub struct Drawn {
-    made: std::collections::HashMap<(IVec3, usize), Vec<Entity>>,
+    made: std::collections::HashMap<(IVec3, usize), Vec<Entity>, cube_voxel::Quick>,
+    /// What is wanted and not made, nearest first, and how many more wait on ground that is on
+    /// its way. Found by looking at every chunk there is, which is milliseconds: so the look
+    /// is a pass over `keys` a part each frame (`at`), gathered in `next` and swapped in when
+    /// the pass ends. `stale`: passes still to finish before what is here can be believed
+    /// (something changed), which a picture waits for.
+    wanted: Vec<(f32, IVec3, usize)>,
+    held: usize,
+    keys: Vec<IVec3>,
+    at: usize,
+    next: (Vec<(f32, IVec3, usize)>, usize),
+    stale: u8,
+    looked: usize,
+    /// Meshes being worked out on other threads.
+    pending: std::collections::HashMap<(IVec3, usize), bevy::tasks::Task<Vec<(bool, cube_voxel::mesh::MeshData)>>, cube_voxel::Quick>,
     pub waiting: usize,
 }
 
@@ -522,20 +561,30 @@ fn middle_of(chunk: IVec3) -> Vec3 {
     ((chunk * CHUNK).as_vec3() + CHUNK as f32 / 2.0) * CELL
 }
 
-/// Meshes one chunk at one level and spawns what it draws: its solid cells and its water.
-fn draw_level(commands: &mut Commands, meshes: &mut Assets<Mesh>, look: &Look, voxels: &Voxels, chunk: IVec3, level: usize) -> Vec<Entity> {
+/// The mesh of one chunk at one level, its solid cells and its water, about the chunk's
+/// middle: the long part of drawing a chunk, and done on another thread from a copy of the
+/// world round it ([`Voxels::around`]).
+fn mesh_level(voxels: &Voxels, chunk: IVec3, level: usize) -> Vec<(bool, cube_voxel::mesh::MeshData)> {
     // Every level of a chunk is drawn from the chunk's middle, so the camera's distance to it
     // is the same whichever level is asked: the fade between two levels needs that.
+    let (middle, step) = (middle_of(chunk), LEVELS[level].0);
+    [false, true]
+        .into_iter()
+        .filter_map(|liquid| {
+            let mut data = if step == 1 { mesh_chunk(voxels, chunk, liquid) } else { mesh_chunk_far(voxels, chunk, liquid, step) };
+            data.positions.iter_mut().for_each(|p| *p = (Vec3::from_array(*p) - middle).to_array());
+            (!data.indices.is_empty()).then_some((liquid, data))
+        })
+        .collect()
+}
+
+/// Spawns what a chunk's meshes draw.
+fn draw_level(commands: &mut Commands, meshes: &mut Assets<Mesh>, look: &Look, chunk: IVec3, level: usize, made: Vec<(bool, cube_voxel::mesh::MeshData)>) -> Vec<Entity> {
     let middle = middle_of(chunk);
-    let (step, from, to) = LEVELS[level];
+    let (_, from, to) = LEVELS[level];
     let range = VisibilityRange { start_margin: (from - FADE).max(0.0)..from, end_margin: if to == f32::MAX { 1.0e9..1.1e9 } else { to - FADE..to }, use_aabb: false };
     let mut spawned = Vec::new();
-    for liquid in [false, true] {
-        let mut data = if step == 1 { mesh_chunk(voxels, chunk, liquid) } else { mesh_chunk_far(voxels, chunk, liquid, step) };
-        if data.indices.is_empty() {
-            continue;
-        }
-        data.positions.iter_mut().for_each(|p| *p = (Vec3::from_array(*p) - middle).to_array());
+    for (liquid, data) in made {
         let faces = Faces(data.indices.len() as u32 / 6);
         let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
@@ -557,27 +606,65 @@ fn draw_level(commands: &mut Commands, meshes: &mut Assets<Mesh>, look: &Look, v
     spawned
 }
 
+/// How many meshes may be in the making at once: enough to keep every thread busy, few
+/// enough that what is asked for is still what is nearest when the camera moves.
+const AT_ONCE: usize = 96;
+/// How many corners of new meshes a frame of play takes in.
+const UPLOAD: usize = 60_000;
+
 /// Keeps the meshes there are in step with where the camera is: a chunk is meshed at a level
-/// when the camera comes within that level's range (nearest first, a few milliseconds' worth a
-/// frame), and its mesh is dropped when the camera is well outside it. A chunk that changed
+/// when the camera comes within that level's range (nearest first, on the other threads: the
+/// frame only takes what they have finished), and its mesh is dropped when the camera is well outside it. A chunk that changed
 /// loses its meshes and is made again. So what is meshed and held is what can be seen, and
 /// the world can be bigger than that.
-fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, mut meshes: ResMut<Assets<Mesh>>, mut drawn: ResMut<Drawn>, mut dirty: ResMut<Dirty>, regions: Res<Regions>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
+fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, mut meshes: ResMut<Assets<Mesh>>, mut drawn: ResMut<Drawn>, mut dirty: ResMut<Dirty>, regions: Res<Regions>, mut cost: ResMut<Cost>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
     let (Some(terrain), Some(look), Some(eye)) = (terrain, look, cameras.iter().next().map(|t| t.translation())) else { return };
+    let began = std::time::Instant::now();
+    let changed = !dirty.0.is_empty();
     for chunk in dirty.0.drain() {
         for level in 0..LEVELS.len() {
-            for entity in drawn.made.remove(&(chunk, level)).into_iter().flatten() {
-                commands.entity(entity).despawn();
+            drawn.pending.remove(&(chunk, level));
+            if let Some(old) = drawn.made.remove(&(chunk, level)) {
+                cost.remade += 1;
+                for entity in old {
+                    commands.entity(entity).despawn();
+                }
             }
         }
     }
-    let mut wanted: Vec<(f32, IVec3, usize)> = Vec::new();
-    for &chunk in terrain.0.chunks.keys() {
+    // (A picture waits for the world and may take what it likes of a frame; a scripted strip
+    // is the game being played, and takes what play takes.)
+    let hurried = loading.up || (args.scene.is_some() && args.strip == 0) || time.elapsed_secs() < 3.0;
+    // (Not when the eye has only moved: what is wanted then changes a little at a time, and
+    // a picture of someone running would wait for ever.)
+    if changed || drawn.looked != terrain.0.chunks.len() {
+        drawn.looked = terrain.0.chunks.len();
+        // The pass under way may have gone by what changed: the one after it is the first whole one.
+        drawn.stale = 2;
+    }
+    if drawn.at == 0 {
+        drawn.keys.clear();
+        drawn.keys.extend(terrain.0.chunks.keys().copied());
+    }
+    // A chunk beside ground that is not made waits for it: its faces at that edge would be
+    // drawn open and the mesh thrown away when the ground arrives (four in ten were, while
+    // the player ran). So the outermost row of chunks of what is made is not drawn, 8 m of
+    // 200. `soon`: the ground it waits for is on its way, and a picture waits too.
+    let (per, edge) = (terrain::REGION / CHUNK, terrain.1.span.div_euclid(terrain::REGION));
+    let beside = |chunk: IVec3, of: &dyn Fn((i32, i32)) -> bool| (-1..=1).any(|dz| (-1..=1).any(|dx| of(((chunk.x + dx).div_euclid(per), (chunk.z + dz).div_euclid(per)))));
+    let open = |chunk: IVec3| beside(chunk, &|r| r.0 >= -edge && r.0 < edge && r.1 >= -edge && r.1 < edge && !regions.made.contains(&r));
+    let soon = |chunk: IVec3| beside(chunk, &|r| regions.unmade.contains(&r));
+    let upto = if hurried { drawn.keys.len() } else { (drawn.at + drawn.keys.len() / 16 + 1).min(drawn.keys.len()) };
+    for i in drawn.at..upto {
+        let chunk = drawn.keys[i];
         let away = eye.distance(middle_of(chunk));
+        let mut waits = None;
         for (level, &(_, from, to)) in LEVELS.iter().enumerate() {
             let has = drawn.made.contains_key(&(chunk, level));
-            if !has && away > from - FADE - KEEP && away < to + KEEP {
-                wanted.push((away, chunk, level));
+            if !has && away > from - FADE - KEEP && away < to + KEEP && *waits.get_or_insert_with(|| open(chunk)) {
+                drawn.next.1 += soon(chunk) as usize;
+            } else if !has && away > from - FADE - KEEP && away < to + KEEP {
+                drawn.next.0.push((away, chunk, level));
             } else if has && (away < from - FADE - KEEP * 2.0 || away > to + KEEP * 2.0) {
                 for entity in drawn.made.remove(&(chunk, level)).into_iter().flatten() {
                     commands.entity(entity).despawn();
@@ -585,21 +672,50 @@ fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, loadi
             }
         }
     }
-    wanted.sort_by(|a, b| a.0.total_cmp(&b.0));
-    drawn.waiting = wanted.len() + regions.waiting;
-    // A picture waits for the world, so it may take as long as it likes; a window gets a long
-    // slice while it first fills in (behind the loading screen, in play), then a few
-    // milliseconds a frame.
-    let slice = if loading.up { crate::loading::SLICE } else if args.scene.is_some() || time.elapsed_secs() < 3.0 { 0.05 } else { 0.004 };
+    drawn.at = upto;
+    if drawn.at >= drawn.keys.len() {
+        let (mut wanted, held) = std::mem::take(&mut drawn.next);
+        wanted.sort_by(|a, b| a.0.total_cmp(&b.0));
+        // What is no longer wanted is given up.
+        let asked: HashSet<(IVec3, usize)> = wanted.iter().map(|w| (w.1, w.2)).collect();
+        drawn.pending.retain(|key, _| asked.contains(key));
+        (drawn.wanted, drawn.held, drawn.at) = (wanted, held, 0);
+        drawn.stale = drawn.stale.saturating_sub(1);
+    } else {
+        let Drawn { wanted, made, .. } = &mut *drawn;
+        wanted.retain(|w| !made.contains_key(&(w.1, w.2)));
+    }
+    drawn.waiting = drawn.wanted.len() + drawn.held + regions.waiting + drawn.stale as usize;
+    // What the other threads have finished is drawn (a few milliseconds' worth a frame:
+    // making a mesh's buffers is not nothing), and the nearest of what is wanted and not
+    // begun is begun.
+    let slice = if loading.up { crate::loading::SLICE } else if hurried { 0.05 } else { 0.003 };
     let started = std::time::Instant::now();
-    for (_, chunk, level) in wanted {
-        let spawned = draw_level(&mut commands, &mut meshes, &look, &terrain.0, chunk, level);
-        drawn.made.insert((chunk, level), spawned);
-        drawn.waiting = drawn.waiting.saturating_sub(1);
-        if started.elapsed().as_secs_f32() > slice {
+    let mut ready: Vec<(IVec3, usize)> = drawn.pending.iter().filter(|(_, task)| task.is_finished()).map(|(key, _)| *key).collect();
+    ready.sort_by(|a, b| eye.distance_squared(middle_of(a.0)).total_cmp(&eye.distance_squared(middle_of(b.0))));
+    let mut taken = 0;
+    for key in ready {
+        let Some(made) = drawn.pending.get_mut(&key).and_then(bevy::tasks::futures::check_ready) else { continue };
+        drawn.pending.remove(&key);
+        taken += made.iter().map(|(_, data)| data.positions.len()).sum::<usize>();
+        let spawned = draw_level(&mut commands, &mut meshes, &look, key.0, key.1, made);
+        drawn.made.insert(key, spawned);
+        cost.meshes += 1;
+        // (In play, so many corners a frame at most: the card takes each mesh's buffers in
+        // the frame it arrives, and two dozen near chunks at once was a frame of 30 ms.)
+        if started.elapsed().as_secs_f32() > slice || (!hurried && taken >= UPLOAD) {
             break;
         }
     }
+    let pool = bevy::tasks::AsyncComputeTaskPool::get();
+    let room = AT_ONCE.saturating_sub(drawn.pending.len());
+    let begin: Vec<(IVec3, usize)> = drawn.wanted.iter().map(|w| (w.1, w.2)).filter(|key| !drawn.pending.contains_key(key) && !drawn.made.contains_key(key) && terrain.0.chunks.contains_key(&key.0)).take(room).collect();
+    let top = if begin.is_empty() { 0 } else { terrain.0.top() };
+    for (chunk, level) in begin {
+        let around = terrain.0.around(chunk, top);
+        drawn.pending.insert((chunk, level), pool.spawn(async move { mesh_level(&around, chunk, level) }));
+    }
+    cost.mesh += began.elapsed().as_secs_f32();
 }
 
 /// What the season does to the look of the land, for the wind shader: the tint of leaves and
@@ -629,12 +745,13 @@ fn seasons(live: Option<Res<crate::motion::Live>>, look: Option<Res<Look>>, mut 
     }
 }
 
-/// Makes the cells of the regions the camera has come near, nearest first, a few
-/// milliseconds' worth a frame; drops those it has left well behind, unless someone dug or
+/// Makes the cells of the regions the camera has come near, nearest first, each on another
+/// thread and apart from the world, which takes it in when it is done (`Voxels::join`); drops those it has left well behind, unless someone dug or
 /// built there. So what is held in cells is what is near, and the island can be a kilometre
 /// across (or ten) for the price of the ground underfoot.
-fn regions(time: Res<Time>, args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrain: Option<ResMut<Terrain>>, mut forms: ResMut<crate::flora::Forms>, mut regions: ResMut<Regions>, mut dirty: ResMut<Dirty>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
+fn regions(args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrain: Option<ResMut<Terrain>>, mut forms: ResMut<crate::flora::Forms>, mut regions: ResMut<Regions>, mut dirty: ResMut<Dirty>, mut cost: ResMut<Cost>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
     let (Some(mut terrain), Some(eye)) = (terrain, cameras.iter().next().map(|t| t.translation())) else { return };
+    let began = std::time::Instant::now();
     let size = terrain::REGION as f32 * CELL;
     let away = |r: (i32, i32)| Vec2::new((r.0 as f32 + 0.5) * size - eye.x, (r.1 as f32 + 0.5) * size - eye.z).length();
     let edge = terrain.1.span.div_euclid(terrain::REGION);
@@ -647,6 +764,7 @@ fn regions(time: Res<Time>, args: Res<crate::Args>, loading: Res<crate::loading:
         .collect();
     wanted.sort_by(|a, b| a.0.total_cmp(&b.0));
     regions.waiting = wanted.len();
+    regions.unmade = wanted.iter().map(|w| w.1).collect();
     // Every chunk of a region and the ring round it is drawn again: faces at its edge that
     // were open to nothing now have a neighbour, and the other way about.
     let redraw = |voxels: &Voxels, r: (i32, i32), dirty: &mut Dirty| {
@@ -654,12 +772,16 @@ fn regions(time: Res<Time>, args: Res<crate::Args>, loading: Res<crate::loading:
         let (lo, hi) = ((r.0 * per - 1, r.1 * per - 1), ((r.0 + 1) * per, (r.1 + 1) * per));
         dirty.0.extend(voxels.chunks.keys().filter(|c| c.x >= lo.0 && c.x <= hi.0 && c.z >= lo.1 && c.z <= hi.1));
     };
-    let slice = if loading.up { crate::loading::SLICE } else if args.scene.is_some() || time.elapsed_secs() < 3.0 { 0.06 } else { 0.006 };
-    let started = std::time::Instant::now();
-    for (_, r) in wanted {
+    // What the other threads have finished is taken in, and what grew there kept for drawing.
+    let asked: HashSet<(i32, i32)> = wanted.iter().map(|w| w.1).collect();
+    regions.pending.retain(|r, _| asked.contains(r));
+    let ready: Vec<(i32, i32)> = regions.pending.iter().filter(|(_, task)| task.is_finished()).map(|(r, _)| *r).collect();
+    for r in ready {
+        let Some((part, mut form)) = regions.pending.get_mut(&r).and_then(bevy::tasks::futures::check_ready) else { continue };
+        regions.pending.remove(&r);
         let Terrain(voxels, land, ..) = &mut *terrain;
         let (lo, hi) = ((r.0 * terrain::REGION, r.1 * terrain::REGION), ((r.0 + 1) * terrain::REGION, (r.1 + 1) * terrain::REGION));
-        let ((), mut form) = cube_sim::plants::recorded(|| terrain::fill(voxels, land, lo, hi));
+        voxels.join(part, |c| region_of(c * CHUNK) == r);
         // Of the shapes grown, the ones whose middle is in this region are this region's to
         // draw: a tree astride an edge is grown by both sides, and drawn half by each.
         let within = |p: Vec3| (p.x / CELL) as i32 >= lo.0 && ((p.x / CELL) as i32) < hi.0 && (p.z / CELL) as i32 >= lo.1 && ((p.z / CELL) as i32) < hi.1;
@@ -684,12 +806,28 @@ fn regions(time: Res<Time>, args: Res<crate::Args>, loading: Res<crate::loading:
                 form.stones.extend(grown.stones);
             }
         }
-        forms.0.insert(r, form);
+        forms.0.insert(r, std::sync::Arc::new(form));
         regions.made.insert(r);
         regions.waiting -= 1;
+        regions.unmade.remove(&r);
+        cost.fills += 1;
         redraw(&terrain.0, r, &mut dirty);
-        if started.elapsed().as_secs_f32() > slice {
+    }
+    // The nearest of what is wanted and not begun is begun: a few at once, so the threads
+    // are left free for the meshes of what is already here.
+    let pool = bevy::tasks::AsyncComputeTaskPool::get();
+    for (_, r) in wanted {
+        if regions.pending.len() >= if loading.up || (args.scene.is_some() && args.strip == 0) { 12 } else { 4 } {
             break;
+        }
+        if let std::collections::hash_map::Entry::Vacant(slot) = regions.pending.entry(r) {
+            let land = terrain.1.clone();
+            let (lo, hi) = ((r.0 * terrain::REGION, r.1 * terrain::REGION), ((r.0 + 1) * terrain::REGION, (r.1 + 1) * terrain::REGION));
+            slot.insert(pool.spawn(async move {
+                let mut part = Voxels::default();
+                let ((), form) = cube_sim::plants::recorded(|| terrain::fill(&mut part, &land, lo, hi));
+                (part, form)
+            }));
         }
     }
     let gone: Vec<(i32, i32)> = regions.made.iter().copied().filter(|r| away(*r) > DROP && !terrain.3.contains(r)).collect();
@@ -701,4 +839,5 @@ fn regions(time: Res<Time>, args: Res<crate::Args>, loading: Res<crate::loading:
         forms.0.remove(&r);
     }
     regions.kept = terrain.3.clone();
+    cost.fill += began.elapsed().as_secs_f32();
 }

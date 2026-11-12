@@ -34,6 +34,10 @@ pub struct Stage {
     /// Counted from the start of the program, a script was over before the world had been
     /// made, and every strip and moving picture was of someone standing still.
     pub ready_for: f32,
+    /// For a strip: how long the world took to be ready (real seconds) and what that cost,
+    /// then every frame's time while the strip ran.
+    pub load: Option<(f32, world::Cost)>,
+    pub ran: Vec<f32>,
     laid_out: bool,
     expected: usize,
     settled: u32,
@@ -149,10 +153,26 @@ impl Pace {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, time: Res<Time>, real: Res<Time<Real>>, rigs: Query<&Rig>, creatures: Query<(), With<Creature>>, drawn: Option<Res<world::Drawn>>, faces: Query<(&world::Faces, &ViewVisibility)>, adapter: Option<Res<bevy::render::renderer::RenderAdapterInfo>>, mut exit: MessageWriter<AppExit>, mut waited: Local<f32>, mut pace: Local<Pace>) {
+fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, time: Res<Time>, real: Res<Time<Real>>, rigs: Query<&Rig>, creatures: Query<(), With<Creature>>, drawn: Option<Res<world::Drawn>>, faces: Query<(&world::Faces, &ViewVisibility)>, adapter: Option<Res<bevy::render::renderer::RenderAdapterInfo>>, mut exit: MessageWriter<AppExit>, cost: Option<Res<world::Cost>>, mut waited: Local<f32>, mut pace: Local<Pace>, mut was: Local<world::Cost>) {
+    // (Once a strip has begun every frame is counted, the ones the world was being made in
+    // most of all: those are the slow ones.)
+    if stage.load.is_some() {
+        stage.ran.push(real.delta_secs());
+        // `SLOW_TRACE=1`: every frame over a fiftieth of a second, and what was made in it.
+        if let Some(cost) = &cost {
+            if real.delta_secs() > 0.02 && std::env::var_os("SLOW_TRACE").is_some() {
+                println!("slow {:.0}ms · {}", real.delta_secs() * 1000.0, cost.since(&was));
+            }
+            *was = **cost;
+        }
+    }
     // Every creature there is going to be has its model (the ones asked for, and any the world
     // came with), and every chunk in view has its mesh.
-    if !stage.laid_out || rigs.iter().count() < stage.expected.max(creatures.iter().count()) || drawn.is_some_and(|d| d.waiting > 0) {
+    // Once it has all been there the clock runs whatever is being made (someone walking has
+    // always a little ground on its way, a frame or two from the other threads); only the
+    // moment of a single picture waits again for everything.
+    let whole = stage.laid_out && rigs.iter().count() >= stage.expected.max(creatures.iter().count()) && !drawn.is_some_and(|d| d.waiting > 0);
+    if !stage.laid_out || (stage.settled == 0 && !whole) {
         return;
     }
     stage.settled += 1;
@@ -165,6 +185,9 @@ fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, ti
         }
     }
     if args.strip > 0 {
+        if stage.load.is_none() {
+            stage.load = Some((real.elapsed_secs(), cost.as_deref().copied().unwrap_or_default()));
+        }
         // A strip: a picture every `every` seconds; `gather` saves them as one when all are in.
         if stage.settled >= 40 && *waited >= args.after + stage.taken as f32 * args.every && stage.taken < args.strip {
             stage.taken += 1;
@@ -176,7 +199,7 @@ fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, ti
         }
         return;
     }
-    if stage.settled >= 40 && *waited >= args.after && !stage.asked {
+    if stage.settled >= 40 && *waited >= args.after && !stage.asked && (whole || *waited >= args.after + 2.0) {
         stage.settled = 40;
         stage.asked = true;
         if let Some(dir) = std::path::Path::new(&stage.path).parent() {
@@ -196,11 +219,21 @@ fn capture(mut commands: Commands, mut stage: ResMut<Stage>, args: Res<Args>, ti
 }
 
 /// One picture of a strip arriving. When the last is in they are set side by side and saved.
-fn gather(shot: On<bevy::render::view::screenshot::ScreenshotCaptured>, args: Res<Args>, mut stage: ResMut<Stage>, mut exit: MessageWriter<AppExit>) {
+fn gather(shot: On<bevy::render::view::screenshot::ScreenshotCaptured>, args: Res<Args>, cost: Option<Res<world::Cost>>, mut stage: ResMut<Stage>, mut exit: MessageWriter<AppExit>) {
     let Ok(picture) = shot.image.clone().try_into_dynamic() else { return };
     stage.frames.push(picture.to_rgb8());
     if stage.frames.len() < args.strip {
         return;
+    }
+    // What the run cost: the load, then the frames while it ran (the middle one, the one in a
+    // hundred, the worst, and how many took over a thirtieth of a second) and what was made
+    // meanwhile. `make pace` holds these to bars.
+    if let (Some((took, at_load)), Some(cost)) = (stage.load, cost) {
+        let mut ran = stage.ran.clone();
+        ran.sort_by(f32::total_cmp);
+        let at = |part: f32| ran.get(((ran.len() as f32 * part) as usize).min(ran.len().saturating_sub(1))).copied().unwrap_or(0.0) * 1000.0;
+        println!("load {took:.1}s · {}", at_load.since(&world::Cost::default()));
+        println!("frames n={} p50={:.1}ms p99={:.1}ms worst={:.0}ms over33={} in {:.0}s · {}", ran.len(), at(0.5), at(0.99), at(1.0), ran.iter().filter(|f| **f > 1.0 / 30.0).count(), ran.iter().sum::<f32>(), cost.since(&at_load));
     }
     if let Some(dir) = std::path::Path::new(&stage.path).parent() {
         let _ = std::fs::create_dir_all(dir);

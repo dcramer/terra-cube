@@ -115,7 +115,7 @@ impl<'a> Near<'a> {
         let mut near = Near([None; 27]);
         for (i, slot) in near.0.iter_mut().enumerate() {
             let i = i as i32;
-            *slot = world.chunks.get(&(chunk + IVec3::new(i % 3 - 1, i / 9 - 1, i / 3 % 3 - 1)));
+            *slot = world.chunks.get(&(chunk + IVec3::new(i % 3 - 1, i / 9 - 1, i / 3 % 3 - 1))).map(|v| &**v);
         }
         near
     }

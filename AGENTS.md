@@ -46,6 +46,7 @@ cargo world map shots/map.png      # one picture from above with where every cre
 make window                        # the real window on an Xvfb, driven by real key presses (tools/xkeys), judged from the trace
 make prove                         # every judgment in one go, a line each: check, survey, run, life, sound levels, what is heard, fight, swim, window, seasons
 make sound                         # five minutes heard in a meadow by day and a shore from dusk, judged from the trace: files, repeats, level against a footfall (`tools/audio/listen.sh forest 21` for any place and hour)
+make pace                          # the player run across the world on the graphics card: load time and every frame's time while he ran, against bars (`cargo world cost`: what a region and a mesh cost, by part)
 make swim                          # the player put in deep water in the real game: floats, swims, is heard (`cargo world find deep` finds it)
 make fight                         # the player fights a goblin in the real game, judged from the trace: hit, kill, sounds
 make grown                         # shots/grown/*.png: every kind of tree and rock alone, whole and close; `make floors`: the ground of a trail, forest, meadow and shore in one sheet
@@ -75,6 +76,7 @@ A machine with no screen needs `DISPLAY=:1` (an Xvfb) for `sheet` and `sandbox`;
 - **Tripo's motion where Tripo has it, untouched.** Presets and motions made from a description are used as delivered; forge makes a clip only where Tripo has none (animals' gaits). Do not rewrite a recorded clip ([pipeline.md](docs/pipeline.md#where-motion-comes-from)).
 - **Bones have roles, not names.** Tripo's bone names are unreliable; clips are written against roles read from the skeleton's shape (`crates/forge/src/rig.rs`). Do not match on bone names for animals.
 - **Runs on Linux, Windows and macOS.** Build paths with `Path::join`, never a typed `/` or a home folder; no shell-outs beyond `node` and `cargo`; anything one system needs sits behind `cfg!` with the reason. `make check` type-checks for Windows. In WSL the game is built as a Windows program and opened there (`make play` does it), so it must start from any folder: it finds `assets/` itself.
+- **Nothing long on the frame's thread.** Making cells, meshes and tree shapes goes to the task threads and the frame takes in what is finished ([engine.md](docs/engine.md#a-big-world)); measure with `make pace` before and after anything that touches what is made or drawn, and profile before guessing (three guesses in a row were wrong the day this was written).
 - **The simulation must not need a window.** Game rules go in crates with no rendering (`cube_voxel`, `cube_sim`), tested headless. `cube_game` only draws and takes input: it never moves a creature itself. Anything random comes from the `Sim`'s seeded generator, so a seed replays.
 - **Secrets:** `.env` (the Tripo login) lives in the main checkout, ignored by git. Never print it or commit it.
 - **Shaders** are for the environment only (terrain, water, sky, weather). Creatures use stock materials.
