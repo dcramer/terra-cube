@@ -450,7 +450,7 @@ fn torch(
 ) {
     // Lit while the torch is the thing in hand (T takes it from the bar); `--torch` lights
     // it whatever is held, for pictures.
-    let held = |m: &Mover| live.agent(m).is_some_and(|a| a.dead.is_none() && a.pack.as_ref().and_then(|p| p.held()).is_some_and(|i| i.lights()));
+    let held = |m: &Mover| live.agent(m).is_some_and(|a| a.dead.is_none() && a.act != cube_sim::life::Act::Swim && a.pack.as_ref().and_then(|p| p.held()).is_some_and(|i| i.lights()));
     // (Not behind the loading screen: it would be heard to catch.)
     let Some((bearer, _)) = bearers.iter().next().filter(|(_, m)| !loading.up && (args.torch || held(m))) else {
         for (entity, ..) in &torches {

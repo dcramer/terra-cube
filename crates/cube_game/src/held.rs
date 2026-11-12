@@ -99,7 +99,9 @@ fn hold(
     // What it has taken from its pack, or what its kind is seen to carry (a goblin's club).
     let wants = |owner: Entity| -> Option<String> {
         let (_, m) = movers.get(owner).ok()?;
-        let agent = live.agent(m).filter(|a| a.dead.is_none())?;
+        // (Nothing while it swims: both hands are for the water, a sword was waved over his
+        // head at every stroke, and a torch does not burn there.)
+        let agent = live.agent(m).filter(|a| a.dead.is_none() && a.act != cube_sim::life::Act::Swim)?;
         agent.pack.as_ref().and_then(|p| p.held()).map(|i| i.name().to_owned()).or_else(|| live.kind(m).and_then(|k| k.holds.clone()))
     };
     let first = |owner: Entity| firsts.get(owner).is_ok_and(|c| c.first_person);
