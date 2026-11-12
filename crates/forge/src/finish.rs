@@ -131,16 +131,29 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
     // Clips: Tripo's under our names, then the made ones the plan asks for.
     let theirs = clips::read(&glb, &skeleton)?;
     let mut out: Vec<Clip> = Vec::new();
+    let mut library: Option<crate::library::Library> = None;
     for name in plan.clips.iter().filter(|c| !creature.without.contains(c)) {
         let preset = plan.presets.get(name).filter(|_| !creature.made.contains(name));
         // (A described motion's clip is named by its description, cut short: the start is enough.)
         let found = preset.and_then(|p| theirs.iter().position(|c| c.name.rsplit(':').next() == Some(p.as_str()) || (plan.motions.contains_key(p) && c.name.starts_with(p.as_str()))));
-        let clip = match found {
-            Some(i) => {
+        // A clip of the library, carried onto this skeleton, comes before Tripo's own.
+        let carried = match plan.library.get(name).filter(|_| !creature.made.contains(name)) {
+            Some(theirs) => {
+                if library.is_none() {
+                    library = Some(crate::library::Library::read()?);
+                }
+                Some(Clip { name: name.clone(), looping: true, frames: library.as_ref().unwrap().carry(theirs, &skeleton)?, source: "library", speed: None })
+            }
+            None => None,
+        };
+        let recorded = carried.as_ref().or(found.map(|i| &theirs[i]));
+        let clip = match recorded {
+            Some(taken) => {
+                let source = taken.source;
                 let looping = !matches!(name.as_str(), "attack" | "hurt" | "die" | "jump" | "land");
                 let mut frames = match plan.trim.get(name) {
-                    Some(&[from, to, speed]) => clips::trimmed(&theirs[i], from, to, speed),
-                    None => theirs[i].frames.clone(),
+                    Some(&[from, to, speed]) => clips::trimmed(taken, from, to, speed),
+                    None => taken.frames.clone(),
                 };
                 if matches!(name.as_str(), "walk" | "run") && creature.gait_gain != 1.0 {
                     clips::gained(&skeleton, &mut frames, creature.gait_gain);
@@ -154,10 +167,28 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
                 if matches!(name.as_str(), "jump" | "fall" | "land") {
                     clips::footed(&skeleton, &roles, &mut frames);
                 }
-                Clip { name: name.clone(), looping, frames, source: "tripo", speed: None }
+                // The library's swimmer lies at the height of its own feet; the game holds a
+                // swimmer by the middle. It is raised until its hips, on the whole, are where
+                // they are standing.
+                if name == "swim" && source == "library" {
+                    let high = |pose: &crate::rig::Pose| skeleton.pose_world(pose)[skeleton.root].w_axis.y;
+                    let lift = high(&skeleton.rest()) - frames.iter().map(high).sum::<f32>() / frames.len().max(1) as f32;
+                    for pose in &mut frames {
+                        pose.root_t += skeleton.base.inverse().transform_vector3(Vec3::Y * lift);
+                    }
+                }
+                // And no part of it goes under the ground: a troll laid down where the library's
+                // slight figure lay was a hand's depth into the floor, and a golem's toes in a lunge.
+                if source == "library" && name != "swim" {
+                    let under = crate::check::sunk(&glb, &skeleton, &frames);
+                    for (pose, under) in frames.iter_mut().zip(under) {
+                        pose.root_t += skeleton.base.inverse().transform_vector3(Vec3::Y * under);
+                    }
+                }
+                Clip { name: name.clone(), looping, frames, source, speed: None }
             }
             None => {
-                let stand = out.iter().find(|c| c.name == "idle" && c.source == "tripo").map(|c| &c.frames[0]);
+                let stand = out.iter().find(|c| c.name == "idle" && c.source != "made").map(|c| &c.frames[0]);
                 clips::make(name, &skeleton, &roles, &out, stand, plan.upright, scale, (1.0 + creature.gait_gain) / 2.0, creature.ease, creature.hops).with_context(|| format!("no preset and no recipe for the clip `{name}` (clips.rs `make`)"))?
             }
         };
@@ -176,7 +207,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         // recorded walk was a person walking and what replaced it was a shuffle: an ankle
         // does not travel at one speed while its foot is down (the heel lands, the foot
         // rolls, the toe pushes off), so the measure failed a good clip.
-        if matches!(name.as_str(), "walk" | "run") && clip.source != "made" && clip.speed.is_none()
+        if matches!(name.as_str(), "walk" | "run" | "sprint") && clip.source != "made" && clip.speed.is_none()
             && let Some((stance, steps)) = recorded_speed(&skeleton, &roles, &clip)
         {
             if std::env::var_os("FORGE_TRACE").is_some() {
@@ -185,6 +216,14 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
             // Where the two disagree by more than a quarter the body is not one the first
             // can read (the troll's run: its lower foot is not always the one down).
             clip.speed = Some(if (stance / steps - 1.0).abs() < 0.25 { stance } else { steps });
+            // The library's sprint is a sprinter's, near twice the run (its steps say less: a
+            // sprinter is in the air between them). The game's sprint is half as fast again
+            // as the run, so the clip is played that much slower and its feet still hold.
+            if let (true, Some(run)) = (name == "sprint" && clip.source == "library", out.iter().find(|c| c.name == "run").and_then(|c| c.speed)) {
+                let slower = (run * 1.5 / stance).clamp(0.6, 1.0);
+                clip.frames = clips::trimmed(&clip, 0.0, clip.seconds(), slower);
+                clip.speed = Some(stance * slower);
+            }
         }
         out.push(clip);
     }

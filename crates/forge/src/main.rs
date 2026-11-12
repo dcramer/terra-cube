@@ -11,6 +11,7 @@ mod clips;
 mod cubes;
 mod finish;
 mod glb;
+mod library;
 mod looks;
 mod rig;
 mod shaped;

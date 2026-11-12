@@ -66,6 +66,10 @@ pub struct Plan {
     /// of its description) → its asset id at Tripo. Each is put on every creature of the plan.
     #[serde(default)]
     pub motions: BTreeMap<String, String>,
+    /// Our clip name → a clip of the hand-animated library (`library.rs`), carried onto the
+    /// creature's own skeleton. Taken before a preset of the same name.
+    #[serde(default)]
+    pub library: BTreeMap<String, String>,
     /// Every clip a creature of this plan must have; ones without a preset are made.
     pub clips: Vec<String>,
     /// Stands upright (falls backward, not onto its side).

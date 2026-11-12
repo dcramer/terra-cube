@@ -19,7 +19,7 @@ pub struct Clip {
     pub name: String,
     pub looping: bool,
     pub frames: Vec<Pose>,
-    /// "tripo" or "made".
+    /// "tripo", "library" (a person's hand, carried over: `library.rs`) or "made".
     pub source: &'static str,
     /// For a gait made with planted feet: the ground speed it was built for, file units a
     /// second. A gait without it is measured.

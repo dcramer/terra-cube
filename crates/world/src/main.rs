@@ -352,8 +352,34 @@ fn trunks_command(args: &Args) -> ! {
             }
         }
     }
+    // And what lies on the ground, from above: how far the top a body stands on is from the
+    // top that is drawn, along every fallen trunk. (A body was seen to sink into one.)
+    let mut tops: Vec<f32> = Vec::new();
+    for limb in form.limbs.iter().filter(|l| l.roots == 0 && l.ra.max(l.rb) >= 0.2 && (l.b.y - l.a.y).abs() < 0.3 * l.a.distance(l.b) && l.a.x.abs() < inside && l.a.z.abs() < inside && l.a.y.min(l.b.y) < land.height((l.a.x / CELL).floor() as i32, (l.a.z / CELL).floor() as i32) as f32 * CELL + 1.5) {
+        let g = limb.near();
+        let mut drawn = std::collections::HashSet::new();
+        limb.fill_span(g, None, (f32::MIN, f32::MAX), |c| {
+            drawn.insert(c);
+        });
+        for part in [0.25, 0.5, 0.75] {
+            let p = limb.a.lerp(limb.b, part);
+            let from = p.y + limb.ra + 0.5;
+            let first = |hit: &dyn Fn(Vec3) -> bool| (0..((limb.ra * 2.0 + 0.6) * 100.0) as i32).map(|i| from - i as f32 * 0.01).find(|y| hit(Vec3::new(p.x, *y, p.z)));
+            if let (Some(stood), Some(shown)) = (first(&|q| world.bit((q / cube_voxel::BIT).floor().as_ivec3()) == limb.bark), first(&|q| drawn.contains(&(q / g).floor().as_ivec3()))) {
+                tops.push(shown - stood);
+            }
+        }
+    }
+    tops.sort_by(f32::total_cmp);
     gaps.sort_by(f32::total_cmp);
     let mut checks = Checks(Vec::new());
+    if !tops.is_empty() {
+        // (All but the place in ten where other wood stands over it: its own bough, the stump beside it.)
+        let (sunk, over) = (tops[tops.len() - 1] * 100.0, tops[tops.len() / 10] * 100.0);
+        println!("logs: {} places on {} fallen trunks · a body stands from {:.0} cm above the wood that is drawn to {:.0} cm down in it", tops.len(), tops.len() / 3, -over, sunk);
+        checks.bar("logs sunk", sunk, sunk < 8.0, "a body sinks no more than 8 cm into a fallen trunk");
+        checks.bar("logs over", -over, -over < 8.0, "nor stands more than 8 cm over one");
+    }
     if gaps.is_empty() {
         checks.bar("trunks", 0.0, false, "some trunks near the start");
         checks.finish()
@@ -535,7 +561,16 @@ fn main() {
                     let depth = (SEA - land.height(cx, cz)) as f32 * CELL;
                     // Deep, and open water for ten metres each way: somewhere to swim, not a pothole.
                     let open = [(10.0, 0.0), (-10.0, 0.0), (0.0, 10.0), (0.0, -10.0)].iter().all(|(dx, dz)| (SEA - land.height(((x + dx) / CELL).floor() as i32, ((z + dz) / CELL).floor() as i32)) as f32 * CELL > 1.2);
-                    let hit = if what == "deep" { depth > 2.0 && open } else if what == "trail" {
+                    // A hillside to walk up: open meadow that climbs a fifth to a half of a metre
+                    // in every metre for ten, some way; the way is given as the `--yaw` that walks up it.
+                    let up = |yaw: f32| (0..10).all(|i| {
+                        let h = |d: f32| (land.height(((x - yaw.sin() * d) / CELL).floor() as i32, ((z - yaw.cos() * d) / CELL).floor() as i32), land.biome(((x - yaw.sin() * d) / CELL).floor() as i32, ((z - yaw.cos() * d) / CELL).floor() as i32));
+                        let (a, b) = (h(i as f32), h(i as f32 + 1.0));
+                        b.1 == Biome::Meadow && (0.2..=0.5).contains(&((b.0 - a.0) as f32 * CELL))
+                    });
+                    let climb = (what == "slope").then(|| (0..16).map(|k| k as f32 * std::f32::consts::TAU / 16.0).find(|yaw| up(*yaw))).flatten();
+                    let depth = climb.map_or(depth, |yaw| -100.0 - yaw);
+                    let hit = if what == "slope" { climb.is_some() && land.trees.iter().all(|t| ((t.x - cx) as f32).hypot((t.z - cz) as f32) * CELL > 9.0) } else if what == "deep" { depth > 2.0 && open } else if what == "trail" {
                         // A stretch in the open, to be seen: meadow, and no tree within seven metres.
                         land.trail(cx, cz) > 0.8 && land.biome(cx, cz) == Biome::Meadow && land.trees.iter().all(|t| ((t.x - cx) as f32).hypot((t.z - cz) as f32) * CELL > 7.0)
                     } else { Biome::named(&what) == Some(land.biome(cx, cz)) };
@@ -545,10 +580,10 @@ fn main() {
                 }
             }
             if found.is_empty() {
-                fail(&format!("no `{what}` on this island (deep, trail, or one of water shore meadow forest rock snow)"));
+                fail(&format!("no `{what}` on this island (deep, trail, slope, or one of water shore meadow forest rock snow)"));
             }
             for (x, z, depth) in found {
-                println!("{what} at {x:.0},{z:.0} · {:.0}m from the start{}", x.hypot(z), if depth > 0.0 { format!(" · {depth:.1}m of water") } else { String::new() });
+                println!("{what} at {x:.0},{z:.0} · {:.0}m from the start{}", x.hypot(z), if depth <= -100.0 { format!(" · up it is --yaw {:.2}", -depth - 100.0) } else if depth > 0.0 { format!(" · {depth:.1}m of water") } else { String::new() });
             }
         }
         "years" => {

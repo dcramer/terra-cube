@@ -65,6 +65,16 @@ pub fn nose(glb: &Glb, sk: &Skeleton, roles: &crate::rig::Roles) -> Option<(usiz
     Some((most(pick), at[pick]))
 }
 
+/// How far under the floor it stands on at rest the skin goes at each pose, file units (0
+/// where it does not): what a carried clip is raised by, since a thick body laid down where a
+/// thin one lay goes into the ground by the difference.
+pub fn sunk(glb: &Glb, sk: &Skeleton, frames: &[Pose]) -> Vec<f32> {
+    let Ok(s) = skin(glb) else { return vec![0.0; frames.len()] };
+    let lowest = |pose: &Pose| posed(&s, sk, pose).iter().map(|p| p.y).fold(f32::MAX, f32::min);
+    let floor = lowest(&sk.rest());
+    frames.iter().map(|pose| (floor - lowest(pose)).max(0.0)).collect()
+}
+
 fn posed(s: &Skin, sk: &Skeleton, pose: &Pose) -> Vec<Vec3> {
     let mats: Vec<Mat4> = sk.pose_world(pose).iter().zip(&sk.inverse_bind).map(|(w, ib)| *w * *ib).collect();
     s.positions

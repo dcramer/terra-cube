@@ -7,7 +7,6 @@ without = ["swim"]
 ease = 1.0
 gait_gain = 0.75
 # Its skin tears crumpled on the ground (stretch over the bar), so its death stays the made topple.
-made = ["attack", "die"]
 
 [life]
 temper = "hostile"

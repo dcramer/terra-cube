@@ -5,7 +5,6 @@ subject = "a tall mossy stone troll with broad shoulders, long thick arms, a sma
 height = 3.0
 gait_gain = 0.6
 # Its skin tears crumpled on the ground (stretch over the bar), so its death stays the made topple.
-made = ["attack", "die"]
 
 [life]
 holds = "Club"

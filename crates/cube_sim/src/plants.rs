@@ -122,8 +122,10 @@ fn wood(world: &mut World, limb: &Limb) {
     // has it or has it not (`cargo world trunks`: by cells a body went 20 cm into wood it
     // could see and was stopped 16 cm short of it).
     // (Every limb of the tree that comes so low, not its foot alone: a trunk is several
-    // limbs end to end, and a bough can hang at the height of a head. Not a twig.)
-    let fine = FOOT.get().filter(|foot| limb.ra.max(limb.rb) >= 0.1 && limb.a.y.min(limb.b.y) < foot + FINE).map_or(f32::MIN, |foot| ((foot + FINE) / CELL).ceil() * CELL);
+    // limbs end to end, and a bough can hang at the height of a head. Not a twig. And what
+    // lies or stands low without being a tree, a fallen trunk, a stump, a sapling: until
+    // 2026-11-12 those were cells, and a body walking over a fallen trunk sank 15 cm into it.)
+    let fine = FOOT.get().filter(|foot| limb.ra.max(limb.rb) >= 0.05 && limb.a.y.min(limb.b.y) < foot + FINE).map_or(f32::MIN, |foot| ((foot + FINE) / CELL).ceil() * CELL);
     if fine > f32::MIN {
         // In the very cubes it is drawn in near the eye, each written as the bits it covers:
         // so what stops a body is the wood that is seen, to the cube.
@@ -353,10 +355,15 @@ pub fn height(kind: Tree, age: f32) -> f32 {
 /// Grows a tree with its foot on the cell `foot`. `age` is 0 for one just grown, 1 for an
 /// old one. Says how tall it stands, metres.
 pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng) -> f32 {
-    FOOT.set(Some(foot.y as f32 * CELL));
-    let tall = grown(world, foot, kind, age, rng);
-    FOOT.set(None);
-    tall
+    low(foot.y as f32 * CELL, || grown(world, foot, kind, age, rng))
+}
+
+/// Grows something whose wood near the ground is to be filled as it is drawn (`FOOT`).
+fn low<R>(foot: f32, grow: impl FnOnce() -> R) -> R {
+    let was = FOOT.replace(Some(foot));
+    let grown = grow();
+    FOOT.set(was);
+    grown
 }
 
 fn grown(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng) -> f32 {
@@ -566,6 +573,10 @@ pub fn specimen(world: &mut World, foot: IVec3, name: &str, rng: &mut Rng) -> bo
 
 /// A young tree, its crown low: what stands at eye level in a wood.
 pub fn young(world: &mut World, foot: IVec3, needles: bool, rng: &mut Rng) {
+    low(foot.y as f32 * CELL, || sprung(world, foot, needles, rng))
+}
+
+fn sprung(world: &mut World, foot: IVec3, needles: bool, rng: &mut Rng) {
     let foot = (foot.as_vec3() + Vec3::new(0.5, 0.0, 0.5)) * CELL;
     let tall = scale::YOUNG.at(rng.between(0.0, 1.0));
     let top = foot + Vec3::Y * tall + Vec3::new(rng.between(-0.3, 0.3), 0.0, rng.between(-0.3, 0.3));
@@ -606,6 +617,10 @@ pub fn bush(world: &mut World, foot: IVec3, rng: &mut Rng) {
 
 /// A fallen trunk lying on the ground, and the stump it broke from when it is thick.
 pub fn log(world: &mut World, foot: IVec3, rng: &mut Rng) {
+    low(foot.y as f32 * CELL, || lain(world, foot, rng))
+}
+
+fn lain(world: &mut World, foot: IVec3, rng: &mut Rng) {
     let foot = (foot.as_vec3() + Vec3::new(0.5, 0.0, 0.5)) * CELL;
     let (way, long, thick) = (rng.between(0.0, TAU), rng.between(3.0, 9.0), rng.between(0.2, 0.5));
     let along = Vec3::new(way.cos(), 0.0, way.sin());
@@ -624,7 +639,8 @@ pub fn log(world: &mut World, foot: IVec3, rng: &mut Rng) {
 pub fn stump(world: &mut World, foot: IVec3, rng: &mut Rng) {
     let foot = (foot.as_vec3() + Vec3::new(0.5, 0.0, 0.5)) * CELL;
     let thick = rng.between(0.3, 0.65);
-    bole(world, foot, foot + Vec3::Y * rng.between(0.35, 1.1), thick, thick * 0.9, Block::Wood, rng);
+    let tall = rng.between(0.35, 1.1);
+    low(foot.y, || bole(world, foot, foot + Vec3::Y * tall, thick, thick * 0.9, Block::Wood, rng));
 }
 
 /// Where the ground is under a point, metres: rocks sit on it, not at the height of the
