@@ -77,6 +77,7 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 	@cargo world trunks | tail -1 | sed 's/^ok$$/ok trunks: what stops a body at a tree is the wood that is drawn/'
 	@python3 tools/audio/level.py | tail -1
 	@python3 tools/audio/loops.py | tail -1
+	@python3 tools/audio/sources.py
 	@$(MAKE) --no-print-directory sound
 	@$(MAKE) --no-print-directory fight
 	@$(MAKE) --no-print-directory swim

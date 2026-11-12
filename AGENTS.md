@@ -17,7 +17,7 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 | `crates/cube_game` | The Bevy app: draws what the simulation holds, takes the player's keys. Sky, light, wind and what drifts in the air (`world`, `air`). Also the sandbox panel, contact sheets, scene pictures. |
 | `crates/world` | `cargo world`: the land and its creatures judged headless (`survey`, `run`, `life`, `map`, `grade`, `who`, `dig`). |
 | `crates/forge` | The creature pipeline CLI. Each file's header says what it holds; `main.rs` has the map. |
-| `tools/audio` | Sound judged by measurement (ffmpeg): `level.py` brings every file to one loudness, `loops.py` joins loops, `listen.sh` and `mix.py` judge five minutes of what the game played, `cut.py` and `cut.sh` cut calls from recordings. |
+| `tools/audio` | Sound judged by measurement (ffmpeg): `level.py` brings every file to one loudness, `sources.py` checks each has its source and licence in the README, `loops.py` joins loops, `listen.sh` and `mix.py` judge five minutes of what the game played, `cut.py` and `cut.sh` cut calls from recordings. |
 | `tools/xkeys` | Real key presses and clicks on an X display, and `make window`'s test of the game's window with them. Python and libXtst, nothing to install. |
 | `tools/tripo` | Tripo Studio CLI (TypeScript, Node ≥ 22.18, no dependencies). Forge drives it; see its README before calling it by hand. |
 | `assets/textures/` | Photographed surface materials (CC0), one per grain; its README says where each came from. |
