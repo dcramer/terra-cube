@@ -199,6 +199,7 @@ fn run_command(args: &Args) -> ! {
         }
     }
     println!("trails: {} of {} larger animals on one ({:.0}%) · trails are {:.1}% of meadow and forest", on, big.len(), on as f32 * 100.0 / big.len().max(1) as f32, trail as f32 * 100.0 / ground.max(1) as f32);
+    println!("grazed: {} tufts, flowers and ferns eaten by what grazed in sight", sim.eaten.len());
     for (k, kind) in sim.kinds.iter().enumerate() {
         // Of those that were lived at all: the rest of the island slept.
         let of: Vec<_> = sim.agents.values().filter(|a| a.kind == k && a.log.acts.iter().sum::<f32>() > args.seconds * 0.5).collect();

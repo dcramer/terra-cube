@@ -160,17 +160,25 @@ fn drivers(mut live: ResMut<Live>, movers: Query<(&Mover, &Transform, Has<Contro
 
 /// (Behind the loading screen the world is held still: no time passes, nothing moves or is
 /// hurt, but what is near the player is woken, so its model is there when the screen lifts.)
-fn tick(terrain: Option<Res<Terrain>>, loading: Res<crate::loading::Loading>, mut live: ResMut<Live>) {
-    if let Some(terrain) = terrain {
+fn tick(terrain: Option<ResMut<Terrain>>, loading: Res<crate::loading::Loading>, mut live: ResMut<Live>, mut dirty: ResMut<crate::world::Dirty>, mut grazed: Local<u32>) {
+    if let Some(mut terrain) = terrain {
         if loading.up {
             live.0.wake(&terrain.0)
         } else {
             let before = live.0.when.floor();
             live.0.step(&terrain.0);
+            // What was grazed is gone from the ground: the grass and flowers an animal ate.
+            for cell in std::mem::take(&mut live.0.eaten) {
+                if terrain.0.get(cell).sprig() {
+                    terrain.0.set(cell, cube_voxel::Block::Air);
+                    *grazed += 1;
+                    dirty.0.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
+                }
+            }
             // As each day turns, the island's day: births, deaths and who moved on (`Sim::day`).
             if live.0.when.floor() != before {
                 let day = live.0.day(&terrain.0, Some(&terrain.1));
-                info!("day {}: born {}, died of age {}, hunted {}, starved {}, of winter {}", live.0.when.floor(), day.born, day.old, day.hunted, day.starved, day.winter);
+                info!("day {}: born {}, died of age {}, hunted {}, starved {}, of winter {} · grazing {:.0}% left, {} tufts eaten in sight", live.0.when.floor(), day.born, day.old, day.hunted, day.starved, day.winter, day.forage.0 * 100.0, std::mem::take(&mut *grazed));
             }
         }
     }

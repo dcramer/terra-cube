@@ -501,6 +501,10 @@ pub struct Sim {
     /// too little to take from a number near 1 without being lost, so kept apart until
     /// `day` takes it off.
     nibbled: BTreeMap<(i32, i32), f32>,
+    /// The cells of grass, flower and fern that grazers in sight have eaten since whoever
+    /// keeps the world last took them: the simulation does not change the world, so it says
+    /// what should go and the game takes it (`motion::tick`).
+    pub eaten: Vec<glam::IVec3>,
 }
 
 /// The size of a piece of grazing, metres; what a grazer a metre tall eats of one in a day
@@ -527,7 +531,7 @@ fn turn_between(from: f32, to: f32) -> f32 {
 
 impl Sim {
     pub fn new(kinds: Vec<Kind>, seed: u64) -> Self {
-        Self { kinds, agents: BTreeMap::new(), tick: 0, focus: None, when: crate::sky::START, rng: Rng::new(seed), next: 1, trails: None, starved: 0, forage: BTreeMap::new(), nibbled: BTreeMap::new() }
+        Self { kinds, agents: BTreeMap::new(), tick: 0, focus: None, when: crate::sky::START, rng: Rng::new(seed), next: 1, trails: None, starved: 0, forage: BTreeMap::new(), nibbled: BTreeMap::new(), eaten: Vec::new() }
     }
 
     /// A person's state as text, a thing a line: when it is, where they are, their health,
@@ -687,6 +691,15 @@ impl Sim {
             if agent.mind.state == mind::State::Graze && matches!(kind.diet, Diet::Plants | Diet::All) {
                 let piece = ((agent.body.pos.x / PASTURE).floor() as i32, (agent.body.pos.z / PASTURE).floor() as i32);
                 *self.nibbled.entry(piece).or_insert(0.0) += kind.height * kind.height * GRAZED * 12.0 * days * if kind.diet == Diet::All { 0.3 } else { 1.0 };
+                // And what stands at its feet is eaten, to be seen: a tuft, a flower or a fern
+                // every second or so, the nearest to its head first. (It grows again when the
+                // ground is next made: what is eaten is not kept.)
+                if self.rng.unit() < DT / 1.2 {
+                    let head = agent.body.pos + Vec3::new(agent.facing.sin(), 0.0, agent.facing.cos()) * kind.length * 0.5;
+                    let at = (head / cube_voxel::CELL).floor().as_ivec3();
+                    let near = (-1..=1).flat_map(|dz| (-1..=1).flat_map(move |dx| (-1..=1).map(move |dy| glam::IVec3::new(dx, dy, dz)))).map(|d| at + d).filter(|c| world.get(*c).sprig() && !self.eaten.contains(c)).min_by_key(|c| (c.as_vec3() - head / cube_voxel::CELL).length_squared() as i32);
+                    self.eaten.extend(near);
+                }
             }
             // A hunter that has found nothing for four meals weakens, and then lies down and
             // dies where it is, in sight: what `day` does to the ones nobody is near.
@@ -1547,6 +1560,8 @@ mod tests {
         run(&mut sim, &world, 120.0);
         let (grazed, left) = (sim.agents[&rabbit].log.acts[Act::Eat as usize], sim.forage_at(Vec2::new(2.0, 2.0)));
         assert!(grazed > 5.0 && left < 1.0 && left > 0.99, "it grazed {grazed:.0} s and left {left}");
+        // (No grass stands on the test floor: nothing there to be eaten and seen to go.)
+        assert!(sim.eaten.is_empty());
     }
 
     #[test]
