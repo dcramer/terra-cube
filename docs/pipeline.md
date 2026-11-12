@@ -59,13 +59,13 @@ The game draws them as `creatures::Picture`: a model and its clips with no body 
 
 ## Where motion comes from
 
-**A person's motion comes from a person: a hand-animated library for all but the leap (Tripo's, from a description), used as recorded; a clip is made here only where neither has one. An animal's motion is a hand-animated wolf's, put on its own body by its feet.** (The developer, 2026-11-11: "if Tripo animates well we should rely on it.") Every time our code rewrote a recorded clip it got worse while every check passed.
+**A person's motion comes from a person: a hand-animated library for all but the leap (Tripo's, from a description), used as recorded; a clip is made here only where neither has one. What open work there is on models and motion, and why how clips are played is now the weak part: [research](research/2026-11-12-open-animation.md). An animal's motion is a hand-animated wolf's, put on its own body by its feet.** (The developer, 2026-11-11: "if Tripo animates well we should rely on it.") Every time our code rewrote a recorded clip it got worse while every check passed.
 
 | Clip | Bipeds | Four legs |
 |---|---|---|
 | idle, walk | the library (`Idle_Loop`, `Walk_Loop`) | the library's wolf (`Idle`, `Walk`) |
 | run | the library (`Jog_Fwd_Loop`) | made (`gait` in clips.rs: the wolf has no trot) |
-| jump, fall, land | Tripo motions from a description | made |
+| jump, fall, land | the library (`Jump_Start` from where the feet leave, `Jump_Loop`, `Jump_Land` played twice as fast) | made |
 | attack, sprint, hurt, die | the library (`Sword_Attack`, `Sprint_Loop`, `Hit_Chest`, `Death01`) | the library's wolf (`Attack`, `Gallop`, `Idle_HitReact_Left`, `Death`) |
 | swim | the library (`Swim_Fwd_Loop`) | made |
 | eat | none | made |

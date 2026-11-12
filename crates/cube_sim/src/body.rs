@@ -161,7 +161,10 @@ impl Body {
 
         // Over the ground: toward the asked velocity, as fast as the footing allows.
         let dir = if intent.dir.length() > 1.0 { intent.dir.normalize() } else { intent.dir };
-        let asked = dir * intent.speed * if self.swimming { tuning.swim } else { 1.0 };
+        // Through leaf it goes at half its speed: a bush or a low bough gives way, and is
+        // pushed through, not run through as if it were not there.
+        let leaf = [0.25, 0.6].iter().any(|up| world.get(((self.pos + Vec3::Y * self.height * *up) / CELL).floor().as_ivec3()).foliage());
+        let asked = dir * intent.speed * if self.swimming { tuning.swim } else if leaf { 0.5 } else { 1.0 };
         let flat = Vec2::new(self.vel.x, self.vel.z);
         let accel = if !(self.grounded || self.swimming) {
             tuning.air_accel

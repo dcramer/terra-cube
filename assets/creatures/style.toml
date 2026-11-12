@@ -69,9 +69,11 @@ hurt = "a man standing is hit in the chest"
 # The library's sword stroke is a second and a half; the game's blow is one and lands a third
 # of a second in.
 attack = [0.2, 1.4, 1.3]
-jump = [0.85, 1.1, 1.0]
-fall = [1.05, 1.2, 0.5]
-land = [1.4, 2.2, 1.2]
+# The library's leap begins with a crouch, and the game's body is off the ground the moment
+# the key is pressed: the leap is taken from where the feet leave. Its landing is a deep
+# crouch and a slow rise, played faster.
+jump = [0.15, 1.33, 1.0]
+land = [0.05, 0.75, 2.0]
 # Clips a person animated by hand (Quaternius's Universal Animation Library, CC0), carried
 # onto the creature's own skeleton (`crates/forge/src/library.rs`; `tools/library.sh` fetches
 # it). Taken before a preset of the same name.
@@ -80,6 +82,9 @@ idle = "Idle_Loop"
 walk = "Walk_Loop"
 run = "Jog_Fwd_Loop"
 attack = "Sword_Attack"
+jump = "Jump_Start"
+fall = "Jump_Loop"
+land = "Jump_Land"
 sprint = "Sprint_Loop"
 swim = "Swim_Fwd_Loop"
 hurt = "Hit_Chest"

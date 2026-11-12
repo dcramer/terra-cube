@@ -19,9 +19,9 @@ looping = false
 source = "library"
 
 [clips.fall]
-seconds = 0.3
+seconds = 2.5
 looping = true
-source = "tripo"
+source = "library"
 
 [clips.hurt]
 seconds = 0.33333334
@@ -34,14 +34,14 @@ looping = true
 source = "library"
 
 [clips.jump]
-seconds = 0.26666668
+seconds = 1.1666666
 looping = false
-source = "tripo"
+source = "library"
 
 [clips.land]
-seconds = 0.6666667
+seconds = 0.36666667
 looping = false
-source = "tripo"
+source = "library"
 
 [clips.run]
 seconds = 0.6333333

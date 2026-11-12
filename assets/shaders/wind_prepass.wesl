@@ -84,7 +84,18 @@ fn vertex(vertex_in: Vertex) -> VertexOutput {
 
 @if(MOTION_VECTOR_PREPASS) {
     let prev_model = mesh_functions::get_previous_world_from_local(vertex_in.instance_index);
-    out.previous_world_position = mesh_functions::mesh_position_local_to_world(prev_model, vec4<f32>(vertex.position, 1.0));
+    // Where it was a frame ago, with the wind as it was then: the picture is steadied from
+    // frame to frame by where each point came from, and told that a leaf had not moved when
+    // the wind had moved it, every leaf and every bush was smeared and drawn again without
+    // end (the developer, 2026-11-12: "the textures seem to redraw on them non stop").
+    var before = mesh_functions::mesh_position_local_to_world(prev_model, vec4<f32>(vertex.position, 1.0)).xyz;
+    let then = globals.time - globals.delta_time;
+    var pushed_before = before;
+@if(VERTEX_UVS_B)
+    pushed_before += bend(before, vertex.uv_b.x, then);
+@if(VERTEX_COLORS)
+    pushed_before += sway(before, 1.0 - vertex.color.a, then);
+    out.previous_world_position = vec4<f32>(pushed_before, 1.0);
 }
 
 @if(VERTEX_OUTPUT_INSTANCE_INDEX)
