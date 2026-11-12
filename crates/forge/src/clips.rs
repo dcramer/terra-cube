@@ -959,11 +959,18 @@ fn eat(sk: &Skeleton, roles: &Roles) -> Clip {
         let hind: Vec<Vec3> = roles.legs.iter().filter(|l| !l.front).map(|l| world[l.chain[0]].w_axis.truncate()).collect();
         (!hind.is_empty()).then(|| hind.iter().sum::<Vec3>() / hind.len() as f32)
     };
+    // The body tips no further than drops the shoulders a third of the fore leg's length:
+    // tipped as far as a goat, a bear on its short legs folded down onto its elbows.
+    let most_tip = {
+        let fore = roles.legs.iter().filter(|l| l.front).map(|l| (sk.position(l.chain[0]).y - roles.floor, along(l.chain[0]))).fold((0.0f32, f32::MIN), |a, b| (a.0.max(b.0), a.1.max(b.1)));
+        let hind = roles.legs.iter().filter(|l| !l.front).map(|l| along(l.chain[0])).fold(f32::MAX, f32::min);
+        if fore.1 > hind && hind < f32::MAX { (0.33 * fore.0 / (fore.1 - hind)).min(0.3) } else { 0.0 }
+    };
     let lower = |total: f32, pose: &mut Pose| {
         // Past what the neck does well alone the whole body tips forward about its hips,
         // the fore legs giving under it: what brings a short-necked goat's mouth down.
         // (Not where a leg has no knee to give with: a moose's fore feet went through the floor.)
-        let tip = if roles.legs.iter().all(|l| l.chain.len() >= 3) { ((total - 0.6) * 0.4).clamp(0.0, 0.3) } else { 0.0 };
+        let tip = if roles.legs.iter().all(|l| l.chain.len() >= 3) { ((total - 0.6) * 0.4).clamp(0.0, most_tip) } else { 0.0 };
         if let (true, Some(stood)) = (tip > 0.0, hips(&sk.rest())) {
             pose.rotations[sk.root] = sk.turned(sk.root, pitch(roles, tip));
             if let Some(now) = hips(pose) {
