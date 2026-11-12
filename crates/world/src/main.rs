@@ -548,6 +548,44 @@ fn main() {
         "trunks" => trunks_command(&args),
         "grade" => grade_command(&args),
         "life" => life_command(&args),
+        "drawn" => {
+            // How far the ground that is drawn is from the ground a body stands on: the cells
+            // are what stops a body, and they are drawn as blocks of other sizes at heights
+            // of their own (`mesh::eased_under`). Over the land round the start, column by
+            // column; and from each column to the next, how high the step is that is drawn
+            // against the step a body takes.
+            let land = Land::new(args.seed, args.radius);
+            let mut world = World::default();
+            let r = cube_sim::terrain::REGION;
+            for rz in -2..2 {
+                for rx in -2..2 {
+                    cube_sim::terrain::fill(&mut world, &land, (rx * r, rz * r), ((rx + 1) * r, (rz + 1) * r));
+                }
+            }
+            let reach = 2 * r - 16;
+            let drawn = |x: i32, z: i32| {
+                let top = land.height(x, z);
+                cube_voxel::mesh::eased_under(&world, Vec3::new((x as f32 + 0.5) * CELL, top as f32 * CELL, (z as f32 + 0.5) * CELL)).map(|y| (y, top as f32 * CELL))
+            };
+            let (mut off, mut steps, mut stood) = (Vec::new(), Vec::new(), Vec::new());
+            for z in (-reach..reach).step_by(3) {
+                for x in (-reach..reach).step_by(3) {
+                    let (Some(here), Some(next)) = (drawn(x, z), drawn(x + 1, z)) else { continue };
+                    off.push((here.0 - here.1).abs());
+                    steps.push((next.0 - here.0).abs());
+                    stood.push((next.1 - here.1).abs());
+                }
+            }
+            if off.is_empty() {
+                fail("no ground round the start to measure");
+            }
+            for all in [&mut off, &mut steps, &mut stood] {
+                all.sort_by(f32::total_cmp);
+            }
+            let at = |all: &Vec<f32>, part: f32| all[((all.len() - 1) as f32 * part) as usize] * 100.0;
+            println!("drawn: {} columns · the ground is drawn {:.0} cm from where a body stands on it at the middle, {:.0} cm at the 95th of a hundred, {:.0} cm at the worst", off.len(), at(&off, 0.5), at(&off, 0.95), at(&off, 1.0));
+            println!("steps from a column to the next: drawn {:.0} cm at the 95th and {:.0} cm at the worst, stood on {:.0} cm and {:.0} cm", at(&steps, 0.95), at(&steps, 1.0), at(&stood, 0.95), at(&stood, 1.0));
+        }
         "find" => {
             // The nearest places to the start of a kind: `deep` water to swim in, or a biome.
             let what = args.file.clone().unwrap_or_default();

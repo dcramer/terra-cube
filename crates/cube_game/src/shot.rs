@@ -42,6 +42,8 @@ pub struct Stage {
     pub rode: Vec<f32>,
     /// How far the foot that stood lowest was above the ground drawn under it, each frame.
     pub stood: Vec<f32>,
+    /// How far under the drawn ground its deepest knee or ankle was, each frame.
+    pub under: Vec<f32>,
     laid_out: bool,
     expected: usize,
     settled: u32,
@@ -237,6 +239,11 @@ fn ride(mut stage: ResMut<Stage>, eyes: Query<&GlobalTransform, With<Camera3d>>,
         if let Some(lowest) = gaps.reduce(f32::min).filter(|g| g.abs() < 0.45) {
             stage.stood.push(lowest);
         }
+        // And how far under the ground that is drawn any knee or ankle of it is: a leg in the ground.
+        let under = legs.legs.iter().flat_map(|[_, knee, tip]| [knee, tip]).filter_map(|b| bones.get(*b).ok()).filter_map(|g| crate::feet::ground_at(terrain, g.translation().x, g.translation().z, at.translation.y).map(|ground| ground - g.translation().y)).fold(f32::MIN, f32::max);
+        if under > f32::MIN {
+            stage.under.push(under);
+        }
     }
 }
 
@@ -269,6 +276,12 @@ fn gather(shot: On<bevy::render::view::screenshot::ScreenshotCaptured>, args: Re
         stood.sort_by(f32::total_cmp);
         if let (Some(low), Some(mid), Some(high)) = (stood.get(stood.len() / 20), stood.get(stood.len() / 2), stood.get(stood.len() * 19 / 20)) {
             println!("feet stance-gap mid={:.1}cm from={:.1}cm to={:.1}cm spread={:.1}cm", mid * 100.0, low * 100.0, high * 100.0, (high - low) * 100.0);
+        }
+        if !stage.under.is_empty() {
+            let (worst, frames) = (stage.under.iter().copied().fold(f32::MIN, f32::max), stage.under.iter().filter(|u| **u > 0.0).count());
+            // (A knee or an ankle is the middle of a limb some 6 cm thick: nearer the ground than that, the limb is in it.)
+            let near = stage.under.iter().filter(|u| **u > -0.06).count();
+            println!("legs under-ground worst={:.1}cm frames={:.0}% touching={:.0}% clear={:.1}cm", worst.max(0.0) * 100.0, frames as f32 * 100.0 / stage.under.len() as f32, near as f32 * 100.0 / stage.under.len() as f32, -worst * 100.0);
         }
         println!("frames n={} p50={:.1}ms p99={:.1}ms worst={:.0}ms over33={} in {:.0}s · {}", ran.len(), at(0.5), at(0.99), at(1.0), ran.iter().filter(|f| **f > 1.0 / 30.0).count(), ran.iter().sum::<f32>(), cost.since(&at_load));
     }

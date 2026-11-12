@@ -39,6 +39,7 @@ cargo forge status                 # every creature: Tripo steps done, credits, 
 cargo forge build wolf             # make what is missing, then finish and check (spends credits once)
 cargo forge finish --all           # the free local half again, after changing clips.rs or style.toml
 cargo forge sheet wolf             # shots/wolf.png: every clip at six moments, one image
+make legs                          # the player up and down a hillside and on a ledge: how far under the drawn ground a knee or ankle goes (`cargo world drawn`: how far the drawn ground is from the cells a body stands on)
 make feet                          # feet put on the ground that is there (`cube_game::feet`): how far the standing foot strays on a hillside, as the clip has it and planted; `--loose-feet` on any `cargo sandbox` turns it off
 make held                          # shots/held.png: the sword and torch in the player's hand through standing, walking and a blow; after any change to `assets/world/held.toml` or a biped's clips
 make gaits ID="wolf deer"           # shots/gaits.png: walk, run and sprint from the side, large; look after any change to motion
