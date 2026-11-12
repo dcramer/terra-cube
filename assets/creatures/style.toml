@@ -76,6 +76,9 @@ land = [1.4, 2.2, 1.2]
 # onto the creature's own skeleton (`crates/forge/src/library.rs`; `tools/library.sh` fetches
 # it). Taken before a preset of the same name.
 [plans.biped.library]
+idle = "Idle_Loop"
+walk = "Walk_Loop"
+run = "Jog_Fwd_Loop"
 attack = "Sword_Attack"
 sprint = "Sprint_Loop"
 swim = "Swim_Fwd_Loop"

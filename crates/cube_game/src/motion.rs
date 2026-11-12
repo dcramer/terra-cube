@@ -260,6 +260,8 @@ fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, terra
         let aims = agent.act == Act::Attack && agent.pack.as_ref().and_then(|p| p.held()).is_some_and(|i| i.reach().1 < 0.2);
         let (name, or) = if aims { ("idle", "idle") } else { agent.act.clip() };
         let find = |name: &str| def.clips.iter().position(|clip| clip.0 == name);
+        // A blow struck on the move is seen over the gait (`creatures::legs`); standing, it is the whole clip.
+        creature.blow = !aims && agent.dead.is_none() && agent.doing.is_some_and(|d| d.0 == Act::Attack) && matches!(agent.act, Act::Walk | Act::Run | Act::Sprint);
         if let Some(index) = find(name).or_else(|| find(or)) {
             creature.clip = index;
             creature.speed = rate.clamp(0.3, 2.5);

@@ -14,7 +14,7 @@ pub struct CreaturesPlugin;
 
 impl Plugin for CreaturesPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(PreStartup, load_registry).add_systems(Update, (attach_scenes, bind_players, drive, wander).chain());
+        app.add_systems(PreStartup, load_registry).add_systems(Update, (attach_scenes, bind_players, legs, drive, wander).chain());
     }
 }
 
@@ -60,6 +60,11 @@ pub struct Def {
     pub graph: Option<Handle<AnimationGraph>>,
     /// Clip name, graph node, seconds; idle first.
     pub clips: Vec<(String, AnimationNodeIndex, f32)>,
+    /// The blow's clip, and (once a model of this kind has been seen: `legs`) the same clip
+    /// as a second node that leaves the legs alone, for a blow struck on the move. `Some(None)`
+    /// where the kind has no legs known by name to leave alone.
+    blow: Option<Handle<AnimationClip>>,
+    over: Option<Option<AnimationNodeIndex>>,
 }
 
 #[derive(Resource, Default)]
@@ -82,7 +87,11 @@ pub struct Creature {
     pub blend: f32,
     /// Chosen by name before the clips are known; resolved to `clip` once they are.
     pub clip_name: Option<String>,
+    /// Strikes a blow over whatever clip it is playing: its arms and trunk do the blow, its
+    /// legs go on as they were (`motion::show` sets it while a blow is struck on the move).
+    pub blow: bool,
     playing: Option<usize>,
+    struck: bool,
 }
 
 impl Creature {
@@ -91,7 +100,7 @@ impl Creature {
         self.playing = None;
     }
     pub fn new(def: usize) -> Self {
-        Self { def, clip: 0, speed: 1.0, hold: None, blend: 0.2, clip_name: None, playing: None }
+        Self { def, clip: 0, speed: 1.0, hold: None, blend: 0.2, clip_name: None, blow: false, playing: None, struck: false }
     }
 }
 
@@ -136,7 +145,7 @@ fn load_registry(mut commands: Commands, assets: Res<AssetServer>) {
         }
         let meta = std::fs::read_to_string(dir.join("meta.toml")).ok().and_then(|t| toml::from_str::<Meta>(&t).ok()).unwrap_or_default();
         match toml::from_str::<Spec>(&text) {
-            Ok(spec) => defs.push(Def { meta, gltf: assets.load(format!("creatures/{id}/model.glb")), id, spec, graph: None, clips: Vec::new() }),
+            Ok(spec) => defs.push(Def { meta, gltf: assets.load(format!("creatures/{id}/model.glb")), id, spec, graph: None, clips: Vec::new(), blow: None, over: None }),
             Err(e) => error!("assets/creatures/{id}/creature.toml: {e}"),
         }
     }
@@ -172,6 +181,7 @@ fn attach_scenes(
                 .zip(nodes)
                 .map(|(n, node)| (n.to_string(), node, clips.get(&gltf.named_animations[*n]).map_or(1.0, |c| c.duration())))
                 .collect();
+            def.blow = gltf.named_animations.get("attack").cloned();
             def.graph = Some(graphs.add(graph));
         }
         let Some(scene) = gltf.default_scene.clone().or_else(|| gltf.scenes.first().cloned()) else { continue };
@@ -202,6 +212,33 @@ fn bind_players(
     }
 }
 
+/// Once, for each kind with a person's legs: its legs and hips are named to its clips'
+/// graph as a group a clip may leave alone, and the blow is added a second time leaving them
+/// alone. So a blow can be struck running: until 2026-11-12 the blow landed and nothing was
+/// seen of it, since the legs' clip was the only one played.
+fn legs(mut registry: ResMut<Registry>, mut graphs: ResMut<Assets<AnimationGraph>>, creatures: Query<(Entity, &Creature), With<Rig>>, children: Query<&Children>, bones: Query<(&Name, &bevy::animation::AnimationTargetId)>) {
+    for (entity, creature) in &creatures {
+        let def = &mut registry.0[creature.def];
+        if def.over.is_some() {
+            continue;
+        }
+        // (Mixamo's names, as Tripo rigs a person: the one skeleton whose bones are known by name.)
+        let lower: Vec<_> = children.iter_descendants(entity).filter_map(|e| bones.get(e).ok()).filter(|(n, _)| ["Hips", "UpLeg", "Leg", "Foot", "ToeBase", "Toe_End"].iter().any(|part| n.as_str().ends_with(part))).map(|(_, id)| *id).collect();
+        let (Some(clip), Some(mut graph), false) = (def.blow.clone(), def.graph.as_ref().and_then(|g| graphs.get_mut(g)), lower.is_empty()) else {
+            // (No bones yet on the frame the model arrives: asked again next frame. None by name at all: never.)
+            if children.iter_descendants(entity).any(|e| bones.contains(e)) {
+                def.over = Some(None);
+            }
+            continue;
+        };
+        for id in lower {
+            graph.add_target_to_mask_group(id, 0);
+        }
+        let root = graph.root;
+        def.over = Some(Some(graph.add_clip_with_mask(clip, 1, 1.0, root)));
+    }
+}
+
 fn drive(registry: Res<Registry>, mut creatures: Query<(Entity, &mut Creature, &Rig, Has<crate::player::Controlled>)>, mut players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>) {
     for (entity, mut creature, rig, controlled) in &mut creatures {
         let Ok((mut player, mut transitions)) = players.get_mut(rig.0) else { continue };
@@ -228,6 +265,17 @@ fn drive(registry: Res<Registry>, mut creatures: Query<(Entity, &mut Creature, &
         // playing, where in it, how fast, paused or not.
         if std::env::var("ANIM_TRACE").is_ok_and(|id| id == def.id) && (std::env::var_os("ANIM_ALL").is_some() || (player.animation(node).map_or(0.0, |a| a.elapsed()) * 2.0).fract() < 0.04) {
             println!("anim {} {entity} rig={} controlled={controlled} clip={} playing={:?} {}", def.id, rig.0, clips[index].0, creature.playing, player.animation(node).map_or("not in the player".into(), |a| format!("at={:.2} speed={:.2} paused={} weight={:.2}", a.seek_time(), a.speed(), a.is_paused(), a.weight())));
+        }
+        // A blow over the clip: begun when asked, far heavier than the clip under it (the two
+        // are mixed by weight where both move a bone, and it moves all but the legs), let go
+        // when no longer asked.
+        if let Some(Some(over)) = def.over {
+            if creature.blow && !creature.struck {
+                player.start(over).set_weight(12.0);
+            } else if !creature.blow && creature.struck {
+                player.stop(over);
+            }
+            creature.struck = creature.blow;
         }
         if let Some(active) = player.animation_mut(node) {
             match creature.hold {

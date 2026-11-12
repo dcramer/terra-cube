@@ -107,7 +107,9 @@ const HELP: &str = "\
 cargo sandbox                           the window, with the spawn panel
 cargo sandbox --play [--as wolf]        start as the player, or as any creature: WASD runs, Shift
                                         sprints, Ctrl walks (in water: dives), Space jumps, the mouse looks, left click
-                                        digs and right click builds where it looks, the
+                                        uses what is in hand (a blow, a shot, a spadeful), holding the
+                                        right button aims over the shoulder and guards, B or the
+                                        middle button builds with the shovel, the
                                         wheel zooms, V is first person, Tab gives the mouse back
 cargo sandbox --play --wild             the same in the living world: every creature where it lives,
                                         grazing, roaming, fleeing and hunting by its own mind

@@ -21,7 +21,7 @@ pub struct PlayPlugin;
 impl Plugin for PlayPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Controls>().init_resource::<Menus>().add_systems(Update, (start, keys, script, drive, follow, edit, cursor, trace).chain());
-        app.add_systems(Update, (torch, arrows, saves));
+        app.add_systems(Update, (torch, arrows, saves, mark));
     }
 }
 
@@ -46,6 +46,10 @@ pub struct Controls {
     pub cycle: i32,
     /// The guard is up (the right button held, with anything but the shovel in hand).
     pub guard: bool,
+    /// Aiming (the right button held): the camera comes in over the shoulder, a mark shows
+    /// where it looks, and the body turns to face that way, so a blow, a shot or a spadeful
+    /// goes where the mark is.
+    pub aim: bool,
     /// A kind of creature to be put down just ahead (a script's `spawn=ID`).
     pub spawn: Option<String>,
     /// An arrow loosed: from where, and which way.
@@ -181,8 +185,11 @@ fn keys(keys: Res<ButtonInput<KeyCode>>, buttons: Res<ButtonInput<MouseButton>>,
     if keys.just_pressed(KeyCode::KeyT) {
         controls.hold = Some(usize::MAX);
     }
-    controls.put |= buttons.just_pressed(MouseButton::Right) && !controlled.is_empty();
+    // (Building was the right button's, a click; held, the right button now aims, and a
+    // lump is laid with the middle button or B.)
+    controls.put |= (buttons.just_pressed(MouseButton::Middle) || keys.just_pressed(KeyCode::KeyB)) && !controlled.is_empty();
     controls.guard = buttons.pressed(MouseButton::Right);
+    controls.aim = buttons.pressed(MouseButton::Right) && !controlled.is_empty();
     if keys.just_pressed(KeyCode::KeyV) {
         for mut c in &mut controlled {
             c.first_person = !c.first_person;
@@ -240,6 +247,7 @@ fn script(time: Res<Time>, args: Res<Args>, stage: Option<Res<crate::shot::Stage
                 "put" => controls.put = true,
                 "surface" => controls.dive = false,
                 "hop" => clock.1 = now + 0.04,
+                "aim" | "noaim" => controls.aim = word == "aim",
                 "first" | "third" => controlled.iter_mut().for_each(|mut c| c.first_person = word == "first"),
                 // `spawn=goblin`: one of that kind is put down two metres ahead, for a fight.
                 other if other.starts_with("spawn=") => controls.spawn = Some(other[6..].to_owned()),
@@ -308,7 +316,7 @@ fn drive(mut controls: ResMut<Controls>, args: Res<Args>, terrain: Option<Res<Te
         }
         let Some(speed) = live.kind(mover).map(|k| k.speed(controls.gait)) else { continue };
         let Some(m) = live.agent_mut(mover) else { continue };
-        // The right button builds with the shovel in hand, and guards with anything else.
+        // The right button guards, with anything but the shovel in hand.
         let shovel = m.pack.as_ref().and_then(|p| p.held()) == Some(cube_sim::items::Item::Shovel);
         m.guard = controls.guard && !shovel;
         if !shovel {
@@ -328,7 +336,7 @@ fn drive(mut controls: ResMut<Controls>, args: Res<Args>, terrain: Option<Res<Te
         }
         m.intent.dive = controls.dive;
         m.gait = controls.gait;
-        m.turn_to = c.first_person.then_some(yaw + std::f32::consts::PI);
+        m.turn_to = (c.first_person || controls.aim).then_some(yaw + std::f32::consts::PI);
         let want = if c.first_person { Visibility::Hidden } else { Visibility::Inherited };
         if *visibility != want {
             *visibility = want;
@@ -350,6 +358,8 @@ fn follow(
     mut cameras: Query<(&mut Orbit, &mut Transform)>,
     time: Res<Time>,
     mut steady: Local<Option<(f32, f32)>>,
+    controls: Res<Controls>,
+    mut aim: Local<f32>,
 ) {
     let (Ok((c, creature, at)), Some(terrain)) = (controlled.single(), terrain) else { return };
     let def = &registry.0[creature.def];
@@ -388,15 +398,33 @@ fn follow(
             transform.look_to(-back, Vec3::Y);
             continue;
         }
-        orbit.focus = at.translation + Vec3::Y * def.meta.height * 0.85;
+        // Aiming, it comes in over the right shoulder: close behind, and looking past him
+        // from his right, so what he aims at is seen and not his back.
+        *aim += ((controls.aim as u8 as f32) - *aim) * (1.0 - (-12.0 * dt).exp());
+        let (far, aside) = (orbit.distance + (orbit.distance.min(2.1) - orbit.distance) * *aim, Quat::from_rotation_y(orbit.yaw) * Vec3::X * 0.55 * *aim);
+        orbit.focus = at.translation + Vec3::Y * def.meta.height * (0.85 + 0.1 * *aim) + aside;
         // Ground in the way pulls it in quickly and lets it out slowly: on a slope the ground
         // behind comes and goes with every step, and the camera went in and out with it.
-        let clear = terrain.0.raycast(orbit.focus, back, orbit.distance + 0.3).map_or(orbit.distance, |hit| (hit - 0.3).max(0.4)).min(orbit.distance);
-        out = if out == f32::MAX { clear } else { (out + (clear - out) * (1.0 - (-(if clear < out { 22.0 } else { 2.5 }) * dt).exp())).min(orbit.distance) };
+        let clear = terrain.0.raycast(orbit.focus, back, far + 0.3).map_or(far, |hit| (hit - 0.3).max(0.4)).min(far);
+        out = if out == f32::MAX { clear } else { (out + (clear - out) * (1.0 - (-(if clear < out { 22.0 } else { 2.5 }) * dt).exp())).min(far.max(clear)) };
         transform.translation = orbit.focus + back * out;
-        transform.look_at(orbit.focus, Vec3::Y);
+        transform.look_to(-back, Vec3::Y);
     }
     *steady = Some((height, out));
+}
+
+/// The mark in the middle of the picture, shown while aiming or looking through his eyes.
+#[derive(Component)]
+struct Mark;
+
+fn mark(mut commands: Commands, controls: Res<Controls>, menus: Res<Menus>, controlled: Query<&Controlled>, mut marks: Query<&mut Visibility, With<Mark>>) {
+    let show = !menus.open() && controlled.iter().next().is_some_and(|c| c.first_person || controls.aim);
+    if marks.is_empty() {
+        commands.spawn((Mark, Node { position_type: PositionType::Absolute, left: percent(50.0), top: percent(50.0), width: px(4), height: px(4), margin: UiRect::all(px(-2)), ..default() }, BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.8)), Visibility::Hidden));
+    }
+    for mut seen in &mut marks {
+        *seen = if show { Visibility::Visible } else { Visibility::Hidden };
+    }
 }
 
 /// How far the controlled creature reaches to dig or build, and how big a hole and a lump are,
@@ -413,9 +441,16 @@ fn edit(mut controls: ResMut<Controls>, live: Res<Live>, terrain: Option<ResMut<
         return;
     }
     let Some(kind) = live.kind(mover) else { return };
+    // Where the middle of the picture is: along the camera's own line, as far as he reaches
+    // from his eyes. (From his eyes along the camera's way, it was beside the mark whenever
+    // the camera stood to one side of him.)
     let (eyes, along) = (at.translation + Vec3::Y * kind.height * 0.92, *camera.forward());
-    let Some(far) = terrain.0.raycast(eyes, along, REACH) else { return };
-    let hit = eyes + along * far;
+    let Some(far) = terrain.0.raycast(camera.translation, along, REACH + camera.translation.distance(eyes)) else { return };
+    let hit = camera.translation + along * far;
+    if hit.distance(eyes) > REACH {
+        return;
+    }
+    let far = hit.distance(eyes);
     if dig {
         terrain.ball(&mut dirty, hit + along * HOLE * 0.3, HOLE, cube_voxel::Block::Air);
     } else if far > 1.0 {

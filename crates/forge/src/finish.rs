@@ -188,7 +188,9 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
                 // A carried animal's gait is set down: its body's height came from another
                 // animal's build, and the lowest any foot comes in the whole stride is the
                 // ground. (By the stride for a gallop, which leaves the ground.)
-                if source == "library" && plan.rig != "humanoid" && matches!(name.as_str(), "walk" | "run" | "sprint") && !roles.legs.is_empty() {
+                // (A person's too: the hips went by the two figures' heights, and a body with
+                // shorter legs for its height walked 7 cm over the ground.)
+                if source == "library" && matches!(name.as_str(), "idle" | "walk" | "run" | "sprint") && !roles.legs.is_empty() {
                     let low = |pose: &crate::rig::Pose| {
                         let world = skeleton.pose_world(pose);
                         roles.legs.iter().map(|l| world[l.foot()].w_axis.y).fold(f32::MAX, f32::min)
@@ -197,7 +199,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
                     let stood = low(&skeleton.rest());
                     let stride = frames.iter().map(low).fold(f32::MAX, f32::min) - stood;
                     for pose in &mut frames {
-                        let over = if name == "walk" { low(pose) - stood } else { stride };
+                        let over = if matches!(name.as_str(), "walk" | "idle") { low(pose) - stood } else { stride };
                         pose.root_t -= skeleton.base.inverse().transform_vector3(Vec3::Y * over);
                     }
                 }
@@ -206,7 +208,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
                 // (Not an animal's gait, which was set down by its feet: a paw turned toe down
                 // goes a little into the floor, and raising the whole animal for it left the
                 // other three feet in the air.)
-                let gait = plan.rig != "humanoid" && matches!(name.as_str(), "walk" | "run" | "sprint");
+                let gait = matches!(name.as_str(), "idle" | "walk" | "run" | "sprint");
                 if source == "library" && name != "swim" && !gait {
                     let under = crate::check::sunk(&glb, &skeleton, &frames);
                     for (pose, under) in frames.iter_mut().zip(under) {
@@ -232,6 +234,27 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
                 let feet = if (stance / steps - 1.0).abs() < 0.25 { stance } else { steps };
                 clip.frames = clips::trimmed(&clip, 0.0, clip.seconds(), (own / feet).clamp(0.6, 1.8));
             }
+            clip.speed = Some(own);
+        }
+        // A person's carried walk and run go at the speed Tripo's own went, the same way: the
+        // game's speeds stay as they were, and the clip is played until its feet hold. (By
+        // the foot that is down: a jog's steps say less than it covers.)
+        if clip.source == "library" && plan.rig == "humanoid" && matches!(name.as_str(), "walk" | "run")
+            && let Some((own_stance, own_steps)) = found.and_then(|i| {
+                // (Tripo's clip as it was used: its stride reined in where the creature's is, its loop closed, stood over its own place.)
+                let mut frames = theirs[i].frames.clone();
+                if creature.gait_gain != 1.0 {
+                    clips::gained(&skeleton, &mut frames, creature.gait_gain);
+                }
+                clips::close_loop(&mut frames);
+                clips::centred(&skeleton, &roles, &mut frames);
+                recorded_speed(&skeleton, &roles, &Clip { name: name.clone(), looping: true, frames, source: "tripo", speed: None })
+            })
+            && let Some((stance, _)) = recorded_speed(&skeleton, &roles, &clip)
+        {
+            let own = if (own_stance / own_steps - 1.0).abs() < 0.25 { own_stance } else { own_steps };
+            let rate = (own / stance).clamp(0.6, 1.5);
+            clip.frames = clips::trimmed(&clip, 0.0, clip.seconds(), rate);
             clip.speed = Some(own);
         }
         // A body that needed its gait reined in needs the same of a leap, by half as much.

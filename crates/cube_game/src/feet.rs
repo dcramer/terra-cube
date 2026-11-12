@@ -190,6 +190,10 @@ fn plant(
         // The body goes up or down by the least of them: then every leg has only to bend,
         // and none is asked to be longer than it is.
         let shift = rises.iter().copied().fold(f32::MAX, f32::min).clamp(-reach, reach * 0.6);
+        if std::env::var_os("FEET_TRACE").is_some() {
+            let grounds: Vec<f32> = now.iter().map(|t| ground(*t)).collect();
+            println!("plant reach={reach:.2} on={:.2} above={above:.2?} ground={grounds:.2?} rises={rises:.2?} shift={shift:.2}", legs.on);
+        }
         if let Some(root) = legs.root.filter(|_| shift.abs() > 1e-4)
             && let Some(parent) = parents.get(root).ok().map(|p| p.parent())
             && let Some(frame) = if parent == entity { Some(at.compute_affine()) } else { world_of(parent, entity, at, &parents, &poses) }

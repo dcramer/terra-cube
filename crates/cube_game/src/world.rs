@@ -529,6 +529,10 @@ const KEEP: f32 = 12.0;
 /// a chunk with no faces at that level). And how many are still wanted and not yet made.
 #[derive(Resource, Default)]
 pub struct Drawn {
+    /// What is still drawn of a chunk that has changed, until what replaces it is ready: taken
+    /// away at once, a hole was dug in a frame of nothing (the ground flickered at every
+    /// stroke of the shovel).
+    old: std::collections::HashMap<(IVec3, usize), Vec<Entity>>,
     made: std::collections::HashMap<(IVec3, usize), Vec<Entity>, cube_voxel::Quick>,
     /// What is wanted and not made, nearest first, and how many more wait on ground that is on
     /// its way. Found by looking at every chunk there is, which is milliseconds: so the look
@@ -629,14 +633,14 @@ fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, loadi
     let (Some(terrain), Some(look), Some(eye)) = (terrain, look, cameras.iter().next().map(|t| t.translation())) else { return };
     let began = std::time::Instant::now();
     let changed = !dirty.0.is_empty();
+    let mut again = Vec::new();
     for chunk in dirty.0.drain() {
         for level in 0..LEVELS.len() {
             drawn.pending.remove(&(chunk, level));
             if let Some(old) = drawn.made.remove(&(chunk, level)) {
                 cost.remade += 1;
-                for entity in old {
-                    commands.entity(entity).despawn();
-                }
+                drawn.old.entry((chunk, level)).or_default().extend(old);
+                again.push((chunk, level));
             }
         }
     }
@@ -687,6 +691,17 @@ fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, loadi
         // What is no longer wanted is given up.
         let asked: HashSet<(IVec3, usize)> = wanted.iter().map(|w| (w.1, w.2)).collect();
         drawn.pending.retain(|key, _| asked.contains(key));
+        // (And what was kept of a changed chunk that is no longer wanted at all.)
+        if drawn.stale == 0 {
+            let Drawn { old, pending, .. } = &mut *drawn;
+            old.retain(|key, entities| {
+                let keep = asked.contains(key) || pending.contains_key(key);
+                if !keep {
+                    entities.drain(..).for_each(|entity| commands.entity(entity).despawn());
+                }
+                keep
+            });
+        }
         (drawn.wanted, drawn.held, drawn.at) = (wanted, held, 0);
         drawn.stale = drawn.stale.saturating_sub(1);
     } else {
@@ -708,6 +723,9 @@ fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, loadi
         taken += made.iter().map(|(_, data)| data.positions.len()).sum::<usize>();
         let spawned = draw_level(&mut commands, &mut meshes, &look, key.0, key.1, made);
         drawn.made.insert(key, spawned);
+        for entity in drawn.old.remove(&key).into_iter().flatten() {
+            commands.entity(entity).despawn();
+        }
         cost.meshes += 1;
         // (In play, so many corners a frame at most: the card takes each mesh's buffers in
         // the frame it arrives, and two dozen near chunks at once was a frame of 30 ms.)
@@ -718,6 +736,9 @@ fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, loadi
     let pool = bevy::tasks::AsyncComputeTaskPool::get();
     let room = AT_ONCE.saturating_sub(drawn.pending.len());
     let begin: Vec<(IVec3, usize)> = drawn.wanted.iter().map(|w| (w.1, w.2)).filter(|key| !drawn.pending.contains_key(key) && !drawn.made.contains_key(key) && terrain.0.chunks.contains_key(&key.0)).take(room).collect();
+    // (What has just changed under someone's hand is begun at once, ahead of the pass that
+    // would find it.)
+    let begin: Vec<(IVec3, usize)> = again.into_iter().filter(|key| terrain.0.chunks.contains_key(&key.0)).chain(begin).collect();
     let top = if begin.is_empty() { 0 } else { terrain.0.top() };
     for (chunk, level) in begin {
         let around = terrain.0.around(chunk, top);

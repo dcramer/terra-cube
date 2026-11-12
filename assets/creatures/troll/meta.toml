@@ -1,7 +1,7 @@
 # Measured by `cargo forge finish`; do not edit.
 height = 3.0
-length = 0.98774505
-width = 1.4541472
+length = 1.3312327
+width = 1.7698334
 walk_speed = 1.2496732
 run_speed = 3.0140321
 sprint_speed = 5.359581
@@ -29,9 +29,9 @@ looping = false
 source = "library"
 
 [clips.idle]
-seconds = 15.333333
+seconds = 2.5
 looping = true
-source = "tripo"
+source = "library"
 
 [clips.jump]
 seconds = 0.26666668
@@ -44,9 +44,9 @@ looping = false
 source = "tripo"
 
 [clips.run]
-seconds = 1.2666667
+seconds = 0.6333333
 looping = true
-source = "tripo"
+source = "library"
 
 [clips.sprint]
 seconds = 1.1
@@ -59,9 +59,9 @@ looping = true
 source = "library"
 
 [clips.walk]
-seconds = 2.3333333
+seconds = 0.9
 looping = true
-source = "tripo"
+source = "library"
 
 [bones]
 foot0 = "mixamorig:LeftToe_End"
