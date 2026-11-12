@@ -132,6 +132,8 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
     let theirs = clips::read(&glb, &skeleton)?;
     let mut out: Vec<Clip> = Vec::new();
     let mut library: Option<crate::library::Library> = None;
+    // Each gait's own speed over the ground, played as it is (file units a second).
+    let mut paces: std::collections::BTreeMap<String, f32> = Default::default();
     for name in plan.clips.iter().filter(|c| !creature.without.contains(c)) {
         let preset = plan.presets.get(name).filter(|_| !creature.made.contains(name));
         // (A described motion's clip is named by its description, cut short: the start is enough.)
@@ -236,9 +238,11 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
             }
             clip.speed = Some(own);
         }
-        // A person's carried walk and run go at the speed Tripo's own went, the same way: the
-        // game's speeds stay as they were, and the clip is played until its feet hold. (By
-        // the foot that is down: a jog's steps say less than it covers.)
+        // A person goes at the speeds Tripo's own walk and run went: the game's speeds stay as
+        // they were. The clips are not played to fit them. (They were, until 2026-11-12: the
+        // library's jog is a 5.4 m/s run and its sprint 8.3, and played at seven tenths of
+        // their rate to go 3.6 and 5.4 they were a run in slow motion on sliding feet. The
+        // game mixes the gaits to fit the speed instead, each by its own true speed, `paces`.)
         if clip.source == "library" && plan.rig == "humanoid" && matches!(name.as_str(), "walk" | "run")
             && let Some((own_stance, own_steps)) = found.and_then(|i| {
                 // (Tripo's clip as it was used: its stride reined in where the creature's is, its loop closed, stood over its own place.)
@@ -253,8 +257,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
             && let Some((stance, _)) = recorded_speed(&skeleton, &roles, &clip)
         {
             let own = if (own_stance / own_steps - 1.0).abs() < 0.25 { own_stance } else { own_steps };
-            let rate = (own / stance).clamp(0.6, 1.5);
-            clip.frames = clips::trimmed(&clip, 0.0, clip.seconds(), rate);
+            let _ = stance;
             clip.speed = Some(own);
         }
         // A body that needed its gait reined in needs the same of a leap, by half as much.
@@ -284,9 +287,19 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
             // sprinter is in the air between them). The game's sprint is half as fast again
             // as the run, so the clip is played that much slower and its feet still hold.
             if let (true, Some(run)) = (name == "sprint" && clip.source == "library", out.iter().find(|c| c.name == "run").and_then(|c| c.speed)) {
-                let slower = (run * 1.5 / stance).clamp(0.6, 1.0);
-                clip.frames = clips::trimmed(&clip, 0.0, clip.seconds(), slower);
-                clip.speed = Some(stance * slower);
+                clip.speed = Some(stance * (run * 1.5 / stance).clamp(0.6, 1.0));
+            }
+        }
+        // Its own speed over the ground: the library's, where the library says (its figure's, by this one's size).
+        if matches!(name.as_str(), "walk" | "run" | "sprint") {
+            let said = library.as_ref().filter(|_| clip.source == "library" && plan.rig == "humanoid").and_then(|lib| Some(lib.travels(plan.library.get(name)?)? * lib.tall(&skeleton)));
+            // (The library's own figure goes at the library's own speeds: it is there to be the clips as they were made.)
+            let authored = (creature.plan == "authored").then(|| crate::library::Library::read().ok()).flatten().and_then(|lib| lib.travels(plan.presets.get(name)?));
+            if let Some(pace) = authored {
+                clip.speed = Some(pace);
+            }
+            if let Some(pace) = said.or(clip.speed) {
+                paces.insert(name.clone(), pace);
             }
         }
         // Every gait begins at the same part of its stride: the moment one fore foot (a
@@ -370,7 +383,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         sprint_speed: speed(sprint),
         triangles: glb.triangles(),
         joints: skeleton.joints.len(),
-        clips: out.iter().map(|c| (c.name.clone(), ClipMeta { seconds: c.seconds(), looping: c.looping, source: c.source.into() })).collect(),
+        clips: out.iter().map(|c| (c.name.clone(), ClipMeta { seconds: c.seconds(), looping: c.looping, source: c.source.into(), speed: paces.get(&c.name).copied().unwrap_or(0.0) * scale })).collect(),
         bones,
     };
     Ok(Finished { glb, skeleton, roles, clips: out, meta, scale })

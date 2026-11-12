@@ -12,11 +12,13 @@ joints = 7
 seconds = 0.4
 looping = true
 source = "made"
+speed = 0.0
 
 [clips.glide]
 seconds = 3.0
 looping = true
 source = "made"
+speed = 0.0
 
 [bones]
 head = "wing_r2"

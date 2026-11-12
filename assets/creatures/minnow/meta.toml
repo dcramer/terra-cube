@@ -12,6 +12,7 @@ joints = 7
 seconds = 1.0
 looping = true
 source = "made"
+speed = 0.0
 
 [bones]
 head = "wing_r2"

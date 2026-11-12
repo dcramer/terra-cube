@@ -12,56 +12,67 @@ joints = 65
 seconds = 0.93333334
 looping = false
 source = "library"
+speed = 0.0
 
 [clips.die]
 seconds = 2.4
 looping = false
 source = "library"
+speed = 0.0
 
 [clips.fall]
 seconds = 2.5
 looping = true
 source = "library"
+speed = 0.0
 
 [clips.hurt]
 seconds = 0.33333334
 looping = false
 source = "library"
+speed = 0.0
 
 [clips.idle]
 seconds = 2.5
 looping = true
 source = "library"
+speed = 0.0
 
 [clips.jump]
 seconds = 1.1666666
 looping = false
 source = "library"
+speed = 0.0
 
 [clips.land]
 seconds = 0.36666667
 looping = false
 source = "library"
+speed = 0.0
 
 [clips.run]
-seconds = 0.6333333
+seconds = 0.93333334
 looping = true
 source = "library"
+speed = 8.649363
 
 [clips.sprint]
-seconds = 1.1
+seconds = 0.6666667
 looping = true
 source = "library"
+speed = 13.320018
 
 [clips.swim]
 seconds = 1.3333334
 looping = true
 source = "library"
+speed = 0.0
 
 [clips.walk]
-seconds = 0.9
+seconds = 1.3333334
 looping = true
 source = "library"
+speed = 1.5741838
 
 [bones]
 foot0 = "mixamorig:LeftToe_End"

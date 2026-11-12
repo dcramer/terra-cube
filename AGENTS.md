@@ -42,6 +42,7 @@ cargo forge sheet wolf             # shots/wolf.png: every clip at six moments, 
 make legs                          # the player up and down a hillside and on a ledge: how far under the drawn ground a knee or ankle goes (`cargo world drawn`: how far the drawn ground is from the cells a body stands on)
 make feet                          # feet put on the ground that is there (`cube_game::feet`): how far the standing foot strays on a hillside, as the clip has it and planted; `--loose-feet` on any `cargo sandbox` turns it off
 make held                          # shots/held.png: the sword and torch in the player's hand through standing, walking and a blow; after any change to `assets/world/held.toml` or a biped's clips
+make beside                        # shots/beside.gif: the hand-animated library's own figure and ours through the same keys, side by side; look before blaming the clips or the game
 make gaits ID="wolf deer"           # shots/gaits.png: walk, run and sprint from the side, large; look after any change to motion
 cargo world survey                 # the land in numbers; `cargo world run`: its creatures living, in numbers
 cargo world life                   # the ecology: how much of the island suits each kind of life, when it is about, where each animal settled

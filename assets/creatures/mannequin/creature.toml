@@ -1,0 +1,14 @@
+# Not a creature of the world: the figure the hand-animated library was made on, with its
+# clips as they are, to set beside a figure of ours that carries the same clips. Where the two
+# move differently, the carrying is at fault; where they move alike and both look wrong, how
+# the game plays them is. `make beside` pictures the pair. (`tools/library.sh` fetches it:
+# its model is .work/library/UAL1_Standard.glb copied to .work/mannequin/rigged.glb.)
+name = "Mannequin"
+kind = "mannequin"
+plan = "authored"
+subject = "none: not made at Tripo"
+height = 1.75
+
+[life]
+temper = "person"
+groups = 0

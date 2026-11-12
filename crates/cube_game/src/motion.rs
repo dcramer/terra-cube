@@ -257,7 +257,13 @@ fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, mut l
         // A blow struck on the move is seen over the gait (`creatures::legs`); standing, it is the whole clip.
         creature.blow = !aims && agent.dead.is_none() && agent.doing.is_some_and(|d| d.0 == Act::Attack) && matches!(agent.act, Act::Walk | Act::Run | Act::Sprint);
         // Going over the ground its gaits are mixed by its speed (`creatures::drive`).
-        creature.pace = (!aims && agent.body.grounded && matches!(agent.act, Act::Idle | Act::Walk | Act::Run | Act::Sprint)).then_some([speed, kind.walk, kind.run, kind.sprint]);
+        creature.pace = (!aims && agent.body.grounded && matches!(agent.act, Act::Idle | Act::Walk | Act::Run | Act::Sprint)).then(|| {
+            // (Each gait by the speed its own clip covers the ground at, which is not always the
+            // speed the creature goes at in it: a person's run is between a walk and the
+            // library's run, and is their mix.)
+            let own = |name: &str, or: f32| def.meta.clips.get(name).map(|c| c.speed).filter(|s| *s > 0.0).unwrap_or(or);
+            [speed, own("walk", kind.walk), own("run", kind.run), own("sprint", kind.sprint)]
+        });
         if let Some(index) = find(name).or_else(|| find(or)) {
             creature.clip = index;
             creature.speed = rate.clamp(0.3, 2.5);

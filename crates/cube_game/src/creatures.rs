@@ -49,6 +49,9 @@ pub struct ClipMeta {
     pub looping: bool,
     pub seconds: f32,
     pub source: String,
+    /// For a gait: how fast the ground passes under it played as it is, m/s (0: not said).
+    #[serde(default)]
+    pub speed: f32,
 }
 
 pub struct Def {
@@ -273,16 +276,25 @@ fn drive(time: Res<Time>, registry: Res<Registry>, mut creatures: Query<(Entity,
         let mut wanted: Vec<(usize, f32, f32, bool)> = Vec::new();
         let gaits = creature.pace.filter(|_| creature.hold.is_none()).and_then(|pace| Some((pace, find("idle")?, find("walk")?, find("run")?))).filter(|(pace, ..)| pace[1] > 0.0 && pace[2] > pace[1]);
         if let Some(([speed, walk, run, sprint], idle, walks, runs)) = gaits {
-            // Two gaits side by side: the faster comes in over the middle half of the way
-            // from one's speed to the other's, a stride takes as long as their mix says, and
-            // the whole is played a little faster or slower until it covers the ground it
-            // is covering.
+            // Two gaits side by side, each at its own rate: the share of the faster is the
+            // one at which their mix covers the ground at the speed it is going, so neither
+            // is played fast or slow to fit and the stride is what shortens. (With the share
+            // by how far the speed was between the two and the mix then played to fit, a
+            // run between a walk and a 5 m/s run was that run at three quarters of its
+            // rate: slow motion.) A stride takes as long as the mix says.
             let mut mix = |a: usize, b: usize, from: f32, to: f32| {
-                let part = (((speed - from) / (to - from) - 0.25) / 0.5).clamp(0.0, 1.0);
-                let part = part * part * (3.0 - 2.0 * part);
+                let covers = |part: f32| {
+                    let stride = long(a) + (long(b) - long(a)) * part;
+                    from * long(a) / stride * (1.0 - part) + to * long(b) / stride * part
+                };
+                let (mut low, mut high) = (0.0f32, 1.0f32);
+                for _ in 0..12 {
+                    let part = (low + high) / 2.0;
+                    if covers(part) < speed { low = part } else { high = part }
+                }
+                let part = (low + high) / 2.0;
                 let stride = long(a) + (long(b) - long(a)) * part;
-                let covers = from * long(a) / stride * (1.0 - part) + to * long(b) / stride * part;
-                let rate = (speed / covers.max(0.01)).clamp(0.6, 1.6);
+                let rate = (speed / covers(part).max(0.01)).clamp(0.8, 1.25);
                 wanted.extend([(a, 1.0 - part, long(a) / stride * rate, true), (b, part, long(b) / stride * rate, true)]);
                 rate / stride
             };

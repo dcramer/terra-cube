@@ -202,6 +202,11 @@ pub struct ClipMeta {
     pub seconds: f32,
     pub looping: bool,
     pub source: String,
+    /// For a gait: how fast the ground passes under it played as it is, metres a second.
+    /// Not always the speed the creature goes at in that gait (`walk_speed`…): the game
+    /// mixes gaits to fit the speed it is going, and needs each one's own.
+    #[serde(default)]
+    pub speed: f32,
 }
 
 pub fn dir(id: &str) -> PathBuf {

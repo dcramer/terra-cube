@@ -89,6 +89,30 @@ impl Library {
         Ok(Self { glb, sk })
     }
 
+    /// How fast the library's own figure goes over the ground in a clip, in its own units a
+    /// second: read from the library's other file, the one whose clips carry the figure
+    /// along (`UAL1_Standard_RM.glb`), as how far its root has gone by the end. The truth of
+    /// it: read off the feet, a jog said 4.8 m/s and a sprint 7.1 where they are 5.4 and 8.3.
+    pub fn travels(&self, name: &str) -> Option<f32> {
+        let along = Glb::read(&file().with_file_name("UAL1_Standard_RM.glb")).ok()?;
+        let sk = Skeleton::read_loose(&along).ok()?;
+        let anim = along.array("animations").iter().find(|a| a["name"].as_str() == Some(name))?;
+        let samplers = anim["samplers"].as_array()?;
+        let channel = anim["channels"].as_array()?.iter().find(|ch| ch["target"]["path"].as_str() == Some("translation") && ch["target"]["node"].as_u64() == Some(sk.joints[sk.root].node as u64))?;
+        let s = &samplers[channel["sampler"].as_u64()? as usize];
+        let (times, places) = (along.floats(s["input"].as_u64()? as usize).ok()?.0, along.floats(s["output"].as_u64()? as usize).ok()?.0);
+        let (first, last) = (Vec3::from_slice(&places[..3]), Vec3::from_slice(&places[places.len() - 3..]));
+        Some(first.distance(last) / times.last().copied().filter(|t| *t > 0.0)?)
+    }
+
+    /// How big a skeleton is beside the library's figure: its hips' height over theirs.
+    pub fn tall(&self, to: &Skeleton) -> f32 {
+        let floor = |all: &[Mat4]| all.iter().map(|m| pos(m).y).fold(f32::MAX, f32::min);
+        let (ours, theirs): (Vec<Mat4>, Vec<Mat4>) = (to.joints.iter().map(|j| j.world).collect(), self.sk.joints.iter().map(|j| j.world).collect());
+        let pelvis = self.sk.joints.iter().position(|j| j.name == "pelvis").unwrap_or(self.sk.root);
+        (pos(&ours[to.root]).y - floor(&ours)) / (pos(&theirs[pelvis]).y - floor(&theirs)).max(1e-5)
+    }
+
     /// The names of its clips.
     pub fn clips(&self) -> Vec<String> {
         self.glb.array("animations").iter().map(|a| a["name"].as_str().unwrap_or("").to_owned()).collect()

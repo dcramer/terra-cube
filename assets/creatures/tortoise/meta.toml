@@ -12,56 +12,67 @@ joints = 28
 seconds = 0.8
 looping = false
 source = "made"
+speed = 0.0
 
 [clips.die]
 seconds = 1.4
 looping = false
 source = "made"
+speed = 0.0
 
 [clips.eat]
 seconds = 4.0
 looping = true
 source = "made"
+speed = 0.0
 
 [clips.fall]
 seconds = 0.9
 looping = true
 source = "made"
+speed = 0.0
 
 [clips.hurt]
 seconds = 0.5
 looping = false
 source = "made"
+speed = 0.0
 
 [clips.idle]
 seconds = 4.0
 looping = true
 source = "made"
+speed = 0.0
 
 [clips.jump]
 seconds = 0.3
 looping = false
 source = "made"
+speed = 0.0
 
 [clips.land]
 seconds = 0.36666667
 looping = false
 source = "made"
+speed = 0.0
 
 [clips.run]
 seconds = 0.16666667
 looping = true
 source = "made"
+speed = 0.65546066
 
 [clips.swim]
 seconds = 1.6
 looping = true
 source = "made"
+speed = 0.0
 
 [clips.walk]
 seconds = 0.23333333
 looping = true
 source = "made"
+speed = 0.28042406
 
 [bones]
 foot0 = "tripo::0_Left_Limb_3"
