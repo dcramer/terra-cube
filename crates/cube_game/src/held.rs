@@ -124,9 +124,18 @@ fn hold(
             // and comes back. (Fixed in its place it was a picture stuck on the glass.)
             let (t, pace) = (time.elapsed_secs(), (agent.body.ground_speed() / 3.5).min(1.4) * agent.body.grounded as u8 as f32);
             *blow += ((agent.swing.is_some() as u8 as f32) - *blow) * (1.0 - (-16.0 * time.delta_secs()).exp());
-            let rest = if thing.arm.is_some() { -0.15 } else { -0.9 };
-            seat.translation = Vec3::new(0.3, -0.32, -0.6) + Vec3::new((t * 5.5).cos() * 0.012, (t * 11.0).sin() * 0.016, 0.0) * pace + Vec3::new(-0.2, 0.1, -0.2) * *blow;
-            seat.rotation = Quat::from_euler(EulerRot::XYZ, rest - 0.45 * *blow, 0.6 * *blow, -0.12 + 0.5 * *blow);
+            let step = Vec3::new((t * 5.5).cos() * 0.012, (t * 11.0).sin() * 0.016, 0.0) * pace;
+            // And the blow is the thing's own: a bow stands upright at the left and is drawn
+            // back toward him, then let go; a torch is thrust straight out; anything else is
+            // cut across the view. (Until 2026-11-11 a bow was swung like a sword.)
+            (seat.translation, seat.rotation) = if thing.draw.is_some() {
+                let drawn = agent.swing.map_or(0.0, |left| (1.0 - left / 0.35).clamp(0.0, 1.0));
+                (Vec3::new(-0.34, -0.08, -1.0) + step + Vec3::new(0.06, 0.03, 0.12) * drawn - Vec3::Z * 0.05 * (*blow - drawn).max(0.0), Quat::from_euler(EulerRot::XYZ, -0.1, 1.45, 0.08 - 0.1 * drawn))
+            } else if thing.arm.is_some() {
+                (Vec3::new(0.3, -0.32, -0.6) + step + Vec3::new(-0.12, 0.1, -0.4) * *blow, Quat::from_euler(EulerRot::XYZ, -0.15 - 0.75 * *blow, 0.0, -0.12 + 0.1 * *blow))
+            } else {
+                (Vec3::new(0.3, -0.32, -0.6) + step + Vec3::new(-0.2, 0.1, -0.2) * *blow, Quat::from_euler(EulerRot::XYZ, -0.9 - 0.45 * *blow, 0.6 * *blow, -0.12 + 0.5 * *blow))
+            };
         }
     }
     for (owner, _) in &movers {
