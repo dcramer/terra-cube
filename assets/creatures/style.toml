@@ -141,6 +141,9 @@ sprint = "Gallop"
 attack = "Attack"
 hurt = "Idle_HitReact_Left"
 die = "Death"
+# Asleep on its side: where the wolf's fall ends, held (the wolf has no clip of lying down;
+# its other two idles stand). Not for a creature marked `lies`, which lies on its belly.
+lie = "Death"
 
 # No presets: Tripo's one animal clip is a walk that marches nearly on the spot (looked at
 # again 2026-11-11 beside ours: the legs lift well but the feet travel 0.14 to 0.27 m/s on a

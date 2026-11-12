@@ -144,7 +144,8 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         // a fox, a toad and a bullfrog tore at two and three times the bar.)
         let carried = match plan.library.get(name).filter(|_| !creature.made.contains(name) && (plan.rig == "humanoid" || creature.ease >= 1.0)
             // (Nor a wolf's gait onto what hops.)
-            && !(creature.hops && matches!(name.as_str(), "walk" | "run" | "sprint"))) {
+            && !(creature.hops && matches!(name.as_str(), "walk" | "run" | "sprint"))
+            && !(creature.lies && name == "lie")) {
             Some(theirs) => {
                 // (A person's clips go on a person's skeleton bone for bone; an animal's on
                 // anything with four legs, by its roles.)
@@ -157,6 +158,19 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
             }
             None => None,
         };
+        // Asleep is where the fall ends, held, breathing: five seconds of its last moment,
+        // the body rising and sinking a little.
+        let carried = carried.map(|mut clip| {
+            if name == "lie" && plan.rig != "humanoid" {
+                let last = clip.frames.last().cloned().unwrap_or_else(|| skeleton.rest());
+                clip.frames = (0..=150).map(|i| {
+                    let mut pose = last.clone();
+                    pose.root_t += skeleton.base.inverse().transform_vector3(Vec3::Y * 0.008 * roles.height * (0.5 - 0.5 * (i as f32 / 150.0 * std::f32::consts::TAU).cos()));
+                    pose
+                }).collect();
+            }
+            clip
+        });
         let recorded = carried.as_ref().or(found.map(|i| &theirs[i]));
         let mut clip = match recorded {
             Some(taken) => {

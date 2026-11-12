@@ -1,0 +1,43 @@
+# What each kind of creature must be able to do, written down so it is checked and not
+# remembered: `python3 tools/features.py` holds every creature in the world to this and
+# writes shots/features.md. A feature is a clip it must have (`clips`), with anything else
+# that must hold. `who` picks the creatures it applies to: by `plan`, by `temper`, by `diet`
+# (as in its `[life]`; a creature with no `[life]` or with `groups = 0` is not in the world
+# and is not held to anything). `recorded` clips must not be ones forge made up.
+#
+# Whether a clip looks right no check can say: `assets/creatures/seen.toml` lists, for each
+# creature, the clips somebody has looked at on a sheet and found right, and the report says
+# which have never been looked at. Add to it only after looking.
+
+[stands]
+clips = ["idle"]
+[moves]
+clips = ["walk", "run"]
+speeds = true            # walk under run, both over nothing
+[sprints]
+who = { plan = ["biped", "quadruped"] }
+clips = ["sprint"]
+[leaps]
+who = { plan = ["biped", "quadruped", "bird"] }
+clips = ["jump", "fall", "land"]
+[swims]
+who = { plan = ["biped", "quadruped"] }
+clips = ["swim"]         # unless its creature.toml says `without = ["swim"]`
+[strikes]
+who = { temper = ["hunter", "hostile", "wary", "person"] }
+clips = ["attack"]
+[flinches-and-dies]
+clips = ["hurt", "die"]
+[feeds]
+who = { plan = ["quadruped", "bird"] }
+clips = ["eat"]
+[rests]
+who = { plan = ["quadruped"] }
+clips = ["lie"]
+[is-heard]
+voice = true             # a `voice` in `[life]` with a file behind it
+[a-person-moves-as-a-person]
+who = { plan = ["biped"] }
+recorded = ["idle", "walk", "run", "sprint", "jump", "fall", "land", "attack", "hurt", "die"]
+[carries-what-it-holds]
+holds = true             # what `holds` names is a thing in assets/world/held.toml

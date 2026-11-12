@@ -1,0 +1,18 @@
+# Clips somebody has looked at on a sheet (`cargo sandbox --shot ID --clips …`) and found
+# right, by creature. Add a clip only after looking at it; take it out when what makes it
+# changes. (As of 2026-11-12, from the sheets looked at that day.)
+player = ["idle", "walk", "run", "sprint", "jump", "fall", "land", "swim", "attack", "hurt", "die"]
+troll = ["sprint", "swim", "hurt", "die", "attack"]
+goblin = ["attack", "die"]
+ogre = ["attack", "die"]
+golem = ["attack", "die"]
+shambler = ["attack", "die"]
+wolf = ["walk", "sprint", "attack", "die", "lie"]
+deer = ["walk", "sprint", "attack", "die", "eat"]
+bear = ["walk", "sprint", "attack", "die", "lie"]
+pony = ["lie"]
+goat = ["eat", "lie"]
+rabbit = ["eat", "lie"]
+boar-beast = ["eat", "lie"]
+badger = ["eat", "lie"]
+squirrel = ["eat", "lie"]

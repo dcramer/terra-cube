@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: wind blow beside legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: wind blow beside features legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -79,6 +79,7 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 	@python3 tools/audio/level.py | tail -1
 	@python3 tools/audio/loops.py | tail -1
 	@python3 tools/audio/sources.py
+	@python3 tools/features.py
 	@$(MAKE) --no-print-directory sound
 	@$(MAKE) --no-print-directory fight
 	@$(MAKE) --no-print-directory swim
@@ -124,6 +125,9 @@ sheet: need-id ## no window: shots/ID.png, every clip of one creature (ID=wolf)
 
 beside: ## no window: shots/beside.gif, the library's own figure and ours (ID=player) through the same keys, side by side
 	@tools/beside.sh $(or $(ID),player)
+
+features: ## every creature in the world held to assets/creatures/requirements.toml, and which of its clips nobody has looked at (shots/features.md)
+	@python3 tools/features.py
 
 legs: ## no window: the player walked up and down a hillside and stood on a ledge: how far under the drawn ground any knee or ankle went
 	@tools/legs.sh
