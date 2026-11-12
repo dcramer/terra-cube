@@ -7,7 +7,8 @@
 # Judge a change with `make held` (the thing through idle, walk, run and a blow).
 
 ["Short sword"]
-turn = [0.0, 0.0, 0.0]
+# Across the palm, the blade out past the thumb: forward and a little up as he stands.
+turn = [0.0, 0.0, 90.0]
 shift = [0.0, 0.08, 0.03]
 pieces = [
     { size = [0.03, 0.14, 0.03], at = [0.0, 0.0, 0.0], colour = [0.30, 0.20, 0.12] },

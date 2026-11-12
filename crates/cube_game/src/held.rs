@@ -46,10 +46,11 @@ struct Thing {
 #[derive(Resource)]
 struct Things(BTreeMap<String, Thing>);
 
-/// A thing drawn in a hand: whose, and what; and the bones of the arm that carries it, from
-/// the shoulder down.
+/// A thing drawn in a hand: whose, and what; the bones of the arm that carries it, from the
+/// shoulder down; and whether it is drawn before the eye instead (the first person, whose
+/// own body is not drawn: the thing is hung on the camera, low and to the right).
 #[derive(Component)]
-struct Held(Entity, cube_sim::items::Item, [Entity; 3]);
+struct Held(Entity, cube_sim::items::Item, [Entity; 3], bool);
 
 /// Where a held thing that lights gives its light from (`player::torch` puts the light there).
 #[derive(Component)]
@@ -65,6 +66,8 @@ fn hold(
     names: Query<&Name>,
     globals: Query<&GlobalTransform>,
     held: Query<(Entity, &Held)>,
+    firsts: Query<&crate::player::Controlled>,
+    cameras: Query<Entity, With<Camera3d>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut cube: Local<Option<Handle<Mesh>>>,
@@ -72,8 +75,9 @@ fn hold(
     let Some(live) = live else { return };
     // What is drawn and no longer held, or whose holder is gone, goes.
     let wants = |owner: Entity| movers.get(owner).ok().and_then(|(_, m)| live.agent(m)).filter(|a| a.dead.is_none()).and_then(|a| a.pack.as_ref().and_then(|p| p.held()));
-    for (entity, Held(owner, item, _)) in &held {
-        if wants(*owner) != Some(*item) {
+    let first = |owner: Entity| firsts.get(owner).is_ok_and(|c| c.first_person);
+    for (entity, Held(owner, item, _, before_eye)) in &held {
+        if wants(*owner) != Some(*item) || first(*owner) != *before_eye {
             commands.entity(entity).despawn();
         }
     }
@@ -89,9 +93,13 @@ fn hold(
         let Some(scale) = globals.get(hand).ok().map(|g| g.scale().x).filter(|s| *s > 1e-4) else { continue };
         // The bone is in the model's own units: the thing is sized in metres whatever they are.
         let turn = Quat::from_euler(EulerRot::XYZ, thing.turn[0].to_radians(), thing.turn[1].to_radians(), thing.turn[2].to_radians());
-        let seat = Transform { translation: Vec3::from_array(thing.shift) / scale, rotation: turn, scale: Vec3::splat(1.0 / scale) };
+        let before_eye = first(owner);
+        let (on, seat) = match cameras.iter().next().filter(|_| before_eye) {
+            Some(camera) => (camera, Transform { translation: Vec3::new(0.3, -0.32, -0.6), rotation: Quat::from_euler(EulerRot::XYZ, if thing.arm.is_some() { -0.15 } else { -0.9 }, 0.0, -0.12), ..default() }),
+            None => (hand, Transform { translation: Vec3::from_array(thing.shift) / scale, rotation: turn, scale: Vec3::splat(1.0 / scale) }),
+        };
         let cube = cube.get_or_insert_with(|| meshes.add(Cuboid::new(1.0, 1.0, 1.0))).clone();
-        let root = commands.spawn((Held(owner, item, [upper, fore, hand]), ChildOf(hand), seat, Visibility::default())).id();
+        let root = commands.spawn((Held(owner, item, [upper, fore, hand], before_eye), ChildOf(on), seat, Visibility::default())).id();
         for piece in &thing.pieces {
             let colour = Color::srgb(piece.colour[0], piece.colour[1], piece.colour[2]);
             let material = materials.add(StandardMaterial { base_color: colour, emissive: colour.to_linear() * piece.glow, perceptual_roughness: 0.7, ..default() });
@@ -107,7 +115,7 @@ fn hold(
 /// with a carry of its own is turned to it, each bone by the least turn that points it the
 /// way it should go, so the clip's own twist and the rest of the body are left as they were.
 fn carry(things: Res<Things>, held: Query<&Held>, owners: Query<&Transform, With<Mover>>, parents: Query<&ChildOf>, globals: Query<&GlobalTransform>, mut bones: Query<&mut Transform, Without<Mover>>) {
-    for Held(owner, item, [upper, fore, hand]) in &held {
+    for Held(owner, item, [upper, fore, hand], _) in &held {
         let (Some(ways), Ok(body)) = (things.0.get(item.name()).and_then(|t| t.arm), owners.get(*owner)) else { continue };
         // The shoulder's turn in the world is last frame's: it moves little, and this frame's is not worked out yet.
         let Some(mut parent) = parents.get(*upper).ok().and_then(|p| globals.get(p.parent()).ok()).map(|g| g.rotation()) else { continue };
