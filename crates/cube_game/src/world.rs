@@ -834,7 +834,6 @@ fn regions(args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrai
     for r in gone {
         redraw(&terrain.0, r, &mut dirty);
         terrain.0.chunks.retain(|c, _| (c.x.div_euclid(terrain::REGION / CHUNK), c.z.div_euclid(terrain::REGION / CHUNK)) != r);
-        terrain.0.bits.retain(|cell, _| region_of(*cell) != r);
         regions.made.remove(&r);
         forms.0.remove(&r);
     }

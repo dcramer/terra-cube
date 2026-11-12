@@ -770,7 +770,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
 /// cell. Slower a face than whole cells (every neighbour is looked up in the world), which is
 /// fine while broken cells are few.
 fn bits(world: &World, cell: IVec3, m: &mut MeshData) {
-    let Some(data) = world.bits.get(&cell) else { return };
+    let Some(data) = world.bits_at(cell) else { return };
     // A neighbour inside this cell is read from it; only the bits at its faces ask the world.
     let near = |at: IVec3| {
         let local = at - cell * SPLIT;

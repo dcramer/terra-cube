@@ -547,11 +547,8 @@ impl Shape {
         // limb is one line of cubes as thick as it is: a hundred boughs of a pine drawn
         // round were more faces than the rest of the wood, and unseen under their needles.
         let g = match level {
-            0 if thick < 0.16 => ((thick * 2.0 / 0.05).round() * 0.05).clamp(0.05, 0.3),
-            // (The trunk of a great tree, a metre through, in cubes of 15: at 10 its foot alone
-            // was twenty thousand faces.)
-            0 if thick > 0.5 => 0.15,
-            0 => 0.1,
+            // (Near, the size the simulation fills it at for a body to meet: `Limb::near`.)
+            0 => limb.near(),
             1 => 0.25,
             _ => 0.5,
         };

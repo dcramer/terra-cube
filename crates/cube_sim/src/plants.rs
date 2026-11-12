@@ -118,7 +118,42 @@ fn grow(world: &mut World, limb: Limb) {
 fn wood(world: &mut World, limb: &Limb) {
     let clock = std::time::Instant::now();
     let bound = ONLY.get();
-    limb.fill_in(CELL, bound, |c| {
+    // A tree's wood is filled to the bit for as high as anything walks into it: a body is stopped by the wood that is drawn there, and not by a cell that
+    // has it or has it not (`cargo world trunks`: by cells a body went 20 cm into wood it
+    // could see and was stopped 16 cm short of it).
+    // (Every limb of the tree that comes so low, not its foot alone: a trunk is several
+    // limbs end to end, and a bough can hang at the height of a head. Not a twig.)
+    let fine = FOOT.get().filter(|foot| limb.ra.max(limb.rb) >= 0.1 && limb.a.y.min(limb.b.y) < foot + FINE).map_or(f32::MIN, |foot| ((foot + FINE) / CELL).ceil() * CELL);
+    if fine > f32::MIN {
+        // In the very cubes it is drawn in near the eye, each written as the bits it covers:
+        // so what stops a body is the wood that is seen, to the cube.
+        let g = limb.near();
+        let n = (g / cube_voxel::BIT).round() as i32;
+        let cubes = bound.map(|b| [(b[0] as f32 * CELL / g).floor() as i32, (b[1] as f32 * CELL / g).floor() as i32, (b[2] as f32 * CELL / g).ceil() as i32, (b[3] as f32 * CELL / g).ceil() as i32]);
+        limb.fill_span(g, cubes, (f32::MIN, fine), |cube| {
+            for dy in 0..n {
+                for dz in 0..n {
+                    for dx in 0..n {
+                        let bit = cube * n + IVec3::new(dx, dy, dz);
+                        let cell = bit.div_euclid(IVec3::splat(cube_voxel::SPLIT));
+                        if !open(cell) {
+                            continue;
+                        }
+                        // (Grass in the cell goes, as it does where a whole cell turns to
+                        // wood: left as the rest of a broken cell it was drawn as bits.)
+                        if world.get(cell).sprig() {
+                            world.set(cell, Block::Air);
+                        }
+                        let was = world.bit(bit);
+                        if was == Block::Air || was.foliage() {
+                            world.set_bit(bit, limb.bark);
+                        }
+                    }
+                }
+            }
+        });
+    }
+    limb.fill_span(CELL, bound, (fine, f32::MAX), |c| {
         if !open(c) {
             return;
         }
@@ -128,6 +163,14 @@ fn wood(world: &mut World, limb: &Limb) {
         }
     });
     crate::terrain::spent(3, clock);
+}
+
+/// How far above its foot a tree is filled to the bit, metres: over a tall creature's head.
+const FINE: f32 = 2.5;
+
+thread_local! {
+    /// The height of the foot of the tree being grown, while one is.
+    static FOOT: std::cell::Cell<Option<f32>> = const { std::cell::Cell::new(None) };
 }
 
 fn mix(seed: u32, k: u32) -> f32 {
@@ -160,7 +203,34 @@ impl Limb {
 
     /// [`Limb::fill`], passing over the lengths of the limb that reach no column from
     /// `only[0], only[1]` up to `only[2], only[3]` (cubes of `g`, x and z).
-    pub fn fill_in(&self, g: f32, only: Option<[i32; 4]>, mut put: impl FnMut(IVec3)) {
+    pub fn fill_in(&self, g: f32, only: Option<[i32; 4]>, put: impl FnMut(IVec3)) {
+        self.fill_span(g, only, (f32::MIN, f32::MAX), put)
+    }
+
+    /// The size of the cubes a limb is drawn in near the eye, metres: a trunk or a heavy limb
+    /// in cubes of 10 cm, round to the cube (a great trunk, a metre through, in 15: at 10 its
+    /// foot alone was twenty thousand faces); a lesser limb one line of cubes as thick as it
+    /// is. Always a whole number of bits, since what is drawn near is also what a body meets.
+    pub fn near(&self) -> f32 {
+        let thick = self.ra.max(self.rb);
+        if thick < 0.16 {
+            ((thick * 2.0 / 0.05).round() * 0.05).clamp(0.05, 0.3)
+        } else if thick > 0.5 {
+            0.15
+        } else {
+            0.1
+        }
+    }
+
+    /// [`Limb::fill_in`], of the cubes whose middles are from `span.0` up to `span.1` high
+    /// (metres): a trunk is filled finely near the ground and coarsely above.
+    pub fn fill_span(&self, g: f32, only: Option<[i32; 4]>, span: (f32, f32), mut put: impl FnMut(IVec3)) {
+        let mut put = |c: IVec3| {
+            let y = (c.y as f32 + 0.5) * g;
+            if y >= span.0 && y < span.1 {
+                put(c)
+            }
+        };
         let (a, b, ra, rb, roots) = (self.a, self.b, self.ra, self.rb, self.roots);
         let seed = a.x.to_bits() ^ a.z.to_bits().rotate_left(13) ^ b.y.to_bits().rotate_left(7) ^ b.x.to_bits().rotate_left(19);
         let thick = ra.max(rb);
@@ -196,11 +266,19 @@ impl Limb {
             let centre = a.lerp(b, t) + wander(t);
             let k = (most(t) / g).ceil() as i32 + 1;
             let m = (centre / g).floor().as_ivec3();
-            if only.is_some_and(|b| m.x + k < b[0] || m.x - k >= b[2] || m.z + k < b[1] || m.z - k >= b[3]) {
+            if only.is_some_and(|b| m.x + k < b[0] || m.x - k >= b[2] || m.z + k < b[1] || m.z - k >= b[3]) || centre.y + (k + 1) as f32 * g < span.0 || centre.y - (k + 1) as f32 * g > span.1 {
                 continue;
             }
             put(m);
-            let deep = if upright { 1 } else { k };
+            // (Well inside it is wood and well outside it is not, without working out its
+            // ridges: only the skin of it needs them.)
+            let (plain, widest) = ((ra + (rb - ra) * t).max(g * 0.56) * 0.9, most(t));
+            // (A trunk that leans has its slices leaning with it: a cube far from the axis and
+            // in this slice is higher or lower than the axis is here, by the lean. Three
+            // layers were enough for a cell; in cubes of 10 cm a great leaning trunk was
+            // hollow beyond a third of its radius.)
+            let lean = ((k as f32) * (1.0 - along.y * along.y).max(0.0).sqrt() / along.y.max(0.5)).ceil() as i32;
+            let deep = if upright { lean.max(1) } else { k };
             for dy in -deep..=deep {
                 for dz in -k..=k {
                     for dx in -k..=k {
@@ -211,7 +289,8 @@ impl Limb {
                             continue;
                         }
                         let flat = p - along * axial;
-                        if flat.length() <= radius(t, flat.dot(other).atan2(flat.dot(side))) {
+                        let out = flat.length();
+                        if out <= widest && (out <= plain || out <= radius(t, flat.dot(other).atan2(flat.dot(side)))) {
                             put(c);
                         }
                     }
@@ -274,6 +353,13 @@ pub fn height(kind: Tree, age: f32) -> f32 {
 /// Grows a tree with its foot on the cell `foot`. `age` is 0 for one just grown, 1 for an
 /// old one. Says how tall it stands, metres.
 pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng) -> f32 {
+    FOOT.set(Some(foot.y as f32 * CELL));
+    let tall = grown(world, foot, kind, age, rng);
+    FOOT.set(None);
+    tall
+}
+
+fn grown(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng) -> f32 {
     let foot = (foot.as_vec3() + Vec3::new(0.5, 0.0, 0.5)) * CELL;
     let lean = |rng: &mut Rng, most: f32| Vec3::new(rng.between(-most, most), 0.0, rng.between(-most, most));
     let clear = foot.y + scale::UNDER_CROWN;

@@ -26,6 +26,8 @@ cargo world years [N] [--seed N]                  the creatures by the day for N
 cargo world who [--seed N]                        where each group of creatures starts: kind, how
                                                   many, metres east and south of the start, biome
                                                   (for `cargo sandbox --wild --scene F --at X,Z`)
+cargo world trunks [--seed N]                     how far what stops a body at a trunk is from the trunk
+                                                  that is drawn, a metre up, round every trunk near the start
 cargo world cost [--seed N]                       what making the world costs: a region's cells by part
                                                   (ground, what stands, cover) and a chunk's mesh, ms
 cargo world dig [--holes 120]                     HOLES (120) holes and stones cut to the 5 cm bit all
@@ -303,6 +305,69 @@ fn map_command(args: &Args) -> ! {
 /// Holes dug all over the land, to the bit, and what they cost: the cells that broke, the
 /// memory for them, the faces added, how long a chunk takes to draw again, and whether the
 /// creatures still live without ending up in the ground.
+/// How far what stops a body is from what is drawn, at the trunks near the start. A metre
+/// above each trunk's foot, from sixteen sides: how far out the first solid point is (what a
+/// body meets) and how far out the first cube of the trunk as the game draws it near (cubes
+/// of 10 cm, or 15 for a great trunk, of the same shape, `Limb::fill`). The gap is the one
+/// less the other: more than nothing, a body is stopped by air; less, it walks into wood.
+fn trunks_command(args: &Args) -> ! {
+    let land = Land::new(args.seed, args.radius);
+    let mut world = World::default();
+    let r = cube_sim::terrain::REGION;
+    let ((), form) = cube_sim::plants::recorded(|| {
+        for rz in -2..2 {
+            for rx in -2..2 {
+                cube_sim::terrain::fill(&mut world, &land, (rx * r, rz * r), ((rx + 1) * r, (rz + 1) * r));
+            }
+        }
+    });
+    let mut gaps: Vec<f32> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    // (Not the trunks at the edge of what was made: the part of one that stands in ground
+    // not made is not there.)
+    let inside = (2 * r) as f32 * CELL - 4.0;
+    for limb in form.limbs.iter().filter(|l| l.roots > 0 && l.a.x.abs() < inside && l.a.z.abs() < inside && seen.insert((l.a.x.to_bits(), l.a.z.to_bits()))) {
+        // What is drawn of the whole tree there: every limb of it that comes near, each at
+        // the size the game draws a limb of its thickness near the eye.
+        let up = limb.a.y + cube_sim::plants::Limb::UNDER + 1.0;
+        let thick = limb.ra.max(limb.rb);
+        let mut drawn = [std::collections::HashSet::new(), std::collections::HashSet::new()];
+        for other in form.limbs.iter().filter(|o| o.ra.max(o.rb) >= 0.16 && (o.a - limb.a).with_y(0.0).length() < thick + 0.3 && o.a.y.min(o.b.y) < up + 0.3 && o.a.y.max(o.b.y) > up - 0.3) {
+            let wide = other.ra.max(other.rb) > 0.5;
+            other.fill_span(if wide { 0.15 } else { 0.1 }, None, (up - 0.3, up + 0.3), |c| {
+                drawn[wide as usize].insert(c);
+            });
+        }
+        let axis = limb.a.lerp(limb.b, ((up - limb.a.y) / (limb.b.y - limb.a.y).max(0.01)).clamp(0.0, 1.0));
+        for k in 0..16 {
+            let way = Vec3::new((k as f32 * std::f32::consts::TAU / 16.0).cos(), 0.0, (k as f32 * std::f32::consts::TAU / 16.0).sin());
+            // (From a little way out, and only this trunk's own wood: a rock or the next
+            // tree in the way is not this trunk's collision.)
+            let out = thick * 5.0 + 0.5;
+            let first = |hit: &dyn Fn(Vec3) -> bool| (0..(out * 100.0) as i32).map(|i| out - i as f32 * 0.01).find(|d| hit(Vec3::new(axis.x, up, axis.z) + way * *d));
+            let (stopped, shown) = (first(&|p| world.bit((p / cube_voxel::BIT).floor().as_ivec3()) == limb.bark), first(&|p| drawn[0].contains(&(p / 0.1).floor().as_ivec3()) || drawn[1].contains(&(p / 0.15).floor().as_ivec3())));
+            if let (Some(stopped), Some(shown)) = (stopped, shown) {
+                gaps.push(stopped - shown);
+            }
+        }
+    }
+    gaps.sort_by(f32::total_cmp);
+    let mut checks = Checks(Vec::new());
+    if gaps.is_empty() {
+        checks.bar("trunks", 0.0, false, "some trunks near the start");
+        checks.finish()
+    }
+    let (n, at) = (gaps.len(), |part: f32| gaps[((gaps.len() - 1) as f32 * part) as usize] * 100.0);
+    let mut off: Vec<f32> = gaps.iter().map(|g| g.abs()).collect();
+    off.sort_by(f32::total_cmp);
+    let mean = off[off.len() / 2] * 100.0;
+    println!("trunks: {} sides of {} trunks · what stops a body is {mean:.1} cm from what is drawn, at the middle · from {:.0} cm inside it to {:.0} cm outside (the 5th and 95th of a hundred)", n, n / 16, at(0.05), at(0.95));
+    checks.bar("trunks off", mean, mean < 4.0, "under 4 cm at the middle");
+    checks.bar("trunks inside", at(0.05), at(0.05) > -8.0, "a body goes no more than 8 cm into wood that is drawn");
+    checks.bar("trunks outside", at(0.95), at(0.95) < 8.0, "a body is stopped no more than 8 cm short of it");
+    checks.finish()
+}
+
 /// What making the world costs, on one thread: the sixteen regions round the start made one
 /// at a time and every chunk of them meshed, as the game does it.
 fn cost_command(args: &Args) -> ! {
@@ -321,7 +386,7 @@ fn cost_command(args: &Args) -> ! {
     let started = std::time::Instant::now();
     let faces: usize = chunks.iter().map(|&c| [false, true].map(|liquid| cube_voxel::mesh::mesh_chunk(&world, c, liquid).indices.len() / 6).iter().sum::<usize>()).sum();
     let mesh = started.elapsed().as_secs_f64() * 1000.0 / chunks.len().max(1) as f64;
-    println!("cost: a region's cells {all:.0} ms (ground {:.0}, what stands {:.0} of which wood {:.0} and leaf {:.0}, cover {:.0}) · a chunk's mesh {mesh:.2} ms ({} chunks, {:.2}M faces)", parts[0], parts[1], parts[3], parts[4], parts[2], chunks.len(), faces as f64 / 1e6);
+    println!("cost: a region's cells {all:.0} ms (ground {:.0}, what stands {:.0} of which wood {:.0} and leaf {:.0}, cover {:.0}) · a chunk's mesh {mesh:.2} ms ({} chunks, {:.2}M faces) · {} cells broken to bits, {:.1} MB", parts[0], parts[1], parts[3], parts[4], parts[2], chunks.len(), faces as f64 / 1e6, world.broken(), world.broken() as f64 * 141.0 / 1e6);
     std::process::exit(0)
 }
 
@@ -358,9 +423,9 @@ fn dig_command(args: &Args) -> ! {
     let stuck = sim.agents.values().map(|a| a.log.stuck).sum::<f32>() / (sim.agents.len() as f32 * 120.0);
     println!(
         "dug {holes} holes and stones 0.3 to 1.6 m across: {} cells broke ({:.1} a hole, {:.1} MB) · faces {:.2}M to {:.2}M · {digging:.2} ms a hole, {remesh:.1} ms to draw a changed chunk again ({} faces)",
-        world.bits.len(),
-        world.bits.len() as f32 / holes as f32,
-        world.bits.len() as f32 * 141.0 / 1e6,
+        world.broken(),
+        world.broken() as f32 / holes as f32,
+        world.broken() as f32 * 141.0 / 1e6,
         before as f32 / 1e6,
         after as f32 / 1e6,
         redrawn / touched.len().max(1)
@@ -453,6 +518,7 @@ fn main() {
         "map" => map_command(&args),
         "dig" => dig_command(&args),
         "cost" => cost_command(&args),
+        "trunks" => trunks_command(&args),
         "grade" => grade_command(&args),
         "life" => life_command(&args),
         "find" => {

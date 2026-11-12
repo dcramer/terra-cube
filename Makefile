@@ -74,13 +74,14 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 	@cargo world survey | tail -1 | sed 's/^ok$$/ok survey: the land/'
 	@cargo world run --seconds 300 | tail -1 | sed 's/^ok$$/ok run: five minutes of creatures/'
 	@cargo world life | tail -1 | sed 's/^ok$$/ok life: every kind has somewhere to live/'
+	@cargo world trunks | tail -1 | sed 's/^ok$$/ok trunks: what stops a body at a tree is the wood that is drawn/'
 	@python3 tools/audio/level.py | tail -1
 	@python3 tools/audio/loops.py | tail -1
 	@$(MAKE) --no-print-directory sound
 	@$(MAKE) --no-print-directory fight
 	@$(MAKE) --no-print-directory swim
 	@$(MAKE) --no-print-directory window
-	@tools/pace.sh --yaw 0.5
+	@tools/pace.sh --yaw 0.7
 	@tools/feet.sh player -60,20 2.0
 	@tools/seasons.sh
 	@cargo world years 24 | tail -1 | sed 's/^ok$$/ok years: twenty-four years, no kind dies out and each settles/'
@@ -97,7 +98,7 @@ seasons: ## no window: the meadow in summer and winter, judged by the ground's c
 	@tools/seasons.sh
 
 pace: ## no window: the player run across the world for half a minute on the graphics card: how long the world took to be ready, and every frame's time while he ran, against bars
-	@tools/pace.sh --yaw 0.5
+	@tools/pace.sh --yaw 0.7
 
 swim: ## no window: the player is put in deep water in the real game; passes if he floats, swims and is heard
 	@tools/xkeys/swim.sh

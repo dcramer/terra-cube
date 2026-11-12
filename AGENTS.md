@@ -44,6 +44,7 @@ make gaits ID="wolf deer"           # shots/gaits.png: walk, run and sprint from
 cargo world survey                 # the land in numbers; `cargo world run`: its creatures living, in numbers
 cargo world life                   # the ecology: how much of the island suits each kind of life, when it is about, where each animal settled
 cargo world years 24               # the island by the day for 24 years, nobody watching: each kind's numbers, whether it lasts and settles, who hunted what fell; change `[life]` or `Sim::day` against this, on more than one `--seed`
+cargo world trunks                 # how far what stops a body at a tree is from the wood that is drawn (0 cm at the middle; it was 15)
 cargo world map shots/map.png      # one picture from above with where every creature went
 make window                        # the real window on an Xvfb, driven by real key presses (tools/xkeys), judged from the trace
 make prove                         # every judgment in one go, a line each: check, survey, run, life, sound levels, what is heard, fight, swim, window, seasons

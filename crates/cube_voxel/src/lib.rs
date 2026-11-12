@@ -140,11 +140,16 @@ impl Block {
 #[derive(Clone)]
 pub struct Chunk {
     cells: Box<[Block]>,
+    /// The cells of it that are [`Block::Broken`], by their place in `cells`, and what each
+    /// bit is. With the chunk, so a copy of the chunks round a place (`World::around`) has
+    /// their bits without looking through every broken cell in the world: there are
+    /// thousands to a wood, since a trunk's surface is bits.
+    bits: HashMap<u32, Box<Bits>>,
 }
 
 impl Default for Chunk {
     fn default() -> Self {
-        Self { cells: vec![Block::Air; (CHUNK * CHUNK * CHUNK) as usize].into_boxed_slice() }
+        Self { cells: vec![Block::Air; (CHUNK * CHUNK * CHUNK) as usize].into_boxed_slice(), bits: HashMap::new() }
     }
 }
 
@@ -161,14 +166,49 @@ impl Chunk {
     pub fn get(&self, p: IVec3) -> Block {
         self.cells[Self::index(p)]
     }
+    /// Makes a cell one whole block.
     pub fn set(&mut self, p: IVec3, b: Block) {
-        self.cells[Self::index(p)] = b;
+        let at = Self::index(p);
+        if self.cells[at] == Block::Broken {
+            self.bits.remove(&(at as u32));
+        }
+        self.cells[at] = b;
+    }
+    /// The bits of a broken cell.
+    pub fn bits(&self, p: IVec3) -> Option<&Bits> {
+        self.bits.get(&(Self::index(p) as u32)).map(|b| &**b)
+    }
+    /// How many of its cells are broken.
+    pub fn broken(&self) -> usize {
+        self.bits.len()
+    }
+    /// Sets one bit of a cell (`i`, its place among the cell's bits). The cell breaks if it
+    /// was whole, and is made whole again if that leaves every bit of it the same.
+    pub fn set_bit(&mut self, p: IVec3, i: usize, b: Block) {
+        let at = Self::index(p);
+        let was = self.cells[at];
+        if was == b {
+            return;
+        }
+        if was != Block::Broken {
+            self.cells[at] = Block::Broken;
+            self.bits.insert(at as u32, Box::new([was; (SPLIT * SPLIT * SPLIT) as usize]));
+        }
+        let bits = self.bits.get_mut(&(at as u32)).expect("a broken cell has its bits");
+        bits[i] = b;
+        if bits.iter().all(|&other| other == b) {
+            self.bits.remove(&(at as u32));
+            self.cells[at] = b;
+        }
     }
     /// Puts `other`'s cells wherever this chunk has air.
     pub fn fill_air(&mut self, other: &Chunk) {
-        for (mine, theirs) in self.cells.iter_mut().zip(other.cells.iter()) {
+        for (at, (mine, theirs)) in self.cells.iter_mut().zip(other.cells.iter()).enumerate() {
             if *mine == Block::Air {
                 *mine = *theirs;
+                if let Some(bits) = other.bits.get(&(at as u32)).filter(|_| *theirs == Block::Broken) {
+                    self.bits.insert(at as u32, bits.clone());
+                }
             }
         }
     }
@@ -218,15 +258,13 @@ pub struct World {
     /// (Shared, and copied when written while shared: a chunk being meshed on another thread
     /// is the chunk as it was when the meshing began, [`World::around`].)
     pub chunks: ByPlace<std::sync::Arc<Chunk>>,
-    /// The cells that are [`Block::Broken`], by cell position, and what each bit is.
-    pub bits: ByPlace<Box<Bits>>,
 }
 
 impl World {
     /// The world round a chunk as it is now, to be read on another thread: the chunk's
     /// column and the eight columns round it, from the bottom to the top (what a mesh of that
     /// chunk reads: its neighbours' faces, and the height of the ground about it), and the
-    /// broken cells in them. Nothing is copied but the broken cells. `top` is [`World::top`],
+    /// broken cells in them. Nothing is copied. `top` is [`World::top`],
     /// asked once for however many chunks are copied: it is a look at every chunk there is.
     pub fn around(&self, chunk: IVec3, top: i32) -> World {
         let mut out = World::default();
@@ -239,10 +277,6 @@ impl World {
                     }
                 }
             }
-        }
-        if !self.bits.is_empty() {
-            let (lo, hi) = ((chunk - IVec3::ONE) * CHUNK, (chunk + IVec3::splat(2)) * CHUNK);
-            out.bits = self.bits.iter().filter(|(c, _)| c.x >= lo.x && c.x < hi.x && c.z >= lo.z && c.z < hi.z).map(|(c, b)| (*c, b.clone())).collect();
         }
         out
     }
@@ -265,7 +299,15 @@ impl World {
                 }
             }
         }
-        self.bits.extend(part.bits);
+    }
+
+    /// The bits of a broken cell, and how many cells are broken in all.
+    pub fn bits_at(&self, cell: IVec3) -> Option<&Bits> {
+        let (c, l) = Self::split(cell);
+        self.chunks.get(&c).and_then(|ch| ch.bits(l))
+    }
+    pub fn broken(&self) -> usize {
+        self.chunks.values().map(|c| c.broken()).sum()
     }
 
     /// The highest chunk there is.
@@ -283,11 +325,7 @@ impl World {
     /// Makes a cell one whole block (never [`Block::Broken`]: use [`World::set_bit`]).
     pub fn set(&mut self, cell: IVec3, b: Block) {
         let (c, l) = Self::split(cell);
-        let chunk = std::sync::Arc::make_mut(self.chunks.entry(c).or_default());
-        if chunk.get(l) == Block::Broken {
-            self.bits.remove(&cell);
-        }
-        chunk.set(l, b);
+        std::sync::Arc::make_mut(self.chunks.entry(c).or_default()).set(l, b);
     }
 
     fn bit_index(bit: IVec3) -> (IVec3, usize) {
@@ -299,7 +337,7 @@ impl World {
     pub fn bit(&self, bit: IVec3) -> Block {
         let (cell, i) = Self::bit_index(bit);
         match self.get(cell) {
-            Block::Broken => self.bits.get(&cell).map_or(Block::Air, |b| b[i]),
+            Block::Broken => self.bits_at(cell).map_or(Block::Air, |b| b[i]),
             whole => whole,
         }
     }
@@ -308,19 +346,8 @@ impl World {
     /// that leaves every bit of it the same.
     pub fn set_bit(&mut self, bit: IVec3, b: Block) {
         let (cell, i) = Self::bit_index(bit);
-        let was = self.get(cell);
-        if was == b {
-            return;
-        }
-        if was != Block::Broken {
-            self.set(cell, Block::Broken);
-            self.bits.insert(cell, Box::new([was; (SPLIT * SPLIT * SPLIT) as usize]));
-        }
-        let bits = self.bits.get_mut(&cell).expect("a broken cell has its bits");
-        bits[i] = b;
-        if bits.iter().all(|&other| other == b) {
-            self.set(cell, b);
-        }
+        let (c, l) = Self::split(cell);
+        std::sync::Arc::make_mut(self.chunks.entry(c).or_default()).set_bit(l, i, b);
     }
 
     /// Makes everything within `radius` metres of a point `b`, to the bit: digging with air,
@@ -491,7 +518,7 @@ mod tests {
         assert_eq!(faces(&w), 6 * 25 - 3 + 3);
         // Put back, it is one cell again and nothing is kept for it.
         w.set_bit(corner, Block::Stone);
-        assert_eq!((w.get(cell), w.bits.len(), faces(&w)), (Block::Stone, 0, 6));
+        assert_eq!((w.get(cell), w.broken(), faces(&w)), (Block::Stone, 0, 6));
         // A ray into a dug cell stops at the stone behind the hole, not at the cell's face.
         w.set_bit(corner, Block::Air);
         let from = (corner.as_vec3() + Vec3::new(-10.0, 0.5, 0.5)) * BIT;
@@ -507,8 +534,7 @@ mod tests {
         assert_eq!(w.get(IVec3::ZERO), Block::Air);
         assert!(!w.solid_at(Vec3::new(0.55, 0.0, 0.0)) && w.solid_at(Vec3::new(0.65, 0.0, 0.0)));
         // A ball 1.2 m across is about 58 cells; the shell that broke is fewer than twice that.
-        assert!(w.bits.len() > 30 && w.bits.len() < 110, "{}", w.bits.len());
-        assert!(w.bits.iter().all(|(cell, _)| w.get(*cell) == Block::Broken));
+        assert!(w.broken() > 30 && w.broken() < 110, "{}", w.broken());
     }
 
     #[test]
