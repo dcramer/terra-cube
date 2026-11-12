@@ -38,11 +38,14 @@ struct Thing {
     light: Option<[f32; 3]>,
     /// How the arm carries it, where the clip's own arm would not do (a torch is held up, and
     /// every clip hangs the arm): the way the upper arm and then the forearm point, in the
-    /// body's own frame (x to its right, y up, -z ahead). The clip still moves the rest.
+    /// body's own frame (y up, +z ahead). The clip still moves the rest.
     arm: Option<[[f32; 3]; 2]>,
     /// Made as big as its bearer is tall beside a person.
     #[serde(default)]
     fits: bool,
+    /// Carried in the left hand (a bow), not the right.
+    #[serde(default)]
+    left: bool,
     pieces: Vec<Piece>,
 }
 
@@ -108,7 +111,8 @@ fn hold(
         let Some(thing) = things.0.get(&item) else { continue };
         // Its hand, once its model is there and placed.
         let bone = |name: &str| children.iter_descendants(owner).find(|e| names.get(*e).is_ok_and(|n| n.as_str().ends_with(name)));
-        let (Some(upper), Some(fore), Some(hand)) = (bone("RightArm"), bone("RightForeArm"), bone("RightHand")) else { continue };
+        let side = if thing.left { "Left" } else { "Right" };
+        let (Some(upper), Some(fore), Some(hand)) = (bone(&format!("{side}Arm")), bone(&format!("{side}ForeArm")), bone(&format!("{side}Hand"))) else { continue };
         let Some(scale) = globals.get(hand).ok().map(|g| g.scale().x).filter(|s| *s > 1e-4) else { continue };
         // The bone is in the model's own units: the thing is sized in metres whatever they are.
         let turn = Quat::from_euler(EulerRot::XYZ, thing.turn[0].to_radians(), thing.turn[1].to_radians(), thing.turn[2].to_radians());

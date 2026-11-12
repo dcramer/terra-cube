@@ -3,7 +3,7 @@
 # along +y away from it. `turn` (degrees about x, y, z) and `shift` (metres) seat the grip in
 # the right hand's bone; `light` is where a thing that lights gives its light from; `arm` is
 # how the arm carries it where a clip's hanging arm would not do: the way the upper arm and
-# the forearm point, in the body's frame (x to its right, y up, -z ahead).
+# the forearm point, in the body's frame (y up, +z ahead).
 # Judge a change with `make held` (the thing through idle, walk, run and a blow).
 
 ["Short sword"]
@@ -23,7 +23,7 @@ turn = [0.0, 0.0, 0.0]
 shift = [0.0, 0.08, 0.03]
 light = [0.0, 0.42, 0.0]
 # Held up before him: a torch at the end of a hanging arm lit his knees.
-arm = [[0.25, -0.85, -0.45], [0.05, 0.8, -0.6]]
+arm = [[0.25, -0.85, 0.45], [0.05, 0.8, 0.6]]
 pieces = [
     { size = [0.035, 0.42, 0.035], at = [0.0, 0.10, 0.0], colour = [0.34, 0.24, 0.14] },
     { size = [0.06, 0.08, 0.06], at = [0.0, 0.33, 0.0], colour = [0.16, 0.12, 0.09] },
@@ -37,6 +37,21 @@ shift = [0.0, 0.08, 0.03]
 pieces = [
     { size = [0.03, 0.85, 0.03], at = [0.0, 0.20, 0.0], colour = [0.42, 0.30, 0.18] },
     { size = [0.16, 0.20, 0.015], at = [0.0, 0.72, 0.0], colour = [0.45, 0.46, 0.48] },
+]
+
+# In the left hand, held out before him: the stave upright, bent back at its ends, and strung.
+[Bow]
+turn = [0.0, 0.0, -90.0]
+shift = [0.0, 0.08, 0.03]
+left = true
+arm = [[-0.2, -0.55, 0.8], [-0.05, 0.05, 1.0]]
+pieces = [
+    { size = [0.035, 0.24, 0.045], at = [0.0, 0.0, 0.0], colour = [0.40, 0.27, 0.15] },
+    { size = [0.03, 0.22, 0.04], at = [0.0, 0.22, -0.03], colour = [0.46, 0.32, 0.18] },
+    { size = [0.03, 0.22, 0.04], at = [0.0, -0.22, -0.03], colour = [0.46, 0.32, 0.18] },
+    { size = [0.025, 0.2, 0.03], at = [0.0, 0.42, -0.09], colour = [0.50, 0.36, 0.20] },
+    { size = [0.025, 0.2, 0.03], at = [0.0, -0.42, -0.09], colour = [0.50, 0.36, 0.20] },
+    { size = [0.008, 1.02, 0.008], at = [0.0, 0.0, -0.13], colour = [0.85, 0.82, 0.74] },
 ]
 
 # What a raider carries (`holds = "Club"` in its `[life]`), as big as it is.
