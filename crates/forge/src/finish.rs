@@ -298,6 +298,11 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
             if let Some(pace) = authored {
                 clip.speed = Some(pace);
             }
+            // (`FORGE_OWN_SPEEDS=1`: a person goes at its clips' own speeds, not the game's: to
+            // see a figure of ours beside the library's with nothing but the carrying between them.)
+            if let (Some(pace), true) = (said, std::env::var_os("FORGE_OWN_SPEEDS").is_some()) {
+                clip.speed = Some(pace);
+            }
             if let Some(pace) = said.or(clip.speed) {
                 paces.insert(name.clone(), pace);
             }
