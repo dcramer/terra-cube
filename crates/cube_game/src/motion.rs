@@ -255,7 +255,10 @@ fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, terra
             Act::Sprint => speed / kind.run.max(0.1),
             _ => 1.0,
         };
-        let (name, or) = agent.act.clip();
+        // (Who shoots stands to do it: the clip of a blow is a lunge, and the bow went down with it.
+        // The arms are the bow's own, `held::carry`.)
+        let aims = agent.act == Act::Attack && agent.pack.as_ref().and_then(|p| p.held()).is_some_and(|i| i.reach().1 < 0.2);
+        let (name, or) = if aims { ("idle", "idle") } else { agent.act.clip() };
         let find = |name: &str| def.clips.iter().position(|clip| clip.0 == name);
         if let Some(index) = find(name).or_else(|| find(or)) {
             creature.clip = index;
