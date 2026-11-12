@@ -1,6 +1,6 @@
 # Measured by `cargo forge finish`; do not edit.
 height = 0.2
-length = 0.22805555
+length = 0.2256748
 width = 0.066818126
 walk_speed = 0.3570529
 run_speed = 0.8345722
@@ -73,11 +73,11 @@ foot0 = "tripo::0_Left_Limb_3"
 foot1 = "tripo::0_Right_Limb_2"
 foot2 = "tripo::1_Left_Limb_3"
 foot3 = "tripo::1_Right_Limb_3"
-head = "tripo::Tail_4"
+head = "tripo::Head_3"
 leg0 = "tripo::0_Left_Limb_0>tripo::0_Left_Limb_1>tripo::0_Left_Limb_3"
 leg1 = "bone_11>tripo::0_Right_Limb_0>tripo::0_Right_Limb_2"
 leg2 = "tripo::1_Left_Limb_0>tripo::1_Left_Limb_1>tripo::1_Left_Limb_3"
 leg3 = "tripo::1_Right_Limb_0>tripo::1_Right_Limb_1>tripo::1_Right_Limb_3"
-neck = "tripo::Tail_1"
+neck = "tripo::Head_1"
 root = "tripo::Root"
-tail = "tripo::Head_1"
+tail = "tripo::Tail_1"

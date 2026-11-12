@@ -280,7 +280,18 @@ impl Roles {
         // The head is the highest chain, but not a lone joint hung straight off the root: that is
         // a piece of the body (the plates of a tortoise's shell), whatever its height.
         let of_body = |c: &Vec<usize>| c.len() == 1 && sk.joints[c[0]].parent == Some(sk.root);
-        let mut head_at = rest.iter().enumerate().filter(|(_, c)| !of_body(c)).max_by(|a, b| tip(a.1).y.total_cmp(&tip(b.1).y)).map(|(i, _)| i);
+        // What Tripo calls a bone is no guide to a limb (it has named a tail bone a left
+        // limb), but its `Head_n` and `Tail_n` have been the head and the tail on every animal
+        // looked at, where shape alone has not: a squirrel's brush stands higher than its
+        // head, and was read as the head, so it ran tail first; a fox's ear stood higher than
+        // its muzzle. So, for these two roles only: a chain with a `Head_` bone in it is the
+        // head before any other, and a chain with a `Tail_` bone in it is never the head (nor
+        // one with a `Head_` bone the tail).
+        let called = |c: &Vec<usize>, part: &str| c.iter().any(|&j| sk.joints[j].name.contains(part));
+        let mut head_at = rest.iter().enumerate().filter(|(_, c)| called(c, "Head_") && !called(c, "Tail_")).max_by(|a, b| tip(a.1).y.total_cmp(&tip(b.1).y)).map(|(i, _)| i);
+        if head_at.is_none() {
+            head_at = rest.iter().enumerate().filter(|(_, c)| !of_body(c) && !called(c, "Tail_")).max_by(|a, b| tip(a.1).y.total_cmp(&tip(b.1).y)).map(|(i, _)| i);
+        }
         if head_at.is_none() {
             head_at = rest.iter().enumerate().max_by(|a, b| tip(a.1).y.total_cmp(&tip(b.1).y)).map(|(i, _)| i);
         }
@@ -327,7 +338,7 @@ impl Roles {
         let tail_at = rest
             .iter()
             .enumerate()
-            .filter(|(i, c)| Some(*i) != head_at && along(tip(c)) < -0.25 * length && (tip(c) - centre).dot(side).abs() < 0.15 * length)
+            .filter(|(i, c)| Some(*i) != head_at && !called(c, "Head_") && along(tip(c)) < -0.25 * length && (tip(c) - centre).dot(side).abs() < 0.15 * length)
             .min_by(|a, b| along(tip(a.1)).total_cmp(&along(tip(b.1))))
             .map(|(i, _)| i);
         for (i, chain) in rest.into_iter().enumerate() {

@@ -922,5 +922,10 @@ fn eat(sk: &Skeleton, roles: &Roles) -> Clip {
         for (i, &j) in roles.tail.iter().enumerate() {
             pose.rotations[j] = sk.turned(j, yaw(0.15 * (t * TAU * 2.0 - i as f32 * 0.7).sin()));
         }
+        // Its feet stay where they stand: the bow turns the forequarters, and without this
+        // the fore feet swung off the ground by a fifth of its height.
+        for leg in &roles.legs {
+            reach(sk, roles, pose, leg, leg.foot(), sk.position(leg.foot()));
+        }
     })
 }

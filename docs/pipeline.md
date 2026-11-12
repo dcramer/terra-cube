@@ -125,7 +125,7 @@ Tripo's bone names cannot be trusted (`bone_7` beside `tripo::0_Right_Limb_0`; a
 
 - A **chain** runs from a leaf bone up to the first bone that branches.
 - Chains whose tip is near the floor are **legs**, front or hind and left or right by position.
-- The highest other chain is the **head**; one trailing behind the feet is the **tail**; the trunk from the root to the head is the **spine**; the rest (fingers, wings, ears) are **others**.
+- A chain with one of Tripo's `Head_n` bones in it is the **head**, and one with a `Tail_n` bone is never the head (2026-11-11: by shape alone, the highest chain, a squirrel's brush and a beaver's limb were heads and both ran backwards, and a fox grazed with an ear). Where there is no such name, the highest other chain is the head; one trailing behind the feet is the **tail**; the trunk from the root to the head is the **spine**; the rest (fingers, wings, ears) are **others**.
 - A limb that leaves the trunk and ends in a branching hand is an **arm** (shoulder to hand); its fingers are the others.
 - **Forward** is toward the head when it sits ahead of the feet, else +Z as Tripo exports an upright figure. `facing = "+x"` in `creature.toml` overrides a wrong guess.
 

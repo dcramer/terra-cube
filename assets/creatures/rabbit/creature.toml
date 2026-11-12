@@ -3,7 +3,6 @@ kind = "wildlife"
 plan = "quadruped"
 subject = "a small brown rabbit with long upright ears, standing on all four feet"
 height = 0.3
-ease = 0.35
 # A rabbit does not walk: it hops, slow or fast.
 hops = true
 
