@@ -497,6 +497,10 @@ pub struct Sim {
     /// anything has grazed: eaten down by what feeds there and grown back by the season
     /// (`day`). Ground nothing has grazed is not here, and is as full as ground gets.
     pub forage: BTreeMap<(i32, i32), f32>,
+    /// What has been grazed in sight since the last day, by piece: taken by the tick, each
+    /// too little to take from a number near 1 without being lost, so kept apart until
+    /// `day` takes it off.
+    nibbled: BTreeMap<(i32, i32), f32>,
 }
 
 /// The size of a piece of grazing, metres; what a grazer a metre tall eats of one in a day
@@ -509,7 +513,8 @@ const LEAN: f32 = 0.3;
 impl Sim {
     /// What there is to graze at a place, of 1.
     pub fn forage_at(&self, at: Vec2) -> f32 {
-        self.forage.get(&((at.x / PASTURE).floor() as i32, (at.y / PASTURE).floor() as i32)).copied().unwrap_or(1.0)
+        let piece = ((at.x / PASTURE).floor() as i32, (at.y / PASTURE).floor() as i32);
+        (self.forage.get(&piece).copied().unwrap_or(1.0) - self.nibbled.get(&piece).copied().unwrap_or(0.0)).max(0.0)
     }
 }
 
@@ -522,7 +527,7 @@ fn turn_between(from: f32, to: f32) -> f32 {
 
 impl Sim {
     pub fn new(kinds: Vec<Kind>, seed: u64) -> Self {
-        Self { kinds, agents: BTreeMap::new(), tick: 0, focus: None, when: crate::sky::START, rng: Rng::new(seed), next: 1, trails: None, starved: 0, forage: BTreeMap::new() }
+        Self { kinds, agents: BTreeMap::new(), tick: 0, focus: None, when: crate::sky::START, rng: Rng::new(seed), next: 1, trails: None, starved: 0, forage: BTreeMap::new(), nibbled: BTreeMap::new() }
     }
 
     /// A person's state as text, a thing a line: when it is, where they are, their health,
@@ -677,6 +682,12 @@ impl Sim {
             let days = DT / crate::sky::DAY;
             agent.hunger += days * kind.appetite();
             agent.thirst += days * if kind.diet == Diet::None { 0.0 } else { 1.0 };
+            // What grazes in sight eats the ground down as it grazes: a day's need in the two
+            // hours a day's grazing takes (`day` takes it for the ones out of sight).
+            if agent.mind.state == mind::State::Graze && matches!(kind.diet, Diet::Plants | Diet::All) {
+                let piece = ((agent.body.pos.x / PASTURE).floor() as i32, (agent.body.pos.z / PASTURE).floor() as i32);
+                *self.nibbled.entry(piece).or_insert(0.0) += kind.height * kind.height * GRAZED * 12.0 * days * if kind.diet == Diet::All { 0.3 } else { 1.0 };
+            }
             // A hunter that has found nothing for four meals weakens, and then lies down and
             // dies where it is, in sight: what `day` does to the ones nobody is near.
             if kind.diet == Diet::Meat && agent.hunger >= STARVES - 1.0 {
@@ -1109,6 +1120,10 @@ impl Sim {
         // there, and has only so far to grow). Until 2026-11-11 the ground was never eaten:
         // what fed on it was held only by a count of its own kind.
         let season = crate::sky::season(self.when);
+        for (piece, taken) in std::mem::take(&mut self.nibbled) {
+            let left = self.forage.entry(piece).or_insert(1.0);
+            *left = (*left - taken).max(0.0);
+        }
         for &id in &ids {
             let Some(agent) = self.agents.get(&id) else { continue };
             let kind = &self.kinds[agent.kind];
@@ -1117,6 +1132,10 @@ impl Sim {
                 Diet::All => 0.3,
                 _ => continue,
             };
+            // (What is awake takes its own as it grazes, in `step`.)
+            if agent.awake {
+                continue;
+            }
             let piece = ((agent.mind.home.x / PASTURE).floor() as i32, (agent.mind.home.y / PASTURE).floor() as i32);
             let left = self.forage.entry(piece).or_insert(1.0);
             *left = (*left - eats * kind.height * kind.height * GRAZED).max(0.0);
@@ -1517,6 +1536,17 @@ mod tests {
             assert!(agent.log.inside == 0 && agent.log.fell == 0, "{} #{id}: {:?}", a.kinds[agent.kind].id, agent.log);
         }
         assert!(a.agents.values().map(|agent| agent.log.moved).sum::<f32>() > 20.0);
+    }
+
+    #[test]
+    fn a_rabbit_grazing_in_sight_eats_the_ground_it_stands_on() {
+        let (world, mut sim) = stage();
+        let rabbit = sim.add(&world, 0, at(2.0, 2.0), 0.0, Driver::Mind);
+        // Hungry, it grazes; and while it does, a little of the grazing there goes.
+        sim.agents.get_mut(&rabbit).unwrap().hunger = 0.9;
+        run(&mut sim, &world, 120.0);
+        let (grazed, left) = (sim.agents[&rabbit].log.acts[Act::Eat as usize], sim.forage_at(Vec2::new(2.0, 2.0)));
+        assert!(grazed > 5.0 && left < 1.0 && left > 0.99, "it grazed {grazed:.0} s and left {left}");
     }
 
     #[test]
