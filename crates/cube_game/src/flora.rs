@@ -70,6 +70,9 @@ pub struct Shape {
     colors: Vec<[f32; 4]>,
     uvs: Vec<[f32; 2]>,
     tangents: Vec<[f32; 4]>,
+    /// How high each corner stands over the ground under it, metres (in x): what a whole
+    /// tree bends by in the wind, its top most. Nothing for a stone.
+    high: Vec<[f32; 2]>,
     indices: Vec<u32>,
 }
 
@@ -380,6 +383,7 @@ fn grow(mut commands: Commands, args: Res<crate::Args>, loading: Res<crate::load
             .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, shape.normals)
             .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, shape.colors)
             .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, shape.uvs)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_1, shape.high)
             .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, shape.tangents)
             .with_inserted_indices(Indices::U32(shape.indices));
         // (As cubes, the whole paint; as shapes, leaf is cards with gaps cut in them.)
@@ -409,6 +413,7 @@ fn grow(mut commands: Commands, args: Res<crate::Args>, loading: Res<crate::load
 fn shape_of(form: &Form, land: &cube_sim::terrain::Land, origin: Vec3, level: u8, shapes: bool) -> Shape {
     let ground = |x: f32, z: f32| land.height((x / CELL).floor() as i32, (z / CELL).floor() as i32) as f32 * CELL;
     let mut shape = Shape::default();
+    let mut still = (0, 0);
     // An end is cut wood if no other limb starts or stops there.
     let key = |p: Vec3| p.to_array().map(f32::to_bits);
     let mut ends: HashMap<[u32; 3], u32> = HashMap::new();
@@ -422,11 +427,13 @@ fn shape_of(form: &Form, land: &cube_sim::terrain::Land, origin: Vec3, level: u8
         }
         let facets = ball();
         let coarse = ball_of(0);
+        still.0 = shape.positions.len();
         for (n, stone) in form.stones.iter().enumerate() {
             let mut stone = stone.clone();
             stone.middle -= origin;
             shape.stone(&stone, &facets, n as u32);
         }
+        still.1 = shape.positions.len();
         for (n, clump) in form.clumps.iter().enumerate() {
             shape.clump(clump.middle - origin, clump.radii, clump.leaf, n as u32 + 100_000, &coarse, level);
         }
@@ -435,12 +442,14 @@ fn shape_of(form: &Form, land: &cube_sim::terrain::Land, origin: Vec3, level: u8
             shape.limb_cubes(limb, origin, ground(limb.a.x, limb.a.z), n as u32, [ends[&key(limb.a)] == 1, ends[&key(limb.b)] == 1], level);
         }
         let wood = shape.indices.len() / 6;
+        still.0 = shape.positions.len();
         for (n, stone) in form.stones.iter().enumerate() {
             let mut stone = stone.clone();
             stone.middle -= origin;
             shape.stone_cubes(&stone, n as u32, level);
         }
         let stone = shape.indices.len() / 6 - wood;
+        still.1 = shape.positions.len();
         for (n, clump) in form.clumps.iter().enumerate() {
             shape.clump_cubes(clump.middle - origin, clump.radii, clump.leaf, n as u32 + 100_000, level);
         }
@@ -450,6 +459,7 @@ fn shape_of(form: &Form, land: &cube_sim::terrain::Land, origin: Vec3, level: u8
             println!("flora level={level} wood={wood} stone={stone} leaf={} limbs={} clumps={} stones={}", shape.indices.len() / 6 - wood - stone, form.limbs.len(), form.clumps.len(), form.stones.len());
         }
     }
+    shape.high = shape.positions.iter().enumerate().map(|(i, p)| [if (still.0..still.1).contains(&i) { 0.0 } else { (p[1] + origin.y - ground(p[0] + origin.x, p[2] + origin.z)).max(0.0) }, 0.0]).collect();
     shape
 }
 

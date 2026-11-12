@@ -30,6 +30,19 @@ fn sway(world: vec3<f32>, free: f32, t: f32) -> vec3<f32> {
     return vec3<f32>(DIR.x * push, -abs(push) * 0.2, DIR.y * push);
 }
 
+// A whole tree leans with the wind and comes back, its top most: by how high a corner
+// stands over the ground (the second texture place of what grows, `flora::Shape::high`),
+// squared, as a pole bends. Slower and longer than the leaves' own stir.
+const LEAN: f32 = 0.4;
+
+fn bend(world: vec3<f32>, high: f32, t: f32) -> vec3<f32> {
+    let along = dot(world.xz, DIR);
+    let swell = 0.55 + 0.45 * sin(along * 0.06 - t * 0.9 + sin(world.x * 0.03 + t * 0.13) * 1.5);
+    let up = clamp(high / 14.0, 0.0, 1.3);
+    let push = LEAN * wind.x * swell * up * up;
+    return vec3<f32>(DIR.x * push, -push * 0.15 * up, DIR.y * push);
+}
+
 @vertex
 fn vertex(vertex_in: Vertex) -> VertexOutput {
     var out: VertexOutput;
@@ -40,8 +53,12 @@ fn vertex(vertex_in: Vertex) -> VertexOutput {
     out.world_normal = mesh_functions::mesh_normal_local_to_world(vertex.normal, vertex_in.instance_index);
 
     out.world_position = mesh_functions::mesh_position_local_to_world(world_from_local, vec4<f32>(vertex.position, 1.0));
+    var pushed = out.world_position.xyz;
+@if(VERTEX_UVS_B)
+    pushed += bend(out.world_position.xyz, vertex.uv_b.x, globals.time);
 @if(VERTEX_COLORS)
-    out.world_position = vec4<f32>(out.world_position.xyz + sway(out.world_position.xyz, 1.0 - vertex.color.a, globals.time), 1.0);
+    pushed += sway(out.world_position.xyz, 1.0 - vertex.color.a, globals.time);
+    out.world_position = vec4<f32>(pushed, 1.0);
     out.position = position_world_to_clip(out.world_position.xyz);
 
 @if(VERTEX_UVS_A)
