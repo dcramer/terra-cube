@@ -8,7 +8,6 @@ use crate::{
 };
 use bevy::{prelude::*, world_serialization::WorldAssetRoot};
 use serde::Deserialize;
-use std::time::Duration;
 
 pub struct CreaturesPlugin;
 
@@ -90,6 +89,12 @@ pub struct Creature {
     /// Strikes a blow over whatever clip it is playing: its arms and trunk do the blow, its
     /// legs go on as they were (`motion::show` sets it while a blow is struck on the move).
     pub blow: bool,
+    /// Going over the ground, standing included: how fast it goes, and the speeds its walk,
+    /// run and sprint were made for (m/s). Its clips are then mixed by its speed, in step
+    /// with each other, whatever `clip` says (`drive`). Nothing for a clip played alone.
+    pub pace: Option<[f32; 4]>,
+    /// Where in a stride it is, 0 to 1: every gait in the mix is at the same part of its own.
+    phase: f32,
     playing: Option<usize>,
     struck: bool,
 }
@@ -100,7 +105,7 @@ impl Creature {
         self.playing = None;
     }
     pub fn new(def: usize) -> Self {
-        Self { def, clip: 0, speed: 1.0, hold: None, blend: 0.2, clip_name: None, blow: false, playing: None, struck: false }
+        Self { def, clip: 0, speed: 1.0, hold: None, blend: 0.2, clip_name: None, blow: false, pace: None, phase: 0.0, playing: None, struck: false }
     }
 }
 
@@ -201,7 +206,7 @@ fn bind_players(
         loop {
             if let Ok(creature) = creatures.get(at) {
                 if let Some(graph) = &registry.0[creature.def].graph {
-                    commands.entity(player).try_insert((AnimationGraphHandle(graph.clone()), AnimationTransitions::new()));
+                    commands.entity(player).try_insert(AnimationGraphHandle(graph.clone()));
                     commands.entity(at).try_insert(Rig(player));
                 }
                 break;
@@ -239,9 +244,19 @@ fn legs(mut registry: ResMut<Registry>, mut graphs: ResMut<Assets<AnimationGraph
     }
 }
 
-fn drive(registry: Res<Registry>, mut creatures: Query<(Entity, &mut Creature, &Rig, Has<crate::player::Controlled>)>, mut players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>) {
+/// Plays each creature's clips. One clip at a time comes in over the one before it; going
+/// over the ground, its idle, walk, run and sprint are mixed by how fast it goes, each at the
+/// same part of its stride, so it speeds up and slows down through its gaits and is never
+/// switched from one to the next. (Until 2026-11-12 it was: a clip chosen by the gait asked
+/// for and played faster or slower to fit the speed, so a body getting under way took a
+/// walk's steps at a third of their rate, and walk became run in a fifth of a second
+/// whatever the legs were doing. The developer: "animations are still not totally natural".)
+/// The weights are kept here, not by Bevy's `AnimationTransitions`, which knows only one
+/// clip coming in and the ones going out.
+fn drive(time: Res<Time>, registry: Res<Registry>, mut creatures: Query<(Entity, &mut Creature, &Rig, Has<crate::player::Controlled>)>, mut players: Query<&mut AnimationPlayer>) {
+    let dt = time.delta_secs();
     for (entity, mut creature, rig, controlled) in &mut creatures {
-        let Ok((mut player, mut transitions)) = players.get_mut(rig.0) else { continue };
+        let Ok(mut player) = players.get_mut(rig.0) else { continue };
         let def = &registry.0[creature.def];
         let clips = &def.clips;
         if clips.is_empty() {
@@ -252,19 +267,99 @@ fn drive(registry: Res<Registry>, mut creatures: Query<(Entity, &mut Creature, &
         }
         let index = creature.clip.min(clips.len() - 1);
         let node = clips[index].1;
-        if creature.playing != Some(index) {
-            let blend = if creature.playing.is_some() && creature.hold.is_none() { creature.blend } else { 0.0 };
-            let active = transitions.play(&mut player, node, Duration::from_secs_f32(blend));
-            if def.meta.clips.get(&clips[index].0).is_none_or(|c| c.looping) || creature.hold.is_some() {
-                active.repeat();
+        let find = |name: &str| clips.iter().position(|c| c.0 == name);
+        let long = |k: usize| clips[k].2.max(0.05);
+        // What is wanted: each clip's share, how fast it is played, and whether it keeps step.
+        let mut wanted: Vec<(usize, f32, f32, bool)> = Vec::new();
+        let gaits = creature.pace.filter(|_| creature.hold.is_none()).and_then(|pace| Some((pace, find("idle")?, find("walk")?, find("run")?))).filter(|(pace, ..)| pace[1] > 0.0 && pace[2] > pace[1]);
+        if let Some(([speed, walk, run, sprint], idle, walks, runs)) = gaits {
+            // Two gaits side by side: the faster comes in over the middle half of the way
+            // from one's speed to the other's, a stride takes as long as their mix says, and
+            // the whole is played a little faster or slower until it covers the ground it
+            // is covering.
+            let mut mix = |a: usize, b: usize, from: f32, to: f32| {
+                let part = (((speed - from) / (to - from) - 0.25) / 0.5).clamp(0.0, 1.0);
+                let part = part * part * (3.0 - 2.0 * part);
+                let stride = long(a) + (long(b) - long(a)) * part;
+                let covers = from * long(a) / stride * (1.0 - part) + to * long(b) / stride * part;
+                let rate = (speed / covers.max(0.01)).clamp(0.6, 1.6);
+                wanted.extend([(a, 1.0 - part, long(a) / stride * rate, true), (b, part, long(b) / stride * rate, true)]);
+                rate / stride
+            };
+            let sprints = find("sprint").filter(|_| sprint > run);
+            let strides = if speed < walk {
+                // Getting under way and coming to a stand: the walk comes in over standing.
+                let part = (speed / walk).clamp(0.0, 1.0);
+                let rate = 0.75 + 0.25 * part;
+                wanted.extend([(idle, 1.0 - part, 1.0, false), (walks, part, rate, true)]);
+                rate / long(walks)
+            } else if speed < run {
+                mix(walks, runs, walk, run)
+            } else if let Some(sprints) = sprints.filter(|_| speed < sprint) {
+                mix(runs, sprints, run, sprint)
+            } else {
+                let (last, made_for) = sprints.map_or((runs, run), |s| (s, sprint));
+                let rate = (speed / made_for).clamp(0.6, 1.6);
+                wanted.push((last, 1.0, rate, true));
+                rate / long(last)
+            };
+            creature.phase = (creature.phase + strides * dt).fract();
+            // (Leaving the ground's gaits for a clip of its own, that clip begins.)
+            creature.playing = None;
+        } else {
+            if creature.playing != Some(index) {
+                let looping = def.meta.clips.get(&clips[index].0).is_none_or(|c| c.looping) || creature.hold.is_some();
+                let began = player.start(node).set_weight(0.0);
+                if looping {
+                    began.repeat();
+                }
+                creature.playing = Some(index);
             }
-            creature.playing = Some(index);
+            wanted.push((index, 1.0, if creature.hold.is_some() { 0.0 } else { creature.speed }, false));
         }
-        // `ANIM_TRACE=ID`: what that creature's clip is doing, a line every half second or so
-        // (every frame with `ANIM_ALL=1`): which entity, which clip is asked for, whether it is
-        // playing, where in it, how fast, paused or not.
-        if std::env::var("ANIM_TRACE").is_ok_and(|id| id == def.id) && (std::env::var_os("ANIM_ALL").is_some() || (player.animation(node).map_or(0.0, |a| a.elapsed()) * 2.0).fract() < 0.04) {
-            println!("anim {} {entity} rig={} controlled={controlled} clip={} playing={:?} {}", def.id, rig.0, clips[index].0, creature.playing, player.animation(node).map_or("not in the player".into(), |a| format!("at={:.2} speed={:.2} paused={} weight={:.2}", a.seek_time(), a.speed(), a.is_paused(), a.weight())));
+        wanted.retain(|w| w.1 > 0.0);
+        for &(k, _, _, steps) in &wanted {
+            if !player.is_playing_animation(clips[k].1) {
+                let began = player.start(clips[k].1).set_weight(0.0).repeat();
+                if steps {
+                    began.seek_to(creature.phase * long(k));
+                }
+            }
+        }
+        // Each clip's share goes toward what is wanted of it, over the creature's blend
+        // time; what is wanted no longer goes out and is stopped. (With nothing yet seen of
+        // any of them, what is wanted is there at once: nothing to come in over.)
+        let over = def.over.flatten();
+        let seen: f32 = player.playing_animations().filter(|(n, _)| Some(**n) != over).map(|(_, a)| a.weight()).sum();
+        let step = if seen <= 0.0 || creature.hold.is_some() { 1.0 } else { dt / creature.blend.max(0.01) };
+        let mut gone = Vec::new();
+        for (n, active) in player.playing_animations_mut() {
+            if Some(*n) == over {
+                continue;
+            }
+            let want = wanted.iter().find(|w| clips[w.0].1 == *n);
+            let (share, to) = (active.weight(), want.map_or(0.0, |w| w.1));
+            let share = share + (to - share).clamp(-step, step);
+            active.set_weight(share);
+            match (want, creature.hold) {
+                (Some(_), Some(t)) => {
+                    active.set_speed(0.0).seek_to(t);
+                }
+                (Some(w), None) => {
+                    active.set_speed(w.2);
+                }
+                (None, _) if share <= 0.0 => gone.push(*n),
+                _ => {}
+            }
+        }
+        for n in gone {
+            player.stop(n);
+        }
+        // `ANIM_TRACE=ID`: what that creature's clips are doing, a line every half second or
+        // so (every frame with `ANIM_ALL=1`): which are wanted, each one's share and speed.
+        if std::env::var("ANIM_TRACE").is_ok_and(|id| id == def.id) && (std::env::var_os("ANIM_ALL").is_some() || (time.elapsed_secs() * 2.0).fract() < dt * 2.0) {
+            let all: Vec<String> = wanted.iter().map(|w| format!("{}={:.2}x{:.2}", clips[w.0].0, player.animation(clips[w.0].1).map_or(0.0, |a| a.weight()), w.2)).collect();
+            println!("anim {} {entity} rig={} controlled={controlled} clip={} pace={:?} {}", def.id, rig.0, clips[index].0, creature.pace.map(|p| p[0]), all.join(" "));
         }
         // A blow over the clip: begun when asked, far heavier than the clip under it (the two
         // are mixed by weight where both move a bone, and it moves all but the legs), let go
@@ -276,16 +371,6 @@ fn drive(registry: Res<Registry>, mut creatures: Query<(Entity, &mut Creature, &
                 player.stop(over);
             }
             creature.struck = creature.blow;
-        }
-        if let Some(active) = player.animation_mut(node) {
-            match creature.hold {
-                Some(t) => {
-                    active.set_speed(0.0).seek_to(t);
-                }
-                None => {
-                    active.set_speed(creature.speed);
-                }
-            }
         }
     }
 }

@@ -289,6 +289,31 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
                 clip.speed = Some(stance * slower);
             }
         }
+        // Every gait begins at the same part of its stride: the moment one fore foot (a
+        // person's foot) passes ahead of the other. The game mixes gaits at the same part of
+        // their strides (`creatures::drive`), and a walk begun on one foot mixed with a run
+        // begun on the other is legs that do neither.
+        let pair: Vec<usize> = { let fore: Vec<usize> = roles.legs.iter().filter(|l| l.front).map(|l| l.foot()).collect(); if fore.len() >= 2 { fore } else { roles.legs.iter().map(|l| l.foot()).collect() } };
+        if matches!(name.as_str(), "walk" | "run" | "sprint") && clip.looping && pair.len() >= 2 && clip.frames.len() > 3 {
+            let ahead: Vec<f32> = clip.frames.iter().map(|pose| { let world = skeleton.pose_world(pose); (world[pair[0]].w_axis.truncate() - world[pair[1]].w_axis.truncate()).dot(roles.forward) }).collect();
+            let n = clip.frames.len() - 1;
+            if let Some(first) = (0..n).find(|&i| ahead[(i + n - 1) % n] <= 0.0 && ahead[i] > 0.0) {
+                clip.frames.truncate(n);
+                clip.frames.rotate_left(first);
+                clip.frames.push(clip.frames[0].clone());
+            }
+        }
+        // `FORGE_TRACE=1`: which foot leads through a gait, at eight moments of its stride: the
+        // game mixes gaits at the same part of their strides, and they must agree which foot
+        // that is (+ the first leg ahead of the second, - behind).
+        if std::env::var_os("FORGE_TRACE").is_some() && matches!(name.as_str(), "walk" | "run" | "sprint") && roles.legs.len() >= 2 {
+            let lead: String = (0..8).map(|i| {
+                let world = skeleton.pose_world(&clip.frames[i * (clip.frames.len() - 1) / 8]);
+                let ahead = (world[pair[0]].w_axis.truncate() - world[pair[1]].w_axis.truncate()).dot(roles.forward);
+                if ahead > 0.0 { '+' } else { '-' }
+            }).collect();
+            eprintln!("{name} leads {lead}");
+        }
         out.push(clip);
     }
 

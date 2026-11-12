@@ -256,6 +256,8 @@ fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, mut l
         let find = |name: &str| def.clips.iter().position(|clip| clip.0 == name);
         // A blow struck on the move is seen over the gait (`creatures::legs`); standing, it is the whole clip.
         creature.blow = !aims && agent.dead.is_none() && agent.doing.is_some_and(|d| d.0 == Act::Attack) && matches!(agent.act, Act::Walk | Act::Run | Act::Sprint);
+        // Going over the ground its gaits are mixed by its speed (`creatures::drive`).
+        creature.pace = (!aims && agent.body.grounded && matches!(agent.act, Act::Idle | Act::Walk | Act::Run | Act::Sprint)).then_some([speed, kind.walk, kind.run, kind.sprint]);
         if let Some(index) = find(name).or_else(|| find(or)) {
             creature.clip = index;
             creature.speed = rate.clamp(0.3, 2.5);
