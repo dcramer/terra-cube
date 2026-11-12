@@ -6,6 +6,7 @@ height = 0.15
 without = ["sprint"]
 ease = 0.3
 gait_gain = -0.6
+rests = "stands"
 
 [life]
 temper = "timid"

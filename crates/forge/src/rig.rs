@@ -193,8 +193,11 @@ pub struct Roles {
     /// The bone the muzzle follows and where the muzzle is as the model stands, where the
     /// skin has been looked at (`check::nose`): the skeleton alone does not say.
     pub nose: Option<(usize, Vec3)>,
-    /// Its creature is one that lies down to rest (`Creature::lies`).
-    pub lies: bool,
+    /// How far its creature sinks to rest, of the height its legs leave its body at
+    /// (`Creature::rests`: belly 0.62, crouch 0.34, stands 0).
+    pub sinks: f32,
+    /// And curls round as it does (`rests = "curl"`).
+    pub curls: bool,
 }
 
 /// Which way a model faces: read from the skeleton, or told.
@@ -405,7 +408,7 @@ impl Roles {
                 arms.push(Leg { front: true, left, chain: path });
             }
         }
-        Roles { forward, side, legs, head, tail, spine, others, arms, floor, height, length, nose: None, lies: false }
+        Roles { forward, side, legs, head, tail, spine, others, arms, floor, height, length, nose: None, sinks: 0.0, curls: false }
     }
 
     /// One line a role, for `forge inspect`.

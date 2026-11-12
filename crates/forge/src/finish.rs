@@ -114,7 +114,14 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
     // (A model built here faces +z: it was built so.)
     let mut roles = Roles::read(&skeleton, if creature.built.is_some() { Facing::Told(Vec3::Z) } else { Facing::parse(&creature.facing)? });
     roles.nose = crate::check::nose(&glb, &skeleton, &roles);
-    roles.lies = creature.lies;
+    roles.sinks = match creature.rests.as_str() {
+        "belly" => 0.62,
+        "crouch" => 0.34,
+        "curl" => 0.55,
+        "side" | "stands" | "" => 0.0,
+        other => bail!("rests = \"{other}\": side, belly, crouch, curl or stands"),
+    };
+    roles.curls = creature.rests == "curl";
     // A four-legged creature with any other number of legs has a skeleton that is short of
     // one (Tripo's rig sometimes is) or one the reader gets wrong. Say so; do not make clips.
     if creature.plan == "quadruped" && roles.legs.len() != 4 {
@@ -145,7 +152,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         let carried = match plan.library.get(name).filter(|_| !creature.made.contains(name) && (plan.rig == "humanoid" || creature.ease >= 1.0)
             // (Nor a wolf's gait onto what hops.)
             && !(creature.hops && matches!(name.as_str(), "walk" | "run" | "sprint"))
-            && !(creature.lies && name == "lie")) {
+            && !(name == "lie" && creature.rests != "side")) {
             Some(theirs) => {
                 // (A person's clips go on a person's skeleton bone for bone; an animal's on
                 // anything with four legs, by its roles.)

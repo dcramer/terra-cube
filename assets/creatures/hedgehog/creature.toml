@@ -5,6 +5,7 @@ subject = "a hedgehog with a dome of brown spines and a pale pointed face"
 height = 0.15
 # Bowed right down to feed, its fore feet leave the ground: its clips that are not gaits at half.
 ease = 0.5
+rests = "stands"
 
 [life]
 temper = "timid"

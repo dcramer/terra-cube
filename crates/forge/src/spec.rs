@@ -140,12 +140,15 @@ pub struct Creature {
     /// thing down (a run for a sprint, a walk for a swim).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub without: Vec<String>,
-    /// At rest it lies down on its belly, its legs folded under it. Said of each creature whose
-    /// lying has been looked at and is an animal lying down (`cargo sandbox --shot ID --clips
-    /// lie`): on some rigs it is not (a wolf sat, a deer's body hung between straight legs),
-    /// and no measure of the pose told the two apart. Without it, it rests standing.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub lies: bool,
+    /// How it rests, which is not the same for every animal: `side` (flat on its side: a wolf,
+    /// a bear), `belly` (down on its belly with its legs folded under: a goat, a badger),
+    /// `crouch` (sunk on all fours, half way down: a rabbit, a deer bedded), `curl` (down and
+    /// curled round, nose to its flank and tail over it: a fox, a cat), `stands`
+    /// (on its feet with its head low: a horse; and the default, for a rig on which none of
+    /// the others comes out right). Say one only after looking at it
+    /// (`cargo sandbox --shot ID --clips lie --view side`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub rests: String,
     /// It goes by hopping: hind feet together, then fore feet together (a rabbit, a hare).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hops: bool,

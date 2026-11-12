@@ -142,7 +142,7 @@ attack = "Attack"
 hurt = "Idle_HitReact_Left"
 die = "Death"
 # Asleep on its side: where the wolf's fall ends, held (the wolf has no clip of lying down;
-# its other two idles stand). Not for a creature marked `lies`, which lies on its belly.
+# its other two idles stand). Only for a creature whose `rests = "side"`.
 lie = "Death"
 
 # No presets: Tripo's one animal clip is a walk that marches nearly on the spot (looked at

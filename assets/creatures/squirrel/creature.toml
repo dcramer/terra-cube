@@ -4,7 +4,7 @@ plan = "quadruped"
 subject = "a red squirrel with a big curled tail and tufted ears, cream belly"
 height = 0.2
 gait_gain = 0.9
-lies = true
+rests = "belly"
 
 [life]
 temper = "timid"

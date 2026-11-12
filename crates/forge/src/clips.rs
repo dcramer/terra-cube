@@ -381,11 +381,11 @@ fn bow(sk: &Skeleton, roles: &Roles, pose: &mut Pose, angle: f32) {
 /// its head low, breathing slowly. Whatever of its legs has no knee to fold (a leg of two
 /// bones) cannot go down, and it rests standing.
 fn lie(sk: &Skeleton, roles: &Roles) -> Clip {
-    let folds = roles.lies && roles.legs.len() >= 4 && roles.legs.iter().all(|l| l.chain.len() >= 3);
+    let folds = roles.sinks > 0.0 && roles.legs.len() >= 4 && roles.legs.iter().all(|l| l.chain.len() >= 3);
     // Down by most of the height of where its legs leave its body: its belly comes to the ground.
     let high = roles.legs.iter().map(|l| sk.position(l.chain[0]).y).fold(f32::MAX, f32::min) - roles.floor;
-    // (Where its creature is one that does: `Creature::lies`.)
-    let down = if folds { high * 0.62 } else { 0.0 };
+    // (As far as its creature says it sinks: `Creature::rests`.)
+    let down = if folds { high * roles.sinks } else { 0.0 };
     Clip::made("lie", true, 5.0, sk, |t, pose| {
         let breath = 0.5 - 0.5 * (t * TAU).cos();
         pose.root_t = sk.root_moved(Vec3::Y * -(down + 0.012 * roles.height * breath));
@@ -396,6 +396,15 @@ fn lie(sk: &Skeleton, roles: &Roles) -> Clip {
         curl(sk, pose, &roles.head, |a| pitch(roles, a), if folds { 0.45 } else { 0.25 } + 0.03 * breath);
         for (i, &j) in roles.tail.iter().enumerate() {
             pose.rotations[j] = sk.turned(j, pitch(roles, 0.12) * yaw(0.05 * (t * TAU - i as f32 * 0.7).sin()));
+        }
+        // Curled round: its back bent to one side along its length, its head brought round
+        // to its flank and its tail laid along the same side.
+        if roles.curls {
+            for &j in &roles.spine {
+                pose.rotations[j] = sk.turned(j, yaw(0.9 / roles.spine.len().max(1) as f32) * pitch(roles, 0.015 * breath));
+            }
+            curl(sk, pose, &roles.head, |a| yaw(a * 1.6) * pitch(roles, a * 0.6), 0.7);
+            curl(sk, pose, &roles.tail, |a| yaw(-a), 1.6);
         }
         if folds {
             stand(sk, roles, pose);

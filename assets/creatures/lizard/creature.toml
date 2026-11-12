@@ -5,6 +5,7 @@ subject = "a monitor lizard with a long whip tail and a forked blue tongue, sand
 height = 0.3
 ease = 0.7
 gait_gain = 0.6
+rests = "stands"
 
 [life]
 temper = "wary"

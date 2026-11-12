@@ -3,6 +3,7 @@ kind = "wildlife"
 plan = "quadruped"
 subject = "a grey wolf"
 height = 0.85
+rests = "side"
 
 [life]
 temper = "hunter"

@@ -32,6 +32,8 @@ for spec in sorted(creatures.glob("*/creature.toml")):
         if need.get("voice") and not any(s.startswith(life.get("voice", "\0") + "_") or s == life.get("voice", "\0") + ".ogg" for s in sounds):
             if about["temper"] != "person":
                 lacks.append("no voice" if "voice" not in life else f"voice {life['voice']} has no file")
+        if need.get("says") and need["says"] not in c:
+            lacks.append(f"does not say how it {need['says']}")
         if need.get("holds") and life.get("holds") and life["holds"] not in held:
             lacks.append(f"holds {life['holds']}, which is not a thing")
         looked = [clip for clip in need.get("clips", []) if clip in clips]

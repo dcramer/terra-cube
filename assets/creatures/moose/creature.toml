@@ -3,6 +3,7 @@ kind = "wildlife"
 plan = "quadruped"
 subject = "a bull moose with broad flat antlers and a long drooping muzzle, dark brown with pale legs"
 height = 2.6
+rests = "stands"
 
 [life]
 temper = "wary"

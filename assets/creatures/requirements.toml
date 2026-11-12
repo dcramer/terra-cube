@@ -34,6 +34,7 @@ clips = ["eat"]
 [rests]
 who = { plan = ["quadruped"] }
 clips = ["lie"]
+says = "rests"           # and its creature.toml says how: side, belly, crouch, curl or stands
 [is-heard]
 voice = true             # a `voice` in `[life]` with a file behind it
 [a-person-moves-as-a-person]
