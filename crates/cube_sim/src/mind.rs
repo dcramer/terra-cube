@@ -51,11 +51,16 @@ pub struct Mind {
     pub to_water: bool,
     /// It is grazing its way along: at the end of this walk it grazes again.
     pub bout: bool,
+    /// Seconds it has been at rest without a break: after a few it lies down, where it is
+    /// out of its hours or has settled for a long rest.
+    pub still: f32,
+    /// It has settled for a long rest, fed and easy, by day.
+    pub easy: bool,
 }
 
 impl Mind {
     pub fn new(home: Vec2, rng: &mut Rng) -> Self {
-        Self { state: State::Rest, left: rng.between(0.0, 4.0), home, goal: home, target: None, tired: 0.0, veer: if rng.chance(0.5) { 1.0 } else { -1.0 }, mark: home, since_mark: 0.0, hit_done: false, about: 1.0 , to_water: false, bout: false}
+        Self { state: State::Rest, left: rng.between(0.0, 4.0), home, goal: home, target: None, tired: 0.0, veer: if rng.chance(0.5) { 1.0 } else { -1.0 }, mark: home, since_mark: 0.0, hit_done: false, about: 1.0 , to_water: false, bout: false, still: 0.0, easy: false}
     }
 }
 
@@ -397,6 +402,12 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
             if m.about < 0.3 {
                 agent.log.lain += DT;
             }
+            // At rest a few seconds out of its hours, or settled for a long rest by day, it
+            // lies down. (Until 2026-11-12 resting was standing: a badger by day and a pony
+            // by night stood where they were, and nothing on the island ever lay down.)
+            if m.still > 4.0 && (m.about < 0.3 || m.easy) && kind.temper != Temper::Hostile {
+                doing = Some(Act::Lie);
+            }
             // Thirst comes first: to the nearest water it can find, and drink. (None in reach,
             // and it makes do: there is dew, and rain.)
             if m.left <= 0.0 && agent.thirst >= THIRSTS && kind.diet != crate::life::Diet::None {
@@ -467,6 +478,12 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
                     }
                 } else {
                     m.left = rng.between(2.0, 5.0);
+                }
+                // Fed, watered and at home in its hours, now and then it settles for a long
+                // rest where it is and lies down in the sun.
+                m.easy = false;
+                if agent.hunger < 0.2 && agent.thirst < THIRSTS * 0.7 && rng.chance(0.25) {
+                    (m.state, m.left, m.easy) = (State::Rest, rng.between(25.0, 60.0), true);
                 }
             }
         }
@@ -610,7 +627,14 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
     }
     // Held until the top of the jump, or it is cut to a hop that clears nothing.
     agent.hold_jump = jump || agent.body.jumping;
+    // (How long it has been at rest; and lying is held from tick to tick, not for a time
+    // that runs out and has it on its feet for a moment.)
+    m.still = if m.state == State::Rest && dir == Vec2::ZERO { m.still + DT } else { 0.0 };
+    if m.state != State::Rest {
+        m.easy = false;
+    }
     match doing {
+        Some(Act::Lie) => agent.doing = Some((Act::Lie, 1.0)),
         Some(act) if agent.doing.is_none_or(|d| d.0 != act) => agent.doing = Some((act, m.left.max(0.1))),
         None => agent.doing = None,
         _ => {}

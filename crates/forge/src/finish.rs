@@ -114,6 +114,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
     // (A model built here faces +z: it was built so.)
     let mut roles = Roles::read(&skeleton, if creature.built.is_some() { Facing::Told(Vec3::Z) } else { Facing::parse(&creature.facing)? });
     roles.nose = crate::check::nose(&glb, &skeleton, &roles);
+    roles.lies = creature.lies;
     // A four-legged creature with any other number of legs has a skeleton that is short of
     // one (Tripo's rig sometimes is) or one the reader gets wrong. Say so; do not make clips.
     if creature.plan == "quadruped" && roles.legs.len() != 4 {

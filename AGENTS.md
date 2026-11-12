@@ -95,6 +95,7 @@ A machine with no screen needs `DISPLAY=:1` (an Xvfb) for `sheet` and `sandbox`;
 
 - **A kind of tree, or what the ground is and what grows on it:** data, not code. A tree is a table in `assets/world/flora.toml`; ground and cover are rules in `assets/world/land.toml`, densities and undergrowth too. Then `cargo world survey`, `make grown`, `make floors`.
 - **Where and when anything lives:** its niche. For an animal, `habitat`, `water`, `cover` and `hours` in `[life]`; for small life the game draws, a `Niche` in `crates/cube_sim/src/ecology.rs`. Never a placement rule in the code that draws it. Then `cargo world life`.
+- **A creature that lies down to rest:** look at `cargo sandbox --shot ID --clips lie --view side` first; `lies = true` in its `creature.toml` only if that is an animal lying down.
 - **How a creature behaves:** `[life]` in its `creature.toml`; a new temper or state in `crates/cube_sim/src/mind.rs` with a test beside the others in `life.rs`, then `cargo world run`.
 - **A creature:** [docs/pipeline.md](docs/pipeline.md). Four commands, about 67 credits.
 - **The world is cuboids, all of it** ([art-guide.md](docs/art-guide.md)): detail comes from small cubes of many sizes and shades, never from smooth shapes or flat planes. `--shapes` and `--blades` show what was set aside.

@@ -3,6 +3,7 @@ kind = "wildlife"
 plan = "quadruped"
 subject = "a large brown bear"
 height = 1.3
+lies = true
 
 [life]
 temper = "wary"

@@ -56,6 +56,12 @@ looping = false
 source = "made"
 speed = 0.0
 
+[clips.lie]
+seconds = 5.0
+looping = true
+source = "made"
+speed = 0.0
+
 [clips.run]
 seconds = 0.4
 looping = true

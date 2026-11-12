@@ -264,6 +264,8 @@ fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, mut l
             let own = |name: &str, or: f32| def.meta.clips.get(name).map(|c| c.speed).filter(|s| *s > 0.0).unwrap_or(or);
             [speed, own("walk", kind.walk), own("run", kind.run), own("sprint", kind.sprint)]
         });
+        // (It lies down and gets up over most of a second, not the fifth of one a change of clip takes.)
+        creature.blend = if agent.act == Act::Lie || creature.clip == find("lie").unwrap_or(usize::MAX) { 0.7 } else { 0.2 };
         if let Some(index) = find(name).or_else(|| find(or)) {
             creature.clip = index;
             creature.speed = rate.clamp(0.3, 2.5);

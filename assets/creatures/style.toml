@@ -131,7 +131,7 @@ rig = "other"
 # a twentieth (`gait_gain`), which is why they shuffled. A gallop carried from the library
 # reads 113% to 115% on wolf and bear at full reach and holds as well (2026-11-12).
 max_stretch = 1.2
-clips = ["idle", "walk", "run", "sprint", "jump", "fall", "land", "swim", "attack", "hurt", "die", "eat"]
+clips = ["idle", "walk", "run", "sprint", "jump", "fall", "land", "swim", "attack", "hurt", "die", "eat", "lie"]
 # What an animal does that a person drew: a wolf's (Quaternius, CC0), carried onto anything
 # with four legs by its roles (`library.rs`). It has no trot: `run` is made.
 [plans.quadruped.library]

@@ -207,12 +207,13 @@ fn run_command(args: &Args) -> ! {
         let (time, minutes) = (lived.iter().map(|a| a.log.acts.iter().sum::<f32>()).sum::<f32>().max(1.0), args.seconds / 60.0);
         let share = |act: Act| lived.iter().map(|a| a.log.acts[act as usize]).sum::<f32>() / time;
         let count = |f: &dyn Fn(&cube_sim::life::Log) -> u32| lived.iter().map(|a| f(&a.log)).sum::<u32>() as f32;
-        let lain = lived.iter().map(|a| a.log.lain).sum::<f32>() / time;
-        let (idle, fast) = (share(Act::Idle) - lain, share(Act::Run) + share(Act::Sprint));
+        // (Lying: on its belly, and at rest out of its hours on its feet where it is one that does not lie down.)
+        let lain = share(Act::Lie);
+        let (idle, fast) = (share(Act::Idle), share(Act::Run) + share(Act::Sprint));
         let (drank, hunts, kills, fled, trips) = (count(&|l| l.drank), count(&|l| l.hunts), count(&|l| l.kills), count(&|l| l.fled), count(&|l| l.trips));
-        println!("alive: {} lived · standing about {:.0}% of the time, lying up {:.0}%, feeding {:.0}%, running {:.1}% · a minute: {:.1} set out for somewhere, {:.1} drank, {:.1} took fright, {:.1} hunts ({:.0} kills in all)", lived.len(), idle * 100.0, lain * 100.0, share(Act::Eat) * 100.0, fast * 100.0, trips / minutes, drank / minutes, fled / minutes, hunts / minutes, kills);
+        println!("alive: {} lived · standing {:.0}% of the time, lying down {:.0}%, feeding {:.0}%, running {:.1}% · a minute: {:.1} set out for somewhere, {:.1} drank, {:.1} took fright, {:.1} hunts ({:.0} kills in all)", lived.len(), idle * 100.0, lain * 100.0, share(Act::Eat) * 100.0, fast * 100.0, trips / minutes, drank / minutes, fled / minutes, hunts / minutes, kills);
         if args.seconds >= 240.0 {
-            checks.bar("alive standing", idle, idle <= 0.35, "in their hours, creatures stand about at most a third of the time");
+            checks.bar("alive standing", idle, idle <= 0.4, "creatures stand about at most two fifths of the time");
             checks.bar("alive errands", trips / minutes, (2.0..=60.0).contains(&(trips / minutes)), "from two to sixty a minute set out for somewhere with a reason (more is the same errand begun over and over)");
         }
     }

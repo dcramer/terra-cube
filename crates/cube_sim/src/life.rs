@@ -345,10 +345,12 @@ pub enum Act {
     Hurt,
     /// Down, and staying down.
     Die,
+    /// Lying up: down on its belly at rest, out of its hours or fed and easy.
+    Lie,
 }
 
 impl Act {
-    pub const ALL: [Act; 12] = [Act::Idle, Act::Walk, Act::Run, Act::Sprint, Act::Jump, Act::Fall, Act::Land, Act::Swim, Act::Eat, Act::Attack, Act::Hurt, Act::Die];
+    pub const ALL: [Act; 13] = [Act::Idle, Act::Walk, Act::Run, Act::Sprint, Act::Jump, Act::Fall, Act::Land, Act::Swim, Act::Eat, Act::Attack, Act::Hurt, Act::Die, Act::Lie];
     /// The clip, and the one to play where a creature has no such clip.
     pub fn clip(self) -> (&'static str, &'static str) {
         match self {
@@ -364,6 +366,7 @@ impl Act {
             Act::Attack => ("attack", "idle"),
             Act::Hurt => ("hurt", "idle"),
             Act::Die => ("die", "hurt"),
+            Act::Lie => ("lie", "idle"),
         }
     }
 }
@@ -376,7 +379,7 @@ pub struct Log {
     /// Metres over the ground.
     pub moved: f32,
     /// Seconds in each [`Act`].
-    pub acts: [f32; 12],
+    pub acts: [f32; 13],
     /// Times it was killed, and what it has killed.
     pub died: u32,
     pub kills: u32,

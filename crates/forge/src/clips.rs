@@ -153,7 +153,7 @@ pub fn make(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Opti
     let mut clip = recipe(name, sk, roles, have, stand, upright, metres, gain, hops)?;
     // A body whose skin tears is moved less: every joint's turn from rest, and the root's
     // travel, scaled down. Not the gaits, whose feet would slide, nor the fall, which must land.
-    if ease != 1.0 && !matches!(name, "run" | "walk" | "sprint" | "die") {
+    if ease != 1.0 && !matches!(name, "run" | "walk" | "sprint" | "die" | "lie") {
         let rest = sk.rest();
         gained(sk, &mut clip.frames, ease);
         for pose in &mut clip.frames {
@@ -329,6 +329,7 @@ fn recipe(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option
         "hurt" => hurt(sk, roles),
         "die" => die(sk, roles, upright),
         "eat" => eat(sk, roles),
+        "lie" => lie(sk, roles),
         _ => return None,
     })
 }
@@ -374,6 +375,32 @@ fn bow(sk: &Skeleton, roles: &Roles, pose: &mut Pose, angle: f32) {
     for leg in roles.legs.iter().filter(|l| sk.joints[l.chain[0]].parent == Some(base)) {
         pose.rotations[leg.chain[0]] = sk.turned(leg.chain[0], pitch(roles, -angle));
     }
+}
+
+/// Lying up: down on its belly with its legs folded under it and its feet where they stood,
+/// its head low, breathing slowly. Whatever of its legs has no knee to fold (a leg of two
+/// bones) cannot go down, and it rests standing.
+fn lie(sk: &Skeleton, roles: &Roles) -> Clip {
+    let folds = roles.lies && roles.legs.len() >= 4 && roles.legs.iter().all(|l| l.chain.len() >= 3);
+    // Down by most of the height of where its legs leave its body: its belly comes to the ground.
+    let high = roles.legs.iter().map(|l| sk.position(l.chain[0]).y).fold(f32::MAX, f32::min) - roles.floor;
+    // (Where its creature is one that does: `Creature::lies`.)
+    let down = if folds { high * 0.62 } else { 0.0 };
+    Clip::made("lie", true, 5.0, sk, |t, pose| {
+        let breath = 0.5 - 0.5 * (t * TAU).cos();
+        pose.root_t = sk.root_moved(Vec3::Y * -(down + 0.012 * roles.height * breath));
+        for &j in &roles.spine {
+            pose.rotations[j] = sk.turned(j, pitch(roles, 0.015 * breath));
+        }
+        // Its head carried low and still, its chin toward the ground.
+        curl(sk, pose, &roles.head, |a| pitch(roles, a), if folds { 0.45 } else { 0.25 } + 0.03 * breath);
+        for (i, &j) in roles.tail.iter().enumerate() {
+            pose.rotations[j] = sk.turned(j, pitch(roles, 0.12) * yaw(0.05 * (t * TAU - i as f32 * 0.7).sin()));
+        }
+        if folds {
+            stand(sk, roles, pose);
+        }
+    })
 }
 
 /// Breathing, a slow look about, a swaying tail.

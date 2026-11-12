@@ -134,7 +134,7 @@ pub struct Wander {
     pub run: bool,
 }
 
-const CLIP_ORDER: [&str; 12] = ["idle", "walk", "run", "sprint", "jump", "fall", "land", "swim", "attack", "hurt", "die", "eat"];
+const CLIP_ORDER: [&str; 13] = ["idle", "walk", "run", "sprint", "jump", "fall", "land", "swim", "attack", "hurt", "die", "eat", "lie"];
 
 /// Sorts clips into the order they are listed everywhere: the common ones first.
 pub fn clip_rank(name: &str) -> (usize, String) {

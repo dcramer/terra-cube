@@ -3,6 +3,7 @@ kind = "wildlife"
 plan = "quadruped"
 subject = "a white mountain goat with short black horns and a small beard, a sleek short coat, all four legs sturdy, clearly visible and set well apart"
 height = 1.1
+lies = true
 
 [life]
 temper = "timid"
