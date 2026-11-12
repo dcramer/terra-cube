@@ -258,9 +258,57 @@ pub struct World {
     /// (Shared, and copied when written while shared: a chunk being meshed on another thread
     /// is the chunk as it was when the meshing began, [`World::around`].)
     pub chunks: ByPlace<std::sync::Arc<Chunk>>,
+    /// Its ground stands where it is drawn ([`World::stood`]): set for a world made as the
+    /// land is made, not for one built by hand in a test.
+    pub eased: bool,
+    /// Where each column's ground is drawn, as it has been asked for, kept by the chunk the
+    /// column is in; what is within a chunk of a cell that is written is forgotten (the
+    /// drawn height of a column goes by the ground for six metres round it).
+    stood: Stood,
 }
 
+/// A column's ground tops by the chunk level they are in: for each, the cell level its ground
+/// ends at and the height it is drawn at, in cells.
+type Tops = std::sync::Arc<[(i32, f32)]>;
+#[derive(Default)]
+struct Stood(std::sync::Mutex<HashMap<(i32, i32), HashMap<(i32, i32, i32), Tops, Quick3>, Quick3>>);
+type Quick3 = std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>;
+
 impl World {
+    /// Where the ground of a column is drawn, for what stands on it: every level in the chunk
+    /// of cell height `y` at which the column's ground ends and is drawn somewhere else, with
+    /// the height it is drawn at (cells). The ground is drawn as blocks of the size its slope
+    /// calls for, at heights of their own ([`mesh::Eased`]), always a whole number of bits; a
+    /// body is stopped by the ground as it is drawn, so what is seen is what is stood on.
+    /// (Until 2026-11-12 a body stood on the cells: 10 cm from the drawn ground at the 95th
+    /// column of a hundred and 75 cm at the worst, `cargo world drawn`, and every way of
+    /// putting the model and its feet back on what was drawn left a leg in the ground
+    /// somewhere.) Nothing where the world is not [`World::eased`].
+    pub fn stood(&self, x: i32, y: i32, z: i32) -> Tops {
+        let key = (x, z, y.div_euclid(CHUNK));
+        let Ok(mut known) = self.stood.0.lock() else { return Tops::from([]) };
+        if !self.eased {
+            return Tops::from([]);
+        }
+        if known.len() > 4_000 {
+            known.clear();
+        }
+        known.entry((x.div_euclid(CHUNK), z.div_euclid(CHUNK))).or_default().entry(key).or_insert_with(|| mesh::stood(self, x, z, key.2).into()).clone()
+    }
+
+    /// A cell of the chunk column at `x`, `z` (in chunks) has been written.
+    fn written(&mut self, x: i32, z: i32) {
+        if let Ok(known) = self.stood.0.get_mut()
+            && !known.is_empty()
+        {
+            for dz in -1..=1 {
+                for dx in -1..=1 {
+                    known.remove(&(x + dx, z + dz));
+                }
+            }
+        }
+    }
+
     /// The world round a chunk as it is now, to be read on another thread: the chunk's
     /// column and the eight columns round it, from the bottom to the top (what a mesh of that
     /// chunk reads: its neighbours' faces, and the height of the ground about it), and the
@@ -287,7 +335,9 @@ impl World {
     /// part beside it); a chunk that is not its own is what reached out of the part, and
     /// goes into the air of what is here. So the parts can arrive in any order.
     pub fn join(&mut self, part: World, own: impl Fn(IVec3) -> bool) {
+        self.eased |= part.eased;
         for (at, mut chunk) in part.chunks {
+            self.written(at.x, at.z);
             match self.chunks.get_mut(&at) {
                 Some(here) if own(at) => {
                     std::sync::Arc::make_mut(&mut chunk).fill_air(here);
@@ -324,6 +374,7 @@ impl World {
     }
     /// Makes a cell one whole block (never [`Block::Broken`]: use [`World::set_bit`]).
     pub fn set(&mut self, cell: IVec3, b: Block) {
+        self.written(cell.x.div_euclid(CHUNK), cell.z.div_euclid(CHUNK));
         let (c, l) = Self::split(cell);
         std::sync::Arc::make_mut(self.chunks.entry(c).or_default()).set(l, b);
     }
@@ -346,6 +397,7 @@ impl World {
     /// that leaves every bit of it the same.
     pub fn set_bit(&mut self, bit: IVec3, b: Block) {
         let (cell, i) = Self::bit_index(bit);
+        self.written(cell.x.div_euclid(CHUNK), cell.z.div_euclid(CHUNK));
         let (c, l) = Self::split(cell);
         std::sync::Arc::make_mut(self.chunks.entry(c).or_default()).set_bit(l, i, b);
     }
@@ -399,6 +451,7 @@ impl World {
     /// Sets a column of cells from `from` up to, not including, `to`, each to what `block`
     /// gives for its height. Much quicker than a `set` a cell: the chunk is found once.
     pub fn set_column(&mut self, x: i32, z: i32, from: i32, to: i32, mut block: impl FnMut(i32) -> Block) {
+        self.written(x.div_euclid(CHUNK), z.div_euclid(CHUNK));
         let mut y = from;
         while y < to {
             let (c, l) = Self::split(IVec3::new(x, y, z));

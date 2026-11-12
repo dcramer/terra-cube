@@ -584,7 +584,40 @@ fn main() {
             }
             let at = |all: &Vec<f32>, part: f32| all[((all.len() - 1) as f32 * part) as usize] * 100.0;
             println!("drawn: {} columns · the ground is drawn {:.0} cm from where a body stands on it at the middle, {:.0} cm at the 95th of a hundred, {:.0} cm at the worst", off.len(), at(&off, 0.5), at(&off, 0.95), at(&off, 1.0));
-            println!("steps from a column to the next: drawn {:.0} cm at the 95th and {:.0} cm at the worst, stood on {:.0} cm and {:.0} cm", at(&steps, 0.95), at(&steps, 1.0), at(&stood, 0.95), at(&stood, 1.0));
+            println!("steps from a column to the next: drawn {:.0} cm at the 95th and {:.0} cm at the worst, the cells' {:.0} cm and {:.0} cm", at(&steps, 0.95), at(&steps, 1.0), at(&stood, 0.95), at(&stood, 1.0));
+            // And where a body comes to rest, let fall on each: against the highest ground
+            // drawn under any part of it, which is what it should be standing on.
+            let (mut rest, mut sunk) = (Vec::new(), 0.0f32);
+            let tuning = cube_sim::body::Tuning::default();
+            for z in (-reach..reach).step_by(7) {
+                for x in (-reach..reach).step_by(7) {
+                    let Some(here) = drawn(x, z) else { continue };
+                    if land.height(x, z) <= SEA {
+                        continue;
+                    }
+                    let mut body = cube_sim::body::Body::new(Vec3::new((x as f32 + 0.5) * CELL, here.0.max(here.1) + 1.0, (z as f32 + 0.5) * CELL), 0.3, 1.75);
+                    for _ in 0..90 {
+                        body.step(&world, cube_sim::body::Intent::default(), &tuning);
+                    }
+                    // (Only where nothing but ground is under it: a trunk or a rock is not this measure's.)
+                    let under: Vec<Option<(f32, f32)>> = (-1..=1).flat_map(|dz| (-1..=1).map(move |dx| (dx, dz))).filter(|(dx, dz)| ((*dx as f32 * CELL).abs() - CELL / 2.0 < 0.3) && ((*dz as f32 * CELL).abs() - CELL / 2.0 < 0.3)).map(|(dx, dz)| drawn(x + dx, z + dz)).collect();
+                    if !body.grounded || under.iter().any(|u| u.is_none()) || (-2..=2).any(|dz| (-2..=2).any(|dx| (0..8).any(|dy| matches!(world.get(IVec3::new(x + dx, land.height(x + dx, z + dz) + dy, z + dz)), cube_voxel::Block::Wood | cube_voxel::Block::Birch | cube_voxel::Block::Rock | cube_voxel::Block::Broken)))) {
+                        continue;
+                    }
+                    let highest = under.iter().flatten().map(|u| u.0).fold(f32::MIN, f32::max);
+                    rest.push((body.pos.y - highest).abs());
+                    sunk = sunk.max(here.0 - body.pos.y);
+                }
+            }
+            rest.sort_by(f32::total_cmp);
+            if rest.is_empty() {
+                fail("no body came to rest on open ground");
+            }
+            println!("a body let fall on {} places rests {:.0} cm from the highest ground drawn under it at the 95th, {:.0} cm at the 99th, {:.0} cm at the worst ({} of them over 2 cm); under the ground drawn at its middle by {:.0} cm at the worst", rest.len(), at(&rest, 0.95), at(&rest, 0.99), at(&rest, 1.0), rest.iter().filter(|r| **r > 0.02).count(), sunk * 100.0);
+            let mut checks = Checks(Vec::new());
+            checks.bar("rests on what is drawn", at(&rest, 0.95), at(&rest, 0.95) < 1.0, "within a centimetre at the 95th place of a hundred");
+            checks.bar("in the drawn ground", sunk * 100.0, sunk * 100.0 < 1.0, "never under the ground drawn at its middle");
+            checks.finish()
         }
         "find" => {
             // The nearest places to the start of a kind: `deep` water to swim in, or a biome.

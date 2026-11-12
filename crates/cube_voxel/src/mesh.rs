@@ -429,6 +429,31 @@ impl<'a> Heights<'a> {
     }
 }
 
+/// For [`World::stood`]: the levels in one chunk at which a column's ground ends, each with
+/// the height its top is drawn at (cells), where that is not the level itself. Worked out as
+/// the mesh of that chunk works it out, so it is what is drawn.
+pub(crate) fn stood(world: &World, x: i32, z: i32, chunk_y: i32) -> Vec<(i32, f32)> {
+    if ground() != Ground::Stepped {
+        return Vec::new();
+    }
+    let chunk = IVec3::new(x.div_euclid(CHUNK), chunk_y, z.div_euclid(CHUNK));
+    let near = Near::of(world, chunk);
+    let mut eased = Eased { near: &near, reach: REACH, lifts: HashMap::new(), tops: HashMap::new(), origin: chunk * CHUNK };
+    let (lx, lz) = (x - chunk.x * CHUNK, z - chunk.z * CHUNK);
+    let is = |y: i32| near.get(IVec3::new(lx, y, lz)).ground();
+    let ends: Vec<i32> = (0..CHUNK).filter(|&y| is(y - 1) && !is(y)).collect();
+    let mut out = Vec::new();
+    for level in ends {
+        if eased.land(lx, level, lz) {
+            let (at, drawn) = (level + chunk.y * CHUNK, (level + chunk.y * CHUNK) as f32 + eased.step(lx, level, lz));
+            if (drawn - at as f32).abs() > 1e-3 {
+                out.push((at, drawn));
+            }
+        }
+    }
+    out
+}
+
 /// The height the ground is drawn at under a point standing on it (metres), if what it stands
 /// on is ground and it stands on top of a cell of it: where to draw feet, since a body stands
 /// on the cubes and the cubes are drawn as a slope.

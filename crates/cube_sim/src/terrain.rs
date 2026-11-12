@@ -430,6 +430,8 @@ pub(crate) fn spent(part: usize, since: std::time::Instant) -> std::time::Instan
 /// whatever has been made round it and in whatever order, so the world can be made and
 /// dropped a region at a time.
 pub fn fill(world: &mut World, land: &Land, lo: (i32, i32), hi: (i32, i32)) {
+    // (What stands on this land stands on it as it is drawn: `World::stood`.)
+    world.eased = true;
     // Snow lies half a metre deep, soil two metres, and the river's bed is gravel where it is
     // over half a metre down.
     let (snow, soil, deep) = (cells(0.5), cells(2.0), cells(1.0));

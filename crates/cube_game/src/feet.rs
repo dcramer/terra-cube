@@ -189,14 +189,15 @@ fn plant(
         }
         // The body goes up or down by the least of them: then every leg has only to bend,
         // and none is asked to be longer than it is.
-        // (Down by a little and no more. Let down as far as a foot wanted, a body with one foot
-        // past the edge of a block went down 30 cm onto that foot and the knee of the leg
-        // still on the block went into it: the developer's picture of 2026-11-12, and half
-        // the frames of a trace. A foot over lower ground than its leg can reach now hangs
-        // there, as a foot does over a kerb.)
-        // (`FEET_DROP=1` lets it down the whole reach, as it was, to set the two side by side.)
-        let drop = std::env::var("FEET_DROP").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.4);
-        let shift = rises.iter().copied().fold(f32::MAX, f32::min).clamp(-reach * drop, reach * 0.6);
+        // (Down until the foot over the highest ground stands on it, and no further: the body
+        // stands on the highest block under any part of it, which on a slope or at an edge
+        // is higher than the ground under either foot, and its feet hung a hand over the
+        // hill. Let down as far as the lowest foot wanted, as it was until 2026-11-12, a
+        // body with one foot past the edge of a block went down 30 cm onto that foot and the
+        // other leg folded under it. A foot its leg cannot reach down to hangs, as one does
+        // over a kerb.)
+        let (least, most) = (rises.iter().copied().fold(f32::MAX, f32::min), rises.iter().copied().fold(f32::MIN, f32::max));
+        let shift = (if least > 0.0 { least } else { most.min(0.0) }).clamp(-reach, reach * 0.6);
         if std::env::var_os("FEET_TRACE").is_some() {
             let grounds: Vec<f32> = now.iter().map(|t| ground(*t)).collect();
             println!("plant reach={reach:.2} on={:.2} above={above:.2?} ground={grounds:.2?} rises={rises:.2?} shift={shift:.2}", legs.on);

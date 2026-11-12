@@ -186,8 +186,7 @@ fn tick(terrain: Option<ResMut<Terrain>>, loading: Res<crate::loading::Loading>,
 
 /// Draws each body between ticks, tips the model into its turns, and plays the clip that
 /// fits what it is doing, at the rate that keeps its feet from sliding.
-fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, terrain: Option<Res<crate::world::Terrain>>, cameras: Query<&GlobalTransform, With<Camera3d>>, mut live: ResMut<Live>, mut movers: Query<(&mut Mover, &mut Creature, &mut Transform)>) {
-    let eye = cameras.iter().next().map(|c| c.translation());
+fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, mut live: ResMut<Live>, mut movers: Query<(&mut Mover, &mut Creature, &mut Transform)>) {
     let dt = time.delta_secs();
     let between = fixed.overstep_fraction();
     let Sim { agents, kinds, when, .. } = &mut live.0;
@@ -203,27 +202,22 @@ fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, terra
         transform.translation = agent.before.lerp(agent.body.pos, between) + Vec3::Y * m.lift;
         // The young are small: born at under half their size, grown by the time they breed.
         transform.scale = Vec3::splat((0.45 + 0.55 * (*when - agent.born) / cube_sim::sky::YEAR / kinds[agent.kind].maturity()).clamp(0.45, 1.0));
-        // On the ground its feet are where the ground is drawn: the body stands on cubes, and
-        // the cubes are drawn as a slope.
-        // (Only near enough for it to be seen: working it out for every creature on the
-        // island each frame was a tenth of the frame.)
-        let near = eye.is_none_or(|e| e.distance(transform.translation) < 50.0);
-        if let (true, true, Some(terrain)) = (near, agent.body.grounded, &terrain) {
-            let at = Vec3::new(transform.translation.x, agent.body.pos.y, transform.translation.z);
-            if let Some(y) = cube_voxel::mesh::eased_under(&terrain.0, at) {
-                // The ground is drawn in blocks, and from one to the next is a step of a
-                // hand or of half a metre: the model (and the eyes that ride on it) come up
-                // or down to the new level over a tenth of a second and are never more than
-                // a third of a metre behind it. Put straight on each block as it was
-                // reached, walking was a string of jolts.
-                let from = m.shown.unwrap_or(y);
-                let eased = y + (from - y).clamp(-0.35, 0.35) * (-16.0 * dt).exp();
-                transform.translation.y = eased;
-                m.shown = Some(eased);
-                m.lift = 0.0;
-            } else {
-                m.shown = None;
-            }
+        // The body stands on the ground as it is drawn (`World::stood`), block by block, and
+        // from one block to the next is a step of a hand or of half a metre: the model (and
+        // the eyes that ride on it) come to the new level over a tenth of a second. Put
+        // straight on each block as it was reached, walking was a string of jolts. Coming
+        // down it is never more than a third of a metre over the body; going up, never more
+        // than a hand under it, where it would be in the block it is climbing (its feet are
+        // put on the ground meanwhile, `feet`).
+        // (Until 2026-11-12 the body stood on the cells and the model was moved from there to
+        // the drawn ground under its middle: see `World::stood`.)
+        if agent.body.grounded {
+            let y = agent.before.lerp(agent.body.pos, between).y;
+            let behind = (m.shown.unwrap_or(y) - y).clamp(-0.1, 0.35);
+            let eased = y + behind * (-(if behind < 0.0 { 26.0 } else { 16.0 }) * dt).exp();
+            transform.translation.y = eased;
+            m.shown = Some(eased);
+            m.lift = 0.0;
         } else {
             m.shown = None;
         }

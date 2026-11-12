@@ -103,19 +103,29 @@ impl Body {
         let (lo, hi) = (pos + Vec3::new(-self.half + SKIN, SKIN, -self.half + SKIN), pos + Vec3::new(self.half - SKIN, self.height - SKIN, self.half - SKIN));
         let (c0, c1) = ((lo / CELL).floor().as_ivec3(), (hi / CELL).floor().as_ivec3());
         let (b0, b1) = ((lo / BIT).floor().as_ivec3(), (hi / BIT).floor().as_ivec3());
-        (c0.y..=c1.y).any(|y| {
-            (c0.z..=c1.z).any(|z| {
-                (c0.x..=c1.x).any(|x| {
+        (c0.z..=c1.z).any(|z| {
+            (c0.x..=c1.x).any(|x| {
+                // Where this column's ground is drawn, where that is not where its cells end:
+                // the ground is solid up to there, more or less than its cells.
+                let drawn: Vec<(i32, f32)> = if world.eased { [c0.y - 6, c1.y + 6].iter().flat_map(|&y| world.stood(x, y, z).to_vec()).collect() } else { Vec::new() };
+                (c0.y..=c1.y).any(|y| {
                     let cell = IVec3::new(x, y, z);
+                    // Of this cell, how much from its floor up is solid (cells): what its
+                    // column's drawn top leaves of it, if it is ground under one or air over one.
+                    let part = |solid_to: f32| lo.y < (solid_to.min(y as f32 + 1.0)) * CELL && solid_to > y as f32;
                     match world.get(cell) {
                         // Only the bits of it the box reaches.
                         Block::Broken => {
                             let (from, to) = (b0.max(cell * SPLIT), b1.min(cell * SPLIT + SPLIT - 1));
                             (from.y..=to.y).any(|y| (from.z..=to.z).any(|z| (from.x..=to.x).any(|x| world.bit(IVec3::new(x, y, z)).solid())))
                         }
+                        // Ground under a top that is drawn lower is solid only up to there.
+                        block if block.ground() => drawn.iter().filter(|(level, _)| *level > y).min_by_key(|(level, _)| *level).is_none_or(|(_, top)| part(*top)),
                         // Leaf gives way: a person pushes through a crown or a bush and is
                         // stopped by wood. (As a wall, every low bough and bush was one.)
-                        block => block.solid() && !block.foliage(),
+                        block if block.solid() && !block.foliage() => true,
+                        // And what is over a top that is drawn higher is ground up to there.
+                        _ => drawn.iter().any(|(level, top)| *level <= y && part(*top)),
                     }
                 })
             })
@@ -137,6 +147,14 @@ impl Body {
 
     /// One tick of [`DT`].
     pub fn step(&mut self, world: &World, intent: Intent, tuning: &Tuning) {
+        // In the ground as the tick begins (put down by where the cells end, on ground that
+        // is drawn higher; or the ground changed under it): onto it, if that is near.
+        if world.eased
+            && self.blocked(world, self.pos)
+            && let Some(up) = (1..=24).map(|n| bit_face(level(self.pos.y) + n)).find(|y| !self.blocked(world, self.pos.with_y(*y)))
+        {
+            self.pos.y = up;
+        }
         let was_grounded = self.grounded;
         let surface = self.water_over_waist(world);
         self.swimming = surface.is_some();
