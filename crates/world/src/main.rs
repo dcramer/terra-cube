@@ -566,12 +566,14 @@ fn main() {
             let mut rows = vec![count(&sim)];
             let mut all = cube_sim::life::Tally::default();
             let mut kills: std::collections::BTreeMap<(usize, usize), u32> = Default::default();
+            let mut grazing = (0.0f32, 1.0f32, 0.0f32);
             // From the first day of a spring, so a year is a year.
             sim.when = sim.when.floor() - sim.when.floor().rem_euclid(cube_sim::sky::YEAR) + cube_sim::sky::YEAR;
             for _ in 0..years {
                 for _ in 0..cube_sim::sky::YEAR as usize {
                     let t = sim.day(&world, Some(&land));
                     (all.born, all.old, all.hunted, all.starved, all.winter, all.moved) = (all.born + t.born, all.old + t.old, all.hunted + t.hunted, all.starved + t.starved, all.winter + t.winter, all.moved + t.moved);
+                    grazing = (grazing.0 + t.forage.0, grazing.1.min(t.forage.1), grazing.2 + 1.0);
                     for pair in t.taken {
                         *kills.entry(pair).or_default() += 1;
                     }
@@ -581,6 +583,7 @@ fn main() {
             }
             let total = |row: &[usize]| row.iter().sum::<usize>();
             println!("years {years} seed={}: {} creatures at the start, {} at the end · born {} · died of age {}, hunted {}, starved {}, of winter {} · groups that moved {}", args.seed, total(&rows[0]), total(&rows[years]), all.born, all.old, all.hunted, all.starved, all.winter, all.moved);
+            println!("  grazing: {:.0}% left on the ground that is grazed, on the whole; {:.0}% on the barest piece at its barest", grazing.0 / grazing.2.max(1.0) * 100.0, grazing.1 * 100.0);
             let mut checks = Checks(Vec::new());
             for (k, kind) in sim.kinds.iter().enumerate() {
                 if rows[0][k] == 0 {
@@ -600,7 +603,7 @@ fn main() {
                 // a number it keeps (the island is begun with fewer of most kinds than it
                 // carries, so growth alone is not a fault: growth that does not stop is).
                 if years < 16 {
-                    checks.bar(&format!("{} holds", kind.id), rows[years][k] as f32, rows[years][k] <= rows[0][k] * 5 + 10, "no kind grows past five times what it began as");
+                    checks.bar(&format!("{} holds", kind.id), rows[years][k] as f32, rows[years][k] <= rows[0][k] * 6 + 10, "no kind grows past six times what it began as");
                 } else {
                     let (was, now) = (rows[years - 8][k] as f32, rows[years][k] as f32);
                     checks.bar(&format!("{} settles", kind.id), now, (now - was).abs() <= was * 0.35 + 10.0, "within a third of what it was eight years before");

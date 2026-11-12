@@ -493,6 +493,24 @@ pub struct Sim {
     pub trails: Option<u32>,
     /// Hunters that have starved in sight of someone, since the start.
     pub starved: u32,
+    /// What there is to graze, of 1, on each piece of ground [`PASTURE`] metres across that
+    /// anything has grazed: eaten down by what feeds there and grown back by the season
+    /// (`day`). Ground nothing has grazed is not here, and is as full as ground gets.
+    pub forage: BTreeMap<(i32, i32), f32>,
+}
+
+/// The size of a piece of grazing, metres; what a grazer a metre tall eats of one in a day
+/// (by its height squared: a moose eats forty rabbits' worth); and how lean the grazing is
+/// when what feeds on it begins to starve and to rear fewer young.
+pub const PASTURE: f32 = 64.0;
+const GRAZED: f32 = 0.0013;
+const LEAN: f32 = 0.3;
+
+impl Sim {
+    /// What there is to graze at a place, of 1.
+    pub fn forage_at(&self, at: Vec2) -> f32 {
+        self.forage.get(&((at.x / PASTURE).floor() as i32, (at.y / PASTURE).floor() as i32)).copied().unwrap_or(1.0)
+    }
 }
 
 /// The fastest anything turns, radians a second: a full turn about in a third of a second.
@@ -504,7 +522,7 @@ fn turn_between(from: f32, to: f32) -> f32 {
 
 impl Sim {
     pub fn new(kinds: Vec<Kind>, seed: u64) -> Self {
-        Self { kinds, agents: BTreeMap::new(), tick: 0, focus: None, when: crate::sky::START, rng: Rng::new(seed), next: 1, trails: None, starved: 0 }
+        Self { kinds, agents: BTreeMap::new(), tick: 0, focus: None, when: crate::sky::START, rng: Rng::new(seed), next: 1, trails: None, starved: 0, forage: BTreeMap::new() }
     }
 
     /// A person's state as text, a thing a line: when it is, where they are, their health,
@@ -978,6 +996,9 @@ pub struct Tally {
     pub winter: u32,
     /// Groups that outgrew their ground and sent half their number to find more.
     pub moved: u32,
+    /// What there is to graze over the ground that is grazed, of 1: on the whole, and on
+    /// the barest piece.
+    pub forage: (f32, f32),
     /// Each kill: the kind that hunted, the kind taken.
     pub taken: Vec<(usize, usize)>,
 }
@@ -1082,8 +1103,37 @@ impl Sim {
             }
         }
 
+        // What grows is eaten and grows back. Each grazer takes from the ground it lives on,
+        // by its size; what is left grows by the season, fastest in spring and not at all in
+        // winter, and slowest where it is nearly gone or nearly whole (it grows from what is
+        // there, and has only so far to grow). Until 2026-11-11 the ground was never eaten:
+        // what fed on it was held only by a count of its own kind.
+        let season = crate::sky::season(self.when);
+        for &id in &ids {
+            let Some(agent) = self.agents.get(&id) else { continue };
+            let kind = &self.kinds[agent.kind];
+            let eats = match kind.diet {
+                Diet::Plants => 1.0,
+                Diet::All => 0.3,
+                _ => continue,
+            };
+            let piece = ((agent.mind.home.x / PASTURE).floor() as i32, (agent.mind.home.y / PASTURE).floor() as i32);
+            let left = self.forage.entry(piece).or_insert(1.0);
+            *left = (*left - eats * kind.height * kind.height * GRAZED).max(0.0);
+        }
+        let grows = match season {
+            crate::sky::Season::Spring => 0.2,
+            crate::sky::Season::Summer => 0.15,
+            crate::sky::Season::Autumn => 0.06,
+            crate::sky::Season::Winter => 0.0,
+        };
+        for left in self.forage.values_mut() {
+            *left = (*left + grows * left.max(0.3) * (1.0 - *left)).min(1.0);
+        }
+        tally.forage = if self.forage.is_empty() { (1.0, 1.0) } else { (self.forage.values().sum::<f32>() / self.forage.len() as f32, self.forage.values().copied().fold(1.0, f32::min)) };
+
         // What the ground will feed, and the winter.
-        let winter = crate::sky::season(self.when) == crate::sky::Season::Winter;
+        let winter = season == crate::sky::Season::Winter;
         let near = |agents: &BTreeMap<u32, Agent>, kind: usize, home: Vec2, range: f32| agents.values().filter(|a| a.kind == kind && a.dead.is_none() && a.mind.home.distance(home) < range).count();
         for &id in &ids {
             let Some(agent) = self.agents.get(&id) else { continue };
@@ -1092,7 +1142,9 @@ impl Sim {
                 continue;
             }
             let crowd = near(&self.agents, agent.kind, agent.mind.home, kind.range) as f32 / kind.capacity as f32;
-            let (hungry, cold) = (((crowd - 1.0) * 0.03).clamp(0.0, 0.2), if winter { 0.004 } else { 0.0 });
+            // (Crowded by its own kind, or on ground grazed lean by anything.)
+            let lean = (LEAN - self.forage_at(agent.mind.home)).max(0.0) * 0.4;
+            let (hungry, cold) = ((((crowd - 1.0) * 0.03).max(0.0) + lean).clamp(0.0, 0.25), if winter { 0.004 } else { 0.0 });
             let roll = self.rng.unit();
             if roll < hungry {
                 self.agents.remove(&id);
@@ -1119,7 +1171,9 @@ impl Sim {
             // One that lives alone finds a mate if another of its kind lives within reach.
             let kin = near(&self.agents, *kind, home, k.range * 6.0);
             let pairs = if k.group > 1 { adults as f32 / 2.0 } else if kin > adults { adults as f32 * 0.5 } else { 0.0 };
-            let room = (1.0 - near(&self.agents, *kind, home, k.range) as f32 / k.capacity as f32).max(0.0);
+            // (Fewer young on lean ground, for what grazes.)
+            let fat = if matches!(k.diet, Diet::Plants | Diet::All) { (self.forage_at(home) / (LEAN + 0.1)).min(1.0) } else { 1.0 };
+            let room = (1.0 - near(&self.agents, *kind, home, k.range) as f32 / k.capacity as f32).max(0.0) * fat;
             // What hunts rears as many as it has fed: a pack that has gone hungry rears none.
             let fed = if matches!(k.diet, Diet::Meat) { (1.0 - (members.iter().map(|id| self.agents[id].hunger).sum::<f32>() / members.len() as f32 - 1.0) / 2.0).clamp(0.0, 1.0) } else { 1.0 };
             let wanted = pairs * k.litter * room * fed;
@@ -1463,6 +1517,49 @@ mod tests {
             assert!(agent.log.inside == 0 && agent.log.fell == 0, "{} #{id}: {:?}", a.kinds[agent.kind].id, agent.log);
         }
         assert!(a.agents.values().map(|agent| agent.log.moved).sum::<f32>() > 20.0);
+    }
+
+    #[test]
+    fn what_grazes_eats_the_ground_down_starves_on_lean_ground_and_it_grows_back() {
+        // (The helper's kinds: 0 a rabbit.) A few on one piece of ground, no more than it holds.
+        let (world, mut sim) = stage();
+        let here = Vec2::new(5.0, 5.0);
+        for i in 0..4 {
+            let id = sim.add(&world, 0, at(i as f32, 0.0), 0.0, Driver::Mind);
+            let rabbit = sim.agents.get_mut(&id).unwrap();
+            (rabbit.mind.home, rabbit.awake) = (here, false);
+        }
+        // A day's grazing takes a little of it.
+        sim.when = crate::sky::YEAR * 2.0 + crate::sky::SEASON * 3.5;
+        sim.day(&world, None);
+        let after = sim.forage_at(here);
+        assert!(after < 1.0 && after > 0.99, "four rabbits a day in winter left {after}");
+        // On ground grazed nearly bare, in winter when nothing grows, they starve.
+        sim.forage.values_mut().for_each(|f| *f = 0.02);
+        let mut starved = 0;
+        for _ in 0..40 {
+            for i in 0..4 {
+                let id = sim.add(&world, 0, at(i as f32, 0.0), 0.0, Driver::Mind);
+                let rabbit = sim.agents.get_mut(&id).unwrap();
+                (rabbit.mind.home, rabbit.awake) = (here, false);
+            }
+            sim.agents.retain(|_, a| a.mind.home == here);
+            let ids: Vec<u32> = sim.agents.keys().copied().collect();
+            ids.iter().skip(4).for_each(|id| {
+                sim.agents.remove(id);
+            });
+            sim.when = crate::sky::YEAR * 2.0 + crate::sky::SEASON * 3.5;
+            starved += sim.day(&world, None).starved;
+        }
+        assert!(starved >= 5 && sim.forage_at(here) < 0.05, "on bare ground {starved} of 160 rabbit-days starved, and {:.2} was left", sim.forage_at(here));
+        // With them gone most of it grows back within a year.
+        sim.agents.clear();
+        sim.when = crate::sky::YEAR * 3.0;
+        for _ in 0..crate::sky::YEAR as usize {
+            sim.day(&world, None);
+            sim.when += 1.0;
+        }
+        assert!(sim.forage_at(here) > 0.6, "a year ungrazed and only {:.2} has grown back", sim.forage_at(here));
     }
 
     #[test]
