@@ -45,6 +45,8 @@ pub struct Args {
     pub strip: usize,
     /// The strip is saved as a moving picture, a frame each `every` seconds, not side by side.
     pub gif: bool,
+    /// A moving picture twice the size: for a place, where the other is for a creature.
+    pub big: bool,
     pub every: f32,
     /// What a scripted run does (`player::script`).
     pub script: String,
@@ -154,6 +156,8 @@ stone on it, to the 5 cm bit, before the first frame: for looking at what broken
                                         the same as a moving picture, FILE.gif: with no --script it
                                         is the show reel (walk, run, sprint, jump, stop, attack,
                                         hurt, run and jump again), so every change of clip is seen
+--wind 0.8 sets how hard the wind blows (0 to 1) in place of the weather's; --big makes a --gif
+twice the size, for a place and not a creature (`make wind` makes shots/wind.gif so).
 --bodies draws the shape each creature is bumped as (also a tick box in the panel).
 --trace prints the controlled body (position, speed, clip, camera) four times a second.
 In the window: Tab controls the picked creature, and lets go of it. Otherwise right-drag
@@ -231,6 +235,7 @@ fn parse_args() -> Args {
             "--quiet" => args.quiet = true,
             "--speed" => args.speed = it.next().and_then(|v| v.parse().ok()).unwrap_or(1.0),
             "--torch" => args.torch = true,
+            "--big" => args.big = true,
             "--wind" => args.wind = it.next().and_then(|v| v.parse().ok()),
             "--shapes" => args.shapes = true,
             "--bits" => cube_voxel::mesh::BITS.store(true, std::sync::atomic::Ordering::Relaxed),

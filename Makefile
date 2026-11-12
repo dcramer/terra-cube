@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: wind feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: wind blow feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -101,6 +101,9 @@ seasons: ## no window: the meadow in summer and winter, judged by the ground's c
 
 wind: ## no window: a wood pictured half a second apart in still air and in a hard wind: the leaves must move in the one and not the other
 	@tools/wind.sh
+
+blow: ## no window: shots/wind.gif, four seconds of the meadow in a strong wind, for a person to watch (WIND=0.3 for a light one)
+	@cargo sandbox --scene shots/wind.gif --play --script '0.1 stop' --gif 4 --big --view three --dist 12 --hour 15 --wind $(or $(WIND),0.85) 2>&1 | grep -q '^shot' && echo "shots/wind.gif"
 
 pace: ## no window: the player run across the world for half a minute on the graphics card: how long the world took to be ready, and every frame's time while he ran, against bars
 	@tools/pace.sh --yaw 0.7

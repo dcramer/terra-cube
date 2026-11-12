@@ -334,7 +334,10 @@ fn scene(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terra
         commands.spawn((creature, creatures::spot(n, &terrain, args.at), Visibility::default()));
         stage.expected += 1;
     }
-    let (w, h) = if args.gif {
+    let (w, h) = if args.gif && args.big {
+        // (A place, not a creature: big enough to see leaves move.)
+        (720, 405)
+    } else if args.gif {
         (360, 240)
     } else if args.strip > 0 {
         (1920 / args.strip.clamp(4, 12) as u32, 300)
