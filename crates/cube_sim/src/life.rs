@@ -43,7 +43,7 @@ pub enum Temper {
 }
 
 /// The `[life]` table of a `creature.toml`: how the creature behaves and where it lives.
-#[derive(Deserialize, Clone, Copy, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct Life {
     pub temper: Temper,
     /// The biome its groups are placed in: meadow, forest, rock, shore or snow.
@@ -90,6 +90,10 @@ pub struct Life {
     /// as often as a wolf.
     #[serde(default)]
     pub meal: Option<f32>,
+    /// What it is seen to carry in its hand, by its name in `assets/world/held.toml`: a
+    /// goblin's club. Only to be seen: what a blow does is the kind's own.
+    #[serde(default)]
+    pub holds: Option<String>,
     /// How common it is beside the usual for its `groups`: `share = 0.1` for a hunter, of
     /// which a land carries one to every twenty or fifty of what it hunts.
     #[serde(default = "whole")]
@@ -180,6 +184,8 @@ pub struct Kind {
     pub range: f32,
     /// Days between a meat-eater's meals.
     pub meal: f32,
+    /// What it is seen to carry (`held.toml`).
+    pub holds: Option<String>,
     pub share: f32,
 }
 
@@ -265,7 +271,7 @@ impl Kind {
                 }
             };
             // With no [life], a player is a person and anything else just stands its ground.
-            let life = spec.life.unwrap_or(Life { temper: if spec.kind == "player" { Temper::Person } else { Temper::Wary }, habitat: None, group: 1, groups: 0, water: Default::default(), cover: Default::default(), hours: Default::default(), winter: 1.0, voice: None, diet: None, litter: None, lifespan: None, capacity: None, range: None, meal: None, share: 1.0 });
+            let life = spec.life.unwrap_or(Life { temper: if spec.kind == "player" { Temper::Person } else { Temper::Wary }, habitat: None, group: 1, groups: 0, water: Default::default(), cover: Default::default(), hours: Default::default(), winter: 1.0, voice: None, diet: None, litter: None, lifespan: None, capacity: None, range: None, meal: None, holds: None, share: 1.0 });
             let diet = life.diet.unwrap_or(match life.temper {
                 Temper::Hunter | Temper::Hostile => Diet::Meat,
                 Temper::Person => Diet::All,
@@ -303,6 +309,7 @@ impl Kind {
                 capacity: life.capacity.unwrap_or(if diet == Diet::Meat { (life.group * 2).max(4) } else { ((life.group * 3) as f32 * (range / 80.0f32).powi(2)).round().max(4.0) as usize }),
                 range,
                 meal: life.meal.unwrap_or(6.0),
+                holds: life.holds.clone(),
                 share: life.share,
             });
         }
@@ -1187,7 +1194,7 @@ mod tests {
     use cube_voxel::Block;
 
     fn kind(id: &str, temper: Temper, height: f32, speeds: [f32; 3]) -> Kind {
-        Kind { id: id.into(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None, winter: 1.0, diet: if matches!(temper, Temper::Hunter | Temper::Hostile) { Diet::Meat } else { Diet::Plants }, litter: 2.0, lifespan: 8.0, capacity: 8, range: 80.0, meal: 6.0, share: 1.0 }
+        Kind { id: id.into(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None, winter: 1.0, diet: if matches!(temper, Temper::Hunter | Temper::Hostile) { Diet::Meat } else { Diet::Plants }, litter: 2.0, lifespan: 8.0, capacity: 8, range: 80.0, meal: 6.0, holds: None, share: 1.0 }
     }
 
     /// Rabbit, wolf, bear, goblin and a person, on a floor of stone 60 m square.

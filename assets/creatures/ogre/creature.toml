@@ -5,6 +5,7 @@ subject = "a frost ogre with pale blue skin, a mane of white fur, icicle tusks a
 height = 3.4
 
 [life]
+holds = "Club"
 # It eats seldom: at a wolf's rate the dozen of them took every large animal on the island.
 meal = 20.0
 # The island's ogres all live within reach of one another: as many as there are is what the

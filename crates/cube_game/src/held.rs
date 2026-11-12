@@ -40,6 +40,9 @@ struct Thing {
     /// every clip hangs the arm): the way the upper arm and then the forearm point, in the
     /// body's own frame (x to its right, y up, -z ahead). The clip still moves the rest.
     arm: Option<[[f32; 3]; 2]>,
+    /// Made as big as its bearer is tall beside a person.
+    #[serde(default)]
+    fits: bool,
     pieces: Vec<Piece>,
 }
 
@@ -50,7 +53,7 @@ struct Things(BTreeMap<String, Thing>);
 /// shoulder down; and whether it is drawn before the eye instead (the first person, whose
 /// own body is not drawn: the thing is hung on the camera, low and to the right).
 #[derive(Component)]
-struct Held(Entity, cube_sim::items::Item, [Entity; 3], bool);
+struct Held(Entity, String, [Entity; 3], bool);
 
 /// Where a held thing that lights gives its light from (`player::torch` puts the light there).
 #[derive(Component)]
@@ -66,6 +69,7 @@ fn hold(
     names: Query<&Name>,
     globals: Query<&GlobalTransform>,
     held: Query<(Entity, &Held)>,
+    mut seats: Query<&mut Transform, With<Held>>,
     firsts: Query<&crate::player::Controlled>,
     cameras: Query<Entity, With<Camera3d>>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -74,11 +78,26 @@ fn hold(
 ) {
     let Some(live) = live else { return };
     // What is drawn and no longer held, or whose holder is gone, goes.
-    let wants = |owner: Entity| movers.get(owner).ok().and_then(|(_, m)| live.agent(m)).filter(|a| a.dead.is_none()).and_then(|a| a.pack.as_ref().and_then(|p| p.held()));
+    // What it has taken from its pack, or what its kind is seen to carry (a goblin's club).
+    let wants = |owner: Entity| -> Option<String> {
+        let (_, m) = movers.get(owner).ok()?;
+        let agent = live.agent(m).filter(|a| a.dead.is_none())?;
+        agent.pack.as_ref().and_then(|p| p.held()).map(|i| i.name().to_owned()).or_else(|| live.kind(m).and_then(|k| k.holds.clone()))
+    };
     let first = |owner: Entity| firsts.get(owner).is_ok_and(|c| c.first_person);
     for (entity, Held(owner, item, _, before_eye)) in &held {
-        if wants(*owner) != Some(*item) || first(*owner) != *before_eye {
+        if wants(*owner).as_ref() != Some(item) || first(*owner) != *before_eye {
             commands.entity(entity).despawn();
+        }
+    }
+    // A thing in a hand is kept to its size in metres whatever the bone's own scale comes to
+    // (on the frame a model arrives its bones are not yet placed, and a goblin's club made
+    // then was made to the wrong size and never seen).
+    for (entity, Held(owner, item, [.., hand], before_eye)) in &held {
+        let (Some(thing), Some(scale), Ok(mut seat)) = (things.0.get(item), globals.get(*hand).ok().map(|g| g.scale().x).filter(|s| *s > 1e-4), seats.get_mut(entity)) else { continue };
+        if !*before_eye {
+            let big = if thing.fits { movers.get(*owner).ok().and_then(|(_, m)| live.kind(m)).map_or(1.0, |k| k.height / 1.75) } else { 1.0 };
+            (seat.translation, seat.scale) = (Vec3::from_array(thing.shift) * big / scale, Vec3::splat(big / scale));
         }
     }
     for (owner, _) in &movers {
@@ -86,7 +105,7 @@ fn hold(
         if held.iter().any(|(_, h)| h.0 == owner) {
             continue;
         }
-        let Some(thing) = things.0.get(item.name()) else { continue };
+        let Some(thing) = things.0.get(&item) else { continue };
         // Its hand, once its model is there and placed.
         let bone = |name: &str| children.iter_descendants(owner).find(|e| names.get(*e).is_ok_and(|n| n.as_str().ends_with(name)));
         let (Some(upper), Some(fore), Some(hand)) = (bone("RightArm"), bone("RightForeArm"), bone("RightHand")) else { continue };
@@ -94,9 +113,11 @@ fn hold(
         // The bone is in the model's own units: the thing is sized in metres whatever they are.
         let turn = Quat::from_euler(EulerRot::XYZ, thing.turn[0].to_radians(), thing.turn[1].to_radians(), thing.turn[2].to_radians());
         let before_eye = first(owner);
+        // Sized to who carries it, where it says so: a troll's club is a troll's.
+        let big = if thing.fits { movers.get(owner).ok().and_then(|(_, m)| live.kind(m)).map_or(1.0, |k| k.height / 1.75) } else { 1.0 };
         let (on, seat) = match cameras.iter().next().filter(|_| before_eye) {
             Some(camera) => (camera, Transform { translation: Vec3::new(0.3, -0.32, -0.6), rotation: Quat::from_euler(EulerRot::XYZ, if thing.arm.is_some() { -0.15 } else { -0.9 }, 0.0, -0.12), ..default() }),
-            None => (hand, Transform { translation: Vec3::from_array(thing.shift) / scale, rotation: turn, scale: Vec3::splat(1.0 / scale) }),
+            None => (hand, Transform { translation: Vec3::from_array(thing.shift) * big / scale, rotation: turn, scale: Vec3::splat(big / scale) }),
         };
         let cube = cube.get_or_insert_with(|| meshes.add(Cuboid::new(1.0, 1.0, 1.0))).clone();
         let root = commands.spawn((Held(owner, item, [upper, fore, hand], before_eye), ChildOf(on), seat, Visibility::default())).id();
@@ -116,7 +137,7 @@ fn hold(
 /// way it should go, so the clip's own twist and the rest of the body are left as they were.
 fn carry(things: Res<Things>, held: Query<&Held>, owners: Query<&Transform, With<Mover>>, parents: Query<&ChildOf>, globals: Query<&GlobalTransform>, mut bones: Query<&mut Transform, Without<Mover>>) {
     for Held(owner, item, [upper, fore, hand], _) in &held {
-        let (Some(ways), Ok(body)) = (things.0.get(item.name()).and_then(|t| t.arm), owners.get(*owner)) else { continue };
+        let (Some(ways), Ok(body)) = (things.0.get(item).and_then(|t| t.arm), owners.get(*owner)) else { continue };
         // The shoulder's turn in the world is last frame's: it moves little, and this frame's is not worked out yet.
         let Some(mut parent) = parents.get(*upper).ok().and_then(|p| globals.get(p.parent()).ok()).map(|g| g.rotation()) else { continue };
         for (bone, child, way) in [(*upper, *fore, ways[0]), (*fore, *hand, ways[1])] {

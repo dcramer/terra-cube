@@ -5,6 +5,7 @@ subject = "a green goblin raider with big pointed ears, a hunched wiry body, a l
 height = 1.2
 
 [life]
+holds = "Club"
 # Raiders keep their camps far apart: left to the room their size gives, they filled every
 # meadow in twenty years (27 to 207).
 range = 260.0
