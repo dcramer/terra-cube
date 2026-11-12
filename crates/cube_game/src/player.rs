@@ -429,6 +429,7 @@ fn torch(
     live: Res<Live>,
     loading: Res<crate::loading::Loading>,
     bearers: Query<(&Transform, &Mover), With<Controlled>>,
+    flames: Query<&GlobalTransform, With<crate::held::Flame>>,
     mut torches: Query<(Entity, &mut Transform, &mut PointLight), (With<Torch>, Without<Controlled>)>,
 ) {
     // Lit while the torch is the thing in hand (T takes it from the bar); `--torch` lights
@@ -441,8 +442,8 @@ fn torch(
         }
         return;
     };
-    // Held up and a little ahead, to the right.
-    let at = bearer.translation + bearer.rotation * Vec3::new(0.3, 1.55, -0.2);
+    // At the head of the torch in his hand; by the shoulder where no torch is drawn (`--torch`).
+    let at = flames.iter().next().map_or(bearer.translation + bearer.rotation * Vec3::new(0.3, 1.55, -0.2), |f| f.translation() + Vec3::Y * 0.08);
     let t = time.elapsed_secs();
     let waver = 1.0 + 0.1 * (t * 11.0).sin() + 0.06 * (t * 23.0 + 1.3).sin() + 0.04 * (t * 5.3).sin();
     if let Ok((_, mut place, mut light)) = torches.single_mut() {

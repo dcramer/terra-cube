@@ -38,6 +38,7 @@ cargo forge status                 # every creature: Tripo steps done, credits, 
 cargo forge build wolf             # make what is missing, then finish and check (spends credits once)
 cargo forge finish --all           # the free local half again, after changing clips.rs or style.toml
 cargo forge sheet wolf             # shots/wolf.png: every clip at six moments, one image
+make held                          # shots/held.png: the sword and torch in the player's hand through standing, walking and a blow; after any change to `assets/world/held.toml` or a biped's clips
 make gaits ID="wolf deer"           # shots/gaits.png: walk, run and sprint from the side, large; look after any change to motion
 cargo world survey                 # the land in numbers; `cargo world run`: its creatures living, in numbers
 cargo world life                   # the ecology: how much of the island suits each kind of life, when it is about, where each animal settled

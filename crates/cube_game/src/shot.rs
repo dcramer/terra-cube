@@ -334,7 +334,7 @@ fn scene(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terra
         Projection::Perspective(PerspectiveProjection { fov: lens, far: 4000.0, ..default() }),
         RenderTarget::Image(stage.target.clone().into()),
         // Only `--play` uses the orbit: behind the player, facing the way the route runs.
-        crate::camera::Orbit { focus, yaw: args.yaw, pitch: 0.28, distance: 5.5 },
+        crate::camera::Orbit { focus, yaw: args.yaw, pitch: 0.28, distance: args.dist.unwrap_or(5.5) },
         Transform::from_translation(from).looking_at(focus, Vec3::Y),
         world::look(),
     ));

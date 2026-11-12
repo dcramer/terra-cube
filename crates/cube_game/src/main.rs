@@ -15,6 +15,7 @@ mod audio;
 mod camera;
 mod creatures;
 mod far;
+mod held;
 mod flora;
 mod hud;
 mod loading;
@@ -311,7 +312,7 @@ fn main() {
     .set(TaskPoolPlugin { task_pool_options: TaskPoolOptions { async_compute: bevy::app::TaskPoolThreadAssignmentPolicy { min_threads: 2, max_threads: usize::MAX, percent: 0.6, on_thread_spawn: None, on_thread_destroy: None }, ..default() } }))
     .insert_resource(args)
     .init_resource::<loading::Loading>()
-    .add_plugins(creatures::CreaturesPlugin);
+    .add_plugins((creatures::CreaturesPlugin, held::HeldPlugin));
     if shot {
         // With no window the loop would idle at sixty a second, and every `pace` would read
         // 17 ms whatever the frame cost: run flat out, so the number is the work.

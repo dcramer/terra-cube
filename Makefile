@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -109,6 +109,9 @@ fight: ## no window: the player fights a goblin in the real game; passes if he i
 
 sheet: need-id ## no window: shots/ID.png, every clip of one creature (ID=wolf)
 	cargo forge sheet $(ID)
+
+held: ## no window: shots/held.png, the sword and the torch in the player's hand, standing, walking and striking
+	@tools/held.sh
 
 gaits: need-id ## no window: shots/gaits.png, walk, run and sprint of the creatures in ID from the side, large (ID="wolf deer")
 	@tools/gaits.sh $(ID)
