@@ -78,6 +78,8 @@ fn hold(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut cube: Local<Option<Handle<Mesh>>>,
+    time: Res<Time>,
+    mut blow: Local<f32>,
 ) {
     let Some(live) = live else { return };
     // What is drawn and no longer held, or whose holder is gone, goes.
@@ -101,6 +103,15 @@ fn hold(
         if !*before_eye {
             let big = if thing.fits { movers.get(*owner).ok().and_then(|(_, m)| live.kind(m)).map_or(1.0, |k| k.height / 1.75) } else { 1.0 };
             (seat.translation, seat.scale) = (Vec3::from_array(thing.shift) * big / scale, Vec3::splat(big / scale));
+        } else if let Some(agent) = movers.get(*owner).ok().and_then(|(_, m)| live.agent(m)) {
+            // Before the eye it goes with him: it rides up and down and a little across as he
+            // walks, faster as he goes faster, and with a blow it is thrown forward and down
+            // and comes back. (Fixed in its place it was a picture stuck on the glass.)
+            let (t, pace) = (time.elapsed_secs(), (agent.body.ground_speed() / 3.5).min(1.4) * agent.body.grounded as u8 as f32);
+            *blow += ((agent.swing.is_some() as u8 as f32) - *blow) * (1.0 - (-16.0 * time.delta_secs()).exp());
+            let rest = if thing.arm.is_some() { -0.15 } else { -0.9 };
+            seat.translation = Vec3::new(0.3, -0.32, -0.6) + Vec3::new((t * 5.5).cos() * 0.012, (t * 11.0).sin() * 0.016, 0.0) * pace + Vec3::new(-0.2, 0.1, -0.2) * *blow;
+            seat.rotation = Quat::from_euler(EulerRot::XYZ, rest - 0.45 * *blow, 0.6 * *blow, -0.12 + 0.5 * *blow);
         }
     }
     for (owner, _) in &movers {
