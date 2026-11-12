@@ -3,6 +3,8 @@ kind = "wildlife"
 plan = "quadruped"
 subject = "a lynx with black-tufted ears, a short bobbed tail and a spotted tawny coat"
 height = 0.7
+# Bowed right down to feed, its fore feet leave the ground: its clips that are not gaits at half.
+ease = 0.4
 
 [life]
 temper = "hunter"

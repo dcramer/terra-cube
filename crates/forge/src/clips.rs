@@ -914,18 +914,34 @@ fn die(sk: &Skeleton, roles: &Roles, upright: bool) -> Clip {
 
 /// Head down to graze, nibbling, and up again.
 fn eat(sk: &Skeleton, roles: &Roles) -> Clip {
+    // How far the neck must dip to bring the muzzle near the ground, found once: a fixed dip
+    // left a deer, a goat and a pony nibbling the air at the height of their own chests.
+    let muzzle = roles.head.last().or(roles.spine.last()).copied();
+    let low = |dip: f32| {
+        let mut pose = sk.rest();
+        curl(sk, &mut pose, &roles.head, |a| pitch(roles, a), 0.5);
+        bow(sk, roles, &mut pose, dip);
+        muzzle.map_or(0.0, |j| sk.pose_world(&pose)[j].w_axis.y - roles.floor)
+    };
+    let dip = (0..=15).map(|i| 0.4 + i as f32 * 0.04).find(|d| low(*d) < 0.12 * roles.height).unwrap_or(1.0);
     Clip::made("eat", true, 4.0, sk, |t, pose| {
         let down = pulse(t, 0.0, 0.2, 0.8, 1.0);
         let nibble = 0.05 * (t * TAU * 6.0).sin() * down;
-        curl(sk, pose, &roles.head, |a| pitch(roles, a), 0.7 * down + nibble);
-        bow(sk, roles, pose, 0.55 * down);
+        curl(sk, pose, &roles.head, |a| pitch(roles, a), 0.5 * down + nibble);
+        bow(sk, roles, pose, dip * down);
         for (i, &j) in roles.tail.iter().enumerate() {
             pose.rotations[j] = sk.turned(j, yaw(0.15 * (t * TAU * 2.0 - i as f32 * 0.7).sin()));
         }
         // Its feet stay where they stand: the bow turns the forequarters, and without this
         // the fore feet swung off the ground by a fifth of its height.
         for leg in &roles.legs {
+            // (A leg of two bones has no knee to bend, and the solve gives no number: such a
+            // leg is left as it was. The moose and the hedgehog vanished while they ate.)
+            let was = pose.rotations.clone();
             reach(sk, roles, pose, leg, leg.foot(), sk.position(leg.foot()));
+            if pose.rotations.iter().any(|r| !r.is_finite()) {
+                pose.rotations = was;
+            }
         }
     })
 }
