@@ -95,9 +95,20 @@ rig = "other"
 # A full stride stretches the skin at shoulder and hip well past the general bar and does not
 # tear it: drawn large from the side, front and quarter at 70% to 103% (fox, deer, bear,
 # 2026-11-11) the animals hold their shape. The 60% bar had their strides cut to as little as
-# a twentieth (`gait_gain`), which is why they shuffled.
-max_stretch = 1.1
+# a twentieth (`gait_gain`), which is why they shuffled. A gallop carried from the library
+# reads 113% to 115% on wolf and bear at full reach and holds as well (2026-11-12).
+max_stretch = 1.2
 clips = ["idle", "walk", "run", "sprint", "jump", "fall", "land", "swim", "attack", "hurt", "die", "eat"]
+# What an animal does that a person drew: a wolf's (Quaternius, CC0), carried onto anything
+# with four legs by its roles (`library.rs`). It has no trot: `run` is made.
+[plans.quadruped.library]
+idle = "Idle"
+walk = "Walk"
+sprint = "Gallop"
+attack = "Attack"
+hurt = "Idle_HitReact_Left"
+die = "Death"
+
 # No presets: Tripo's one animal clip is a walk that marches nearly on the spot (looked at
 # again 2026-11-11 beside ours: the legs lift well but the feet travel 0.14 to 0.27 m/s on a
 # wolf). Walk, trot and gallop are made with planted feet instead (clips.rs `gait`).

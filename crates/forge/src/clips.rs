@@ -581,7 +581,7 @@ fn turn_now(sk: &Skeleton, pose: &mut Pose, joint: usize, delta: Quat) {
 /// Bends a leg at its second joint and swings it at its first so its tip is at `target`: the
 /// two-bone solve, with everything below the second joint carried rigid. Bends the way the
 /// leg already bends. Reaches as far as it can when the target is too far.
-fn reach(sk: &Skeleton, roles: &Roles, pose: &mut Pose, leg: &crate::rig::Leg, tip: usize, target: Vec3) {
+pub(crate) fn reach(sk: &Skeleton, roles: &Roles, pose: &mut Pose, leg: &crate::rig::Leg, tip: usize, target: Vec3) {
     let (hip, knee) = (leg.chain[0], leg.chain[1]);
     let at = |pose: &Pose, j: usize| sk.pose_world(pose)[j].w_axis.truncate();
     let (h, k, p) = (at(pose, hip), at(pose, knee), at(pose, tip));

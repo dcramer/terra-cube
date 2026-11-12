@@ -51,6 +51,17 @@ fn node_local(n: &Value) -> (Vec3, Quat, Vec3) {
 
 impl Skeleton {
     pub fn read(glb: &Glb) -> Result<Self> {
+        Self::read_with(glb, true)
+    }
+
+    /// A skeleton made by hand may carry helper bones beside the body's (the targets its legs
+    /// were posed with): read so, the root is the one with the most under it and the others
+    /// stay where they rest. A creature's own skeleton is held to one root.
+    pub fn read_loose(glb: &Glb) -> Result<Self> {
+        Self::read_with(glb, false)
+    }
+
+    fn read_with(glb: &Glb, strict: bool) -> Result<Self> {
         let nodes = glb.array("nodes");
         let skin = glb.array("skins").first().context("the model has no skin: it is not rigged")?;
         let joint_nodes: Vec<usize> = skin["joints"].as_array().context("skin without joints")?.iter().map(|v| v.as_u64().unwrap() as usize).collect();
@@ -88,8 +99,11 @@ impl Skeleton {
             }
         }
         let roots: Vec<usize> = (0..joints.len()).filter(|&i| joints[i].parent.is_none()).collect();
-        ensure!(roots.len() == 1, "expected one root joint, found {}", roots.len());
-        let root = roots[0];
+        ensure!(roots.len() == 1 || (!strict && !roots.is_empty()), "expected one root joint, found {}", roots.len());
+        fn under(joints: &[Joint], i: usize) -> usize {
+            1 + joints[i].children.iter().map(|&c| under(joints, c)).sum::<usize>()
+        }
+        let root = *roots.iter().max_by_key(|&&r| under(&joints, r)).unwrap();
         let base = node_parent[joints[root].node].map_or(Mat4::IDENTITY, |p| world(p, nodes, &node_parent));
         let inverse_bind = match skin.get("inverseBindMatrices").and_then(Value::as_u64) {
             Some(a) => glb.floats(a as usize)?.0.chunks(16).map(Mat4::from_cols_slice).collect(),

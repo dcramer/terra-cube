@@ -137,17 +137,25 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         // (A described motion's clip is named by its description, cut short: the start is enough.)
         let found = preset.and_then(|p| theirs.iter().position(|c| c.name.rsplit(':').next() == Some(p.as_str()) || (plan.motions.contains_key(p) && c.name.starts_with(p.as_str()))));
         // A clip of the library, carried onto this skeleton, comes before Tripo's own.
-        let carried = match plan.library.get(name).filter(|_| !creature.made.contains(name)) {
+        // (Not onto a body whose skin tears, one that has had to have its made clips eased:
+        // a fox, a toad and a bullfrog tore at two and three times the bar.)
+        let carried = match plan.library.get(name).filter(|_| !creature.made.contains(name) && (plan.rig == "humanoid" || creature.ease >= 1.0)
+            // (Nor a wolf's gait onto what hops.)
+            && !(creature.hops && matches!(name.as_str(), "walk" | "run" | "sprint"))) {
             Some(theirs) => {
+                // (A person's clips go on a person's skeleton bone for bone; an animal's on
+                // anything with four legs, by its roles.)
+                let human = plan.rig == "humanoid";
                 if library.is_none() {
-                    library = Some(crate::library::Library::read()?);
+                    library = Some(if human { crate::library::Library::read()? } else { crate::library::Library::open(crate::library::beast())? });
                 }
-                Some(Clip { name: name.clone(), looping: true, frames: library.as_ref().unwrap().carry(theirs, &skeleton)?, source: "library", speed: None })
+                let lib = library.as_ref().unwrap();
+                Some(Clip { name: name.clone(), looping: true, frames: if human { lib.carry(theirs, &skeleton)? } else { lib.carry_beast(theirs, &skeleton, &roles)? }, source: "library", speed: None })
             }
             None => None,
         };
         let recorded = carried.as_ref().or(found.map(|i| &theirs[i]));
-        let clip = match recorded {
+        let mut clip = match recorded {
             Some(taken) => {
                 let source = taken.source;
                 let looping = !matches!(name.as_str(), "attack" | "hurt" | "die" | "jump" | "land");
@@ -177,9 +185,29 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
                         pose.root_t += skeleton.base.inverse().transform_vector3(Vec3::Y * lift);
                     }
                 }
+                // A carried animal's gait is set down: its body's height came from another
+                // animal's build, and the lowest any foot comes in the whole stride is the
+                // ground. (By the stride for a gallop, which leaves the ground.)
+                if source == "library" && plan.rig != "humanoid" && matches!(name.as_str(), "walk" | "run" | "sprint") && !roles.legs.is_empty() {
+                    let low = |pose: &crate::rig::Pose| {
+                        let world = skeleton.pose_world(pose);
+                        roles.legs.iter().map(|l| world[l.foot()].w_axis.y).fold(f32::MAX, f32::min)
+                    };
+                    // (A walk has a foot down at every moment, and is set down moment by moment.)
+                    let stood = low(&skeleton.rest());
+                    let stride = frames.iter().map(low).fold(f32::MAX, f32::min) - stood;
+                    for pose in &mut frames {
+                        let over = if name == "walk" { low(pose) - stood } else { stride };
+                        pose.root_t -= skeleton.base.inverse().transform_vector3(Vec3::Y * over);
+                    }
+                }
                 // And no part of it goes under the ground: a troll laid down where the library's
                 // slight figure lay was a hand's depth into the floor, and a golem's toes in a lunge.
-                if source == "library" && name != "swim" {
+                // (Not an animal's gait, which was set down by its feet: a paw turned toe down
+                // goes a little into the floor, and raising the whole animal for it left the
+                // other three feet in the air.)
+                let gait = plan.rig != "humanoid" && matches!(name.as_str(), "walk" | "run" | "sprint");
+                if source == "library" && name != "swim" && !gait {
                     let under = crate::check::sunk(&glb, &skeleton, &frames);
                     for (pose, under) in frames.iter_mut().zip(under) {
                         pose.root_t += skeleton.base.inverse().transform_vector3(Vec3::Y * under);
@@ -192,7 +220,20 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
                 clips::make(name, &skeleton, &roles, &out, stand, plan.upright, scale, (1.0 + creature.gait_gain) / 2.0, creature.ease, creature.hops).with_context(|| format!("no preset and no recipe for the clip `{name}` (clips.rs `make`)"))?
             }
         };
-        let mut clip = clip;
+        // A carried animal's gait goes at the speed that animal's own made gait went (its legs'
+        // length says how fast it walks and runs: the game's speeds, and who catches whom, are
+        // as they were). A walk is played faster or slower until its feet hold at that speed:
+        // a badger steps quicker than a wolf. A gallop is not: its feet say less than it
+        // covers, being in the air for part of it.
+        if clip.source == "library" && plan.rig != "humanoid" && matches!(name.as_str(), "walk" | "sprint")
+            && let Some(own) = clips::make(name, &skeleton, &roles, &out, None, plan.upright, scale, (1.0 + creature.gait_gain) / 2.0, creature.ease, creature.hops).and_then(|c| c.speed)
+        {
+            if name == "walk" && let Some((stance, steps)) = recorded_speed(&skeleton, &roles, &clip) {
+                let feet = if (stance / steps - 1.0).abs() < 0.25 { stance } else { steps };
+                clip.frames = clips::trimmed(&clip, 0.0, clip.seconds(), (own / feet).clamp(0.6, 1.8));
+            }
+            clip.speed = Some(own);
+        }
         // A body that needed its gait reined in needs the same of a leap, by half as much.
         if matches!(name.as_str(), "jump" | "fall") && clip.source == "made" && creature.gait_gain != 1.0 {
             clips::gained(&skeleton, &mut clip.frames, (1.0 + creature.gait_gain) / 2.0);

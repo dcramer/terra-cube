@@ -1,7 +1,7 @@
 # Measured by `cargo forge finish`; do not edit.
 height = 0.3
-length = 0.6501687
-width = 0.21574749
+length = 0.6412543
+width = 0.21343882
 walk_speed = 0.5920282
 run_speed = 1.235537
 sprint_speed = 2.2102387
@@ -9,14 +9,14 @@ triangles = 7234
 joints = 28
 
 [clips.attack]
-seconds = 0.8
+seconds = 1.3333334
 looping = false
-source = "made"
+source = "library"
 
 [clips.die]
-seconds = 1.4
+seconds = 1.0333333
 looping = false
-source = "made"
+source = "library"
 
 [clips.eat]
 seconds = 4.0
@@ -29,14 +29,14 @@ looping = true
 source = "made"
 
 [clips.hurt]
-seconds = 0.5
+seconds = 0.6666667
 looping = false
-source = "made"
+source = "library"
 
 [clips.idle]
-seconds = 4.0
+seconds = 3.3333333
 looping = true
-source = "made"
+source = "library"
 
 [clips.jump]
 seconds = 0.3
@@ -54,9 +54,9 @@ looping = true
 source = "made"
 
 [clips.sprint]
-seconds = 0.26666668
+seconds = 0.53333336
 looping = true
-source = "made"
+source = "library"
 
 [clips.swim]
 seconds = 1.6
@@ -64,9 +64,9 @@ looping = true
 source = "made"
 
 [clips.walk]
-seconds = 0.33333334
+seconds = 0.56666666
 looping = true
-source = "made"
+source = "library"
 
 [bones]
 foot0 = "tripo::0_Left_Limb_3"

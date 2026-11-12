@@ -106,7 +106,11 @@ fn start(
     *begun = true;
     let picked = selected.and_then(|s| s.0).and_then(|e| creatures.get(e).ok());
     let wanted = args.play_as.as_deref().unwrap_or("player");
-    let named = creatures.iter().find(|(_, c, _)| registry.0[c.def].id == wanted);
+    // (Of its kind, the one nearest where the scene is: with the island's creatures about,
+    // `--as deer` took whichever deer came first, somewhere on the island, and a scene of it
+    // showed nothing.)
+    let here = Vec3::new(args.at.0, 0.0, args.at.1);
+    let named = creatures.iter().filter(|(_, c, _)| registry.0[c.def].id == wanted).min_by(|a, b| a.2.translation.with_y(0.0).distance(here).total_cmp(&b.2.translation.with_y(0.0).distance(here)));
     // Tab goes back to the creature it let go of, unless another has been picked since.
     let again = last.and_then(|(entity, picked_then)| (picked_then == picked_now).then(|| creatures.get(entity).ok()).flatten());
     let Some((entity, creature, at)) = (if begin { named.or(picked) } else { again.or(picked).or(named) }).or_else(|| creatures.iter().next()) else { return };

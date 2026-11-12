@@ -4,8 +4,11 @@
 # zip, CC0, from its page at itch.io, to .work/library/UAL1_Standard.glb. 15 MB, once.
 # Needs curl, unzip and python3. If itch.io changes its pages, download the zip by hand from
 # https://quaternius.itch.io/universal-animation-library and unzip the GLB there.
+# The animals' motion is one more file, a wolf of the same author's (CC0), to be put beside it
+# by hand as .work/library/Wolf.glb: the GLB from https://poly.pizza/m/P1gU3Qkr9r .
 set -e
 out=.work/library
+[ -f "$out/Wolf.glb" ] || echo "note: $out/Wolf.glb is missing (animals' motion): the GLB from https://poly.pizza/m/P1gU3Qkr9r"
 [ -f "$out/UAL1_Standard.glb" ] && { echo "ok library: $out/UAL1_Standard.glb"; exit 0; }
 mkdir -p "$out/fetch"
 page=https://quaternius.itch.io/universal-animation-library

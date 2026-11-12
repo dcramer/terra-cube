@@ -22,9 +22,14 @@ pub struct Library {
     sk: Skeleton,
 }
 
-/// The library's file, where `tools/library.sh` puts it.
+/// The library's file, where `tools/library.sh` puts it; and the animal's, a wolf a person
+/// animated (Quaternius's Ultimate Animated Animals, CC0), whose motion goes on anything
+/// with four legs.
 pub fn file() -> PathBuf {
     PathBuf::from(".work").join("library").join("UAL1_Standard.glb")
+}
+pub fn beast() -> PathBuf {
+    PathBuf::from(".work").join("library").join("Wolf.glb")
 }
 
 /// The clip in which the library's figure stands as it does for carrying: arms a little down.
@@ -72,12 +77,15 @@ fn facing(left: Vec3, right: Vec3) -> Vec3 {
 
 impl Library {
     pub fn read() -> Result<Self> {
-        let path = file();
+        Self::open(file())
+    }
+
+    pub fn open(path: PathBuf) -> Result<Self> {
         if !path.exists() {
-            bail!("{} is missing: `tools/library.sh` fetches it (Quaternius's Universal Animation Library, CC0)", path.display());
+            bail!("{} is missing: `tools/library.sh` fetches it (Quaternius's hand-animated motion, CC0)", path.display());
         }
         let glb = Glb::read(&path)?;
-        let sk = Skeleton::read(&glb)?;
+        let sk = Skeleton::read_loose(&glb)?;
         Ok(Self { glb, sk })
     }
 
@@ -203,6 +211,95 @@ impl Library {
                 pose
             })
             .collect())
+    }
+}
+
+impl Library {
+    /// A clip of the hand-animated animal as poses of any four-legged skeleton, whose bones
+    /// are known only by their roles. The trunk, neck and tail turn as the animal's do, each
+    /// bone as the one the same way along its chain; then each foot is put where the animal's
+    /// foot is, by the two legs' lengths, and the leg bent to reach it. So the feet strike and
+    /// lift as a person drew them, on a body of any build.
+    pub fn carry_beast(&self, name: &str, to: &Skeleton, roles: &crate::rig::Roles) -> Result<Vec<Pose>> {
+        let frames = self.worlds(name)?;
+        let stood: Vec<Mat4> = self.sk.joints.iter().map(|j| j.world).collect();
+        let theirs = |n: &str| self.sk.joints.iter().position(|j| j.name == n).with_context(|| format!("the animal has no bone `{n}`"));
+        let chain = |names: &[&str]| names.iter().map(|n| theirs(n)).collect::<Result<Vec<usize>>>();
+        let (spine, neck) = (chain(&["Back", "Torso", "Torso2", "Torso3"])?, chain(&["Neck1", "Neck2", "Neck3", "Head"])?);
+        let tail = chain(&["Tail1", "Tail2", "Tail3", "Tail4", "Tail5", "Tail6", "Tail7", "Tail8"])?;
+        // A leg of theirs: where it leaves the body, and its last bone, whose end is the foot
+        // (a node past the last bone, not a bone itself).
+        let nodes = self.glb.array("nodes");
+        let end = |j: usize| -> Vec3 {
+            let ends = nodes[self.sk.joints[j].node]["children"].as_array().into_iter().flatten().filter_map(|c| nodes.get(c.as_u64()? as usize)).find(|n| n["name"].as_str().is_some_and(|n| n.ends_with("_end")));
+            ends.and_then(|n| n["translation"].as_array()).map_or(Vec3::ZERO, |t| Vec3::new(t[0].as_f64().unwrap_or(0.0) as f32, t[1].as_f64().unwrap_or(0.0) as f32, t[2].as_f64().unwrap_or(0.0) as f32))
+        };
+        let leg = |front: bool, left: bool| -> Result<(usize, usize, Vec3)> {
+            let side = if left { "L" } else { "R" };
+            let (hip, last) = if front { (theirs(&format!("FrontUpperLeg.{side}"))?, theirs(&format!("FrontLowerLeg.{side}"))?) } else { (theirs(&format!("BackLeg.{side}"))?, theirs(&format!("BackLowerLeg.{side}"))?) };
+            Ok((hip, last, end(last)))
+        };
+        let foot = |all: &[Mat4], l: &(usize, usize, Vec3)| all[l.1].transform_point3(l.2);
+        // The two turned to face the same way: theirs from tail to head.
+        let from = (pos(&stood[neck[3]]) - pos(&stood[spine[0]])).with_y(0.0).normalize_or(Vec3::Z);
+        let turn = if from.dot(roles.forward) < -0.999 { Quat::from_rotation_y(std::f32::consts::PI) } else { Quat::from_rotation_arc(from, roles.forward) };
+        let rest: Vec<Mat4> = to.joints.iter().map(|j| j.world).collect();
+        // Which of their bones each of ours turns with: the one as far along its chain.
+        let mut with: Vec<Option<usize>> = vec![None; to.joints.len()];
+        let mut along = |ours: &[usize], their: &[usize]| {
+            for (i, &j) in ours.iter().enumerate() {
+                with[j] = Some(their[((i as f32 + 0.5) / ours.len() as f32 * their.len() as f32) as usize]);
+            }
+        };
+        along(&roles.spine, &spine);
+        along(&roles.head, &neck);
+        along(&roles.tail, &tail);
+        with[to.root] = Some(spine[0]);
+        // Sizes: how high each stands at the shoulder, for how far the body moves; each leg by its own length.
+        let floor = |all: &[Mat4]| all.iter().map(|m| pos(m).y).fold(f32::MAX, f32::min);
+        let fore = leg(true, true)?;
+        let shoulder_theirs = pos(&stood[fore.0]).y - foot(&stood, &fore).y;
+        let shoulder_ours = roles.legs.iter().filter(|l| l.front).map(|l| pos(&rest[l.chain[0]]).y).fold(f32::MIN, f32::max) - floor(&rest);
+        let big = (shoulder_ours / shoulder_theirs.max(1e-5)).max(1e-5);
+        let order = parents_first(to);
+        let base_turn = rot(&to.base);
+        let mut out = Vec::with_capacity(frames.len());
+        for frame in &frames {
+            let mut pose = to.rest();
+            let mut world = vec![Quat::IDENTITY; to.joints.len()];
+            for &j in &order {
+                let above = to.joints[j].parent.map_or(base_turn, |p| world[p]);
+                world[j] = match with[j] {
+                    Some(s) => {
+                        let now = (turn * (rot(&frame[s]) * rot(&stood[s]).inverse()) * turn.inverse() * rot(&rest[j])).normalize();
+                        pose.rotations[j] = (above.inverse() * now).normalize();
+                        now
+                    }
+                    None => above * to.joints[j].rest_r,
+                };
+            }
+            let moved = turn * ((pos(&frame[spine[0]]) - pos(&stood[spine[0]])) * big);
+            pose.root_t = to.base.inverse().transform_point3(pos(&rest[to.root]) + moved);
+            for ours in &roles.legs {
+                // The leg, from where it leaves the body to the foot, lies as theirs lies: their
+                // leg's line, by the two legs' lengths, from our own hip where the body now is.
+                // (Feet put where theirs stood on the ground, whatever the body did, left a
+                // wolf dead on its back with its legs in the air: its body had gone further
+                // than its legs could follow.)
+                let their = leg(ours.front, ours.left)?;
+                let (line_ours, line_theirs) = (pos(&rest[ours.foot()]) - pos(&rest[ours.chain[0]]), turn * (foot(&stood, &their) - pos(&stood[their.0])));
+                let fit = Quat::from_rotation_arc(line_theirs.normalize_or(Vec3::NEG_Y), line_ours.normalize_or(Vec3::NEG_Y));
+                let hip = pos(&to.pose_world(&pose)[ours.chain[0]]);
+                let target = hip + fit * (turn * (foot(frame, &their) - pos(&frame[their.0]))) * (line_ours.length() / line_theirs.length().max(1e-5));
+                let was = pose.rotations.clone();
+                crate::clips::reach(to, roles, &mut pose, ours, ours.foot(), target);
+                if pose.rotations.iter().any(|r| !r.is_finite()) {
+                    pose.rotations = was;
+                }
+            }
+            out.push(pose);
+        }
+        Ok(out)
     }
 }
 
