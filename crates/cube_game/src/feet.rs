@@ -2,8 +2,10 @@
 //! is blocks and slopes: a foot the clip sets down on the level is in the air on the downhill
 //! side and in the hill on the other. After the clip has posed the body and before the pose
 //! is used, each leg is bent (two bones, the knee the way it already bends) so its foot is as
-//! far above the ground under it as the clip had it above the level, and the body is let
-//! down as far as its lowest foot has to reach.
+//! far above the ground under it as the clip had it above the level, and the body is moved
+//! up or down so that no leg has to be longer than it is. What goes on four legs is first
+//! pitched to the slope it stands on, nose up a rise and down a fall, so its legs have only
+//! the unevenness left to take up.
 //!
 //! Which bones are a leg is forge's to say, for every creature alike (`leg0`, `leg1`… in its
 //! `meta.toml`, from the roles it reads off the skeleton): nothing here knows a biped from a
@@ -31,6 +33,13 @@ pub struct Legs {
     pub legs: Vec<[Entity; 3]>,
     root: Option<Entity>,
     on: f32,
+    /// How far the body was pitched to the slope last frame: it comes after the slope's own.
+    pitch: f32,
+    /// Every bone this moved last frame: how the clip had it, and how it was left. A clip
+    /// does not pose every bone every frame (a standing animal's root has no track at all),
+    /// and a bone the clip has not posed again is still as it was left: moved again from
+    /// there, a deer standing on a slope sank a little further into it each frame.
+    moved: Vec<(Entity, Transform, Transform)>,
 }
 
 /// How far a foot may be moved up or down from where the clip has it, in the creature's heights.
@@ -57,7 +66,7 @@ fn find(mut commands: Commands, registry: Res<Registry>, creatures: Query<(Entit
                 Some([parts.next()??, parts.next()??, parts.next()??])
             })
             .collect();
-        commands.entity(entity).insert(Legs { legs, root: bones.get("root").and_then(|n| named(n)), on: 0.0 });
+        commands.entity(entity).insert(Legs { legs, root: bones.get("root").and_then(|n| named(n)), on: 0.0, pitch: 0.0, moved: Vec::new() });
     }
 }
 
@@ -118,6 +127,17 @@ fn plant(
     }
     let eye = cameras.iter().next().map(|c| c.translation());
     for (entity, mover, creature, at, mut legs) in &mut creatures {
+        // What the clip has not posed again since it was moved is put back as the clip had it.
+        for (bone, clip, left) in std::mem::take(&mut legs.moved) {
+            if let Ok(mut pose) = poses.get_mut(bone) {
+                if pose.translation == left.translation {
+                    pose.translation = clip.translation;
+                }
+                if pose.rotation == left.rotation {
+                    pose.rotation = clip.rotation;
+                }
+            }
+        }
         let Some(agent) = live.agent(mover) else { continue };
         if legs.legs.is_empty() || eye.is_some_and(|e| e.distance(at.translation) > NEAR) {
             continue;
@@ -128,29 +148,57 @@ fn plant(
         if legs.on <= 0.0 {
             continue;
         }
-        let reach = registry.0[creature.def].meta.height * REACH * at.scale.y;
-        // Where the clip has each foot, and how far the ground there is from the level the
-        // clip was made for (the height the creature itself is drawn at).
-        let mut wants = Vec::with_capacity(legs.legs.len());
-        for [_, _, tip] in &legs.legs {
-            let Some(foot) = world_of(*tip, entity, at, &parents, &poses).map(|w| Vec3::from(w.translation)) else { continue };
-            let off = ground_at(&terrain, foot.x, foot.z, at.translation.y).map_or(0.0, |g| (g - at.translation.y).clamp(-reach, reach)) * legs.on;
-            wants.push(off);
+        let touched: Vec<Entity> = legs.legs.iter().flat_map(|[hip, knee, _]| [*hip, *knee]).chain(legs.root).collect();
+        let before: Vec<(Entity, Transform)> = touched.iter().filter_map(|b| poses.get(*b).ok().map(|p| (*b, *p))).collect();
+        let four = legs.legs.len() >= 4;
+        let reach = registry.0[creature.def].meta.height * REACH * at.scale.y * if four { 1.8 } else { 1.0 };
+        let ease = 1.0 - (-12.0 * time.delta_secs()).exp();
+        let chains = legs.legs.clone();
+        let tips = |poses: &Query<&mut Transform, Without<Mover>>| -> Option<Vec<Vec3>> { chains.iter().map(|[.., tip]| world_of(*tip, entity, at, &parents, poses).map(|w| Vec3::from(w.translation))).collect() };
+        // How high the clip has each foot above the level it was made for (the height the
+        // creature itself is drawn at): what is to be kept.
+        let Some(clip) = tips(&poses) else { continue };
+        let above: Vec<f32> = clip.iter().map(|t| t.y - at.translation.y).collect();
+        let ground = |p: Vec3| ground_at(&terrain, p.x, p.z, at.translation.y).map_or(0.0, |g| g - at.translation.y);
+        // On four legs: the slope from the feet behind to the feet ahead, and the body
+        // turned to it about the bone it hangs from.
+        if let (true, Some(root)) = (four, legs.root) {
+            // (Which way it is long is read off the feet themselves: fore and hind are further
+            // apart than left and right.)
+            let local: Vec<Vec3> = clip.iter().map(|t| at.rotation.inverse() * (*t - at.translation)).collect();
+            let spread = |of: fn(&Vec3) -> f32| local.iter().map(of).fold(f32::MIN, f32::max) - local.iter().map(of).fold(f32::MAX, f32::min);
+            let long = if spread(|v| v.x) > spread(|v| v.z) { Vec3::X } else { Vec3::Z };
+            let along: Vec<f32> = local.iter().map(|v| v.dot(long)).collect();
+            let middle = along.iter().sum::<f32>() / along.len() as f32;
+            let side = |ahead: bool| -> Option<(f32, f32)> {
+                let of: Vec<(f32, f32)> = clip.iter().zip(&along).filter(|(_, z)| (**z > middle) == ahead).map(|(t, z)| (*z, ground(*t))).collect();
+                (!of.is_empty()).then(|| (of.iter().map(|o| o.0).sum::<f32>() / of.len() as f32, of.iter().map(|o| o.1).sum::<f32>() / of.len() as f32))
+            };
+            if let (Some((za, ga)), Some((zb, gb))) = (side(true), side(false)) && (za - zb).abs() > 1e-3 {
+                let slope = (-((ga - gb) / (za - zb)).atan()).clamp(-0.42, 0.42) * legs.on;
+                legs.pitch += (slope - legs.pitch) * ease;
+                turn_bone(root, Quat::from_axis_angle(Vec3::Y.cross(at.rotation * long), legs.pitch), entity, at, &parents, &mut poses);
+            }
         }
-        if wants.len() != legs.legs.len() {
-            continue;
+        // How far each foot must rise or fall from where it now is.
+        let Some(now) = tips(&poses) else { continue };
+        let mut rises = Vec::with_capacity(now.len());
+        for (i, tip) in now.iter().enumerate() {
+            let want = ground(*tip).clamp(-reach, reach) * legs.on;
+            rises.push(at.translation.y + above[i] + want - tip.y);
         }
-        // The body comes down as far as its lowest foot must go: a leg cannot be made longer.
-        let drop = wants.iter().copied().fold(0.0f32, f32::min);
-        if let Some(root) = legs.root.filter(|_| drop < -1e-4)
+        // The body goes up or down by the least of them: then every leg has only to bend,
+        // and none is asked to be longer than it is.
+        let shift = rises.iter().copied().fold(f32::MAX, f32::min).clamp(-reach, reach * 0.6);
+        if let Some(root) = legs.root.filter(|_| shift.abs() > 1e-4)
             && let Some(parent) = parents.get(root).ok().map(|p| p.parent())
             && let Some(frame) = if parent == entity { Some(at.compute_affine()) } else { world_of(parent, entity, at, &parents, &poses) }
             && let Ok(mut pose) = poses.get_mut(root)
         {
-            pose.translation += Vec3::from(frame.matrix3.inverse() * bevy::math::Vec3A::from(Vec3::Y * drop));
+            pose.translation += Vec3::from(frame.matrix3.inverse() * bevy::math::Vec3A::from(Vec3::Y * shift));
         }
-        for ([hip, knee, tip], off) in legs.legs.clone().into_iter().zip(wants) {
-            let rise = off - drop;
+        for ([hip, knee, tip], rise) in chains.iter().copied().zip(rises) {
+            let rise = rise - shift;
             if rise.abs() < 1e-4 {
                 continue;
             }
@@ -180,5 +228,6 @@ fn plant(
             let (Some(from), Some(to)) = ((bent - a).try_normalize(), (target - a).try_normalize()) else { continue };
             turn_bone(hip, Quat::from_rotation_arc(from, to), entity, at, &parents, &mut poses);
         }
+        legs.moved = before.into_iter().filter_map(|(bone, clip)| poses.get(bone).ok().map(|left| (bone, clip, *left))).filter(|(_, clip, left)| clip != left).collect();
     }
 }
