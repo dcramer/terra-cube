@@ -8,6 +8,10 @@ gait_gain = 0.6
 made = ["attack", "die"]
 
 [life]
+# It eats seldom: at a wolf's rate the dozen of them took every large animal on the island.
+meal = 20.0
+# As the ogre: without it none was born and they died out of age.
+capacity = 12
 temper = "hostile"
 share = 0.4
 voice = "troll"

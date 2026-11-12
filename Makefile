@@ -82,10 +82,10 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 	@$(MAKE) --no-print-directory window
 	@tools/pace.sh --yaw 0.5
 	@tools/seasons.sh
-	@cargo world years 8 | tail -1 | sed 's/^ok$$/ok years: eight years, no kind dies out or overruns/'
+	@cargo world years 24 | tail -1 | sed 's/^ok$$/ok years: twenty-four years, no kind dies out and each settles/'
 
-years: ## the island's creatures by the day for eight years: each kind's numbers year by year, and whether they hold
-	@cargo world years 8
+years: ## the island's creatures by the day for twenty-four years: each kind's numbers year by year, whether each lasts and settles, and who hunted what fell
+	@cargo world years 24
 
 sound: ## no window: five minutes heard in a meadow by day and by a shore from dusk, judged from the trace: how many files, how loud against a footfall (tools/audio/listen.sh forest 21 for any place and hour)
 	@cargo build -q --release -p cube_game

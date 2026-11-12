@@ -20,7 +20,9 @@ cargo world run [--seconds 120] [--seed N]        the creatures living in it for
                                                   then ok or FAIL lines
 cargo world years [N] [--seed N]                  the creatures by the day for N (3) years, nobody
                                                   watching: births, deaths and of what, each kind's
-                                                  numbers year by year; FAIL if a kind dies out or overruns
+                                                  numbers year by year; FAIL if a kind dies out, overruns,
+                                                  or (over 16 years or more) has not settled; under a kind
+                                                  that fell by half, who hunted it
 cargo world who [--seed N]                        where each group of creatures starts: kind, how
                                                   many, metres east and south of the start, biome
                                                   (for `cargo sandbox --wild --scene F --at X,Z`)
@@ -497,12 +499,16 @@ fn main() {
             };
             let mut rows = vec![count(&sim)];
             let mut all = cube_sim::life::Tally::default();
+            let mut kills: std::collections::BTreeMap<(usize, usize), u32> = Default::default();
             // From the first day of a spring, so a year is a year.
             sim.when = sim.when.floor() - sim.when.floor().rem_euclid(cube_sim::sky::YEAR) + cube_sim::sky::YEAR;
             for _ in 0..years {
                 for _ in 0..cube_sim::sky::YEAR as usize {
                     let t = sim.day(&world, Some(&land));
                     (all.born, all.old, all.hunted, all.starved, all.winter, all.moved) = (all.born + t.born, all.old + t.old, all.hunted + t.hunted, all.starved + t.starved, all.winter + t.winter, all.moved + t.moved);
+                    for pair in t.taken {
+                        *kills.entry(pair).or_default() += 1;
+                    }
                     sim.when += 1.0;
                 }
                 rows.push(count(&sim));
@@ -516,9 +522,23 @@ fn main() {
                 }
                 let line: Vec<String> = rows.iter().map(|r| r[k].to_string()).collect();
                 println!("  {:<12} {:<7} {}", kind.id, format!("{:?}", kind.diet).to_lowercase(), line.join(" > "));
+                // What has fallen to under half: who took it.
+                if rows[years][k] * 2 < rows[0][k] {
+                    let mut by: Vec<(u32, &str)> = kills.iter().filter(|((_, prey), _)| *prey == k).map(|((hunter, _), n)| (*n, sim.kinds[*hunter].id.as_str())).collect();
+                    by.sort_by_key(|b| std::cmp::Reverse(b.0));
+                    println!("    taken by: {}", by.iter().map(|(n, id)| format!("{id} {n}")).collect::<Vec<_>>().join(", "));
+                }
                 // A kind that began as more than a handful is still there, and none has overrun the island.
                 checks.bar(&format!("{} lasts", kind.id), rows[years][k] as f32, rows[0][k] < 6 || rows[years][k] >= 2, "a kind that began with six or more still has two");
-                checks.bar(&format!("{} holds", kind.id), rows[years][k] as f32, rows[years][k] <= rows[0][k] * 5 + 10, "no kind grows past five times what it began as");
+                // Over a few years, none has overrun the island; over many, each has come to
+                // a number it keeps (the island is begun with fewer of most kinds than it
+                // carries, so growth alone is not a fault: growth that does not stop is).
+                if years < 16 {
+                    checks.bar(&format!("{} holds", kind.id), rows[years][k] as f32, rows[years][k] <= rows[0][k] * 5 + 10, "no kind grows past five times what it began as");
+                } else {
+                    let (was, now) = (rows[years - 8][k] as f32, rows[years][k] as f32);
+                    checks.bar(&format!("{} settles", kind.id), now, (now - was).abs() <= was * 0.35 + 10.0, "within a third of what it was eight years before");
+                }
             }
             let (first, last) = (total(&rows[0]) as f32, total(&rows[years]) as f32);
             checks.bar("creatures", last, last > first * 0.4 && last < first * 3.0, "between two fifths and three times as many as at the start");

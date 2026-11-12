@@ -82,6 +82,14 @@ pub struct Life {
     pub lifespan: Option<f32>,
     #[serde(default)]
     pub capacity: Option<usize>,
+    /// How far it ranges from where it lives, metres, where its size does not say: groups of
+    /// a kind keep that far apart, so a long range is a kind that stays few.
+    #[serde(default)]
+    pub range: Option<f32>,
+    /// Days between the meals of a meat-eater, where six is not right: a troll does not eat
+    /// as often as a wolf.
+    #[serde(default)]
+    pub meal: Option<f32>,
     /// How common it is beside the usual for its `groups`: `share = 0.1` for a hunter, of
     /// which a land carries one to every twenty or fifty of what it hunts.
     #[serde(default = "whole")]
@@ -170,6 +178,8 @@ pub struct Kind {
     /// How many of its kind the ground within its range will feed, and that range, metres.
     pub capacity: usize,
     pub range: f32,
+    /// Days between a meat-eater's meals.
+    pub meal: f32,
     pub share: f32,
 }
 
@@ -255,7 +265,7 @@ impl Kind {
                 }
             };
             // With no [life], a player is a person and anything else just stands its ground.
-            let life = spec.life.unwrap_or(Life { temper: if spec.kind == "player" { Temper::Person } else { Temper::Wary }, habitat: None, group: 1, groups: 0, water: Default::default(), cover: Default::default(), hours: Default::default(), winter: 1.0, voice: None, diet: None, litter: None, lifespan: None, capacity: None, share: 1.0 });
+            let life = spec.life.unwrap_or(Life { temper: if spec.kind == "player" { Temper::Person } else { Temper::Wary }, habitat: None, group: 1, groups: 0, water: Default::default(), cover: Default::default(), hours: Default::default(), winter: 1.0, voice: None, diet: None, litter: None, lifespan: None, capacity: None, range: None, meal: None, share: 1.0 });
             let diet = life.diet.unwrap_or(match life.temper {
                 Temper::Hunter | Temper::Hostile => Diet::Meat,
                 Temper::Person => Diet::All,
@@ -263,7 +273,7 @@ impl Kind {
             });
             // How far it ranges from where it lives: a hunter two and a half times as far as
             // what it hunts, as in life, so a land holds few of them.
-            let range = (60.0 + meta.height * 40.0) * if diet == Diet::Meat { 2.5 } else { 1.0 };
+            let range = life.range.unwrap_or((60.0 + meta.height * 40.0) * if diet == Diet::Meat { 2.5 } else { 1.0 });
             kinds.push(Kind {
                 id,
                 height: meta.height,
@@ -292,6 +302,7 @@ impl Kind {
                 // one group, grown to twice its size at most before half must leave.
                 capacity: life.capacity.unwrap_or(if diet == Diet::Meat { (life.group * 2).max(4) } else { ((life.group * 3) as f32 * (range / 80.0f32).powi(2)).round().max(4.0) as usize }),
                 range,
+                meal: life.meal.unwrap_or(6.0),
                 share: life.share,
             });
         }
@@ -439,6 +450,10 @@ pub struct Hit {
 /// Seconds something lies where it fell before it is gone; seconds after that until another
 /// of its kind comes to live where it did; and seconds a person lies before waking at home.
 const LIES: f32 = 25.0;
+/// How far a hunter out of sight hunts, in the reaches of its own ground; and how many of
+/// the hunted within that make a hunt as likely to succeed as it can be.
+const HUNT_REACH: f32 = 2.5;
+const PLENTY: f32 = 8.0;
 /// How hungry a meat-eater can get before it dies of it: four meals missed (`Sim::day` holds
 /// the ones out of sight to the same).
 pub const STARVES: f32 = 4.0;
@@ -945,7 +960,7 @@ impl Sim {
 }
 
 /// What a day did to the island's creatures.
-#[derive(Default, Clone, Copy, Debug)]
+#[derive(Default, Clone, Debug)]
 pub struct Tally {
     pub born: u32,
     /// Died of age, were killed and eaten, starved (for want of prey, or of ground to feed
@@ -956,6 +971,8 @@ pub struct Tally {
     pub winter: u32,
     /// Groups that outgrew their ground and sent half their number to find more.
     pub moved: u32,
+    /// Each kill: the kind that hunted, the kind taken.
+    pub taken: Vec<(usize, usize)>,
 }
 
 impl Sim {
@@ -1021,23 +1038,36 @@ impl Sim {
             let (home, hunger, own) = (hunter.mind.home, hunter.hunger, hunter.kind);
             // What it can take: a tenth its size to half as big again, and a pack takes larger.
             let most = kind.height * 1.5 * (kind.group as f32).sqrt();
+            // It hunts the ground it keeps and a way beyond, not the island: so where the
+            // hunters are many the hunted grow few, the hunt fails, and the hunters go hungry
+            // there. With the whole island to take from, wolves grew sixfold in twenty years
+            // while the deer beside them fell to a third.
+            let reach = kind.range * HUNT_REACH;
             let prey: Vec<u32> = self
                 .agents
                 .iter()
-                .filter(|(_, a)| lives(a, &self.kinds) && !a.awake && matches!(self.kinds[a.kind].diet, Diet::Plants) && self.kinds[a.kind].height < most && self.kinds[a.kind].height > kind.height * 0.1 && a.mind.home.distance(home) < kind.range)
+                .filter(|(_, a)| lives(a, &self.kinds) && !a.awake && a.mind.home.distance(home) < reach && matches!(self.kinds[a.kind].diet, Diet::Plants) && self.kinds[a.kind].height < most && self.kinds[a.kind].height > kind.height * 0.1 && a.mind.home.distance(home) < kind.range)
                 .map(|(&p, _)| p)
                 .collect();
-            if !prey.is_empty() && self.rng.unit() < 0.5 {
+            // (By the square: the last few of anything are hard to find, which is what keeps
+            // a hunted kind from being hunted out.)
+            if self.rng.unit() < 0.5 * (prey.len() as f32 / PLENTY).min(1.0).powi(2) {
                 let taken = prey[self.rng.below(prey.len())];
-                let big = self.kinds[self.agents[&taken].kind].height >= kind.height * 0.6;
+                tally.taken.push((own, self.agents[&taken].kind));
+                let size = self.kinds[self.agents[&taken].kind].height / kind.height;
+                let big = size >= 0.6;
                 self.agents.remove(&taken);
-                // The kill feeds the one that made it, and if it is big, the pack.
+                // The kill feeds the one that made it, and if it is big, the pack; and a big
+                // kill feeds for longer than a small one, by its bulk: a wolf on a deer does
+                // not hunt again for weeks, on a rabbit it hunts again in days. (Every kill
+                // one meal, the trolls and ogres ate the deer, ponies and moose to nothing.)
+                let full = -(2.0 * size.powi(3)).min(3.0);
                 for a in self.agents.values_mut().filter(|a| a.kind == own && a.mind.home.distance(home) < 1.0) {
                     if big {
-                        a.hunger = 0.0;
+                        a.hunger = full / kind.group.max(1) as f32;
                     }
                 }
-                self.agents.get_mut(&id).unwrap().hunger = 0.0;
+                self.agents.get_mut(&id).unwrap().hunger = if big { full / kind.group.max(1) as f32 } else { full };
                 tally.hunted += 1;
             } else if hunger >= STARVES && kind.diet == Diet::Meat {
                 self.agents.remove(&id);
@@ -1080,10 +1110,12 @@ impl Sim {
             let home = self.agents[&members[0]].mind.home;
             let adults = members.iter().filter(|id| (self.when - self.agents[*id].born) / year >= k.maturity()).count();
             // One that lives alone finds a mate if another of its kind lives within reach.
-            let kin = near(&self.agents, *kind, home, k.range * 2.0);
+            let kin = near(&self.agents, *kind, home, k.range * 6.0);
             let pairs = if k.group > 1 { adults as f32 / 2.0 } else if kin > adults { adults as f32 * 0.5 } else { 0.0 };
             let room = (1.0 - near(&self.agents, *kind, home, k.range) as f32 / k.capacity as f32).max(0.0);
-            let wanted = pairs * k.litter * room;
+            // What hunts rears as many as it has fed: a pack that has gone hungry rears none.
+            let fed = if matches!(k.diet, Diet::Meat) { (1.0 - (members.iter().map(|id| self.agents[id].hunger).sum::<f32>() / members.len() as f32 - 1.0) / 2.0).clamp(0.0, 1.0) } else { 1.0 };
+            let wanted = pairs * k.litter * room * fed;
             let young = wanted.floor() as usize + (self.rng.unit() < wanted.fract()) as usize;
             let (at, facing) = (self.agents[&members[0]].body.pos, self.agents[&members[0]].facing);
             for _ in 0..young {
@@ -1135,7 +1167,7 @@ impl Kind {
     /// what does not eat never hungers.
     pub fn appetite(&self) -> f32 {
         match self.diet {
-            Diet::Meat => 1.0 / 6.0,
+            Diet::Meat => 1.0 / self.meal,
             Diet::All => 1.0 / 18.0,
             Diet::Plants => 2.0,
             Diet::None => 0.0,
@@ -1155,7 +1187,7 @@ mod tests {
     use cube_voxel::Block;
 
     fn kind(id: &str, temper: Temper, height: f32, speeds: [f32; 3]) -> Kind {
-        Kind { id: id.into(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None, winter: 1.0, diet: if matches!(temper, Temper::Hunter | Temper::Hostile) { Diet::Meat } else { Diet::Plants }, litter: 2.0, lifespan: 8.0, capacity: 8, range: 80.0, share: 1.0 }
+        Kind { id: id.into(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None, winter: 1.0, diet: if matches!(temper, Temper::Hunter | Temper::Hostile) { Diet::Meat } else { Diet::Plants }, litter: 2.0, lifespan: 8.0, capacity: 8, range: 80.0, meal: 6.0, share: 1.0 }
     }
 
     /// Rabbit, wolf, bear, goblin and a person, on a floor of stone 60 m square.

@@ -566,7 +566,7 @@ fn small(mut commands: Commands, time: Res<Time>, mut bank: ResMut<Bank>, live: 
         if a.frogs > 0.05 {
             let from = about(&mut bank, 12.0, 40.0, -1.6, -0.5);
             let pitch = 0.9 + bank.roll() * 0.2;
-            bank.far(&mut commands, "frog", from, 0.28, pitch);
+            bank.far(&mut commands, "frog", from, 0.23, pitch);
         }
     }
     // The night's crickets, one by one: each sits somewhere near and keeps its own time, so
