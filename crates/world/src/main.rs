@@ -200,6 +200,22 @@ fn run_command(args: &Args) -> ! {
     }
     println!("trails: {} of {} larger animals on one ({:.0}%) · trails are {:.1}% of meadow and forest", on, big.len(), on as f32 * 100.0 / big.len().max(1) as f32, trail as f32 * 100.0 / ground.max(1) as f32);
     println!("grazed: {} tufts, flowers and ferns eaten by what grazed in sight", sim.eaten.len());
+    // How alive it is, in one line: of the creatures lived near the watcher (not the watcher),
+    // how much of their time was standing, and what happened among them a minute.
+    {
+        let lived: Vec<_> = sim.agents.values().filter(|a| a.driver == cube_sim::life::Driver::Mind && a.log.acts.iter().sum::<f32>() > args.seconds * 0.5).collect();
+        let (time, minutes) = (lived.iter().map(|a| a.log.acts.iter().sum::<f32>()).sum::<f32>().max(1.0), args.seconds / 60.0);
+        let share = |act: Act| lived.iter().map(|a| a.log.acts[act as usize]).sum::<f32>() / time;
+        let count = |f: &dyn Fn(&cube_sim::life::Log) -> u32| lived.iter().map(|a| f(&a.log)).sum::<u32>() as f32;
+        let lain = lived.iter().map(|a| a.log.lain).sum::<f32>() / time;
+        let (idle, fast) = (share(Act::Idle) - lain, share(Act::Run) + share(Act::Sprint));
+        let (drank, hunts, kills, fled, trips) = (count(&|l| l.drank), count(&|l| l.hunts), count(&|l| l.kills), count(&|l| l.fled), count(&|l| l.trips));
+        println!("alive: {} lived · standing about {:.0}% of the time, lying up {:.0}%, feeding {:.0}%, running {:.1}% · a minute: {:.1} set out for somewhere, {:.1} drank, {:.1} took fright, {:.1} hunts ({:.0} kills in all)", lived.len(), idle * 100.0, lain * 100.0, share(Act::Eat) * 100.0, fast * 100.0, trips / minutes, drank / minutes, fled / minutes, hunts / minutes, kills);
+        if args.seconds >= 240.0 {
+            checks.bar("alive standing", idle, idle <= 0.35, "in their hours, creatures stand about at most a third of the time");
+            checks.bar("alive errands", trips / minutes, (2.0..=60.0).contains(&(trips / minutes)), "from two to sixty a minute set out for somewhere with a reason (more is the same errand begun over and over)");
+        }
+    }
     for (k, kind) in sim.kinds.iter().enumerate() {
         // Of those that were lived at all: the rest of the island slept.
         let of: Vec<_> = sim.agents.values().filter(|a| a.kind == k && a.log.acts.iter().sum::<f32>() > args.seconds * 0.5).collect();
@@ -214,7 +230,7 @@ fn run_command(args: &Args) -> ! {
         let acts: Vec<String> = acts.iter().map(|(act, part)| format!("{} {:.0}%", act.clip().0, part * 100.0)).collect();
         let (moved, stuck, swim, boxed) = (sum(&|l| l.moved) / n, sum(&|l| l.stuck) / total, sum(&|l| l.acts[Act::Swim as usize]) / total, sum(&|l| l.boxed) / total);
         let (inside, fell) = (sum(&|l| l.inside as f32), sum(&|l| l.fell as f32));
-        println!("{} ×{}: went {:.0}m each · {} · fled {} · hit {} · drank {}", kind.id, of.len(), moved, acts.join(" "), sum(&|l| l.fled as f32), sum(&|l| l.struck as f32), sum(&|l| l.drank as f32));
+        println!("{} ×{}: went {:.0}m each · {} · fled {} · hit {} · drank {} · set out {} · hunts {}", kind.id, of.len(), moved, acts.join(" "), sum(&|l| l.fled as f32), sum(&|l| l.struck as f32), sum(&|l| l.drank as f32), sum(&|l| l.trips as f32), sum(&|l| l.hunts as f32));
         checks.bar(&format!("{} inside-ground", kind.id), inside, inside == 0.0, "0 ticks");
         checks.bar(&format!("{} fell-out", kind.id), fell, fell == 0.0, "0 times");
         checks.bar(&format!("{} stuck", kind.id), stuck, stuck <= 0.08, "at most 0.08 of the time");

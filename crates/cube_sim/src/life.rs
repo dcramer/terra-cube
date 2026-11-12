@@ -389,6 +389,12 @@ pub struct Log {
     pub fell: u32,
     pub struck: u32,
     pub fled: u32,
+    /// Chases begun by what hunts, and times it set out for somewhere with a reason (to
+    /// water, to fresh grazing, home to lie up, after prey).
+    pub hunts: u32,
+    pub trips: u32,
+    /// Seconds at rest out of its hours: lying up, not standing about.
+    pub lain: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -677,7 +683,7 @@ impl Sim {
         self.when = crate::sky::later(self.when, DT);
         self.wake(world);
         // Minds see the world as it was at the start of the tick.
-        let seen: Vec<mind::Seen> = self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.awake).map(|(&id, a)| mind::Seen { id, pos: a.body.pos, vel: a.body.vel, temper: self.kinds[a.kind].temper, reach: a.body.half + a.body.long.length() }).collect();
+        let seen: Vec<mind::Seen> = self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.awake).map(|(&id, a)| mind::Seen { id, pos: a.body.pos, vel: a.body.vel, temper: self.kinds[a.kind].temper, kind: a.kind, errand: a.mind.errand(), reach: a.body.half + a.body.long.length() }).collect();
         let mut hits = Vec::new();
         let when = self.when;
         // What is awake grows hungry and thirsty by the second, at the day's rates (`day`).
@@ -1323,6 +1329,26 @@ mod tests {
         assert_eq!(sim.agents[&wolf].body.pos, at(1.0, 0.0));
         assert_eq!(sim.agents[&rabbit].health, sim.kinds[0].health());
         assert!(sim.agents[&wolf].awake);
+    }
+
+    #[test]
+    fn a_herd_bolts_when_one_of_it_does_and_a_hungry_hunter_goes_looking() {
+        // Two rabbits fifteen metres apart, and a fed wolf near the first only: too far from
+        // the second for it to take notice (twelve metres), and it runs all the same.
+        let (world, mut sim) = stage();
+        let (near, far) = (sim.add(&world, 0, at(0.0, 0.0), 0.0, Driver::Mind), sim.add(&world, 0, at(-15.0, 0.0), 0.0, Driver::Mind));
+        let wolf = sim.add(&world, 1, at(9.0, 0.0), 0.0, Driver::Mind);
+        sim.agents.get_mut(&wolf).unwrap().hunger = 0.0;
+        run(&mut sim, &world, 1.5);
+        assert!(sim.agents[&near].mind.state == State::Flee, "the nearer did not run: {:?}", sim.agents[&near].mind.state);
+        assert!(sim.agents[&far].log.fled >= 1, "the further did not take fright from the nearer: {:?}", sim.agents[&far].mind.state);
+        // And a hungry wolf with rabbits forty metres off, out of its sight, sets out toward them.
+        let (world, mut sim) = stage();
+        let wolf = sim.add(&world, 1, at(20.0, 0.0), 0.0, Driver::Mind);
+        sim.add(&world, 0, at(-20.0, 0.0), 0.0, Driver::Mind);
+        (sim.agents.get_mut(&wolf).unwrap().hunger, sim.agents.get_mut(&wolf).unwrap().mind.about) = (1.0, 1.0);
+        run(&mut sim, &world, 12.0);
+        assert!(sim.agents[&wolf].body.pos.x < 14.0 && sim.agents[&wolf].log.trips >= 1, "the hungry wolf stayed where it was: at {} after {} trips", sim.agents[&wolf].body.pos, sim.agents[&wolf].log.trips);
     }
 
     #[test]

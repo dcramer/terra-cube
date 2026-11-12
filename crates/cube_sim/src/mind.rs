@@ -49,11 +49,34 @@ pub struct Mind {
     pub about: f32,
     /// It is going to water to drink, and drinks when it gets there.
     pub to_water: bool,
+    /// It is grazing its way along: at the end of this walk it grazes again.
+    pub bout: bool,
 }
 
 impl Mind {
     pub fn new(home: Vec2, rng: &mut Rng) -> Self {
-        Self { state: State::Rest, left: rng.between(0.0, 4.0), home, goal: home, target: None, tired: 0.0, veer: if rng.chance(0.5) { 1.0 } else { -1.0 }, mark: home, since_mark: 0.0, hit_done: false, about: 1.0 , to_water: false}
+        Self { state: State::Rest, left: rng.between(0.0, 4.0), home, goal: home, target: None, tired: 0.0, veer: if rng.chance(0.5) { 1.0 } else { -1.0 }, mark: home, since_mark: 0.0, hit_done: false, about: 1.0 , to_water: false, bout: false}
+    }
+}
+
+/// What a creature is plainly about, to another of its kind that sees it: the herd goes to
+/// water when one of it does, and bolts when one of it bolts.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Errand {
+    None,
+    /// Going to drink, there.
+    Water(Vec2),
+    /// Running from that one.
+    Flee(u32),
+}
+
+impl Mind {
+    pub fn errand(&self) -> Errand {
+        match (self.state, self.target) {
+            (State::Flee, Some(from)) => Errand::Flee(from),
+            (State::Roam, _) if self.to_water => Errand::Water(self.goal),
+            _ => Errand::None,
+        }
     }
 }
 
@@ -65,6 +88,9 @@ pub struct Seen {
     pub temper: Temper,
     /// From its middle to its furthest edge over the ground.
     pub reach: f32,
+    /// Which kind it is, and what it is about.
+    pub kind: usize,
+    pub errand: Errand,
 }
 
 /// How close `them` must come before `me` takes notice, metres: to flee it, chase it or
@@ -83,9 +109,11 @@ fn notice(me: Temper, them: Temper) -> f32 {
 }
 
 /// How hungry a hunter is before it hunts (in meals: half way to needing one), and how
-/// thirsty anything is before it goes to water (in days).
+/// thirsty anything is before it goes to water (in days: three times a day, where until
+/// 2026-11-12 it was 0.7, once in seventeen minutes of play, and of sixty-nine creatures
+/// watched for five minutes eight drank).
 pub const HUNTS: f32 = 0.5;
-pub const THIRSTS: f32 = 0.7;
+pub const THIRSTS: f32 = 0.3;
 
 /// The nearest water's edge to a place, within sixty metres: the last dry ground before it,
 /// looking out sixteen ways. Water stands at the sea's level everywhere, river and lake too.
@@ -308,6 +336,7 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
             m.state = State::Chase;
             m.target = Some(s.id);
             m.left = 14.0;
+            agent.log.hunts += (kind.temper == Temper::Hunter) as u32;
         }
         (Temper::Wary, Some((s, gap))) if m.state != State::Strike => {
             m.target = Some(s.id);
@@ -325,6 +354,32 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
         _ => {}
     }
 
+    // What its own kind is about, near it, it is about too: one bolts and the herd bolts from
+    // the same thing; one sets off to drink and the rest, if they could do with a drink, go
+    // with it. (Until 2026-11-12 each decided alone, and a herd was creatures standing near
+    // one another.)
+    if !matches!(m.state, State::Flee | State::Chase | State::Strike) {
+        let mates = seen.iter().filter(|s| s.id != id && s.kind == agent.kind && flat(s.pos).distance(me) < 18.0);
+        for mate in mates {
+            match mate.errand {
+                // (Only from what is still near: with no such bound two of a herd kept each
+                // other running for as long as what had frightened them was anywhere.)
+                Errand::Flee(from) if kind.temper == Temper::Timid && seen.iter().any(|s| s.id == from && flat(s.pos).distance(me) < 26.0) => {
+                    agent.log.fled += 1;
+                    (m.state, m.target, m.left, m.to_water, m.bout) = (State::Flee, Some(from), 3.0, false, false);
+                    break;
+                }
+                Errand::Water(to) if !m.to_water && agent.thirst > THIRSTS * 0.5 && matches!(m.state, State::Rest | State::Graze) => {
+                    let beside = to + Vec2::from_angle(rng.between(0.0, std::f32::consts::TAU)) * rng.between(0.5, 2.5);
+                    (m.state, m.left, m.goal, m.to_water, m.bout) = (State::Roam, 60.0, beside, true, false);
+                    agent.log.trips += 1;
+                    break;
+                }
+                _ => {}
+            }
+        }
+    }
+
     let target = m.target.and_then(|t| seen.iter().find(|s| s.id == t));
 
     // What the state asks of the body: where to head and how fast, or what to face.
@@ -338,23 +393,52 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
             if m.left <= 0.0 && rng.unit() > m.about.max(0.12) {
                 m.left = rng.between(6.0, 14.0);
             }
+            // (Lying up out of its hours is not standing about: it is counted apart.)
+            if m.about < 0.3 {
+                agent.log.lain += DT;
+            }
             // Thirst comes first: to the nearest water it can find, and drink. (None in reach,
             // and it makes do: there is dew, and rain.)
             if m.left <= 0.0 && agent.thirst >= THIRSTS && kind.diet != crate::life::Diet::None {
                 match water_near(world, me) {
                     Some(to) => {
                         (m.state, m.left, m.goal, m.to_water) = (State::Roam, 60.0, to, true);
+                        agent.log.trips += 1;
                     }
                     None => agent.thirst = 0.3,
                 }
             }
-            if m.left <= 0.0 {
+            // What hunts and is hungry goes looking: toward the nearest of what it hunts that
+            // is anywhere about, at a walk, until it is near enough to be seen and run down.
+            // (It hunted only what came within sixteen metres of where it stood: in five
+            // minutes of three bears, a fox and three goblins, nothing was struck.)
+            if m.left <= 0.0 && kind.temper == Temper::Hunter && agent.hunger >= HUNTS && m.tired == 0.0 && m.about > 0.3 {
+                let prey = seen.iter().filter(|s| s.temper == Temper::Timid && (s.pos.y - agent.body.pos.y).abs() < 8.0).map(|s| (flat(s.pos), flat(s.pos).distance(me))).filter(|p| p.1 < 70.0).min_by(|a, b| a.1.total_cmp(&b.1));
+                if let Some((at, far)) = prey {
+                    let toward = me + (at - me) * ((far - 10.0).max(0.0) / far.max(0.1));
+                    let reach = clear_way(world, agent, kind.step(), toward);
+                    if reach >= 2.0 {
+                        (m.state, m.left, m.goal) = (State::Roam, 20.0, me + (toward - me).clamp_length_max(reach));
+                        agent.log.trips += 1;
+                    }
+                }
+            }
+            // Out of its hours and away from where it lies up, it goes home.
+            if m.left <= 0.0 && m.state == State::Rest && m.about < 0.3 && me.distance(m.home) > 8.0 {
+                let reach = clear_way(world, agent, kind.step(), m.home);
+                if reach >= 2.0 {
+                    (m.state, m.left, m.goal) = (State::Roam, 40.0, me + (m.home - me).clamp_length_max(reach));
+                    agent.log.trips += 1;
+                }
+            }
+            if m.left <= 0.0 && m.state == State::Rest {
                 // What eats plants grazes because it is hungry: full, it does not; empty, it does little else.
                 let grazes = matches!(kind.diet, crate::life::Diet::Plants | crate::life::Diet::All) && kind.temper != Temper::Hostile;
                 let roll = rng.unit();
                 if grazes && roll < ((agent.hunger - 0.15) * 1.6).clamp(0.0, 0.95) {
                     m.state = State::Graze;
-                    m.left = rng.between(4.0, 10.0);
+                    m.left = rng.between(8.0, 18.0);
+                    m.bout = true;
                 } else if roll < 0.9 || me.distance(m.home) > range(kind) {
                     m.state = State::Roam;
                     m.left = rng.between(8.0, 16.0);
@@ -388,11 +472,23 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
         }
         State::Graze => {
             doing = Some(Act::Eat);
-            // Two hours' grazing is a meal.
-            agent.hunger = (agent.hunger - DT / (crate::sky::DAY / 12.0)).max(0.0);
+            // Four hours' grazing is a meal: what grazes is at it for a third of its day and
+            // more. (At two hours, a deer ate for a sixth of the time it was watched and stood
+            // for two thirds.)
+            agent.hunger = (agent.hunger - DT / (crate::sky::DAY / 6.0)).max(0.0);
             if m.left <= 0.0 {
-                m.state = State::Rest;
-                m.left = rng.between(1.0, 4.0);
+                // Still hungry, it moves on a few steps to fresh grazing and eats again: a
+                // grazing animal goes over the ground as it feeds. (It ate where it stood,
+                // stood a while, and rolled the dice again.)
+                let on = (m.bout && agent.hunger > 0.15).then(|| m.home + Vec2::from_angle(rng.between(0.0, std::f32::consts::TAU)) * rng.between(2.0, range(kind))).filter(|to| me.distance(*to) < 14.0 && dry_ground(world, *to, agent.body.pos.y, kind.height));
+                match on.map(|to| (to, clear_way(world, agent, kind.step(), to))).filter(|(_, far)| *far >= 2.0) {
+                    Some((to, far)) => {
+                        (m.state, m.left, m.goal) = (State::Roam, 8.0, me + (to - me).clamp_length_max(far.min(8.0)));
+                    }
+                    None => {
+                        (m.state, m.left, m.bout) = (State::Rest, rng.between(1.0, 4.0), false);
+                    }
+                }
             }
         }
         State::Roam => {
@@ -402,8 +498,13 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
                 (m.to_water, m.state, m.left) = (false, State::Graze, 6.0);
                 agent.thirst = 0.0;
                 agent.log.drank += 1;
+            } else if (heading.is_none() || m.left <= 0.0) && m.bout {
+                (m.state, m.left) = (State::Graze, rng.between(8.0, 18.0));
             } else if heading.is_none() || m.left <= 0.0 {
-                m.to_water = false;
+                // (Water it set out for and did not come to: it makes do a while, as where there is none.)
+                if std::mem::take(&mut m.to_water) {
+                    agent.thirst = agent.thirst.min(THIRSTS * 0.4);
+                }
                 m.state = State::Rest;
                 m.left = rng.between(2.0, 6.0);
             }
@@ -491,7 +592,12 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
         // No way on from here. A roam is given up; a chase or a flight waits for one to open.
         agent.log.boxed += DT;
         if m.state == State::Roam {
-            m.state = State::Rest;
+            // (And water it cannot get to it gives up on: it set out for it again every few
+            // seconds, two hundred times in five minutes among ten deer.)
+            if std::mem::take(&mut m.to_water) {
+                agent.thirst = agent.thirst.min(THIRSTS * 0.4);
+            }
+            (m.state, m.bout) = (State::Rest, false);
             m.left = rng.between(0.5, 2.0);
         }
     }
@@ -520,7 +626,10 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
             agent.log.stuck += m.since_mark;
             m.veer = -m.veer;
             if m.state == State::Roam {
-                m.state = State::Rest;
+                if std::mem::take(&mut m.to_water) {
+                    agent.thirst = agent.thirst.min(THIRSTS * 0.4);
+                }
+                (m.state, m.bout) = (State::Rest, false);
                 m.left = rng.between(0.5, 2.0);
             } else {
                 agent.want_jump = 0.12;
