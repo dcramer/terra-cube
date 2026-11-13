@@ -38,7 +38,7 @@ pub struct Tuning {
 
 impl Default for Tuning {
     fn default() -> Self {
-        Self { gravity: 22.0, jump_speed: 8.2, ground_accel: 18.0, ground_decel: 26.0, short_jump: 2.4, air_accel: 7.0, step: 0.55, max_fall: 25.0, coyote: 0.1, swim: 0.55 }
+        Self { gravity: crate::matter::GRAVITY, jump_speed: 8.2, ground_accel: 18.0, ground_decel: 26.0, short_jump: 2.4, air_accel: 7.0, step: 0.55, max_fall: 25.0, coyote: 0.1, swim: 0.55 }
     }
 }
 

@@ -1,0 +1,79 @@
+//! What things weigh and how they fall: the numbers of the world's physics, in one place.
+//!
+//! There are three kinds of thing that move, and one world they move in.
+//!
+//! - **The world is cells** (`cube_voxel`), and the only thing anything is stopped by. A
+//!   tree, a wall, a hunk put down: each is cells, and so each is ground to whatever comes
+//!   after it, with nothing more to be said about it.
+//! - **A body** (`body`): a creature or the player, an upright box held out of solid cells.
+//!   It walks up whatever is no higher than its step (`Tuning::step`, 0.55 m: a hunk, a
+//!   thin log, a block of the ground), must jump what is higher, and falls at [`GRAVITY`].
+//!   Bodies push each other apart over the ground and nothing else.
+//! - **A piece** (`loose`): cells cut loose, moving as one rigid thing until it comes to
+//!   rest and is cells again. It falls at [`GRAVITY`] as a body does; a tall one that
+//!   stands on its end goes over about its foot ([`TIPPING`]). In the air it is stopped by
+//!   the world alone: it does not meet bodies or other pieces until it has landed, when
+//!   it is the world and whoever was under it is struck ([`harm`]).
+//!
+//! What a thing weighs changes none of how fast it falls. It changes what it does: how hard
+//! it strikes ([`harm`]), and, as more is built on this, how loud it is, whether it breaks
+//! and whether it can be carried or pushed. So everything has a mass, from what it is made
+//! of ([`density`]) and how much of it there is, and nothing has a weight of its own
+//! written anywhere else.
+
+use cube_voxel::Block;
+
+/// Metres a second a second that a body or a loose thing falls at. More than twice the
+/// earth's, as in most games a person jumps in: at 9.8 a jump hangs. (`body::Tuning`'s own
+/// default is this.)
+pub const GRAVITY: f32 = 22.0;
+
+/// The gravity a tall thing goes over at, about its foot: the earth's. How long a tree takes
+/// to come down is the one thing that says how big it is, and at [`GRAVITY`] a birch was on
+/// the ground 1.8 s after it was cut through and a willow 1.3, where a tree takes four or
+/// five ("when it falls its not really like a tree falling", the developer, 2026-11-13).
+pub const TIPPING: f32 = 9.81;
+
+/// The fastest the top of a thing going over moves, metres a second: its crown is held by
+/// the air, and it does not come down faster and faster to the end.
+pub const SWEEP: f32 = 13.0;
+
+/// Kilograms to a cubic metre of what a block is: green wood, stone, earth, leaf. Nothing
+/// for air and what grows low.
+pub fn density(block: Block) -> f32 {
+    use Block::*;
+    match block {
+        b if b.wood() => 650.0,
+        Billet => 650.0,
+        b if b.foliage() => 40.0,
+        Stone | Slate | Chalk | Rock | Shard | Cobble => 2600.0,
+        Gravel => 1800.0,
+        Sand => 1600.0,
+        Grass | Dirt | Turf | Moss => 1500.0,
+        Litter => 400.0,
+        Snow => 300.0,
+        Water => 1000.0,
+        _ => 0.0,
+    }
+}
+
+/// Health a thing that lands on a body takes from it: by what it weighs and how fast it
+/// came, 400 at the most. A clod of 90 kg dropped half a metre is a bruise (9); a tonne and
+/// a half of trunk at ten metres a second kills.
+pub fn harm(mass: f32, speed: f32) -> f32 {
+    (mass * speed / 50.0).min(400.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn what_is_heavy_strikes_hard_and_what_is_light_does_not() {
+        let cubic = |b: Block| density(b);
+        assert!(cubic(Block::Stone) > cubic(Block::Wood) * 3.0 && cubic(Block::Wood) > cubic(Block::Leaves) * 10.0);
+        // A cubic metre of leaf that comes down is nothing; of wood, a hard blow; of stone, death.
+        let (leaf, wood, stone) = (harm(cubic(Block::Leaves), 8.0), harm(cubic(Block::Wood), 8.0), harm(cubic(Block::Stone), 8.0));
+        assert!(leaf < 10.0 && (60.0..200.0).contains(&wood) && stone > 300.0, "{leaf} {wood} {stone}");
+    }
+}

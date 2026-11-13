@@ -108,7 +108,7 @@ const LEAFY: u8 = 10;
 /// half a metre.
 const SHATTERS: f32 = 4.5;
 /// Metres a second a second that a loose thing falls at (as a body does: `body`).
-const FALL: f32 = 22.0;
+const FALL: f32 = crate::matter::GRAVITY;
 
 /// One cell of a piece: whole, or its bits.
 #[derive(Clone)]
@@ -150,6 +150,8 @@ pub struct Piece {
     /// How tall it is, metres, and the places of it that are tried against the world.
     tall: f32,
     feel: Vec<Vec3>,
+    /// What it weighs, kilograms: by what each cell of it is made of (`matter::density`).
+    pub mass: f32,
     /// Seconds it has been loose.
     pub age: f32,
     /// Times a lump has rolled off what it came down on ([`Loose::step`]).
@@ -169,6 +171,14 @@ impl Piece {
     }
 }
 
+/// What cells weigh, kilograms: each by what it is made of.
+fn mass(cells: &HashMap<IVec3, Part>) -> f32 {
+    cells.values().map(|part| match part {
+        Part::Whole(b) => crate::matter::density(*b) * CELL * CELL * CELL,
+        Part::Bits(bits) => bits.iter().map(|b| crate::matter::density(*b)).sum::<f32>() * BIT * BIT * BIT,
+    }).sum()
+}
+
 /// What has come down: where, how many cells of it were put back, and how many it had.
 #[derive(Clone, Copy, Debug)]
 pub struct Landed {
@@ -182,6 +192,8 @@ pub struct Landed {
     /// A tree coming to rest after its top has already struck: that was the crash, and this
     /// is not heard again nor a second blow.
     pub settled: bool,
+    /// What it weighs, kilograms (`matter::density`).
+    pub mass: f32,
 }
 
 /// What a cut did: the chunks that changed; and whatever whole shapes it bit into, which are
@@ -1488,10 +1500,11 @@ impl Loose {
         let heart = of.iter().map(|c| (c.as_vec3() + 0.5) * CELL).sum::<Vec3>() / of.len() as f32;
         let lean = (heart - middle).with_y(0.0) / (tall * 0.08).max(0.1);
         let way = (push.with_y(0.0).normalize_or_zero() + lean.clamp_length_max(2.5)).try_normalize().unwrap_or(Vec3::X);
-        // (Slowly at first: it hangs on its stump a moment and then goes.)
+        // (Slowly at first: it hangs on its stump, held by what wood is left, and then goes.
+        // Begun leaning three degrees and already turning, it was half way down in a second.)
         // (Hunks one on another are not a pole: they come straight down.)
         let hunk = cells.values().all(|p| matches!(p, Part::Whole(b) if b.hunk()));
-        let over = (!hunk && tall > 2.0 && tall > wide * 2.5).then_some((way, 0.05, 0.16));
+        let over = (!hunk && tall > 2.0 && tall > wide * 2.5).then_some((way, 0.02, 0.04));
         // Where it is tried against the world: some hundreds of its cells, spread through it.
         // (Its wood and stone, not its leaves: a crown goes through another crown, and
         // into the ground a little, before the wood under it is stopped.)
@@ -1521,7 +1534,7 @@ impl Loose {
             }
             None => feel,
         };
-        self.pieces.push(Piece { id: self.next, cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, spin: Vec3::ZERO, brittle, hunk, thing, base: Quat::IDENTITY, settling: false, spare: (pivot, tall * 0.3), tall, feel, age: 0.0, rolls: 0 });
+        self.pieces.push(Piece { id: self.next, mass: mass(&cells), cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, spin: Vec3::ZERO, brittle, hunk, thing, base: Quat::IDENTITY, settling: false, spare: (pivot, tall * 0.3), tall, feel, age: 0.0, rolls: 0 });
         changed
     }
 
@@ -1575,6 +1588,7 @@ impl Loose {
             self.pieces.push(Piece {
                 id: self.next,
                 hunk: false,
+                mass: mass(&cells),
                 cells,
                 // (Turning about its own middle, from where the whole had brought it.)
                 pivot: middle,
@@ -1630,7 +1644,9 @@ impl Loose {
                 }
                 Some((way, tipped, rate)) => {
                     // As a pole on its end goes over: faster the further it has gone.
-                    *rate += 1.5 * FALL / piece.tall.max(1.0) * tipped.sin() * dt;
+                    // (As a pole on its end goes over, at the earth's own gravity, and no
+                    // faster at its top than the air lets a crown go: `matter`.)
+                    *rate = (*rate + 1.5 * crate::matter::TIPPING / piece.tall.max(1.0) * tipped.sin() * dt).min(crate::matter::SWEEP / piece.tall.max(1.0));
                     *tipped += *rate * dt;
                     piece.turn = Quat::from_axis_angle(Vec3::Y.cross(*way).normalize_or(Vec3::Z), *tipped);
                     speed = *rate * piece.tall;
@@ -1719,7 +1735,7 @@ impl Loose {
             // A tree's top has struck: it is heard, its outermost twigs snap off, and it
             // settles about where it struck (below, once every piece has been looked at).
             if let (Some(top), Some((way, ..))) = (struck, piece.over) {
-                self.landed.push(Landed { at: piece.now(top), cells: piece.cells.len(), put: 0, lost: 0, speed, settled: false });
+                self.landed.push(Landed { at: piece.now(top), cells: piece.cells.len(), put: 0, lost: 0, speed, settled: false, mass: piece.mass });
                 // (It comes down whole: its outermost twigs broke from it here, each a lump
                 // of its own, until a felled tree was to keep the shape it stood in.)
                 (piece.shift, piece.pivot) = (piece.pivot + piece.shift + piece.turn * (top - piece.pivot) - top, top);
@@ -1728,7 +1744,7 @@ impl Loose {
                 continue;
             }
             if piece.brittle && speed > SHATTERS && piece.cells.len() >= 8 {
-                self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put: 0, lost: 0, speed, settled: false });
+                self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put: 0, lost: 0, speed, settled: false, mass: piece.mass });
                 self.shatter(piece, speed, 1.0, |_| false);
                 continue;
             }
@@ -1773,7 +1789,7 @@ impl Loose {
             // And what of it has come down on nothing (a limb left sticking out over a
             // hollow, a part cut off from the rest by what it fell across) falls in its turn.
             changed.extend(self.loosen(world, lo - 1, hi + 1, Vec3::X));
-            self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put, lost, speed, settled: piece.settling });
+            self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put, lost, speed, settled: piece.settling, mass: piece.mass });
         }
         self.pieces.extend(settling);
         self.pieces.extend(settling_rolls);

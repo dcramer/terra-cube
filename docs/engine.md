@@ -39,6 +39,17 @@ The rule this protects: **the simulation never needs a window.** A big sandbox w
 - **Deep water is harder to see through**: a water face's alpha grows with the water under it, so a ford shows its bed and the sea does not. The sea beyond the island is four plain sheets out past the fog.
 - **Not yet**: greedy meshing (measured elsewhere at 50 to 350 µs a chunk for plain meshing, so not urgent), meshing off the main thread, level of detail, chunk streaming, saving.
 
+### How things move and meet (`cube_sim::matter`, 2026-11-13)
+
+The developer: "our physics engine is key... how weight works like with the tree falling, how everything collides with each other, what you can and cannot just 'walk over', speed of things. should make sure we've ... [made] it well designed and that ill continue to work as we add more and more things to the world." Until then each rule had been written where it was first needed. They are one design, and its numbers are in one module (`matter`, whose head says the whole of it):
+
+- **The world is cells, and the only thing anything is stopped by.** A tree, a wall, a hunk put down is cells, so it is ground to whatever comes after it and nothing more has to be said about it. A new kind of thing in the world needs no collider of its own: it is cells, or it is one of the two below.
+- **A body** (a creature, the player) is an upright box held out of solid cells. It walks up what is no higher than its step (0.55 m: a hunk, a thin log, a block of the ground) and must jump what is higher; that one number is what can be walked over. Bodies push each other apart over the ground.
+- **A piece** is cells cut loose, one rigid thing until it comes to rest and is cells again. In the air it is stopped by the world alone: it does not meet bodies or other pieces until it has landed, when it is the world, and whoever was under it is struck.
+- **One gravity** (22 m/s², more than twice the earth's, as a jump wants) for bodies and for pieces that drop. **A tall thing that goes over about its foot goes at the earth's** (9.81), no faster at its top than 13 m/s, and begins slowly as a tree hangs on its hinge: how long a tree takes to come down is what says how big it is. At the one gravity a birch was down 1.8 s after it was cut through, its top at 25 m/s; it now takes 3.5 s and comes at 13 (a willow 1.3 s then, 2.5 now).
+- **What a thing weighs changes none of how fast it falls; it changes what it does.** Everything has a mass, from what it is made of (`matter::density`: wood 650 kg a cubic metre, stone 2,600, earth 1,500, leaf 40) and how much of it there is, and nothing has a weight written anywhere else. What lands on a body takes health by its mass and its speed (`matter::harm`): it had been by its speed and the cube root of how many cells it was, so a cubic metre of leaf struck as a cubic metre of stone. A hunk of wood is 80 kg and one of stone 325, which carrying does not yet know.
+- **Not done, and where the next things go:** pieces do not meet each other or a body in the air; nothing is pushed by a body; how loud a landing is and whether a thing breaks still go by cells and speed, not by mass.
+
 ### What is cut loose falls (`cube_sim::loose`, 2026-11-12)
 
 The role model is Teardown: everything can be cut, and what a cut leaves standing on nothing comes down. Ours is an open world made from a seed, not a level, so it is done on the world's own cells with no physics engine.

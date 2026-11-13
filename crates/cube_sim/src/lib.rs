@@ -12,6 +12,7 @@ pub mod items;
 pub mod cover;
 pub mod flora;
 pub mod life;
+pub mod matter;
 pub mod loose;
 pub mod mind;
 pub mod plants;
