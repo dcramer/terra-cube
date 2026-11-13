@@ -573,7 +573,8 @@ fn joined_command(args: &Args) -> ! {
                 let b = world.get(c);
                 if b.foliage() {
                     leafed += 1;
-                } else if b.wood() || b == Block::Broken {
+                } else if b.wood() || b == Block::Broken && world.bits_at(c).is_some_and(|bits| bits.iter().any(|b| b.wood())) {
+                    // (A broken cell with wood in it: one with none is the ground's, broken by something else.)
                     cells.insert(c);
                 } else if b == Block::Air {
                     // (Its shape has a cell here and the world has none. Its roots in the
@@ -587,12 +588,27 @@ fn joined_command(args: &Args) -> ! {
         let (mut seen, mut queue) = (std::collections::HashSet::from([start]), std::collections::VecDeque::from([start]));
         while let Some(c) = queue.pop_front() {
             for d in (-1..=1).flat_map(|x| (-1..=1).flat_map(move |y| (-1..=1).map(move |z| IVec3::new(x, y, z)))) {
-                if cells.contains(&(c + d)) && seen.insert(c + d) {
-                    queue.push_back(c + d);
+                // (Or through the swell of its foot, which is written to the bit wider than
+                // its shape at the size of a cell and is its wood all the same, as a cut
+                // takes it, `loose::work`: without it ten clumps of stems each had one cell
+                // at the ground that no cell of their own shape touched.)
+                let n = c + d;
+                let swell = (n.y as f32) * CELL < foot.a.y + 1.0 && (world.get(n) == Block::Broken || world.get(n).wood()) && ((n.as_vec3() + 0.5) * CELL).with_y(0.0).distance(foot.a.with_y(0.0)) < foot.ra.max(foot.rb) * 2.6 + 1.0;
+                if (cells.contains(&n) || swell) && seen.insert(n) {
+                    queue.push_back(n);
                 }
             }
         }
-        let apart = cells.len() - seen.len();
+        // (Not a root's end lying on the ground by its foot: that is joined to it through
+        // the earth, and stays where it is when the tree is cut.)
+        let root = |c: &IVec3| (c.y as f32) * CELL < foot.a.y + 0.75 && world.get(*c - IVec3::Y).ground();
+        let apart = cells.difference(&seen).filter(|c| !root(c)).count();
+        if apart > 0 && std::env::var_os("WORLD_VERBOSE").is_some() {
+            for c in cells.difference(&seen).filter(|c| !root(c)).take(2) {
+                let round: Vec<String> = (-1..=1).flat_map(|y| (-1..=1).flat_map(move |z| (-1..=1).map(move |x| IVec3::new(x, y, z)))).map(|d| format!("{:?}", world.get(*c + d)).chars().take(2).collect()).collect();
+                println!("apart: {:?} at {c:?}, {:.1} m up its tree · round it {}", world.get(*c), c.y as f32 * CELL - foot.a.y, round.join(" "));
+            }
+        }
         if apart == 0 {
             whole += 1;
         } else {

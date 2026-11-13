@@ -79,6 +79,7 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 	@tools/fells.sh 30
 	@for seed in 1 7; do cargo world quarry --seed $$seed | grep -E '^FAIL' | sed "s/^/seed $$seed: /"; done; cargo world quarry | tail -1 | sed 's/^ok$$/ok quarry: a boulder dug out from under comes down, breaks if it comes down hard, and its stone lies where it fell/'
 	@for seed in 5 7; do cargo world hunks --seed $$seed | grep -E '^FAIL' | sed "s/^/seed $$seed: /"; done; cargo world hunks | tail -1 | sed 's/^ok$$/ok hunks: a tree and a boulder worked to the pieces that are carried, each whole and lying on something, one taken up and put down/'
+	@for seed in 1 3; do cargo world joined --seed $$seed | grep -E '^FAIL' | sed "s/^/seed $$seed: /"; done; cargo world joined | tail -1 | sed 's/^ok$$/ok joined: every tree near the start, as the cells it is once cut into, is one body with its foot/'
 	@cargo world replay | tail -1 | sed 's/^ok$$/ok replay: the land made again from its seed with the same edits done to it is the same world/'
 	@tools/forget.sh
 	@tools/dig.sh

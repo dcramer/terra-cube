@@ -106,6 +106,8 @@ pub struct Args {
     pub speed: f32,
     /// The player starts with a torch lit.
     pub torch: bool,
+    /// The player starts with a hunk of wood in his hands (to try F on, with real keys).
+    pub carry: bool,
     /// A trial body of boxes, moved by its skeleton and its feet and no clips (`limbs`).
     pub limbs: bool,
     /// A person is moved by clips alone, as before the two-legged walker (`stride`): to set the two side by side.
@@ -172,6 +174,7 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
                                         the first of spring: 7 days a season (3 mid spring, 10 mid
                                         summer, 17 autumn, 24 winter), and a moon full on days 3, 10…
         … --torch                       the player carries a lit torch (T lights it and puts it out)
+        … --carry                       the player starts with a hunk of wood in his hands (F puts it down and takes it up)
         … --hud bar|pack|admin          in a scene with --play: the bar, health and clock drawn over it,
                                         with the pack or the admin panel open
         … --no-reflect                  forward rendering, and water that reflects only the sky
@@ -290,6 +293,7 @@ fn parse_args() -> Args {
             "--quiet" => args.quiet = true,
             "--speed" => args.speed = it.next().and_then(|v| v.parse().ok()).unwrap_or(1.0),
             "--torch" => args.torch = true,
+            "--carry" => args.carry = true,
             "--limbs" => args.limbs = true,
             "--clips-only" => args.clips_only = true,
             "--as-played" => args.as_played = true,

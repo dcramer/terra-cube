@@ -304,19 +304,23 @@ fn trace(time: Res<Time>, args: Res<Args>, live: Res<Live>, controlled: Query<(&
         let b = &agent.body;
         let yaw = cameras.iter().next().map_or(0.0, |o| o.yaw);
         println!(
-            "play t={:.1} pos={:.1},{:.1},{:.1} speed={:.2} grounded={} swimming={} clip={clip}x{:.2} yaw={yaw:.2} first={} health={:.0} held={} kills={}",
-            clock.0, b.pos.x, b.pos.y, b.pos.z, b.ground_speed(), b.grounded, b.swimming, creature.speed, c.first_person, agent.health, agent.pack.as_ref().and_then(|p| p.held()).map_or("nothing", |i| i.name()), agent.log.kills
+            "play t={:.1} pos={:.1},{:.1},{:.1} speed={:.2} grounded={} swimming={} clip={clip}x{:.2} yaw={yaw:.2} first={} health={:.0} held={} carries={} kills={}",
+            clock.0, b.pos.x, b.pos.y, b.pos.z, b.ground_speed(), b.grounded, b.swimming, creature.speed, c.first_person, agent.health, agent.pack.as_ref().and_then(|p| p.held()).map_or("nothing", |i| i.name()), agent.carries.map_or("nothing".to_owned(), |b| format!("{b:?}")), agent.log.kills
         );
     }
 }
 
 /// Hands the controls to the controlled creature's body, turned to the way the camera faces.
-fn drive(mut controls: ResMut<Controls>, time: Res<Time>, args: Res<Args>, terrain: Option<Res<Terrain>>, mut live: ResMut<Live>, cameras: Query<&Orbit>, mut controlled: Query<(&Controlled, &Mover, &mut Visibility)>) {
+fn drive(mut controls: ResMut<Controls>, time: Res<Time>, args: Res<Args>, terrain: Option<Res<Terrain>>, mut live: ResMut<Live>, cameras: Query<&Orbit>, mut controlled: Query<(&Controlled, &Mover, &mut Visibility)>, mut carried: Local<bool>) {
     // A scripted route runs the way `--yaw` says, whatever the camera is doing.
     let yaw = if args.scene.is_some() { args.yaw } else { cameras.iter().next().map_or(0.0, |o| o.yaw) };
     // The camera looks along -Z turned by its yaw; right is +X turned the same.
     let (sin, cos) = yaw.sin_cos();
     for (c, mover, mut visibility) in &mut controlled {
+        // (`--carry`: a hunk of wood in his hands from the start.)
+        if args.carry && !std::mem::replace(&mut *carried, true) {
+            live.0.lifted(mover.id, cube_voxel::Block::Billet);
+        }
         // What is in hand, and using it: the simulation says what that does.
         if let Some(pack) = live.agent_mut(mover).and_then(|a| a.pack.as_mut()) {
             match controls.hold.take() {

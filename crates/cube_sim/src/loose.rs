@@ -592,6 +592,22 @@ pub fn hunk_at(world: &World, cell: IVec3) -> Option<(IVec3, Block)> {
     hunk().all(|d| world.get(corner + d) == block).then_some((corner, block))
 }
 
+/// Every cell joined to one, by faces, edges or corners, that `holds` says is of the same
+/// stuff: the piece a blow has struck. No further than 6,000 cells.
+fn joined(world: &World, first: IVec3, holds: impl Fn(&World, IVec3) -> bool) -> Vec<IVec3> {
+    let (mut body, mut queue, mut seen) = (vec![first], VecDeque::from([first]), HashSet::from([first]));
+    while let Some(cell) = queue.pop_front() {
+        for side in round() {
+            let next = cell + side;
+            if body.len() < 6_000 && holds(world, next) && seen.insert(next) {
+                body.push(next);
+                queue.push_back(next);
+            }
+        }
+    }
+    body
+}
+
 /// Puts hunks down: as many as asked, at the first of the places given (each a lowest
 /// corner, with what it is ordered by) that have room. Says how many found room.
 fn strew(world: &mut World, mut places: Vec<(f32, IVec3)>, many: usize, block: Block, changed: &mut HashSet<IVec3>) -> usize {
@@ -951,17 +967,8 @@ impl Loose {
         if stands((first.as_vec3() + 0.5) * CELL) {
             return None;
         }
-        // The piece: every cell of cut wood joined to that one, by faces, edges or corners.
-        let (mut body, mut queue, mut seen) = (vec![first], VecDeque::from([first]), HashSet::from([first]));
-        while let Some(cell) = queue.pop_front() {
-            for side in round() {
-                let next = cell + side;
-                if body.len() < 6_000 && holds(world, next) && seen.insert(next) {
-                    body.push(next);
-                    queue.push_back(next);
-                }
-            }
-        }
+        // The piece: every cell of cut wood joined to that one.
+        let body = joined(world, first, holds);
         // Its length: from the cell furthest from the blow to the one furthest from that.
         let middle = |c: &IVec3| (c.as_vec3() + 0.5) * CELL;
         let furthest = |from: Vec3| body.iter().map(middle).max_by(|a, b| a.distance(from).total_cmp(&b.distance(from)).then_with(|| (a.x, a.y, a.z).partial_cmp(&(b.x, b.y, b.z)).unwrap_or(std::cmp::Ordering::Equal))).unwrap_or(from);
@@ -1026,6 +1033,42 @@ impl Loose {
         Some(cut)
     }
 
+    /// A blow of a pick at loose stone: rubble, what a boulder or a cliff became when it came
+    /// down, or what is left where a boulder broke. As timber to an axe: the piece struck
+    /// is all the loose stone joined to what the blow landed on, and it breaks into hunks,
+    /// as many as it has stone for; a scrap of under half a hunk is gone in chips. Nothing,
+    /// if no loose stone is there, or it is more than a blow breaks (some 12 m3).
+    fn rubble(&mut self, world: &mut World, at: Vec3, push: Vec3) -> Option<Cut> {
+        let holds = |world: &World, cell: IVec3| match world.get(cell) {
+            Block::Broken => world.bits_at(cell).is_some_and(|b| b.contains(&Block::Shard)),
+            b => b == Block::Shard,
+        };
+        let c = (at / CELL).floor().as_ivec3();
+        let first = (-2..=2).flat_map(|y| (-2..=2).flat_map(move |z| (-2..=2).map(move |x| c + IVec3::new(x, y, z)))).filter(|cell| holds(world, *cell)).map(|cell| (((cell.as_vec3() + 0.5) * CELL).distance(at), cell)).filter(|(d, _)| *d < 0.45).min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| (a.1.y, a.1.z, a.1.x).cmp(&(b.1.y, b.1.z, b.1.x))))?.1;
+        let body = joined(world, first, holds);
+        if body.len() > 800 {
+            return None;
+        }
+        self.journal.push((self.steps, Edit::Chip { at, push }));
+        let mut cut = Cut::default();
+        let (lo, hi) = body.iter().fold((IVec3::MAX, IVec3::MIN), |(lo, hi), c| (lo.min(*c), hi.max(*c)));
+        let middle = body.iter().map(|c| (c.as_vec3() + 0.5) * CELL).sum::<Vec3>() / body.len() as f32;
+        // (From the ground up and from its middle out, on the squares its cells are over.)
+        let places: Vec<(f32, IVec3)> = body.iter().map(|c| IVec3::new(c.x.div_euclid(HUNK) * HUNK, c.y, c.z.div_euclid(HUNK) * HUNK)).collect::<HashSet<_>>().into_iter().map(|corner| (corner.y as f32 * 8.0 + ((corner.as_vec3() + HUNK as f32 * 0.5) * CELL - middle).with_y(0.0).length(), corner)).collect();
+        let own: HashSet<IVec3> = body.iter().copied().collect();
+        let stone = emptied(world, lo, hi, |b| b == Block::Shard, |p| own.contains(&(p / CELL).floor().as_ivec3()), &mut cut.changed);
+        let many = (stone as f32 / (SPLIT * SPLIT * SPLIT * HUNK * HUNK * HUNK) as f32).round() as usize;
+        let put = strew(world, places, many, Block::Cobble, &mut cut.changed);
+        for k in 0..4 {
+            self.shed.push((middle + Vec3::new(k as f32 * 0.15 - 0.2, 0.2, 0.0), Block::Shard));
+        }
+        trace(format_args!("chip: rubble of {} cells broke into {put} hunks of {many}", body.len()));
+        cut.changed.extend(self.loosen(world, lo - HUNK - 1, hi + HUNK + 1, push));
+        cut.taken[Stuff::Stone as usize] = stone;
+        self.cuts.push((at, cut.taken));
+        Some(cut)
+    }
+
     /// A blow of a pick on a boulder. As an axe to a tree, so a pick to a boulder: it is
     /// chipped, a little off it at each blow, until it has taken as many as its size asks
     /// ([`CHIPS`]), and at the last it breaks into hunks, as many as it has stone for, lying
@@ -1040,7 +1083,9 @@ impl Loose {
         let cut = work(world, at, 0.3, forms, Some(Stuff::Stone), &[]);
         self.note(&cut, forms);
         let deep = |t: &Thing| t.stone.as_ref().filter(|s| t.blows < CHIPS(s.radii.max_element())).map(|s| ((at - s.middle) / (s.radii + 0.35)).length_squared()).filter(|d| *d < 1.0);
-        let n = self.things.iter().enumerate().filter_map(|(n, t)| deep(t).map(|d| (d, n))).min_by(|a, b| a.0.total_cmp(&b.0))?.1;
+        let Some(n) = self.things.iter().enumerate().filter_map(|(n, t)| deep(t).map(|d| (d, n))).min_by(|a, b| a.0.total_cmp(&b.0)).map(|b| b.1) else {
+            return self.rubble(world, at, push);
+        };
         let mut cut = cut;
         let Some(stone) = self.things[n].stone.clone() else { return Some(cut) };
         let needs = CHIPS(stone.radii.max_element());
@@ -2194,6 +2239,14 @@ mod tests {
         let all: Vec<IVec3> = (-40..40).flat_map(|x| (-40..40).flat_map(move |z| (0..24).map(move |y| IVec3::new(x, y, z)))).filter(|c| w.get(*c) == Block::Cobble).collect();
         assert!(all.iter().all(|c| hunk_at(&w, *c).is_some()));
         assert!(all.iter().all(|c| c.y == 0 || w.get(*c - IVec3::Y).solid()), "a hunk of stone in the air");
+        // Rubble: stone that came down and broke is loose stone, and a blow at a lump of it
+        // makes hunks of it, to the nearest one.
+        w.fill(Vec3::new(6.0, 0.0, 6.0), Vec3::new(6.75, 0.75, 7.0), Block::Shard);
+        assert!(loose.chip(&mut w, Vec3::new(6.3, 0.7, 6.3), Vec3::NEG_Y, &[&form]).is_some());
+        run(&mut loose, &mut w);
+        assert_eq!(count(&w, &|b| b == Block::Shard), 0);
+        let (cobbles, all) = (cobbles + 40, (-40..40).flat_map(|x| (-40..40).flat_map(move |z| (0..24).map(move |y| IVec3::new(x, y, z)))).filter(|c| w.get(*c) == Block::Cobble).collect::<Vec<IVec3>>());
+        assert_eq!(all.len(), cobbles, "36 cells of rubble are four and a half hunks: five, to the nearest");
         // A hunk is no boulder and is not cut: a pick does nothing to it, nor to the ground.
         let top = (all.iter().max_by_key(|c| c.y).unwrap().as_vec3() + 0.5) * CELL;
         assert!(loose.chip(&mut w, top, Vec3::NEG_Y, &[&form]).is_none());
@@ -2202,6 +2255,7 @@ mod tests {
         // And the same blows on the same land give the same land.
         let (mut again, mut form2) = (floor(), Form::default());
         again.ellipsoid(Vec3::new(0.1, 0.6, 0.1), Vec3::new(1.0, 0.8, 0.9), Block::Rock, true);
+        again.fill(Vec3::new(6.0, 0.0, 6.0), Vec3::new(6.75, 0.75, 7.0), Block::Shard);
         form2.stones.push(form.stones[0].clone());
         replay(&mut again, &[&form2], &loose.journal);
         assert_eq!(count(&again, &|b| b == Block::Cobble), cobbles);
