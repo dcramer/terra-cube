@@ -1436,4 +1436,32 @@ mod tests {
         assert!(lies < 1.5, "it lies {lies} m up");
         assert_ne!(w.get(IVec3::new(6, 12, 0)), Block::Air, "the other tree went with it");
     }
+
+    #[test]
+    fn a_wall_built_of_stone_stands_and_comes_down_when_its_foot_is_cut_away() {
+        let mut w = floor();
+        let mut loose = Loose::default();
+        // Eight cells long and six high, a piece at a time, each put on what is there.
+        for y in 0..6 {
+            for x in 0..8 {
+                loose.put(&mut w, (IVec3::new(x, y, 0).as_vec3() + 0.5) * CELL, 0.155, Block::Stone);
+            }
+        }
+        run(&mut loose, &mut w);
+        let standing = |w: &World| (0..6).flat_map(|y| (0..8).map(move |x| IVec3::new(x, y, 0))).filter(|c| has(w, *c, false)).count();
+        assert!(loose.pieces.is_empty() && standing(&w) == 48, "{} of 48 cells stand, {} loose", standing(&w), loose.pieces.len());
+        // A doorway picked through it leaves the wall standing over the gap.
+        loose.cut(&mut w, Vec3::new(1.0, 0.25, 0.125), 0.3, Vec3::Z, &[], Some(Stuff::Stone));
+        run(&mut loose, &mut w);
+        assert!(standing(&w) >= 40 && w.get(IVec3::new(4, 5, 0)) == Block::Stone, "a hole brought it down: {} stand", standing(&w));
+        // Its whole foot cut away, what was over it comes down, and its stone is on the ground.
+        for x in 0..9 {
+            loose.cut(&mut w, Vec3::new(x as f32 * CELL, 0.125, 0.125), 0.3, Vec3::Z, &[], Some(Stuff::Stone));
+        }
+        assert!(!loose.pieces.is_empty(), "the wall stands on nothing");
+        run(&mut loose, &mut w);
+        let top = (0..12).rev().find(|y| (-8..16).any(|x| (-8..8).any(|z| w.get(IVec3::new(x, *y, z)) != Block::Air))).unwrap_or(0);
+        let stone: usize = (-12..20).flat_map(|x| (-12..12).flat_map(move |z| (0..12).map(move |y| IVec3::new(x, y, z)))).filter(|c| has(&w, *c, false)).count();
+        assert!(top < 6 && stone >= 20, "it lies {top} cells high, {stone} cells of stone on the ground");
+    }
 }
