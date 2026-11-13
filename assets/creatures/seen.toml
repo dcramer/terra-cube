@@ -4,11 +4,11 @@
 # ground, and a mark made from a small sheet is not a look. Look at a pose large, with the
 # floor line in the picture.) (As of 2026-11-12, from the sheets looked at that day.)
 player = ["idle", "walk", "run", "sprint", "jump", "fall", "land", "swim", "attack", "hurt", "die"]
-troll = ["sprint", "swim", "hurt", "die", "attack"]
-goblin = ["attack", "die"]
-ogre = ["attack", "die"]
-golem = ["attack", "die"]
-shambler = ["attack", "die"]
+troll = ["sprint", "swim", "hurt", "die", "attack", "walk", "run", "jump"]
+goblin = ["attack", "die", "walk", "run", "jump", "hurt"]
+ogre = ["attack", "die", "walk", "run", "jump", "hurt"]
+golem = ["attack", "die", "walk", "run", "jump", "hurt"]
+shambler = ["attack", "die", "walk", "run", "jump", "hurt"]
 wolf = ["walk", "run", "sprint", "attack", "die", "jump", "fall", "land", "swim"]
 deer = ["walk", "run", "sprint", "attack", "die", "eat", "jump", "fall", "land", "swim"]
 bear = ["attack", "die", "jump", "fall", "land", "swim"]
