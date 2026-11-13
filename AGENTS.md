@@ -58,7 +58,7 @@ cargo world map shots/map.png      # one picture from above with where every cre
 make window                        # the real window on an Xvfb, driven by real key presses (tools/xkeys), judged from the trace
 make prove                         # every judgment in one go, a line each: check, survey, run, life, sound levels, what is heard, fight, swim, window, seasons
 make sound                         # five minutes heard in a meadow by day and a shore from dusk, judged from the trace: files, repeats, level against a footfall (`tools/audio/listen.sh forest 21` for any place and hour)
-make pace                          # the player run across the world on the graphics card: load time and every frame's time while he ran, against bars (`cargo world cost`: what a region and a mesh cost, by part)
+make pace                          # the player run across the world on the graphics card: load time and every frame's time while he ran, against bars (`make digpace`: the same while he digs sixty holes; `cargo world cost`: what a region and a mesh cost, by part)
 make swim                          # the player put in deep water in the real game: floats, swims, is heard (`cargo world find deep` finds it)
 make fight                         # the player fights a goblin in the real game, judged from the trace: hit, kill, sounds
 make grown                         # shots/grown/*.png: every kind of tree and rock alone, whole and close; `make floors`: the ground of a trail, forest, meadow and shore in one sheet
