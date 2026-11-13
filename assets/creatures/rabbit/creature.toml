@@ -1,11 +1,17 @@
 name = "Rabbit"
 kind = "wildlife"
-plan = "quadruped"
+plan = "walked"
 subject = "a small brown rabbit with long upright ears, standing on all four feet"
 height = 0.3
 # A rabbit does not walk: it hops, slow or fast.
 hops = true
-rests = "crouch"
+# (And rests as it sits: on its haunches.)
+rests = "stands"
+# It sits low on its haunches, standing and going: a third of the way down on its legs.
+low = 0.3
+# (So its blow, its flinch and its death are made from where it sits, not carried from the
+# wolf, which stands tall.)
+made = ["attack", "hurt", "die"]
 
 [life]
 temper = "timid"

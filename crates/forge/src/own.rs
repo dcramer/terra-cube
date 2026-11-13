@@ -46,6 +46,8 @@ pub struct Own {
     /// Where the tail ends, from its last bone, and how thick it is; the file's units.
     tip: Vec3,
     thick: f32,
+    /// How far down on its legs it stands and goes (`Creature::low`).
+    pub low: f32,
 }
 
 /// Whether a model was rigged here: it has our bones.
@@ -264,7 +266,7 @@ impl Own {
         if std::env::var_os("FORGE_TRACE").is_some() {
             println!("own: legs read off the mesh: {} · {shape:.2?}", read.join(" · "));
         }
-        let mut own = Self { build, shape, metres, origin, right, ahead, tip: Vec3::ZERO, thick: 0.0 };
+        let mut own = Self { build, shape, metres, origin, right, ahead, tip: Vec3::ZERO, thick: 0.0, low: 0.0 };
 
         // Where each bone is as it stands: the walker's own joints, stood.
         let stood = Walker::shaped(build, shape, Vec3::ZERO, 0.0);
@@ -517,7 +519,7 @@ impl Own {
             for tick in 0..(14.0 / dt) as usize {
                 gone += pace * dt;
                 let before = walker.steps[0];
-                walker.step(dt, Vec3::Z * gone, 0.0, 0.0, |_, _| 0.0);
+                walker.step(dt, Vec3::Z * gone, 0.0, self.low, |_, _| 0.0);
                 let stepped = walker.steps[0] != before;
                 if began.is_none() && stepped && tick as f32 * dt > 3.0 {
                     began = Some(tick);
@@ -536,7 +538,7 @@ impl Own {
             clips::close_loop(&mut frames);
         } else {
             // Standing; or lain down, and held there.
-            let rest = if name == "lie" { 1.0 } else { 0.0 };
+            let rest = if name == "lie" { 1.0 } else { self.low };
             for _ in 0..(5.0 / dt) as usize {
                 walker.step(dt, Vec3::ZERO, 0.0, rest, |_, _| 0.0);
             }

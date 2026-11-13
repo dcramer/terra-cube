@@ -153,6 +153,11 @@ pub struct Creature {
     /// (`strider.rs`): of `idle`, `walk`, `run`, `sprint`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub walked: Vec<String>,
+    /// For what goes on our own skeleton: how far down on its legs it stands and goes, of 1
+    /// (which is lying on its belly). A hedgehog's model has legs as long as its body is
+    /// deep, and stood straight on them it was a ball on stilts: it goes at 0.5.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub low: f32,
     /// It goes by hopping: hind feet together, then fore feet together (a rabbit, a hare).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hops: bool,
@@ -277,4 +282,8 @@ pub fn ids() -> Vec<String> {
         .collect();
     out.sort();
     out
+}
+
+fn is_zero(v: &f32) -> bool {
+    *v == 0.0
 }

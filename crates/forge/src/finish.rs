@@ -118,7 +118,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         crate::shaped::rig(&mut glb, creature.built.is_some())?;
     }
     // And what goes on four legs may be given our own skeleton, the walker's (`own`).
-    let owned = if plan.rig == "own" { Some(crate::own::Own::rig(&mut glb, creature.height)?) } else { None };
+    let owned = if plan.rig == "own" { Some(crate::own::Own::rig(&mut glb, creature.height).map(|mut own| { own.low = creature.low; own })?) } else { None };
     let skeleton = Skeleton::read(&glb)?;
     // (A model built here faces +z: it was built so.)
     // And a person may be moved by the two-legged walker in place of anybody's clips (`strider`).

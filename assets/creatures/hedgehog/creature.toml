@@ -5,6 +5,11 @@ subject = "a hedgehog with a dome of brown spines and a pale pointed face"
 height = 0.15
 # Bowed right down to feed, its fore feet leave the ground: its clips that are not gaits at half.
 rests = "stands"
+# Its model has legs as long as its body is deep: it stands and goes half way down on them.
+low = 0.5
+# (So its blow, its flinch and its death are made from where it stands, not carried from the
+# wolf, which stands tall: each began with it up on straight legs.)
+made = ["attack", "hurt", "die"]
 
 [life]
 temper = "timid"
