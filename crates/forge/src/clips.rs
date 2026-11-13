@@ -1041,6 +1041,12 @@ fn eat(sk: &Skeleton, roles: &Roles) -> Clip {
     let along = |j: usize| sk.position(j).dot(roles.forward);
     let shoulder = roles.legs.iter().filter(|l| l.front).map(|l| along(l.chain[0])).fold(f32::MIN, f32::max);
     let mut neck: Vec<usize> = roles.spine.iter().chain(&roles.head).copied().filter(|&j| roles.head.contains(&j) || Some(&j) == roles.spine.last() || (shoulder > f32::MIN && along(j) > shoulder - 0.2 * roles.length)).collect();
+    // (On our own skeleton, `own.rs`, the spine is one bone and it is the whole trunk: it is
+    // no part of a neck. Counted as one, the trunk pitched and the legs folded to keep the
+    // feet down: a pony knelt to eat.)
+    if sk.joints.iter().any(|j| j.name == "hl_shank") {
+        neck.retain(|&j| j != sk.root);
+    }
     // (No further than the bone the muzzle follows: a goat's last "head" bone is its horns.)
     if let Some(end) = roles.nose.and_then(|(j, _)| neck.iter().position(|&n| n == j)) {
         neck.truncate(end + 1);
@@ -1080,7 +1086,14 @@ fn eat(sk: &Skeleton, roles: &Roles) -> Clip {
             };
             // (A bone behind the shoulders carries the chest: it gives a little and no more. Turned
             // as far as a neck, a bear folded in half and a toad's fore legs were pulled out.)
-            let most = if shoulder > f32::MIN && along(j) < shoulder - 0.05 * roles.length { 0.45 } else { 1.4 };
+            // (And on our own skeleton the neck is one bone, which a thick neck cannot be
+            // bent far about: a boar's skin was pulled to nearly three times its length.)
+            let own = sk.joints.iter().any(|j| j.name == "hl_shank");
+            let most = if shoulder > f32::MIN && along(j) < shoulder - 0.05 * roles.length { 0.45 } else if own {
+                // (Less, the shorter its neck is for its height: a boar has next to none.)
+                let long = sk.joints[j].children.first().map_or(0.0, |c| sk.position(*c).distance(sk.position(j)));
+                0.75 * (long / (0.3 * roles.height)).clamp(0.25, 1.0)
+            } else { 1.4 };
             let turn = (total * share).clamp(-most, most);
             pose.rotations[j] = sk.turned(j, pitch(roles, turn));
             so_far += turn;

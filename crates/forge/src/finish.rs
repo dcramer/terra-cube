@@ -5,7 +5,7 @@
 
 use crate::clips::{self, Clip};
 use crate::glb::Glb;
-use crate::rig::{Facing, Roles, Skeleton};
+use crate::rig::{Pose, Facing, Roles, Skeleton};
 use crate::spec::{self, ClipMeta, Creature, Meta, Plan};
 use anyhow::{Context, Result, bail};
 use glam::{Quat, Vec3};
@@ -423,6 +423,18 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         // lowest of its skin is under the floor. (Six made rest poses were, by 4% to 16% of
         // the creature's height, five of them marked as looked at: the check for it was
         // written only after the developer saw the wolf's paws in the floor.)
+        // On our own skeleton, eating that tears the skin is eased back toward standing until
+        // it does not: a boar has next to no neck, and its head cannot be brought as low as
+        // a deer's without pulling its skin to twice its length.
+        if owned.is_some() && name == "eat" {
+            let (bar, rest, whole) = (plan.max_stretch.unwrap_or(1.2), skeleton.rest(), clip.frames.clone());
+            for much in [1.0f32, 0.85, 0.7, 0.55, 0.4, 0.25] {
+                clip.frames = whole.iter().map(|f| Pose { rotations: f.rotations.iter().zip(&rest.rotations).map(|(r, at_rest)| at_rest.slerp(*r, much)).collect(), root_t: rest.root_t.lerp(f.root_t, much) }).collect();
+                if crate::check::tears(&glb, &skeleton, &clip.frames) <= bar * 0.95 {
+                    break;
+                }
+            }
+        }
         // And what has died rests on the ground, however its death was made: not under it
         // and not over it. (A frog, a toad and a tortoise made to roll onto their backs ended
         // a hand's breadth up in the air.) By how far the last of it is off, eased in over
