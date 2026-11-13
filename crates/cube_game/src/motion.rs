@@ -89,10 +89,20 @@ fn populate(mut commands: Commands, args: Res<crate::Args>, registry: Res<Regist
 /// The wild creatures that are drawn are the ones being lived: one that wakes (the player
 /// has come near) gets its model, one that sleeps or is gone loses it. The island holds
 /// thousands; a couple of hundred are ever on screen.
-fn mirror(mut commands: Commands, registry: Res<Registry>, mut live: ResMut<Live>, cameras: Query<&GlobalTransform, With<Camera3d>>, controlled: Query<&Mover, With<Controlled>>, wild: Query<(Entity, &Mover), With<Wild>>) {
+fn mirror(mut commands: Commands, registry: Res<Registry>, mut live: ResMut<Live>, cameras: Query<&GlobalTransform, With<Camera3d>>, controlled: Query<&Mover, With<Controlled>>, wild: Query<(Entity, &Mover), With<Wild>>, mut stepped: Local<u64>) {
     // Whoever is watching: the creature being played, or the camera.
     let watcher = controlled.iter().next().and_then(|m| live.agent(m)).map(|a| a.body.pos).or(cameras.iter().next().map(|c| c.translation()));
+    // (Until the simulation has been told where the watcher is, and taken a step knowing it,
+    // every creature on the island counts as awake: the first frame gave all 1,890 a model
+    // and the second took 1,800 away again. `watch` counted them, 2026-11-13.)
+    let told = live.0.focus.is_some() && *stepped != live.0.tick;
+    if live.0.focus.is_none() {
+        *stepped = live.0.tick;
+    }
     live.0.focus = watcher;
+    if !told {
+        return;
+    }
     let mut drawn = std::collections::HashSet::new();
     for (entity, mover) in &wild {
         if live.agent(mover).is_some_and(|a| a.awake) {
@@ -350,6 +360,6 @@ fn watch(args: Res<crate::Args>, registry: Res<Registry>, wild: Query<(&Creature
     *camera = Transform::from_translation(focus + (at.rotation * Vec3::new(0.8, 0.0, 0.6)).normalize() * size * 4.0 + Vec3::Y * size * 0.9).looking_at(focus, Vec3::Y);
     if !*said {
         *said = true;
-        println!("watch {kind}: found {:.0} m from the place asked, of {} of its kind awake", at.translation.with_y(0.0).distance(from), wild.iter().filter(|(c, _)| registry.0.get(c.def).is_some_and(|d| d.id == kind)).count());
+        println!("watch {kind}: found {:.0} m from the place asked, of {} of its kind awake and {} creatures in all", at.translation.with_y(0.0).distance(from), wild.iter().filter(|(c, _)| registry.0.get(c.def).is_some_and(|d| d.id == kind)).count(), wild.iter().count());
     }
 }
