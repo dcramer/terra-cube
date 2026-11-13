@@ -450,7 +450,7 @@ impl Own {
             let under = self.build.tall - self.build.deep / 2.0;
             // (Or let back down: a long tail of hair joined to the legs it hangs between tears if
             // it is swung clear of them, and lies better left where it hangs.)
-            let tried: Vec<(f32, Pose, Option<(f32, bool)>)> = (-8..=6).flat_map(|k| [-1.0f32, -0.5, 0.0, 0.15, 0.3, 0.5].map(|lift| (k, lift))).map(|(k, lift)| { let pose = lain(k as f32 * 0.02 * under, lift); let said = judge(&pose); (k as f32, pose, said) }).collect();
+            let tried: Vec<(f32, Pose, Option<(f32, bool)>)> = (-16..=6).flat_map(|k| [-1.0f32, -0.5, 0.0, 0.15, 0.3, 0.5, 0.8].map(|lift| (k, lift))).map(|(k, lift)| { let pose = lain(k as f32 * 0.02 * under, lift); let said = judge(&pose); (k as f32, pose, said) }).collect();
             let best = tried.iter().filter(|t| t.2.is_some_and(|s| s.1)).chain(tried.iter()).min_by(|a, b| (!a.2.is_some_and(|s| s.1), a.2.map_or(a.0.abs(), |s| s.0)).partial_cmp(&(!b.2.is_some_and(|s| s.1), b.2.map_or(b.0.abs(), |s| s.0))).unwrap_or(std::cmp::Ordering::Equal));
             let pose = best.map_or_else(|| lain(0.0, 0.0), |b| b.1.clone());
             return Ok(Clip { name: name.into(), looping: true, frames: vec![pose; (FPS * 4.0) as usize + 1], source: "walker", speed: None });

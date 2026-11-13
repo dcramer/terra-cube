@@ -194,7 +194,12 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
             clip
         });
         let recorded = carried.as_ref().or(found.map(|i| &theirs[i]));
-        let mut clip = if let Some(crawler) = &crawler { crawler.clip(name, &skeleton)? } else if let Some(own) = owned.as_ref().filter(|_| crate::own::WALKED.contains(&name.as_str())) {
+        // (One that rests on its feet, a pony or a moose, rests as it stands: it is not laid
+        // down as a dog lies because the plan has a clip of that name.)
+        let stands = owned.is_some() && name == "lie" && matches!(creature.rests.as_str(), "stands" | "");
+        let mut clip = if let Some(crawler) = &crawler { crawler.clip(name, &skeleton)? } else if let Some(own) = owned.as_ref().filter(|_| stands) {
+            Clip { name: name.clone(), source: "made", ..own.clip_judged("idle", &skeleton, &|_| None)? }
+        } else if let Some(own) = owned.as_ref().filter(|_| crate::own::WALKED.contains(&name.as_str())) {
             // (Judged as it will be drawn: raised out of the ground first, as every lying clip is.)
             own.clip_judged(name, &skeleton, &|pose| {
                 let mut pose = pose.clone();

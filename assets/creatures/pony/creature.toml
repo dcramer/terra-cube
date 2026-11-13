@@ -1,6 +1,6 @@
 name = "Wild pony"
 kind = "wildlife"
-plan = "quadruped"
+plan = "walked"
 subject = "a stocky wild pony with a shaggy black mane and a dun coat"
 height = 1.6
 # One fore hoof is skinned partly to another bone and pulls out into a spike as the leg

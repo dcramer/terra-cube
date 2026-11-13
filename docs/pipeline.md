@@ -53,7 +53,7 @@ Tried end to end on the old crow's mesh with its skeleton taken off: rig, skin, 
 
 ### A four-legged animal on our own skeleton (`plan = "walked"`)
 
-On it: wolf, bear, fox, moose, boar-beast, goat, lynx, deer. Not yet, each tried 2026-11-12: pony (its hair tail is joined to its hind legs in the mesh: swung clear to lie, the hair tears, 175%; left hanging, the chest is held 14% up), badger (`pose lie` chest 9% against 8%), beaver (flat tail, lying far off), squirrel (hind legs not found; back 14° lying). Never tried: frogs, tortoise, lizard, hedgehog (not built like a dog), rabbit (it hops; the walker has no hop).
+On it: wolf, bear, fox, moose, boar-beast, goat, lynx, deer, badger, pony (the pony is built but not in the world: `groups = 0`, the developer's call). Not yet, each tried: beaver (flat tail; lying far off: chest 59% of a leg up), squirrel (hind legs not found on the mesh; back 15° lying). Never tried: frogs, tortoise, lizard, hedgehog (not built like a dog), rabbit (it hops; the walker has no hop). One whose `rests` is `stands` (pony, moose, lynx) is not laid down: its `lie` is its standing.
 
 Tripo makes the mesh; forge makes the skeleton, the skin and the motion (`crates/forge/src/own.rs`). Use this plan for a new four-legged animal. To move an existing one to it: set `plan = "walked"` in its `creature.toml` and run `cargo forge finish ID`. No credits.
 

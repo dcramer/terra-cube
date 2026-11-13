@@ -1,6 +1,6 @@
 name = "Badger"
 kind = "wildlife"
-plan = "quadruped"
+plan = "walked"
 subject = "a badger with a black and white striped face and a low grey body"
 height = 0.3
 rests = "belly"
