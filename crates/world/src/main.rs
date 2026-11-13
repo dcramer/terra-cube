@@ -40,6 +40,8 @@ cargo world hunks [--seed N]                      a tree and a boulder near the 
                                                   limbed, broken into logs, split; chipped, broken
 cargo world quarry [--seed N]                     a boulder near the start cut through with a pick: that
                                                   it becomes cells, its top comes down and lies as stone
+cargo world roots [--seed N]                      every rooted tree near the start: how far the lowest
+                                                  wood of its foot hangs over the ground under it
 cargo world joined [--seed N]                     every tree near the start as the cells it is once cut
                                                   into: whether all its wood is one body with its foot
                                                   loose whole, goes over, lies on the ground as cells,
@@ -546,6 +548,59 @@ fn quarry_command(args: &Args) -> ! {
 /// and whether all its wood is one body with its foot (joined by faces, edges or corners,
 /// as what holds a thing up is told). One that is not drops a part of itself the moment an
 /// axe touches it: a birch was seen standing with a gap in its trunk and its top in the air.
+/// `cargo world roots`: whether what stands on the land meets it. For every rooted tree
+/// near the start, each column of bits (5 cm) round its foot that has its wood beginning
+/// no higher than its foot: how far the lowest of that wood is over the
+/// ground under it. A root should go into the ground wherever the ground is; on a slope
+/// the downhill one hung over it (the developer saw one, 2026-11-13).
+fn roots_command(args: &Args) -> ! {
+    let (world, _, form) = grown(args);
+    let inside = (2 * cube_sim::terrain::REGION) as f32 * CELL - 16.0;
+    let bit = cube_voxel::BIT;
+    let wood = |b: Block| b.wood();
+    let (mut trees, mut hung, mut worst) = (0, 0, (0.0f32, Vec3::ZERO));
+    for limb in form.limbs.iter().filter(|l| l.roots > 0 && l.a.x.abs() < inside && l.a.z.abs() < inside) {
+        let foot = limb.a + Vec3::Y * cube_sim::plants::Limb::UNDER;
+        let reach = limb.ra * 4.6 + 0.2;
+        let (lo, hi) = (((foot - reach) / bit).floor().as_ivec3(), ((foot + reach) / bit).floor().as_ivec3());
+        let mut gap = 0.0f32;
+        let mut what = (Block::Air, Block::Air, 0.0f32, 0.0f32);
+        for z in lo.z..=hi.z {
+            for x in lo.x..=hi.x {
+                // The lowest wood of this column near its foot, and what is under it.
+                // (No further out than its roots reach: what is in the corners of the square
+                // round it is a neighbour's.)
+                if (Vec3::new(x as f32 + 0.5, 0.0, z as f32 + 0.5) * bit).distance(foot.with_y(0.0)) > reach {
+                    continue;
+                }
+                // (Wood that begins no higher than its foot: a root, and not the trunk of a
+                // tree that leans or a neighbour's bough, which are over the ground by rights.)
+                let (top, floor) = (((foot.y + 0.05) / bit) as i32, ((foot.y - 3.0) / bit) as i32);
+                let Some(low) = (floor..top).find(|y| wood(world.bit(IVec3::new(x, *y, z)))) else { continue };
+                // (Water is ground enough: a root may stand in it.)
+                let under = (1..60).find(|d| { let b = world.bit(IVec3::new(x, low - d, z)); b.solid() || b == Block::Water }).unwrap_or(60);
+                if (under - 1) as f32 * bit > gap {
+                    gap = (under - 1) as f32 * bit;
+                    what = (world.bit(IVec3::new(x, low - 1, z)), world.bit(IVec3::new(x, low - under, z)), (low as f32 * bit - foot.y), (Vec3::new(x as f32, 0.0, z as f32) * bit).distance(foot.with_y(0.0)));
+                }
+            }
+        }
+        if gap > 0.1 && std::env::var_os("WORLD_VERBOSE").is_some() {
+            println!("hung {gap:.2} m: just under it {:?}, then {:?} · the wood {:.2} m from its foot's height, {:.2} m out · trunk {:.2} m thick", what.0, what.1, what.2, what.3, limb.ra * 2.0);
+        }
+        trees += 1;
+        hung += (gap > 0.1) as usize;
+        if gap > worst.0 {
+            worst = (gap, foot);
+        }
+    }
+    println!("roots: {trees} rooted trees · {hung} with wood of their foot more than 10 cm over the ground · the worst {:.2} m, at {:.1},{:.1}", worst.0, worst.1.x, worst.1.z);
+    let mut checks = Checks(Vec::new());
+    checks.bar("roots hung", hung as f32 / trees.max(1) as f32, hung * 8 <= trees, "under an eighth of the trees have wood at their foot over the ground, of 1 (it was three in five)");
+    checks.bar("roots worst", worst.0, worst.0 <= 0.6, "none by more than 0.6 m");
+    checks.finish()
+}
+
 fn joined_command(args: &Args) -> ! {
     let land = Land::new(args.seed, args.radius);
     let mut world = World::default();
@@ -1110,6 +1165,7 @@ fn main() {
         "trunks" => trunks_command(&args),
         "fell" => fell_command(&args),
         "joined" => joined_command(&args),
+        "roots" => roots_command(&args),
         "quarry" => quarry_command(&args),
         "hunks" => hunks_command(&args),
         "replay" => replay_command(&args),

@@ -178,6 +178,32 @@ fn wood(world: &mut World, limb: &Limb) {
                 }
             }
         });
+        // Its roots, down to the ground under each of them ([`Limb::feet`]): cube under
+        // cube, until one is all ground, three metres at the most (past that it is over
+        // a drop, and hangs).
+        for foot in limb.feet(g, cubes) {
+            for down in 1..=(3.0 / g) as i32 {
+                let mut any = false;
+                for d in 0..n * n * n {
+                    let bit = (foot - IVec3::Y * down) * n + IVec3::new(d % n, d / (n * n), d / n % n);
+                    let cell = bit.div_euclid(IVec3::splat(cube_voxel::SPLIT));
+                    if !open(cell) {
+                        continue;
+                    }
+                    if world.get(cell).sprig() {
+                        world.set(cell, Block::Air);
+                    }
+                    let was = world.bit(bit);
+                    if was == Block::Air || was.foliage() {
+                        world.set_bit(bit, limb.bark);
+                        any = true;
+                    }
+                }
+                if !any {
+                    break;
+                }
+            }
+        }
     }
     limb.fill_span(CELL, bound, (fine, f32::MAX), |c| {
         if !open(c) {
@@ -231,6 +257,29 @@ impl Limb {
     /// `only[0], only[1]` up to `only[2], only[3]` (cubes of `g`, x and z).
     pub fn fill_in(&self, g: f32, only: Option<[i32; 4]>, put: impl FnMut(IVec3)) {
         self.fill_span(g, only, (f32::MIN, f32::MAX), put)
+    }
+
+    /// The lowest cube of each column of a rooted trunk's foot (cubes of `g`, as
+    /// [`Limb::fill_in`]): what is to be brought down to the ground under it, by whoever
+    /// knows where the ground is. A trunk's shape is its own and knows no land: its roots
+    /// are wood to a hand under its foot, and a root reaches a metre and more out, so on a
+    /// bank the downhill one hung in the air (three trees in five had one that did,
+    /// `cargo world roots`; the developer saw one, 2026-11-13: "one of the roots of the
+    /// tree here is floating above the ground vs angling with it"). The land is there
+    /// first: the simulation fills each of these down to the ground the world has, and
+    /// the picture down to the ground the land says, and a root angles with it.
+    pub fn feet(&self, g: f32, only: Option<[i32; 4]>) -> Vec<IVec3> {
+        if self.roots == 0 {
+            return Vec::new();
+        }
+        let mut low: std::collections::HashMap<(i32, i32), i32> = std::collections::HashMap::new();
+        self.fill_span(g, only, (f32::MIN, self.a.y + Self::UNDER + 0.3), |c| {
+            let lowest = low.entry((c.x, c.z)).or_insert(c.y);
+            *lowest = (*lowest).min(c.y);
+        });
+        let mut feet: Vec<IVec3> = low.into_iter().map(|((x, z), y)| IVec3::new(x, y, z)).collect();
+        feet.sort_by_key(|c| (c.x, c.z));
+        feet
     }
 
     /// The size of the cubes a limb is drawn in near the eye, metres: a trunk or a heavy limb

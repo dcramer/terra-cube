@@ -111,7 +111,7 @@ impl Shape {
         // Where its rings are, along it. A rooted trunk has more of them low down, where it
         // spreads: it begins half a metre under the ground (`plants::bole`).
         let mut stations: Vec<f32> = (0..=rings).map(|j| j as f32 / rings as f32).collect();
-        const UNDER: f32 = 0.5;
+        const UNDER: f32 = cube_sim::plants::Limb::UNDER;
         if roots > 0 {
             let low: Vec<f32> = [0.0f32, 0.25, 0.6, 1.1, 1.8, 2.8, 4.2].iter().map(|h| (UNDER - 0.12 + h * ra) / length).filter(|t| *t < 0.7).collect();
             let last = low.last().copied().unwrap_or(0.0);
@@ -447,7 +447,7 @@ fn shape_of(form: &Form, land: &cube_sim::terrain::Land, origin: Vec3, level: u8
         }
     } else {
         for (n, limb) in form.limbs.iter().enumerate() {
-            shape.limb_cubes(limb, origin, ground(limb.a.x, limb.a.z), n as u32, [ends[&key(limb.a)] == 1, ends[&key(limb.b)] == 1], level);
+            shape.limb_cubes(limb, origin, &ground, n as u32, [ends[&key(limb.a)] == 1, ends[&key(limb.b)] == 1], level);
         }
         let wood = shape.indices.len() / 6;
         still.0 = shape.positions.len();
@@ -549,7 +549,8 @@ impl Shape {
     /// A limb as cubes: round, tapering, wandering a little, ridged along its grain, and a
     /// rooted trunk swelling into buttresses at the ground, all to the cube.
     #[allow(clippy::too_many_arguments)]
-    fn limb_cubes(&mut self, limb: &cube_sim::plants::Limb, origin: Vec3, floor: f32, n: u32, cut: [bool; 2], level: u8) {
+    fn limb_cubes(&mut self, limb: &cube_sim::plants::Limb, origin: Vec3, ground: &dyn Fn(f32, f32) -> f32, n: u32, cut: [bool; 2], level: u8) {
+        let floor = ground(limb.a.x, limb.a.z);
         let (a, b, ra, rb, bark) = (limb.a, limb.b, limb.ra, limb.rb, limb.bark);
         let thick = ra.max(rb);
         // What is dropped away from the camera: only what is hidden or is nothing at that
@@ -598,6 +599,14 @@ impl Shape {
                 set.insert(c);
             }
         });
+        // Its roots go down to the ground under each of them, as the simulation's do
+        // (`Limb::feet`): the land is there first, and a root angles with it.
+        for foot in limb.feet(g, None) {
+            let to = (ground((foot.x as f32 + 0.5) * g, (foot.z as f32 + 0.5) * g) / g).floor() as i32 - 1;
+            for y in to.max(foot.y - (3.0 / g) as i32)..foot.y {
+                set.insert(IVec3::new(foot.x, y, foot.z));
+            }
+        }
         if fine_to < f32::MAX && a.y.max(b.y) > fine_to {
             let (wide, mut above) = (g * 2.0, HashSet::new());
             limb.fill(wide, |c| {
