@@ -393,10 +393,17 @@ impl Crawler {
                 pose
             }), false, None),
             "swim" => (frames_of(1.2, &|t| self.pose(sk, Vec3::ZERO, Quat::IDENTITY, |n| (self.reach * 0.4 * (TAU * t + self.set(n) as f32 * PI).sin(), 0.25))), true, None),
-            // (A bird pecks: its head goes down on its neck, and its body stays on its feet.)
+            // A bird pecks at the ground: its body tips forward over its feet, which stay
+            // where they are, and its neck goes down from there, as far as brings its beak
+            // to the ground. (With only its neck turned its beak pointed down at the height
+            // of its back and never came near the ground, a heron's least of all: seen on
+            // a sheet of all six from the side, 2026-11-13.)
             "eat" if self.fowl => (frames_of(4.0, &|t| {
-                let mut pose = self.pose(sk, Vec3::ZERO, Quat::IDENTITY, still);
-                pose.rotations[1] = Quat::from_rotation_x(1.1 + 0.25 * (TAU * 4.0 * t).sin());
+                let down = 1.6;
+                let beak = |tip: f32| self.high - self.long * 0.5 * tip.sin() + self.neck * (tip + down).cos();
+                let tip = (0..=22).map(|k| k as f32 * 0.05).find(|tip| beak(*tip) <= 0.02).unwrap_or(1.1) + 0.05 * (TAU * 4.0 * t).sin();
+                let mut pose = self.pose(sk, Vec3::ZERO, Quat::from_rotation_x(tip), |_| (self.reach * tip.sin(), 0.0));
+                pose.rotations[1] = Quat::from_rotation_x(down - 0.1 + 0.1 * (TAU * 4.0 * t).sin());
                 pose
             }), true, None),
             "eat" => (frames_of(4.0, &|t| self.pose(sk, Vec3::NEG_Y * self.high * 0.12, Quat::from_rotation_x(0.2 + 0.05 * (TAU * 4.0 * t).sin()), still)), true, None),
