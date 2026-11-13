@@ -110,9 +110,14 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
     if plan.rig == "forge" {
         crate::shaped::rig(&mut glb, creature.built.is_some())?;
     }
+    // And what goes on four legs may be given our own skeleton, the walker's (`own`).
+    let owned = if plan.rig == "own" { Some(crate::own::Own::rig(&mut glb, creature.height)?) } else { None };
     let skeleton = Skeleton::read(&glb)?;
     // (A model built here faces +z: it was built so.)
-    let mut roles = Roles::read(&skeleton, if creature.built.is_some() { Facing::Told(Vec3::Z) } else { Facing::parse(&creature.facing)? });
+    let mut roles = match &owned {
+        Some(own) => own.roles(&skeleton),
+        None => Roles::read(&skeleton, if creature.built.is_some() { Facing::Told(Vec3::Z) } else { Facing::parse(&creature.facing)? }),
+    };
     roles.nose = crate::check::nose(&glb, &skeleton, &roles);
     roles.sinks = match creature.rests.as_str() {
         "belly" => 0.62,
@@ -179,7 +184,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
             clip
         });
         let recorded = carried.as_ref().or(found.map(|i| &theirs[i]));
-        let mut clip = match recorded {
+        let mut clip = if let Some(own) = &owned { own.clip(name, &skeleton)? } else { match recorded {
             Some(taken) => {
                 let source = taken.source;
                 let looping = !matches!(name.as_str(), "attack" | "hurt" | "die" | "jump" | "land");
@@ -245,7 +250,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
                 let stand = out.iter().find(|c| c.name == "idle" && c.source != "made").map(|c| &c.frames[0]);
                 clips::make(name, &skeleton, &roles, &out, stand, plan.upright, scale, (1.0 + creature.gait_gain) / 2.0, creature.ease, creature.hops).with_context(|| format!("no preset and no recipe for the clip `{name}` (clips.rs `make`)"))?
             }
-        };
+        } };
         // A carried animal's gait goes at the speed that animal's own made gait went (its legs'
         // length says how fast it walks and runs: the game's speeds, and who catches whom, are
         // as they were). A walk is played faster or slower until its feet hold at that speed:

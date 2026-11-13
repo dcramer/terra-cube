@@ -1,0 +1,12 @@
+# A trial, not in the world: the wolf's own mesh with our skeleton in it and none of Tripo's
+# (`[plans.walked]`, `crates/forge/src/own.rs`). `.work/wolf-own/rigged.glb` is
+# `.work/wolf/rigged.glb`: forge takes Tripo's rig off it and keeps the mesh. Set beside `wolf`.
+name = "Wolf (our skeleton)"
+kind = "wildlife"
+plan = "walked"
+subject = "a lean grey wolf with a thick ruff, long legs, bushy tail hanging low"
+height = 0.85
+
+[life]
+temper = "hunter"
+groups = 0

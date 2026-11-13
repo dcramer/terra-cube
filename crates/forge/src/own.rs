@@ -1,0 +1,308 @@
+//! A four-legged model given our own skeleton: the one the box creature of `cube_anim` has,
+//! sized to this mesh and put inside it, with the skin bound to it here. Nothing of Tripo's
+//! rig is used; a bare mesh is all that is asked of whoever made the model. Since the bones
+//! are the walker's own, what moves the boxes moves the model joint for joint: its gaits and
+//! its lying down are the walker's, written down, with nothing solved again on the model.
+//!
+//! A trial (2026-11-12, `[plans.walked]`, the wolf as `wolf-own`), after a week in which
+//! nearly every fault traced to a rig read by its shape: bones named anyhow, a hind leg a
+//! bone short, legs hung from stubs of the spine, skin that tore.
+
+use crate::clips::{self, Clip, FPS};
+use crate::glb::Glb;
+use crate::rig::{Leg, Pose, Roles, Skeleton};
+use anyhow::{Context, Result, bail};
+use cube_anim::{Build, Walker};
+use glam::{Mat3, Mat4, Quat, Vec3};
+use serde_json::json;
+
+/// The bones, in the order the skin lists them: the trunk (the root), neck, head and two of
+/// tail; then each leg in the walker's order (fore left, fore right, hind left, hind right),
+/// a fore leg's three and a hind leg's four.
+pub const BONES: [&str; 19] = [
+    "trunk", "neck", "head", "tail_1", "tail_2", "fl_upper", "fl_fore", "fl_paw", "fr_upper", "fr_fore", "fr_paw", "hl_thigh", "hl_shank", "hl_lower", "hl_paw", "hr_thigh", "hr_shank", "hr_lower", "hr_paw",
+];
+const PARENTS: [Option<usize>; 19] = [None, Some(0), Some(1), Some(0), Some(3), Some(0), Some(5), Some(6), Some(0), Some(8), Some(9), Some(0), Some(11), Some(12), Some(13), Some(0), Some(15), Some(16), Some(17)];
+/// Each leg's bones, from where it leaves the trunk down.
+const LEGS: [&[usize]; 4] = [&[5, 6, 7], &[8, 9, 10], &[11, 12, 13, 14], &[15, 16, 17, 18]];
+
+/// A model rigged here: the walker's build of it in metres, and how the walker's frame (x
+/// its right, y up, z ahead, from the ground under its middle) lies in the file's.
+pub struct Own {
+    build: Build,
+    /// Metres to a unit of the file.
+    metres: f32,
+    origin: Vec3,
+    right: Vec3,
+    ahead: Vec3,
+    /// Where the tail ends, from its last bone, and how thick it is; the file's units.
+    tip: Vec3,
+    thick: f32,
+}
+
+/// Whether a model was rigged here: it has our bones.
+pub fn made(glb: &Glb) -> bool {
+    glb.array("nodes").iter().any(|n| n["name"] == "hl_shank")
+}
+
+fn to_segment(p: Vec3, a: Vec3, b: Vec3) -> f32 {
+    let along = ((p - a).dot(b - a) / (b - a).length_squared().max(1e-9)).clamp(0.0, 1.0);
+    p.distance(a + (b - a) * along)
+}
+
+impl Own {
+    /// A point of the walker's, in the file.
+    fn file(&self, w: Vec3) -> Vec3 {
+        self.origin + (self.right * w.x + Vec3::Y * w.y + self.ahead * w.z) / self.metres
+    }
+
+    /// Gives a bare mesh that stands on four legs its skeleton and skin. `height` is how tall
+    /// the creature is, metres.
+    pub fn rig(glb: &mut Glb, height: f32) -> Result<Self> {
+        // Whatever rig it came with is taken off: its skin, what moved it, and the say its
+        // bones had over each point. (Its bones stay in the file as nodes that hold nothing.)
+        let rigged = !glb.array("skins").is_empty();
+        if rigged {
+            glb.json.as_object_mut().context("no model")?.remove("animations");
+            for node in glb.json["nodes"].as_array_mut().context("no nodes")? {
+                node.as_object_mut().map(|n| n.remove("skin"));
+            }
+            for mesh in glb.json["meshes"].as_array_mut().context("no meshes")? {
+                for p in mesh["primitives"].as_array_mut().into_iter().flatten() {
+                    for key in ["JOINTS_0", "WEIGHTS_0"] {
+                        p["attributes"].as_object_mut().map(|a| a.remove(key));
+                    }
+                }
+            }
+        }
+        let nodes = glb.array("nodes").to_vec();
+        let holder = nodes.iter().position(|n| n.get("mesh").is_some()).context("no node carries a mesh")?;
+        let local = |n: &serde_json::Value| -> Mat4 {
+            if let Some(m) = n.get("matrix").and_then(|m| m.as_array()) {
+                return Mat4::from_cols_slice(&m.iter().map(|v| v.as_f64().unwrap_or(0.0) as f32).collect::<Vec<_>>());
+            }
+            let f = |key: &str, default: &[f32]| -> Vec<f32> { n.get(key).and_then(|a| a.as_array()).map_or(default.to_vec(), |a| a.iter().map(|v| v.as_f64().unwrap_or(0.0) as f32).collect()) };
+            Mat4::from_scale_rotation_translation(Vec3::from_slice(&f("scale", &[1.0; 3])), Quat::from_slice(&f("rotation", &[0.0, 0.0, 0.0, 1.0])).normalize(), Vec3::from_slice(&f("translation", &[0.0; 3])))
+        };
+        let mut placed = if rigged { Mat4::IDENTITY } else { local(&nodes[holder]) };
+        let mut at = holder;
+        while !rigged && let Some(parent) = nodes.iter().position(|n| n["children"].as_array().is_some_and(|c| c.iter().any(|c| c.as_u64() == Some(at as u64)))) {
+            placed = local(&nodes[parent]) * placed;
+            at = parent;
+        }
+        let mesh = nodes[holder]["mesh"].as_u64().unwrap() as usize;
+        let primitives = glb.array("meshes")[mesh]["primitives"].as_array().cloned().unwrap_or_default();
+        let mut points: Vec<Vec<Vec3>> = Vec::new();
+        for p in &primitives {
+            let (data, width) = glb.floats(p["attributes"]["POSITION"].as_u64().context("a primitive without POSITION")? as usize)?;
+            points.push(data.chunks(width).map(|c| placed.transform_point3(Vec3::new(c[0], c[1], c[2]))).collect());
+        }
+        let all: Vec<Vec3> = points.iter().flatten().copied().collect();
+        let (lo, hi) = all.iter().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
+        let size = hi - lo;
+        // It is long the way it is longer, and its head is at the end that stands higher.
+        let (mut ahead, side) = if size.z >= size.x { (Vec3::Z, Vec3::X) } else { (Vec3::X, Vec3::Z) };
+        let mid = (lo + hi) / 2.0;
+        let high: Vec<Vec3> = all.iter().copied().filter(|p| p.y > lo.y + size.y * 0.8).collect();
+        if high.iter().map(|p| (*p - mid).dot(ahead)).sum::<f32>() < 0.0 {
+            ahead = -ahead;
+        }
+        let right = Vec3::Y.cross(ahead);
+        let _ = side;
+        let (z, x) = (|p: Vec3| (p - mid).dot(ahead), |p: Vec3| (p - mid).dot(right));
+        // Its feet: what of it is near the ground, fore and hind, and where the middle of each lot is.
+        let low: Vec<Vec3> = all.iter().copied().filter(|p| p.y < lo.y + size.y * 0.06).collect();
+        let mean = |of: &dyn Fn(&Vec3) -> bool, f: &dyn Fn(Vec3) -> f32| {
+            let some: Vec<f32> = low.iter().filter(|p| of(p)).map(|p| f(*p)).collect();
+            (!some.is_empty()).then(|| some.iter().sum::<f32>() / some.len() as f32)
+        };
+        let split = low.iter().map(|p| z(*p)).sum::<f32>() / low.len().max(1) as f32;
+        let (Some(fore), Some(hind)) = (mean(&|p| z(*p) > split, &|p| z(p)), mean(&|p| z(*p) <= split, &|p| z(p))) else { bail!("no feet found near the ground: is this a model standing on four legs?") };
+        let wide = mean(&|_| true, &|p| x(p).abs()).unwrap_or(size.dot(right.abs()) * 0.3) * 2.0;
+        // Its trunk, between its legs: how low its belly is and how high its back.
+        let between: Vec<Vec3> = all.iter().copied().filter(|p| z(*p) > hind + (fore - hind) * 0.3 && z(*p) < hind + (fore - hind) * 0.7).collect();
+        let (belly, back) = between.iter().fold((f32::MAX, f32::MIN), |(b, t), p| (b.min(p.y), t.max(p.y)));
+        if between.is_empty() || belly - lo.y < size.y * 0.15 {
+            bail!("no trunk found standing over its legs");
+        }
+        let metres = height / size.y;
+        let m = |file: f32| file * metres;
+        let (front, rear) = (all.iter().map(|p| z(*p)).fold(f32::MIN, f32::max), all.iter().map(|p| z(*p)).fold(f32::MAX, f32::min));
+        let deep = m(back - belly);
+        let build = Build { long: m(fore - hind), wide: m(wide), tall: m((back + belly) / 2.0 - lo.y), deep, leg: m(belly - lo.y) * 0.13, neck: m(front - fore) * 0.6, head: m(front - fore) * 0.5, tail: m(hind - rear) };
+        let mut own = Self { build, metres, origin: mid.with_y(lo.y) + ahead * (fore + hind) / 2.0, right, ahead, tip: Vec3::ZERO, thick: 0.0 };
+
+        // Where each bone is as it stands: the walker's own joints, stood.
+        let stood = Walker::new(build, Vec3::ZERO, 0.0);
+        let limbs = stood.limbs();
+        let top = Vec3::new(0.0, build.tall + build.deep * 0.2, 0.0);
+        let part = |of: &dyn Fn(f32) -> bool, or: Vec3| {
+            let some: Vec<Vec3> = all.iter().copied().filter(|p| of(z(*p))).collect();
+            if some.is_empty() { or } else { some.iter().sum::<Vec3>() / some.len() as f32 }
+        };
+        let head = part(&|at| at > front - (front - fore) * 0.35, own.file(top + Vec3::Z * (build.long / 2.0 + build.neck)));
+        let tip = part(&|at| at < rear + (hind - rear) * 0.2, own.file(top - Vec3::Z * (build.long / 2.0 + build.tail)));
+        let tail = own.file(top - Vec3::Z * build.long / 2.0);
+        (own.tip, own.thick) = (tip + (tip - tail) * 0.25 - (tail + tip) / 2.0, build.leg / metres);
+        let mut places = vec![own.file(stood.trunk().0), own.file(top + Vec3::Z * build.long / 2.0), head, tail, (tail + tip) / 2.0];
+        for limb in &limbs {
+            places.extend(limb.iter().map(|p| own.file(*p)));
+        }
+        // What holds each point of the skin: each bone is a line with a thickness, and a point
+        // is held most by what it is nearest. A leg's bones hold nothing on the other side.
+        let leg = build.leg / metres;
+        let mut lines: Vec<(usize, Vec3, Vec3, f32, f32)> = vec![
+            (0, own.file(Vec3::new(0.0, build.tall, -build.long / 2.0)), own.file(Vec3::new(0.0, build.tall, build.long / 2.0)), deep / metres * 0.45, 0.0),
+            (1, places[1], head, deep / metres * 0.3, 0.0),
+            (2, head, head + ahead * (front - z(head)).max(leg), deep / metres * 0.3, 0.0),
+            (3, tail, places[4], leg, 0.0),
+            (4, places[4], tip, leg, 0.0),
+        ];
+        for (n, bones) in LEGS.iter().enumerate() {
+            let sided = if n % 2 == 0 { -1.0 } else { 1.0 };
+            for (k, &bone) in bones.iter().enumerate() {
+                let to = bones.get(k + 1).map_or(places[bone] + ahead * leg, |next| places[*next]);
+                lines.push((bone, places[bone], to, leg * 0.6, sided));
+            }
+        }
+        let soft = (belly - lo.y) * 0.04;
+        for (p, pts) in points.iter().enumerate() {
+            let (mut joints, mut weights) = (Vec::with_capacity(pts.len() * 4), Vec::with_capacity(pts.len() * 4));
+            for at in pts {
+                let mut held: Vec<(usize, f32)> = lines.iter().filter(|l| l.4 == 0.0 || x(*at) * l.4 > -wide * 0.05).map(|l| (l.0, 1.0 / ((to_segment(*at, l.1, l.2) - l.3).max(0.0) + soft).powi(4))).collect();
+                held.sort_by(|a, b| b.1.total_cmp(&a.1));
+                held.truncate(4);
+                held.resize(4, (0, 0.0));
+                let sum: f32 = held.iter().map(|h| h.1).sum::<f32>().max(1e-9);
+                joints.extend(held.iter().map(|h| h.0 as u8));
+                weights.extend(held.iter().map(|h| h.1 / sum));
+            }
+            let j = glb.add_raw(&joints, 5121, "VEC4", pts.len());
+            let w = glb.add_floats(&weights, "VEC4", false);
+            glb.json["meshes"][mesh]["primitives"][p]["attributes"]["JOINTS_0"] = json!(j);
+            glb.json["meshes"][mesh]["primitives"][p]["attributes"]["WEIGHTS_0"] = json!(w);
+        }
+        // The bones as nodes under the scene, none of them turned as it stands; the mesh is
+        // drawn by them.
+        let first = glb.array("nodes").len();
+        let list = glb.json["nodes"].as_array_mut().context("no nodes")?;
+        for (i, name) in BONES.iter().enumerate() {
+            let from = PARENTS[i].map_or(Vec3::ZERO, |p| places[p]);
+            let children: Vec<usize> = (0..BONES.len()).filter(|c| PARENTS[*c] == Some(i)).map(|c| first + c).collect();
+            let mut node = json!({ "name": name, "translation": (places[i] - from).to_array() });
+            if !children.is_empty() {
+                node["children"] = json!(children);
+            }
+            list.push(node);
+        }
+        list[holder]["skin"] = json!(0);
+        let scene = glb.json["scene"].as_u64().unwrap_or(0) as usize;
+        glb.json["scenes"][scene]["nodes"].as_array_mut().context("no scene")?.push(json!(first));
+        let binds: Vec<f32> = places.iter().flat_map(|at| (Mat4::from_translation(-*at) * placed).to_cols_array()).collect();
+        let inverse = glb.add_floats(&binds, "MAT4", false);
+        glb.json["skins"] = json!([{ "joints": (first..first + BONES.len()).collect::<Vec<_>>(), "inverseBindMatrices": inverse, "skeleton": first }]);
+        Ok(own)
+    }
+
+    /// Its roles, which are known and not read: the bones are ours.
+    pub fn roles(&self, sk: &Skeleton) -> Roles {
+        let (lo, hi) = sk.joints.iter().fold((f32::MAX, f32::MIN), |(lo, hi), j| (lo.min(j.world.w_axis.y), hi.max(j.world.w_axis.y)));
+        let along: Vec<f32> = sk.joints.iter().map(|j| j.world.w_axis.truncate().dot(self.ahead)).collect();
+        Roles {
+            forward: self.ahead,
+            side: -self.right,
+            legs: LEGS.iter().enumerate().map(|(n, bones)| Leg { chain: bones.to_vec(), front: n < 2, left: n % 2 == 0 }).collect(),
+            head: vec![1, 2],
+            tail: vec![3, 4],
+            spine: vec![0],
+            others: Vec::new(),
+            arms: Vec::new(),
+            floor: lo,
+            height: hi - lo,
+            length: along.iter().copied().fold(f32::MIN, f32::max) - along.iter().copied().fold(f32::MAX, f32::min),
+            nose: None,
+            sinks: 0.0,
+            curls: false,
+        }
+    }
+
+    /// The skeleton as the walker has it at one moment: the trunk where the walker's is
+    /// (less how far it has gone, so that it stays over its place) and every leg's bone
+    /// pointed from its joint to the next of the walker's.
+    fn pose(&self, sk: &Skeleton, walker: &Walker, gone: f32) -> Pose {
+        let mut pose = sk.rest();
+        let basis = Quat::from_mat3(&Mat3::from_cols(self.right, Vec3::Y, self.ahead));
+        let (trunk, turned) = walker.trunk();
+        clips::turn_now(sk, &mut pose, 0, (basis * turned * basis.inverse()).normalize());
+        pose.root_t = sk.base.inverse().transform_point3(self.file(trunk - Vec3::Z * gone));
+        for (bones, limb) in LEGS.iter().zip(walker.limbs()) {
+            for k in 0..bones.len() - 1 {
+                let world = sk.pose_world(&pose);
+                let now = world[bones[k + 1]].w_axis.truncate() - world[bones[k]].w_axis.truncate();
+                let want = self.file(limb[k + 1]) - self.file(limb[k]);
+                if let (Some(now), Some(want)) = (now.try_normalize(), want.try_normalize()) {
+                    clips::turn_now(sk, &mut pose, bones[k], Quat::from_rotation_arc(now, want));
+                }
+            }
+            // (A paw stays flat, as it stood, whatever the leg over it does.)
+            let paw = bones[bones.len() - 1];
+            let turned = sk.pose_world(&pose)[paw].to_scale_rotation_translation().1;
+            clips::turn_now(sk, &mut pose, paw, turned.inverse());
+        }
+        // A tail that hangs as it stands would go into the ground as it lies: it is swung
+        // out behind until its end is on the ground and not in it.
+        for _ in 0..45 {
+            if sk.pose_world(&pose)[4].transform_point3(self.tip).y >= self.origin.y + self.thick {
+                break;
+            }
+            clips::turn_now(sk, &mut pose, 3, Quat::from_axis_angle(self.right, 2f32.to_radians()));
+        }
+        pose
+    }
+
+    /// One of its clips, made by the walker: standing, a stride of a gait at the speed its
+    /// legs' length gives it, or lying down.
+    pub fn clip(&self, name: &str, sk: &Skeleton) -> Result<Clip> {
+        let mut walker = Walker::new(self.build, Vec3::ZERO, 0.0);
+        let legs = self.build.tall - self.build.deep / 2.0;
+        let pace = (9.81 * legs).sqrt() * match name {
+            "walk" => 0.45,
+            "run" => 0.95,
+            "sprint" => 1.7,
+            _ => 0.0,
+        };
+        let dt = 1.0 / (FPS * 4.0);
+        let mut frames = Vec::new();
+        if pace > 0.0 {
+            // Walked until it is in its stride, then one stride of it kept.
+            let (mut gone, mut began) = (0.0f32, None);
+            for tick in 0..(14.0 / dt) as usize {
+                gone += pace * dt;
+                let before = walker.steps[0];
+                walker.step(dt, Vec3::Z * gone, 0.0, 0.0, |_, _| 0.0);
+                let stepped = walker.steps[0] != before;
+                if began.is_none() && stepped && tick as f32 * dt > 3.0 {
+                    began = Some(tick);
+                } else if began.is_some() && stepped {
+                    break;
+                }
+                if let Some(from) = began && (tick - from).is_multiple_of(4) {
+                    frames.push(self.pose(sk, &walker, gone));
+                }
+            }
+            if frames.len() < 4 {
+                bail!("the walker took no stride at {pace:.1} m/s");
+            }
+            frames.push(frames[0].clone());
+            clips::close_loop(&mut frames);
+        } else {
+            // Standing; or lain down, and held there.
+            let rest = if name == "lie" { 1.0 } else { 0.0 };
+            for _ in 0..(5.0 / dt) as usize {
+                walker.step(dt, Vec3::ZERO, 0.0, rest, |_, _| 0.0);
+            }
+            frames = vec![self.pose(sk, &walker, 0.0); (FPS * 4.0) as usize + 1];
+        }
+        Ok(Clip { name: name.into(), looping: true, frames, source: "walker", speed: (pace > 0.0).then_some(pace / self.metres) })
+    }
+}

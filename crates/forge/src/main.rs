@@ -13,6 +13,7 @@ mod finish;
 mod glb;
 mod library;
 mod looks;
+mod own;
 mod rig;
 mod shaped;
 mod spec;

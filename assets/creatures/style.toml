@@ -121,6 +121,15 @@ attack = [0.2, 1.4, 1.3]
 jump = [0.15, 1.33, 1.0]
 land = [0.05, 0.75, 2.0]
 
+# A trial: what goes on four legs with our own skeleton, the walker's, put inside a bare mesh
+# and skinned here (`crates/forge/src/own.rs`). Nothing of Tripo's rig is used: if the model
+# comes with one it is taken off. Its clips are the walker's, joint for joint.
+[plans.walked]
+pose = "standing still on all four legs in a neutral pose, seen from the side and slightly in front, all four legs straight and clearly separated, tail away from the legs, mouth closed"
+rig = "own"
+max_stretch = 1.2
+clips = ["idle", "walk", "run", "sprint", "lie"]
+
 # Four-legged animals and monsters. Every clip is made (clips.rs).
 [plans.quadruped]
 pose = "standing still on all four legs in a neutral pose, seen from the side and slightly in front, all four legs straight and clearly separated, tail away from the legs, mouth closed"
