@@ -87,6 +87,10 @@ source = "library"
 speed = 1.141248
 
 [bones]
+fold0 = "bone_9>tripo::0_Left_Limb_1>tripo::0_Left_Limb_4"
+fold1 = "tripo::Spine_4>tripo::0_Right_Limb_1>tripo::0_Right_Limb_4"
+fold2 = "tripo::1_Left_Limb_0>tripo::1_Left_Limb_1>tripo::1_Left_Limb_3"
+fold3 = "bone_25>bone_26>bone_27"
 foot0 = "tripo::0_Left_Limb_4"
 foot1 = "tripo::0_Right_Limb_4"
 foot2 = "tripo::1_Left_Limb_3"

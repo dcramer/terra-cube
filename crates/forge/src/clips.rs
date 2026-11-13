@@ -626,7 +626,7 @@ pub(crate) fn reach(sk: &Skeleton, roles: &Roles, pose: &mut Pose, leg: &crate::
 /// spine) and the joint nearest half way along it from there to the foot. [`reach`] bends
 /// the first two bones of the chain, which on a fox, a deer, a lynx and a rabbit are the
 /// stub and the shoulder: lowered, their legs stayed straight and the animal stood.
-fn folds_at(sk: &Skeleton, leg: &crate::rig::Leg) -> (usize, usize) {
+pub(crate) fn folds_at(sk: &Skeleton, leg: &crate::rig::Leg) -> (usize, usize) {
     let at = |j: usize| sk.position(j);
     let whole: f32 = leg.chain.windows(2).map(|w| at(w[0]).distance(at(w[1]))).sum();
     let first = (0..leg.chain.len() - 2).find(|&i| at(leg.chain[i]).distance(at(leg.chain[i + 1])) > 0.12 * whole).unwrap_or(0);

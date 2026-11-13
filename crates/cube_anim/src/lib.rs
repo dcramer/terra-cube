@@ -93,6 +93,10 @@ pub struct Walker {
     tail: Vec3,
     /// Steps taken, by foot: for whoever counts them.
     pub steps: [u32; 4],
+    /// Where each leg leaves the trunk, from the trunk's middle in its own frame, and the
+    /// lengths of its two bones: the build's, or a real model's own ([`Walker::fitted`]).
+    hip: [Vec3; 4],
+    bone: [(f32, f32); 4],
 }
 
 impl Walker {
@@ -100,7 +104,34 @@ impl Walker {
         let turn = Quat::from_rotation_y(yaw);
         let feet = build.hips().map(|h| Foot { at: at + turn * h, step: None });
         let trunk = (at + Vec3::Y * build.tall, turn);
-        Self { build, at, yaw, vel: Vec3::ZERO, feet, down: 0.0, trunk, tail: at - turn * Vec3::Z * (build.long / 2.0 + build.tail) + Vec3::Y * build.tall, steps: [0; 4] }
+        Self { build, at, yaw, vel: Vec3::ZERO, feet, down: 0.0, trunk, tail: at - turn * Vec3::Z * (build.long / 2.0 + build.tail) + Vec3::Y * build.tall, steps: [0; 4], hip: build.hips().map(|h| h - Vec3::Y * build.deep * 0.35), bone: [build.bones(); 4] }
+    }
+
+    /// A walker for a body that is already made: where each of its legs leaves it as it
+    /// stands (in its own frame, from the point on the ground under its middle; fore left,
+    /// fore right, hind left, hind right, left being -x) and the lengths of each leg's two
+    /// bones. Its build is read off those.
+    pub fn fitted(hips: [Vec3; 4], bone: [(f32, f32); 4], at: Vec3, yaw: f32) -> Self {
+        let tall = hips.iter().map(|h| h.y).sum::<f32>() / 4.0;
+        let (fore, hind) = ((hips[0].z + hips[1].z) / 2.0, (hips[2].z + hips[3].z) / 2.0);
+        let wide = ((hips[1].x - hips[0].x).abs() + (hips[3].x - hips[2].x).abs()) / 2.0;
+        let build = Build { long: fore - hind, wide, tall, deep: tall * 0.45, leg: tall * 0.13, neck: tall * 0.45, head: tall * 0.4, tail: tall * 0.7 };
+        let middle = Vec3::new(0.0, tall, (fore + hind) / 2.0);
+        let mut w = Self::new(build, at, yaw);
+        (w.hip, w.bone) = (hips.map(|h| h - middle), bone);
+        let turn = Quat::from_rotation_y(yaw);
+        for (foot, h) in w.feet.iter_mut().zip(hips) {
+            foot.at = at + turn * Vec3::new(h.x, 0.0, h.z - middle.z);
+        }
+        w
+    }
+
+    /// The trunk's middle and how it is turned; and each foot's place on the ground.
+    pub fn trunk(&self) -> (Vec3, Quat) {
+        self.trunk
+    }
+    pub fn feet(&self) -> [Vec3; 4] {
+        self.feet.map(|f| f.at)
     }
 
     /// One moment: the body is now at `at` facing `yaw`; `rest` is how far down it should be
@@ -119,8 +150,8 @@ impl Walker {
         let takes = (stride / speed.max(0.6) * 0.55).clamp(0.11, 0.3);
         // Where each foot belongs: under where its leg leaves the trunk, and ahead by half a
         // stride the way it is going, so it lands where the body will be.
-        let homes = b.hips().map(|h| {
-            let p = at + turn * h + Vec3::new(flat.x, 0.0, flat.y) * takes * 0.9;
+        let homes = self.hip.map(|h| {
+            let p = at + turn * Vec3::new(h.x, 0.0, h.z) + Vec3::new(flat.x, 0.0, flat.y) * takes * 0.9;
             Vec3::new(p.x, ground(p.x, p.z), p.z)
         });
         // The feet go in diagonal pairs, as a trot: fore left with hind right. A foot steps
@@ -173,10 +204,9 @@ impl Walker {
         // does, by as much as keeps every leg its own length.
         let ease = 1.0 - (-14.0 * dt).exp();
         self.trunk = (self.trunk.0.lerp(want.0, ease).with_x(at.x).with_z(at.z), self.trunk.1.slerp(want.1, ease));
-        let (upper, lower) = b.bones();
-        let reach = (upper + lower) * 0.985;
-        let over = b.hips().iter().zip(&self.feet).map(|(h, f)| {
-            let hip = self.trunk.0 + self.trunk.1 * (*h - Vec3::Y * b.deep * 0.35);
+        let over = self.hip.iter().zip(&self.feet).zip(&self.bone).map(|((h, f), (upper, lower))| {
+            let reach = (upper + lower) * 0.985;
+            let hip = self.trunk.0 + self.trunk.1 * *h;
             let across = Vec2::new(hip.x - f.at.x, hip.z - f.at.z).length();
             hip.y - (f.at.y + (reach * reach - across * across).max(0.0).sqrt())
         }).fold(0.0f32, f32::max);
@@ -190,11 +220,11 @@ impl Walker {
 
     /// The joints of each leg in the world: where it leaves the trunk, its knee, its foot.
     pub fn legs(&self) -> [[Vec3; 3]; 4] {
-        let (a, b) = self.build.bones();
-        let hips = self.build.hips();
+        let hips = self.hip;
         let ahead = self.trunk.1 * Vec3::Z;
         std::array::from_fn(|i| {
-            let hip = self.trunk.0 + self.trunk.1 * (hips[i] - Vec3::Y * self.build.deep * 0.35);
+            let (a, b) = self.bone[i];
+            let hip = self.trunk.0 + self.trunk.1 * hips[i];
             // A fore leg's elbow points back and a hind leg's knee ahead; lying, both go out
             // to the side a little so the leg folds beside the body and not through it.
             let out = self.trunk.1 * Vec3::X * hips[i].x.signum();

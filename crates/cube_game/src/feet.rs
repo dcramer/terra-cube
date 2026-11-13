@@ -73,7 +73,7 @@ fn find(mut commands: Commands, registry: Res<Registry>, creatures: Query<(Entit
 /// Where a bone is in the world this frame: its own place under each of its parents' in turn,
 /// up to the creature, whose place is already this frame's (the bones' own are last frame's
 /// until the engine works them out, after this).
-fn world_of(bone: Entity, top: Entity, top_at: &Transform, parents: &Query<&ChildOf>, poses: &Query<&mut Transform, Without<Mover>>) -> Option<Affine3A> {
+pub(crate) fn world_of(bone: Entity, top: Entity, top_at: &Transform, parents: &Query<&ChildOf>, poses: &Query<&mut Transform, Without<Mover>>) -> Option<Affine3A> {
     let mut chain = Vec::new();
     let mut at = bone;
     while at != top {
@@ -91,7 +91,7 @@ fn turn_of(world: &Affine3A) -> Quat {
 }
 
 /// Turns a bone by `turn`, a turn in the world, from where its pose has it.
-fn turn_bone(bone: Entity, turn: Quat, top: Entity, top_at: &Transform, parents: &Query<&ChildOf>, poses: &mut Query<&mut Transform, Without<Mover>>) -> Option<()> {
+pub(crate) fn turn_bone(bone: Entity, turn: Quat, top: Entity, top_at: &Transform, parents: &Query<&ChildOf>, poses: &mut Query<&mut Transform, Without<Mover>>) -> Option<()> {
     let parent = parents.get(bone).ok()?.parent();
     let frame = if parent == top { top_at.rotation } else { turn_of(&world_of(parent, top, top_at, parents, poses)?) };
     let mut pose = poses.get_mut(bone).ok()?;

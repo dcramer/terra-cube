@@ -123,8 +123,8 @@ fight: ## no window: the player fights a goblin in the real game; passes if he i
 sheet: need-id ## no window: shots/ID.png, every clip of one creature (ID=wolf)
 	cargo forge sheet $(ID)
 
-limbs: ## no window: shots/limbs.gif, a body of boxes moved by its skeleton and feet and no clips (cube_anim): standing, walking, running, lying down, getting up
-	@cargo sandbox --scene shots/limbs.gif --limbs --gif 16 --dist 6.4 --pitch 0.55 --hour 13 2>&1 | grep -q '^gif' && echo "shots/limbs.gif"
+limbs: ## no window: shots/limbs.gif, a body of boxes moved by its skeleton and feet and no clips (cube_anim): standing, walking, running, lying down, getting up (ID=wolf: a real creature's model moved the same way beside it)
+	@cargo sandbox --scene shots/limbs.gif $(if $(ID),--limbs-as $(ID),--limbs) --gif 16 --dist 6.4 --pitch 0.55 --hour 13 2>&1 | grep -q '^gif' && echo "shots/limbs.gif"
 
 beside: ## no window: shots/beside.gif, the library's own figure and ours (ID=player) through the same keys, side by side
 	@tools/beside.sh $(or $(ID),player)

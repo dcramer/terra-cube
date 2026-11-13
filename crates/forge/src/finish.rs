@@ -413,6 +413,15 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         if leg.chain.len() >= 3 && chain.iter().all(own) && chain[0] != chain[1] && chain[1] != chain[2] {
             bones.insert(format!("leg{i}"), chain.join(">"));
         }
+        // And where the leg folds, for a body moved by its feet and no clip (`cube_anim`):
+        // where the leg proper begins, the joint half way down it, its end.
+        if leg.chain.len() >= 3 {
+            let (hip, knee) = clips::folds_at(&skeleton, leg);
+            let fold = [hip, knee, leg.foot()].map(|j| skeleton.joints[j].name.clone());
+            if fold.iter().all(own) && fold[0] != fold[1] && fold[1] != fold[2] {
+                bones.insert(format!("fold{i}"), fold.join(">"));
+            }
+        }
     }
     // Its size as it stands (the first frame of idle), not as it rests: a T-pose is all arms.
     let stand = out.iter().find(|c| c.name == "idle").map_or_else(|| skeleton.rest(), |c| c.frames[0].clone());
