@@ -44,6 +44,7 @@ make legs                          # the player up and down a hillside and on a 
 make feet                          # feet put on the ground that is there (`cube_game::feet`): how far the standing foot strays on a hillside, as the clip has it and planted; `--loose-feet` on any `cargo sandbox` turns it off
 make held                          # shots/held.png: the sword and torch in the player's hand through standing, walking and a blow; after any change to `assets/world/held.toml` or a biped's clips
 make moves ID=wolf                 # the routine for a four-legged creature's movement: forge walks the model and bakes its gaits, judges them by number, draws one side sheet
+make limbs                         # shots/limbs.gif: a four-legged body of boxes moved by its skeleton and feet, no clips; `make person`: a person the same way. Fix motion on the boxes before any model
 make beside                        # shots/beside.gif: the hand-animated library's own figure and ours through the same keys, side by side; look before blaming the clips or the game
 make gaits ID="wolf deer"           # shots/gaits.png: walk, run and sprint from the side, large; look after any change to motion
 cargo world survey                 # the land in numbers; `cargo world run`: its creatures living, in numbers
@@ -101,7 +102,7 @@ A machine with no screen needs `DISPLAY=:1` (an Xvfb) for `sheet` and `sandbox`;
 - **A pose or a motion is not invented.** Look at photographs of the real animal first, write what makes it in `assets/creatures/poses.toml` as measures, build to them, let forge measure it, look once, and add a measure when the eye catches what the numbers passed (the process is at the head of that file).
 - **What every creature must be able to do is written down** (`assets/creatures/requirements.toml`), and `make features` holds each to it; `seen.toml` beside it lists the clips somebody has looked at and found right. A new ability goes in the first; a clip goes in the second only after looking.
 - **How a creature behaves:** `[life]` in its `creature.toml`; a new temper or state in `crates/cube_sim/src/mind.rs` with a test beside the others in `life.rs`, then `cargo world run`.
-- **A creature:** [docs/pipeline.md](docs/pipeline.md). Four commands, about 67 credits.
+- **A creature:** [docs/pipeline.md](docs/pipeline.md). Four commands, about 67 credits. A four-legged animal: `plan = "walked"` (our skeleton in Tripo's mesh). A person: `walked = [..]` (the two-legged walker moves it in the game). Both sections say what to check.
 - **The world is cuboids, all of it** ([art-guide.md](docs/art-guide.md)): detail comes from small cubes of many sizes and shades, never from smooth shapes or flat planes. `--shapes` and `--blades` show what was set aside.
 - **Creatures are not made of cubes.** That was tried and parked (`cargo forge cubes`, [docs/pipeline.md](docs/pipeline.md#cubes)); They fit the world by style, and the style is the house style in `style.toml`: other looks were tried and it was kept.
 - **A bird, an insect or a fish:** `[built]` in its `creature.toml` and `cargo forge finish ID`: forge makes it of boxes and rigs it itself, free ([docs/pipeline.md](docs/pipeline.md)); `cube_game::air` flies it.

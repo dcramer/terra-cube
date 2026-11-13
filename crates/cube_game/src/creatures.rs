@@ -39,9 +39,6 @@ pub struct Meta {
     pub joints: usize,
     #[serde(default)]
     pub clips: std::collections::HashMap<String, ClipMeta>,
-    /// The body as it stands, for moving it by its feet (`limbs`): forge's `[walk]`.
-    #[serde(default)]
-    pub walk: Option<Walk>,
     /// A person the two-legged walker moves (`stride`): forge's `[stride]`.
     #[serde(default)]
     pub stride: Option<Stride>,
@@ -69,21 +66,6 @@ pub struct Grip {
     pub turn: [f32; 4],
     pub bones: Vec<String>,
     pub turns: Vec<[f32; 4]>,
-}
-
-/// Each leg in the walker's order: its hip, knee and end by name, where the hip is, how long
-/// its two bones are, how high its end stands (metres, in the model's frame).
-#[derive(Deserialize, Clone, Debug, Default)]
-pub struct Walk {
-    pub legs: Vec<String>,
-    pub hips: Vec<[f32; 3]>,
-    #[serde(default)]
-    pub knees: Vec<[f32; 3]>,
-    pub bones: Vec<[f32; 2]>,
-    pub ankle: Vec<f32>,
-    /// Where each leg meets the ground, in its last joint's own frame.
-    #[serde(default)]
-    pub sole: Vec<[f32; 3]>,
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]

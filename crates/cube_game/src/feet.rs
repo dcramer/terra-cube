@@ -117,7 +117,7 @@ pub(crate) fn plant(
     terrain: Option<Res<Terrain>>,
     registry: Res<Registry>,
     cameras: Query<&GlobalTransform, With<Camera3d>>,
-    mut creatures: Query<(Entity, &Mover, &Creature, &Transform, &mut Legs), Without<crate::limbs::Real>>,
+    mut creatures: Query<(Entity, &Mover, &Creature, &Transform, &mut Legs)>,
     parents: Query<&ChildOf>,
     mut poses: Query<&mut Transform, Without<Mover>>,
 ) {

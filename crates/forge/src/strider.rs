@@ -4,7 +4,9 @@
 //! clips reach it pose for pose); only what moves it is ours. The walker is given this
 //! skeleton's own measures, so every joint it places is where the bone can be.
 //!
-//! A trial (2026-11-12, `[plans.strode]`, the player as `player-own`).
+//! For a creature whose `creature.toml` names clips in `walked` (the player). The game moves
+//! the same body by the same walker as it runs (`cube_game::stride`); these written clips are
+//! what a sheet shows and what the game's speeds are read from.
 
 use crate::clips::{self, Clip, FPS};
 use crate::rig::{Pose, Skeleton};

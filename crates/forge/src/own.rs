@@ -4,7 +4,7 @@
 //! are the walker's own, what moves the boxes moves the model joint for joint: its gaits and
 //! its lying down are the walker's, written down, with nothing solved again on the model.
 //!
-//! A trial (2026-11-12, `[plans.walked]`, the wolf as `wolf-own`), after a week in which
+//! `[plans.walked]` (2026-11-12; the wolf), after a week in which
 //! nearly every fault traced to a rig read by its shape: bones named anyhow, a hind leg a
 //! bone short, legs hung from stubs of the spine, skin that tore.
 
@@ -239,12 +239,30 @@ impl Own {
         }
         let soft = (belly - lo.y) * 0.04;
         for (p, pts) in points.iter().enumerate() {
+            // Every point's hold by every bone, by how near it is. Points at one place are one
+            // point: the skin is cut along the seams of its picture and must not come apart
+            // there. (Tried 2026-11-12 and taken out: smoothing the hold over the mesh, each
+            // point taking half of its neighbours', as is done for bodies modelled in code.
+            // On this mesh two passes took a walk's stretch from 66% to 111% and lying from
+            // 81% to 224%: a wide blend between a leg and the trunk drags the skin.)
+            let mut place: std::collections::HashMap<[i32; 3], usize> = std::collections::HashMap::new();
+            let grain = size.y / 20000.0;
+            let welded: Vec<usize> = pts.iter().map(|at| { let n = place.len(); *place.entry([(at.x / grain).round() as i32, (at.y / grain).round() as i32, (at.z / grain).round() as i32]).or_insert(n) }).collect();
+            let mut hold = vec![[0.0f32; BONES.len()]; place.len()];
+            for (at, w) in pts.iter().zip(&welded) {
+                for l in lines.iter().filter(|l| l.4 == 0.0 || x(*at) * l.4 > -wide * 0.05) {
+                    hold[*w][l.0] = hold[*w][l.0].max(1.0 / ((to_segment(*at, l.1, l.2) - l.3).max(0.0) + soft).powi(4));
+                }
+            }
+            for h in &mut hold {
+                let sum = h.iter().sum::<f32>().max(1e-9);
+                h.iter_mut().for_each(|v| *v /= sum);
+            }
             let (mut joints, mut weights) = (Vec::with_capacity(pts.len() * 4), Vec::with_capacity(pts.len() * 4));
-            for at in pts {
-                let mut held: Vec<(usize, f32)> = lines.iter().filter(|l| l.4 == 0.0 || x(*at) * l.4 > -wide * 0.05).map(|l| (l.0, 1.0 / ((to_segment(*at, l.1, l.2) - l.3).max(0.0) + soft).powi(4))).collect();
+            for w in &welded {
+                let mut held: Vec<(usize, f32)> = hold[*w].iter().copied().enumerate().collect();
                 held.sort_by(|a, b| b.1.total_cmp(&a.1));
                 held.truncate(4);
-                held.resize(4, (0, 0.0));
                 let sum: f32 = held.iter().map(|h| h.1).sum::<f32>().max(1e-9);
                 joints.extend(held.iter().map(|h| h.0 as u8));
                 weights.extend(held.iter().map(|h| h.1 / sum));
@@ -335,6 +353,21 @@ impl Own {
         pose
     }
 
+    /// What the walker does not move, moved: over one turn of the frames given, the head
+    /// held level against the trunk's rocking with a small nod, and the tail swung from side
+    /// to side, its end after its root. (A trunk and four legs going under a head and tail
+    /// held as if cast was half an animal.)
+    fn lively(&self, sk: &Skeleton, frames: &mut [Pose], much: f32) {
+        let n = frames.len() as f32;
+        for (i, pose) in frames.iter_mut().enumerate() {
+            let turn = i as f32 / n * std::f32::consts::TAU;
+            let nose = (sk.pose_world(pose)[0].to_scale_rotation_translation().1 * (sk.joints[0].world.to_scale_rotation_translation().1.inverse() * self.ahead)).y.clamp(-1.0, 1.0).asin();
+            clips::turn_now(sk, pose, 1, Quat::from_axis_angle(self.right, nose * 0.7 + 0.03 * much * (2.0 * turn).sin()));
+            clips::turn_now(sk, pose, 3, Quat::from_axis_angle(Vec3::Y, 0.2 * much * turn.sin()));
+            clips::turn_now(sk, pose, 4, Quat::from_axis_angle(Vec3::Y, 0.25 * much * (turn - 0.9).sin()));
+        }
+    }
+
     /// One of its clips, made by the walker: standing, a stride of a gait at the speed its
     /// legs' length gives it, or lying down.
     pub fn clip(&self, name: &str, sk: &Skeleton) -> Result<Clip> {
@@ -369,6 +402,7 @@ impl Own {
             if frames.len() < 4 {
                 bail!("the walker took no stride at {pace:.1} m/s");
             }
+            self.lively(sk, &mut frames, if name == "walk" { 1.0 } else { 0.6 });
             frames.push(frames[0].clone());
             clips::close_loop(&mut frames);
         } else {
@@ -377,7 +411,11 @@ impl Own {
             for _ in 0..(5.0 / dt) as usize {
                 walker.step(dt, Vec3::ZERO, 0.0, rest, |_, _| 0.0);
             }
-            frames = vec![self.pose(sk, &walker, 0.0); (FPS * 4.0) as usize + 1];
+            frames = vec![self.pose(sk, &walker, 0.0); (FPS * 4.0) as usize];
+            if name == "idle" {
+                self.lively(sk, &mut frames, 0.35);
+            }
+            frames.push(frames[0].clone());
         }
         Ok(Clip { name: name.into(), looping: true, frames, source: "walker", speed: (pace > 0.0).then_some(pace / self.metres) })
     }

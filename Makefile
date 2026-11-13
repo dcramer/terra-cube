@@ -129,8 +129,8 @@ moves: need-id ## one creature's movement made and judged: forge fits the walker
 person: ## no window: shots/person.gif, a person of boxes moved by their skeleton and feet and no clips (cube_anim::biped): standing, walking, running, sprinting, stopping
 	@cargo sandbox --scene shots/person.gif --limbs-person --gif 16 --big --hour 13 2>&1 | grep -q '^gif' && echo "shots/person.gif"
 
-limbs: ## no window: shots/limbs.gif, a body of boxes moved by its skeleton and feet and no clips (cube_anim): standing, walking, running, lying down, getting up (ID=wolf: a real creature's model moved the same way beside it)
-	@cargo sandbox --scene shots/limbs.gif $(if $(ID),--limbs-as $(ID),--limbs) --gif 16 --dist 6.4 --pitch 0.55 --hour 13 2>&1 | grep -q '^gif' && echo "shots/limbs.gif"
+limbs: ## no window: shots/limbs.gif, a body of boxes moved by its skeleton and feet and no clips (cube_anim): standing, walking, running, lying down, getting up
+	@cargo sandbox --scene shots/limbs.gif --limbs --gif 16 --dist 6.4 --pitch 0.55 --hour 13 2>&1 | grep -q '^gif' && echo "shots/limbs.gif"
 
 beside: ## no window: shots/beside.gif, the library's own figure and ours (ID=player) through the same keys, side by side
 	@tools/beside.sh $(or $(ID),player)

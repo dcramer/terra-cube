@@ -87,10 +87,6 @@ source = "walker"
 speed = 0.7622116
 
 [bones]
-fold0 = "bone_8>tripo::0_Left_Limb_1>tripo::0_Left_Limb_2"
-fold1 = "bone_12>tripo::0_Right_Limb_1>tripo::0_Right_Limb_2"
-fold2 = "bone_17>bone_18>bone_19"
-fold3 = "tripo::1_Left_Limb_1>tripo::1_Left_Limb_2>tripo::1_Left_Limb_3"
 foot0 = "tripo::0_Left_Limb_2"
 foot1 = "tripo::0_Right_Limb_2"
 foot2 = "bone_19"
@@ -103,11 +99,3 @@ leg3 = "tripo::1_Left_Limb_1>tripo::1_Left_Limb_2>tripo::1_Left_Limb_3"
 neck = "tripo::Head_0"
 root = "tripo::Root"
 tail = "bone_2"
-
-[walk]
-legs = ["bone_8>tripo::0_Left_Limb_1>tripo::0_Left_Limb_2", "bone_12>tripo::0_Right_Limb_1>tripo::0_Right_Limb_2", "tripo::1_Left_Limb_1>tripo::1_Left_Limb_2>tripo::1_Left_Limb_3", "bone_17>bone_18>bone_19"]
-hips = [[0.003757904, 0.41761371, 0.24990675], [0.003757904, 0.41761377, 0.24990675], [0.0037578924, 0.44391984, -0.14468314], [0.09394988, 0.3123904, -0.15219913]]
-knees = [[0.07140186, 0.20716669, 0.22360095], [-0.06764389, 0.20716673, 0.22360091], [-0.08643402, 0.31239048, -0.15219903], [0.0977079, 0.1432811, -0.25742298]]
-bones = [[0.22261098, 0.20913427], [0.22378153, 0.20896545], [0.15965915, 0.32965738], [0.19920877, 0.14426339]]
-ankle = [0.0, 0.0, 0.0, 0.0]
-sole = [[0.004662484, 0.03135252, -0.0020175613], [0.004668832, 0.031387318, 0.0013560131], [-0.07868165, 0.1264914, -0.003421329], [-0.009686559, 0.05427612, 0.002908595]]

@@ -75,8 +75,6 @@ source = "walker"
 speed = 1.4019289
 
 [bones]
-fold0 = "mixamorig:LeftUpLeg>mixamorig:LeftLeg>mixamorig:LeftToe_End"
-fold1 = "mixamorig:RightUpLeg>mixamorig:RightLeg>mixamorig:RightToe_End"
 foot0 = "mixamorig:LeftToe_End"
 foot1 = "mixamorig:RightToe_End"
 head = "mixamorig:HeadTop_End"

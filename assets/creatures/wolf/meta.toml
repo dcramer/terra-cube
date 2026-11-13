@@ -1,7 +1,7 @@
 # Measured by `cargo forge finish`; do not edit.
 height = 0.85
-length = 1.1965284
-width = 0.33016998
+length = 1.1962391
+width = 0.33017
 walk_speed = 1.1418166
 run_speed = 2.4648738
 sprint_speed = 4.4041495
@@ -87,10 +87,6 @@ source = "walker"
 speed = 1.1418166
 
 [bones]
-fold0 = "fl_upper>fl_fore>fl_paw"
-fold1 = "fr_upper>fr_fore>fr_paw"
-fold2 = "hl_thigh>hl_lower>hl_paw"
-fold3 = "hr_thigh>hr_lower>hr_paw"
 foot0 = "fl_paw"
 foot1 = "fr_paw"
 foot2 = "hl_paw"
@@ -103,11 +99,3 @@ leg3 = "hr_thigh>hr_shank>hr_paw"
 neck = "neck"
 root = "trunk"
 tail = "tail_1"
-
-[walk]
-legs = ["fl_upper>fl_fore>fl_paw", "fr_upper>fr_fore>fr_paw", "hl_thigh>hl_lower>hl_paw", "hr_thigh>hr_lower>hr_paw"]
-hips = [[-0.08583587, 0.4352972, 0.24020442], [0.08583587, 0.4352972, 0.24020442], [-0.120289534, 0.4367322, -0.32877433], [0.12028954, 0.4367322, -0.32877433]]
-knees = [[-0.09287186, 0.33494213, 0.20716795], [0.09287187, 0.33494213, 0.20716795], [-0.105297066, 0.18113248, -0.32195717], [0.105297066, 0.18113248, -0.32195717]]
-bones = [[0.10588697, 0.34094122], [0.10588697, 0.34094122], [0.2561298, 0.18823329], [0.2561298, 0.18823329]]
-ankle = [0.0, 0.0, 0.0, 0.0]
-sole = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]

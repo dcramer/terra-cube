@@ -75,8 +75,6 @@ source = "tripo"
 speed = 0.9330314
 
 [bones]
-fold0 = "thigh_l>calf_l>ball_leaf_l"
-fold1 = "thigh_r>calf_r>ball_leaf_r"
 foot0 = "ball_leaf_l"
 foot1 = "ball_leaf_r"
 head = "Head"

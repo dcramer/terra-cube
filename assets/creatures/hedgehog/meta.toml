@@ -87,8 +87,6 @@ source = "made"
 speed = 0.2930095
 
 [bones]
-fold0 = "bone_6>bone_7>bone_9"
-fold1 = "tripo::0_Right_Limb_1>tripo::0_Right_Limb_2>tripo::0_Right_Limb_4"
 foot0 = "bone_9"
 foot1 = "tripo::0_Right_Limb_4"
 foot2 = "tripo::0_Left_Limb_1"

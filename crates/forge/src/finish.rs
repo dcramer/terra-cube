@@ -115,7 +115,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
     let skeleton = Skeleton::read(&glb)?;
     // (A model built here faces +z: it was built so.)
     // And a person may be moved by the two-legged walker in place of anybody's clips (`strider`).
-    let strode = if creature.plan == "strode" || !creature.walked.is_empty() { Some(crate::strider::Strider::new(&skeleton, creature.height)?) } else { None };
+    let strode = if !creature.walked.is_empty() { Some(crate::strider::Strider::new(&skeleton, creature.height)?) } else { None };
     let mut roles = match &owned {
         Some(own) => own.roles(&skeleton),
         None => Roles::read(&skeleton, if creature.built.is_some() { Facing::Told(Vec3::Z) } else { Facing::parse(&creature.facing)? }),
@@ -186,7 +186,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
             clip
         });
         let recorded = carried.as_ref().or(found.map(|i| &theirs[i]));
-        let mut clip = if let Some(own) = owned.as_ref().filter(|_| crate::own::WALKED.contains(&name.as_str())) { own.clip(name, &skeleton)? } else if let Some(strode) = strode.as_ref().filter(|_| creature.plan == "strode" || creature.walked.contains(name)) { strode.clip(name, &skeleton)? } else { match recorded {
+        let mut clip = if let Some(own) = owned.as_ref().filter(|_| crate::own::WALKED.contains(&name.as_str())) { own.clip(name, &skeleton)? } else if let Some(strode) = strode.as_ref().filter(|_| creature.walked.contains(name)) { strode.clip(name, &skeleton)? } else { match recorded {
             Some(taken) => {
                 let source = taken.source;
                 let looping = !matches!(name.as_str(), "attack" | "hurt" | "die" | "jump" | "land");
@@ -462,39 +462,10 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         if leg.chain.len() >= 3 && chain.iter().all(own) && chain[0] != chain[1] && chain[1] != chain[2] {
             bones.insert(format!("leg{i}"), chain.join(">"));
         }
-        // And where the leg folds, for a body moved by its feet and no clip (`cube_anim`):
-        // where the leg proper begins, the joint half way down it, its end.
-        if leg.chain.len() >= 3 {
-            let (hip, knee) = clips::folds_at(&skeleton, leg);
-            let fold = [hip, knee, leg.foot()].map(|j| skeleton.joints[j].name.clone());
-            if fold.iter().all(own) && fold[0] != fold[1] && fold[1] != fold[2] {
-                bones.insert(format!("fold{i}"), fold.join(">"));
-            }
-        }
     }
     // Its size as it stands (the first frame of idle), not as it rests: a T-pose is all arms.
     let stand = out.iter().find(|c| c.name == "idle").map_or_else(|| skeleton.rest(), |c| c.frames[0].clone());
     let (slo, shi) = crate::check::bounds(&glb, &skeleton, &stand).unwrap_or((lo, hi));
-    // The body as it stands, for what moves it by its feet: every leg that folds, measured.
-    let stands = (roles.legs.len() == 4 && roles.legs.iter().all(|l| l.chain.len() >= 3)).then(|| {
-        let world = skeleton.pose_world(&stand);
-        let at = |j: usize| turn * (world[j].w_axis.truncate() * scale) + offset;
-        let mut legs: Vec<([usize; 3], Vec3)> = roles.legs.iter().map(|l| { let (hip, knee) = clips::folds_at(&skeleton, l); ([hip, knee, l.foot()], at(hip)) }).collect();
-        legs.sort_by(|a, b| b.1.z.total_cmp(&a.1.z));
-        legs[..2].sort_by(|a, b| a.1.x.total_cmp(&b.1.x));
-        legs[2..].sort_by(|a, b| a.1.x.total_cmp(&b.1.x));
-        spec::Walk {
-            legs: legs.iter().map(|(j, _)| j.map(|j| skeleton.joints[j].name.clone()).join(">")).collect(),
-            hips: legs.iter().map(|(_, hip)| hip.to_array()).collect(),
-            knees: legs.iter().map(|(j, _)| at(j[1]).to_array()).collect(),
-            bones: legs.iter().map(|(j, _)| [at(j[0]).distance(at(j[1])), at(j[1]).distance(at(j[2]).with_y(0.0))]).collect(),
-            ankle: vec![0.0; 4],
-            sole: legs.iter().map(|(j, _)| { let p = world[j[2]].w_axis.truncate(); world[j[2]].inverse().transform_point3(p - Vec3::Y * at(j[2]).y.max(0.0) / scale).to_array() }).collect(),
-        }
-    }).filter(|w| {
-        // (Each name must be one bone's and no other's, or the game cannot find it.)
-        w.legs.iter().all(|l| l.split('>').all(|n| skeleton.joints.iter().filter(|j| j.name == n).count() == 1))
-    });
     let meta = Meta {
         height: creature.height,
         length: crate::check::extent(&glb, &skeleton, &stand, roles.forward).unwrap_or((shi - slo).dot(roles.forward).abs()) * scale,
@@ -506,7 +477,6 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         joints: skeleton.joints.len(),
         clips: out.iter().map(|c| (c.name.clone(), ClipMeta { seconds: c.seconds(), looping: c.looping, source: c.source.into(), speed: paces.get(&c.name).copied().unwrap_or(0.0) * scale })).collect(),
         bones,
-        walk: stands,
         stride: (strode.is_some() && plan.rig == "humanoid").then(|| crate::grip::rests(&skeleton)),
         grip: if plan.rig == "humanoid" { crate::grip::grips(&skeleton, scale) } else { Default::default() },
     };

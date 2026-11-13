@@ -51,18 +51,43 @@ Tripo's rig of a bird is no use: the crow (67 credits) came back with a leg name
 
 Tried end to end on the old crow's mesh with its skeleton taken off: rig, skin, both clips, checks and sheet all run. That mesh stands with folded wings, so it twists (its widest way is beak to tail); the path wants a model made for it. **Not yet done: any such model.** The hawk is set to this plan with its lock cleared (its concept was drawn standing), and the account had no credits the day this was written: `cargo forge build hawk --to concept`, look, then `cargo forge build hawk`, about 47 credits. Then the air's birds (`cube_game::air`, still shapes made and moved in code) can be drawn from it. Butterflies, dragonflies and fish can take the same rig with their own clips.
 
-### Our own skeleton in a four-legged mesh (2026-11-12)
+### A four-legged animal on our own skeleton (`plan = "walked"`; the wolf)
 
-`[plans.walked]` (`crates/forge/src/own.rs`; the wolf, and `wolf-own` beside it) takes whatever rig a model came with off it and puts the box walker's skeleton (`cube_anim`) inside its mesh, skinned by distance to each bone. Tripo is needed for the mesh and no more.
+Tripo makes the mesh; forge makes the skeleton, the skin and the motion (`crates/forge/src/own.rs`). Use this plan for a new four-legged animal. To move an existing one to it: set `plan = "walked"` in its `creature.toml` and run `cargo forge finish ID`. No credits.
 
-- **The joints are read off the mesh**: each leg's skin cut into slices from the ground to the belly; the paw is the lowest slice's middle, a fore leg's elbow where it meets the chest, a hind leg's hock where the leg is furthest back below its middle and its knee where it is furthest ahead above that. Where a leg leaves the trunk cannot be seen and is put over the elbow or knee as an animal's is. `Walker::shaped` takes them, so **standing is the mesh as it was made** (the idle's stretch is 0%: on a dog's joints of the same size it stood crouched, 24%). `FORGE_TRACE=1` prints what was read.
-- **Standing, the gaits and lying down are the walker's**, written down bone for bone. Everything else comes as any four-legged animal's does, by roles, which here are known and not read (`Own::roles`): the library's blow, flinch and death carried on, and the made leap, fall, swim and eating. (Its side is up crossed with ahead and a leg on that side is its left, as `Roles::read` has it: given the other way round the head rose to eat and the death rolled against its own legs.)
-- **What has fallen is on the ground** (`check::off_floor`): a death carried onto a body whose middle is higher than the one it was drawn on lay on its side in the air.
-- Still rough: the skin is bound by distance alone (elbows and the tail's root pinch); the neck, head and tail do not move in the gaits; lying still fails two of `poses.toml`'s measures that the picture does not bear out, and which of the two is wrong has not been settled.
+What `finish` does, in order:
+1. Takes off whatever skeleton the file has. Keeps the mesh.
+2. Measures the mesh: floor, feet, belly, back, which end is the head (the higher end).
+3. Finds each leg's joints: cuts the leg into 14 slices from floor to belly and takes each slice's middle. Paw: lowest slice. Elbow: where a fore leg meets the chest. Hock: the point furthest back in the lower half of a hind leg. Knee: the point furthest forward above the hock. Shoulder and hip are inside the body: placed above the elbow and knee by fixed ratios. `FORGE_TRACE=1` prints what was found; a leg not found gets a dog's proportions.
+4. Places 19 bones on those joints (trunk, neck, head, two tail, 3 per fore leg, 4 per hind leg) and binds each skin point to its nearest bones.
+5. Makes `idle`, `walk`, `run`, `sprint`, `lie` by running the four-legged walker (`cube_anim::Walker::shaped`) on those joints and recording every bone. Then, over each stride: the head is held level against the trunk's rocking and the tail swings side to side, its end after its root (`Own::lively`).
+6. Makes the other clips the way every animal's are made (`attack`, `hurt`, `die` carried from the hand-animated wolf; `jump`, `fall`, `land`, `swim`, `eat` by recipe).
 
-### A trial: a person moved by the two-legged walker (2026-11-12)
+Then check, in this order:
+- `clip idle ... stretch` must be near 0%: standing must equal the mesh as made. If not, step 3 misread a joint.
+- `cargo sandbox --shot ID --view three --clips idle,walk,sprint,attack,die,eat,lie --cols 6`: look once. Use `three`, not `side`: from the side the far legs hide behind the near ones.
+- `die` must end on the ground, `eat` must lower the head. If either goes the wrong way, the side axis is wrong (`Own::roles`: side is up crossed with ahead; a leg on that side is the left).
 
-`[plans.strode]` (`crates/forge/src/strider.rs`, the creature `player-own`) keeps a humanoid's rig as Tripo made it (it is sound: the library's clips reach it pose for pose) and takes nobody's clips: `cube_anim::biped`, proven first on a figure of boxes (`make person`), is given the skeleton's own measures and its stride written down bone for bone. It stands, walks, runs and sprints, palms turned in and fingers curled. The player takes its walk, run and sprint from it (`walked = [..]` in its `creature.toml`; chosen by the developer over the library's, 2026-11-12) and the rest from the library still. Not yet: a jump, a fall, a blow, swimming, being hurt, dying; nothing on a slope.
+Known faults: skin pinches at elbows and tail root (bound by distance only; smoothing the weights over the mesh was tried and made stretch worse, see `own.rs`); its walk is a trot at walking speed (diagonal pairs), where a real walk sets down one foot at a time; `pose lie` fails two yes/no measures that the picture contradicts (not resolved which is right).
+
+### A person moved by the two-legged walker (`walked = [..]` in `creature.toml`; the player)
+
+Tripo's humanoid skeleton and skin are kept (they are sound). Motion is not from clips: the game runs the two-legged walker (`cube_anim::biped`) every frame and turns each bone to it (`cube_game::stride`).
+
+To put a humanoid on it: add `walked = ["walk", "run", "sprint"]` to its `creature.toml`, run `cargo forge finish ID`. Forge then writes into `meta.toml`:
+- `[stride]`: every bone's resting turn. The game stands the skeleton this way each frame before the walker poses it.
+- `[grip.Left]`, `[grip.Right]`: where a handle sits in the palm and each finger bone's turn when closed (`crates/forge/src/grip.rs`). Written for every humanoid.
+- `walk`, `run`, `sprint` clips recorded from the walker (`strider.rs`): used for sheets and for the game's speeds only.
+
+In the game the walker does: standing (breathing, weight shift), any speed from walk to sprint, turning, stopping, slopes and steps, jump, fall, landing, a stance for a blow. Clips still do: the blow and the flinch from the chest up (over the walker's legs), death and swimming (whole body). `--clips-only` turns the walker off to compare.
+
+Check after any change to the walker or the model:
+- `cargo test -p cube_anim` (gait, slope, jump and stop are tests).
+- `make person`: the same walker on a figure of boxes. Fix motion here first, not on the model.
+- `make legs` and `make feet`: the model on a hillside; nothing under the ground, the standing foot within a few cm of it. `STRIDE_TRACE=1` on any `--scene --play` prints each frame a knee or ankle is under the ground.
+- `make held` and `cargo sandbox --scene X.png --play --script '0.1 stop hold1; 1.6 fwd walk' --strip 3 --view hand` (`lefthand` for the bow): the thing in the closed hand, close.
+
+What is in a hand (`assets/world/held.toml`): `turn`, `shift` from the grip; `aim` which way it points; `droop` leaves the arm to the walker and only keeps the forearm low (sword, bow); `arm` holds the whole arm in a pose (torch, shovel).
 
 ### The small life of air and water is built here, of boxes (2026-11-11)
 
