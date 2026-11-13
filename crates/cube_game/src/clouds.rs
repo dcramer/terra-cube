@@ -52,7 +52,7 @@ const EDGE_FOOT: f32 = 130.0;
 const FIELD: f32 = 14_000.0;
 const PLACES: i32 = 26;
 /// How much of the field has cloud: 0 none, 1 a cloud at every place.
-const COVER: f32 = 0.7;
+const COVER: f32 = 0.74;
 /// How many shapes there are; each cloud is one of them, turned one of four ways and sized.
 const KINDS: usize = 16;
 /// A cloud's smallest cube, metres (times the cloud's own size, 0.8 to 1.2); its larger steps are twice and four times that. Beyond
@@ -64,9 +64,9 @@ const LEVEL: f32 = 0.3;
 /// Which way they go and how fast, metres a second: the way the cloud shadows and the pollen
 /// go (`world::sky`, `air::WIND`), and faster than the shadows, as the day here is.
 const WIND: Vec3 = Vec3::new(0.8, 0.0, 0.6);
-/// Where in the field the world begins: under a fair sky of middling clouds, not in one of
-/// its clear patches or under a bank (both come over in time).
-const START: Vec3 = Vec3::new(2500.0, 0.0, 1500.0);
+/// Where in the field the world begins: under a fair sky with a bank standing off to the
+/// south-east, not in one of its clear patches or under a bank (both come over in time).
+const START: Vec3 = Vec3::new(6000.0, 0.0, -1000.0);
 const DRIFT: f32 = 5.0;
 
 /// A cloud's material: Bevy's own, matt white, with the light a cloud has inside it added
@@ -82,6 +82,10 @@ struct Within {
     /// camera's exposure (rgb).
     #[uniform(101)]
     glow: Vec4,
+    /// What the side of a cloud away from a low sun takes from the sky: its blue (rgb, as
+    /// the picture has it).
+    #[uniform(102)]
+    shade: Vec4,
 }
 
 impl MaterialExtension for Within {
@@ -214,7 +218,7 @@ fn shape(puffs: &[Puff], reach: Vec3, cube: f32) -> Shape {
                 )
                 .normalize_or_zero();
                 let block = (at / big).floor();
-                let own = 0.92 + 0.05 * hash(x, y, z) + 0.03 * hash(block.x as i32, block.y as i32 + 77, block.z as i32);
+                let own = 0.86 + 0.09 * hash(x, y, z) + 0.05 * hash(block.x as i32, block.y as i32 + 77, block.z as i32);
                 let white = own * (0.6 + 0.4 * (-over / 45.0f32).exp());
                 over += cube;
                 for (dx, dy, dz) in [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)] {
@@ -228,7 +232,7 @@ fn shape(puffs: &[Puff], reach: Vec3, cube: f32) -> Shape {
                     // And each face a little its own shade, as the land's cubes are: the top
                     // lightest, the sides less, the underside least, so a cube is a cube in
                     // flat light too.
-                    let white = white * if dy > 0 { 1.0 } else if dy < 0 { 0.9 } else { 0.95 };
+                    let white = white * if dy > 0 { 1.0 } else if dy < 0 { 0.84 } else { 0.92 };
                     let first = positions.len() as u32;
                     for (u, v) in [(-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)] {
                         positions.push((at + (face * 0.5 + a * u + b * v) * cube).to_array());
@@ -301,9 +305,11 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
             // The thicker the patch, the bigger its cloud; the thinnest have none of their own.
             // And small ones stand anywhere, in half the places, so no part of the sky is bare.
             let thick = ((cover(x, z) - (1.0 - COVER)) / 0.4).clamp(0.0, 1.0);
+            // (And squared: most of the sky thin, a few places a bank.)
+            let thick = thick * thick;
             // (Small ones in clumps of up to three, more of them where it is thick, strewn
             // well beyond their own place: one to a place apiece was a sky of polka dots.)
-            let small = (roll(&mut state) < 0.3 + 0.4 * thick) as usize + (roll(&mut state) < 0.45 * thick) as usize + (roll(&mut state) < 0.15) as usize;
+            let small = (roll(&mut state) < 0.12 + 0.6 * thick) as usize + (roll(&mut state) < 0.6 * thick) as usize + (roll(&mut state) < 0.12) as usize;
             for nth in 0..1 + small {
                 if nth == 0 && thick <= 0.0 {
                     continue;
@@ -312,11 +318,12 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
                 let kind = ((size * KINDS as f32) as usize).min(KINDS - 1);
                 let strewn = if nth == 0 { 1.0 } else { 2.6 };
                 let at = Vec3::new((x as f32 + 0.5 + (roll(&mut state) - 0.5) * strewn) * place, 0.0, (z as f32 + 0.5 + (roll(&mut state) - 0.5) * strewn) * place) + START;
-                // One small one in seven is of a higher, thinner kind, twice as far up.
-                let high = nth > 0 && roll(&mut state) < 0.14;
+                // One small one in eleven is of a higher, thinner kind, twice as far up.
+                let high = nth > 0 && roll(&mut state) < 0.09;
                 // (The largest are wider than a place and lie into their neighbours': a bank.)
-                let scale = (0.8 + 0.4 * roll(&mut state)) * if high { -1.0 } else { 1.0 };
-                let turned = Quat::from_rotation_y((roll(&mut state) * 4.0).floor() * std::f32::consts::FRAC_PI_2);
+                let scale = (0.8 + 0.4 * roll(&mut state) + if nth == 0 { 0.5 * thick } else { 0.0 }) * if high { -1.0 } else { 1.0 };
+                // (The high kind all lie one way, drawn out along the wind.)
+                let turned = Quat::from_rotation_y(if high { -WIND.z.atan2(WIND.x) } else { (roll(&mut state) * 4.0).floor() * std::f32::consts::FRAC_PI_2 });
                 commands.spawn((Cloud(at, scale, kind), Mesh3d(kinds[kind].1.clone()), MeshMaterial3d(white.clone()), Transform::from_translation(Vec3::new(0.0, -5000.0, 0.0)).with_rotation(turned), NotShadowCaster, NotShadowReceiver));
             }
         }
@@ -338,11 +345,11 @@ fn drift(time: Res<Time>, kinds: Res<Kinds>, cameras: Query<&GlobalTransform, Wi
         let out = (far / (FIELD / 2.0)).min(1.0);
         let fade = 1.0 - ((out - 0.8) / 0.2).clamp(0.0, 1.0);
         // (A size under nought marks one of the high thin kind.)
-        let (size, lift, thin) = if cloud.1 < 0.0 { (-cloud.1 * 1.5, 2.1, 0.4) } else { (cloud.1, 1.0, 1.0) };
+        let (size, lift, long, thin) = if cloud.1 < 0.0 { (-cloud.1, 2.2, 2.4, 0.34) } else { (cloud.1, 1.0, 1.0, 1.0) };
         at.translation = Vec3::new(eye.x + dx, sea + (FOOT - (FOOT - EDGE_FOOT) * out * out) * lift, eye.z + dz);
         // (Never quite nothing: a size of nought has no way back.)
         let size = (size * fade * fade * (3.0 - 2.0 * fade)).max(1e-4);
-        at.scale = Vec3::new(size, size * thin, size);
+        at.scale = Vec3::new(size * long, size * thin, size);
         let want = if far < NEAR { &kinds.0[cloud.2].0 } else { &kinds.0[cloud.2].1 };
         if mesh.0 != *want {
             mesh.0 = want.clone();
@@ -367,5 +374,9 @@ fn lit(live: Option<Res<crate::motion::Live>>, kinds: Res<Kinds>, cameras: Query
     if let Some(mut material) = materials.get_mut(&kinds.1) {
         material.extension.sun = to_sun.extend(0.0);
         material.extension.glow = glow.extend(0.0);
+        // The sky's blue is on a cloud's shaded side while the sun is low and still up or
+        // just under: by day the engine's own sky light is enough, and at night there is none.
+        let low = (1.0 - ((to_sun.y - 0.02) / 0.26).abs()).clamp(0.0, 1.0) * ((to_sun.y + 0.12) / 0.06).clamp(0.0, 1.0);
+        material.extension.shade = (Vec3::new(0.10, 0.15, 0.36) * (0.5 * low)).extend(0.0);
     }
 }

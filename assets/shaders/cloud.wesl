@@ -15,11 +15,13 @@ import bevy_pbr::render::{
 // The sun's light as a white thing facing it would give it back at a cloud's height, in
 // the colour the air has left it, and already at the camera's exposure (rgb).
 @group(constants::MATERIAL_BIND_GROUP) @binding(101) var<uniform> glow: vec4<f32>;
+// What the side away from a low sun takes from the sky: its blue, as the picture has it.
+@group(constants::MATERIAL_BIND_GROUP) @binding(102) var<uniform> shade: vec4<f32>;
 
 // How much of that light comes out of a cloud's every side, at its top and under its
 // thickest part; and how much more at an edge with the sun behind.
-const WITHIN: f32 = 0.3;
-const UNDER: f32 = 0.3;
+const WITHIN: f32 = 0.4;
+const UNDER: f32 = 0.42;
 const LINING: f32 = 0.55;
 
 @fragment
@@ -33,21 +35,23 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     var open = 1.0;
 @if(VERTEX_COLORS)
     open = smoothstep(0.57, 1.0, in.color.b);
-    // (With the sun at the horizon or under it the light comes in from the side and from
-    // below, and a cloud's foot has as much of it as its top.)
-    let level = clamp(1.0 - sun.y / 0.15, 0.0, 1.0);
+    // (With the sun under the horizon the light comes up from below, and a cloud's foot has
+    // as much of it as its top.)
+    let level = clamp(-sun.y / 0.04, 0.0, 1.0);
     // A low sun's light is thin and from one side: less of it gets about inside, and a
     // cloud then has a lit side and a shaded one, not one colour all over. Under the land's
     // edge it is all a cloud has, and it is let show.
     let low = clamp(1.0 - sun.y / 0.25, 0.0, 1.0);
     let under = clamp(-sun.y / 0.05, 0.0, 1.0);
-    let within = WITHIN * mix(1.0, 0.4, low) * (1.0 + 1.5 * under) * mix(mix(UNDER, 0.8, level), 1.0, open);
+    let within = WITHIN * mix(1.0, 0.25, low) * (1.0 + 3.0 * under) * mix(mix(UNDER, 0.8, level), 1.0, open);
+    // The side away from a low sun is the sky's colour, not the sun's.
+    let away = 1.0 - clamp(dot(pbr_input.N, sun.xyz) * 2.0 + 0.5, 0.0, 1.0);
     // An edge is where the cloud's surface is square to the eye; the sun is behind when the
     // eye looks toward it. The lining is brightest close round the sun and faint elsewhere.
     let edge = pow(1.0 - abs(dot(pbr_input.N, pbr_input.V)), 2.0);
     let toward = max(dot(-pbr_input.V, sun.xyz), 0.0);
     let lining = LINING * edge * (0.2 + 1.8 * pow(toward, 6.0));
-    out.color = vec4<f32>(out.color.rgb + glow.rgb * (within + lining), out.color.a);
+    out.color = vec4<f32>(out.color.rgb + glow.rgb * (within + lining) + shade.rgb * away, out.color.a);
 
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
     return out;
