@@ -413,9 +413,9 @@ pub fn lie(glb: &crate::glb::Glb, sk: &Skeleton, roles: &Roles, stand: &Pose) ->
         // (And what of it is lowest, by the joint it follows: where to look when it is in the ground.)
         let skin = shape.body.at(sk, &pose);
         let mut low: std::collections::BTreeMap<usize, f32> = Default::default();
-        for i in 0..skin.len() {
-            let e = low.entry(shape.body.most[i]).or_insert(f32::MAX);
-            *e = e.min((skin[i].y - floor) / leg);
+        for (at, most) in skin.iter().zip(&shape.body.most) {
+            let e = low.entry(*most).or_insert(f32::MAX);
+            *e = e.min((at.y - floor) / leg);
         }
         let mut low: Vec<(usize, f32)> = low.into_iter().filter(|l| l.1 < -0.01).collect();
         low.sort_by(|a, b| a.1.total_cmp(&b.1));
