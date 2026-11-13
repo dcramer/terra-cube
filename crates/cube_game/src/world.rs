@@ -77,6 +77,9 @@ pub struct Regions {
     /// Changed regions that have been dropped and made again from the seed, and have not
     /// yet had what was done to them done again (`cube_sim::loose::replay`).
     stale: HashSet<(i32, i32)>,
+    /// A group of them having its edits done again, a few milliseconds a frame: by the
+    /// least of its regions.
+    replaying: std::collections::HashMap<(i32, i32), cube_sim::loose::Replay>,
     /// (A script's `forget`: every changed region is to be dropped now, however near, to
     /// try that it comes back the same; and what it all came to before, to hold it to.)
     pub forget: bool,
@@ -990,10 +993,19 @@ fn regions(args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrai
                 group.contains(&region_of((*middle / CELL).floor().as_ivec3()))
             }).collect();
             let near: Vec<(i32, i32)> = group.iter().flat_map(round).collect::<HashSet<_>>().into_iter().filter(|r| forms.0.contains_key(r)).collect();
-            let again = {
+            // A few milliseconds of it a frame (all of it behind the loading screen): a wood
+            // felled again at once was a frame of 50 ms and more on coming back to it.
+            let key = group.iter().copied().min().unwrap_or_default();
+            let mut doing = regions.replaying.remove(&key).unwrap_or_default();
+            let done = {
                 let shapes: Vec<&cube_sim::plants::Form> = near.iter().map(|r| &*forms.0[r]).collect();
-                cube_sim::loose::replay(&mut terrain.0, &shapes, &mine)
+                doing.advance(&mut terrain.0, &shapes, &mine, if loading.up { std::time::Duration::MAX } else { std::time::Duration::from_millis(3) })
             };
+            if !done {
+                regions.replaying.insert(key, doing);
+                continue;
+            }
+            let again = doing.loose;
             // What is cells again is no longer among the shapes drawn.
             for r in &near {
                 let Some(form) = forms.0.get_mut(r).map(std::sync::Arc::make_mut) else { continue };

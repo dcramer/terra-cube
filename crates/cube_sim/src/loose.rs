@@ -198,22 +198,49 @@ pub enum Edit {
 /// Does a journal's edits to a world again, each at its moment, and lets what falls come to
 /// rest. `forms` are the shapes of what grows there, as the land was made.
 pub fn replay(world: &mut World, forms: &[&Form], journal: &[(u64, Edit)]) -> Loose {
-    let mut loose = Loose::default();
-    for (at, edit) in journal {
-        while loose.steps < *at {
-            loose.step(world, crate::DT);
+    let mut again = Replay::default();
+    while !again.advance(world, forms, journal, std::time::Duration::MAX) {}
+    again.loose
+}
+
+/// A journal being done again, a little at a time: for whoever cannot spare the whole of it
+/// in one go (the game, on a frame: a tree felled again is some tens of milliseconds).
+#[derive(Default)]
+pub struct Replay {
+    pub loose: Loose,
+    next: usize,
+    settled: u32,
+}
+
+impl Replay {
+    /// Does as much more of it as `budget` allows. Says whether it is all done.
+    pub fn advance(&mut self, world: &mut World, forms: &[&Form], journal: &[(u64, Edit)], budget: std::time::Duration) -> bool {
+        let began = std::time::Instant::now();
+        while let Some((at, edit)) = journal.get(self.next) {
+            while self.loose.steps < *at {
+                self.loose.step(world, crate::DT);
+                if began.elapsed() > budget {
+                    return false;
+                }
+            }
+            match *edit {
+                Edit::Cut { middle, radius, push, stuff } => drop(self.loose.cut(world, middle, radius, push, forms, stuff)),
+                Edit::Put { middle, radius, block } => drop(self.loose.put(world, middle, radius, block)),
+            }
+            self.next += 1;
+            if began.elapsed() > budget {
+                return false;
+            }
         }
-        match *edit {
-            Edit::Cut { middle, radius, push, stuff } => drop(loose.cut(world, middle, radius, push, forms, stuff)),
-            Edit::Put { middle, radius, block } => drop(loose.put(world, middle, radius, block)),
+        while !self.loose.pieces.is_empty() && self.settled < 60 * crate::TICKS {
+            self.loose.step(world, crate::DT);
+            self.settled += 1;
+            if began.elapsed() > budget {
+                return false;
+            }
         }
+        true
     }
-    let mut guard = 0;
-    while !loose.pieces.is_empty() && guard < 60 * crate::TICKS {
-        loose.step(world, crate::DT);
-        guard += 1;
-    }
-    loose
 }
 
 /// Everything loose in a world, and what has landed since it was last asked for.
