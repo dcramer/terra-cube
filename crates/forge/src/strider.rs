@@ -29,6 +29,10 @@ pub struct Strider {
     arms: [[usize; 3]; 2],
     /// The hips' bone from the middle of the two hip joints, as it stands.
     offset: Vec3,
+    /// Each hand as the model was made: which way its palm faces and its fingers point, and
+    /// the bones of its four fingers.
+    palms: [(Vec3, Vec3); 2],
+    fingers: [Vec<usize>; 2],
 }
 
 fn rot(m: &glam::Mat4) -> Quat {
@@ -58,8 +62,17 @@ impl Strider {
         // figure's right. A stride is the same either way round. (With x as the figure's right
         // it faced backwards: it leaned back and swung its arms behind it.)
         let right = (at(rl[0]) - at(ll[0])).with_y(0.0).normalize_or(Vec3::X);
-        let (ll, la, rl, ra) = (rl, ra, ll, la);
-        Ok(Self { frame, metres, under: seat.with_y(floor), right: -right, ahead: Vec3::Y.cross(right), hips, spine: bone("Spine1").or_else(|_| bone("Spine"))?, neck: bone("Neck")?, legs: [ll, rl], arms: [la, ra], offset: at(hips) - seat })
+        // A hand's palm, from where its fingers leave it: across them and along them. (The
+        // model stands with its arms out; which way its palms face there is its maker's choice.)
+        let hand = |s: &str, mirror: f32| -> Result<((Vec3, Vec3), Vec<usize>)> {
+            let (wrist, index, pinky, middle) = (at(bone(&format!("{s}Hand"))?), at(bone(&format!("{s}HandIndex1"))?), at(bone(&format!("{s}HandPinky1"))?), at(bone(&format!("{s}HandMiddle1"))?));
+            let along = (middle - wrist).normalize_or(Vec3::X);
+            let fingers = ["Index", "Middle", "Ring", "Pinky"].iter().flat_map(|f| (1..=3).map(move |n| format!("{s}Hand{f}{n}"))).filter_map(|n| bone(&n).ok()).collect();
+            Ok(((along.cross(index - pinky).normalize_or(Vec3::NEG_Y) * mirror, along), fingers))
+        };
+        let ((lp, lf), (rp, rf)) = (hand("Left", 1.0)?, hand("Right", -1.0)?);
+        let (ll, la, rl, ra, palms, fingers) = (rl, ra, ll, la, [rp, lp], [rf, lf]);
+        Ok(Self { frame, metres, under: seat.with_y(floor), right: -right, ahead: Vec3::Y.cross(right), hips, spine: bone("Spine1").or_else(|_| bone("Spine"))?, neck: bone("Neck")?, legs: [ll, rl], arms: [la, ra], offset: at(hips) - seat, palms, fingers })
     }
 
     /// The skeleton as the walker has it at one moment, less how far it has gone.
@@ -92,6 +105,20 @@ impl Strider {
             let ([upper, fore, hand], [shoulder, elbow, wrist, _]) = (self.arms[i], s.arms[i].map(file));
             aim(&mut pose, upper, fore, elbow - shoulder);
             aim(&mut pose, fore, hand, wrist - elbow);
+            // The forearm turned about itself until the palm faces the body, as a hand hangs
+            // and swings; and the fingers curled a little, as a hand at ease has them. (Left
+            // as the model was made, arms out and fingers spread, they were carried like plates.)
+            let turned = rot(&sk.pose_world(&pose)[hand]) * rot(&sk.joints[hand].world).inverse();
+            let (palm, along) = (turned * self.palms[i].0, (wrist - elbow).normalize_or(Vec3::NEG_Y));
+            let inward = basis * (s.chest.1 * Vec3::X * if i == 0 { 1.0 } else { -1.0 });
+            let flat = |v: Vec3| (v - along * v.dot(along)).normalize_or(Vec3::X);
+            let (from, to) = (flat(palm), flat(inward));
+            let twist = Quat::from_axis_angle(along, from.cross(to).dot(along).atan2(from.dot(to)));
+            clips::turn_now(sk, &mut pose, fore, twist);
+            let curl = (twist * turned * self.palms[i].1.cross(self.palms[i].0)).normalize_or(Vec3::Z);
+            for &finger in &self.fingers[i] {
+                clips::turn_now(sk, &mut pose, finger, Quat::from_axis_angle(curl, 0.4));
+            }
         }
         pose
     }
@@ -100,9 +127,11 @@ impl Strider {
     pub fn clip(&self, name: &str, sk: &Skeleton) -> Result<Clip> {
         let size = ((self.frame.thigh + self.frame.shin) / 0.86).sqrt();
         let pace = size * match name {
+            // (A walk as people walk. The run and sprint are what the game has had a person
+            // go at since 2026-11-12, kept so that nothing else about the game changes.)
             "walk" => 1.4,
-            "run" => 3.7,
-            "sprint" => 5.8,
+            "run" => 5.2,
+            "sprint" => 6.5,
             "idle" => 0.0,
             _ => bail!("the two-legged walker has no `{name}` yet (it stands, walks, runs and sprints)"),
         };

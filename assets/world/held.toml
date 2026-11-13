@@ -3,7 +3,8 @@
 # along +y away from it. `turn` (degrees about x, y, z) and `shift` (metres) seat the grip in
 # the right hand's bone; `light` is where a thing that lights gives its light from; `arm` is
 # how the arm carries it where a clip's hanging arm would not do: the way the upper arm and
-# the forearm point, in the body's frame (y up, +z ahead, +x his right). `blow` is a blow with
+# the forearm point, in the body's frame (y up, +z ahead, +x his right); `sway` is how much of
+# the clip's own swing of that arm is kept under it (0 to 1). `blow` is a blow with
 # it where the clip's sword stroke will not do (the bow): the same two ways with the arm drawn
 # back, then as the blow lands; `draw` the same for the other arm; `looses` the boxes that fly from it as the blow lands.
 # Judge a change with `make held` (the thing through idle, walk, run and a blow).
@@ -12,6 +13,10 @@
 # Across the palm, the blade out past the thumb: forward and a little up as he stands.
 turn = [0.0, 0.0, 90.0]
 shift = [0.0, 0.08, 0.03]
+# Carried low at his side, the forearm ahead and a little down, with a third of the arm's own
+# swing: on the arm as a run pumps it the blade went up past his face at every stride.
+arm = [[0.1, -0.97, -0.12], [0.08, -0.5, 0.86]]
+sway = 0.35
 pieces = [
     { size = [0.03, 0.14, 0.03], at = [0.0, 0.0, 0.0], colour = [0.30, 0.20, 0.12] },
     { size = [0.04, 0.03, 0.04], at = [0.0, -0.085, 0.0], colour = [0.55, 0.50, 0.42] },

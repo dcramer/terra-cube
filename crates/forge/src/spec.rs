@@ -149,6 +149,10 @@ pub struct Creature {
     /// (`cargo sandbox --shot ID --clips lie --view side`).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub rests: String,
+    /// For a person: the clips the two-legged walker makes for it in place of anybody's
+    /// (`strider.rs`): of `idle`, `walk`, `run`, `sprint`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub walked: Vec<String>,
     /// It goes by hopping: hind feet together, then fore feet together (a rabbit, a hare).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hops: bool,

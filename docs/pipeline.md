@@ -57,7 +57,7 @@ Tried end to end on the old crow's mesh with its skeleton taken off: rig, skin, 
 
 ### A trial: a person moved by the two-legged walker (2026-11-12)
 
-`[plans.strode]` (`crates/forge/src/strider.rs`, the creature `player-own`) keeps a humanoid's rig as Tripo made it (it is sound: the library's clips reach it pose for pose) and takes nobody's clips: `cube_anim::biped`, proven first on a figure of boxes (`make person`), is given the skeleton's own measures and its stride written down bone for bone. It stands, walks, runs and sprints. Not yet: a jump, a fall, a blow, swimming, being hurt, dying; the hands are left as the T-pose has them; nothing on a slope. Not in the world.
+`[plans.strode]` (`crates/forge/src/strider.rs`, the creature `player-own`) keeps a humanoid's rig as Tripo made it (it is sound: the library's clips reach it pose for pose) and takes nobody's clips: `cube_anim::biped`, proven first on a figure of boxes (`make person`), is given the skeleton's own measures and its stride written down bone for bone. It stands, walks, runs and sprints, palms turned in and fingers curled. The player takes its walk, run and sprint from it (`walked = [..]` in its `creature.toml`; chosen by the developer over the library's, 2026-11-12) and the rest from the library still. Not yet: a jump, a fall, a blow, swimming, being hurt, dying; nothing on a slope.
 
 ### The small life of air and water is built here, of boxes (2026-11-11)
 

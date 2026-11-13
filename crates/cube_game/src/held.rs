@@ -40,6 +40,10 @@ struct Thing {
     /// every clip hangs the arm): the way the upper arm and then the forearm point, in the
     /// body's own frame (y up, +z ahead). The clip still moves the rest.
     arm: Option<[[f32; 3]; 2]>,
+    /// How much of the clip's own swing of that arm is kept under the carry, 0 (none: the arm
+    /// is held as `arm` says) to 1. With any, a blow that is the clip's own is left to the clip.
+    #[serde(default)]
+    sway: f32,
     /// A blow with it, where the clip's own would not do (every clip strikes with an empty
     /// hand): how the arm that holds it points drawn back, and then as the blow lands.
     blow: Option<[[[f32; 3]; 2]; 2]>,
@@ -192,7 +196,7 @@ fn carry(things: Res<Things>, live: Option<Res<Live>>, held: Query<&Held>, owner
         let blow = |b: Option<[[[f32; 3]; 2]; 2]>| b.filter(|_| on > 0.0).map(|[back, hit]| [mix(back[0], hit[0], landed), mix(back[1], hit[1], landed)]);
         let holding = match (thing.arm, blow(thing.blow)) {
             (Some(rest), Some(b)) => Some(([mix(rest[0], b[0], on), mix(rest[1], b[1], on)], 1.0)),
-            (Some(rest), None) => Some((rest, 1.0)),
+            (Some(rest), None) => Some((rest, if thing.sway > 0.0 { (1.0 - thing.sway) * (1.0 - on) } else { 1.0 })),
             (None, Some(b)) => Some((b, on)),
             (None, None) => None,
         };
