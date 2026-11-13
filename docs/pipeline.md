@@ -154,6 +154,8 @@ The game draws them as `creatures::Picture`: a model and its clips with no body 
 
 ## Judging motion
 
+**A stiff-skinned animal dies onto its back** (`clips::make`, `ease < 1`, 2026-11-13): toad, tortoise, bullfrog, lizard, hedgehog. On its side its legs do not fold, and it lay dead propped off the ground on the two under it; the check on a dead body's height passed, since a leg did touch. Seen only on a sheet of two animals at full width (`--shot ID --clips attack,die,eat,lie --view side --cols 6`, two stacked): six moments of a clip at a third of that size had hidden it.
+
 **A bound keeps the belly off the ground** (`cube_anim::Walker`, 2026-11-13): seen on `make gaits ID="wolf bear"`, not by any number: mid-bound a bear's trunk came down to the ground, a stumble in every stride. In a bound a pair of feet now steps when it is a third of a stride from where it belongs (not a half: the body goes as far again while the pair is in the air, and the pair on the ground was left further behind than a leg is long), and the trunk comes down to its feet by a quarter of its height at the most. Wolf, bear, boar and moose looked at after.
 
 **A number that passes is not a clip that looks right.** Two bars failed good motion for weeks: `slide` read a recorded human walk as 88% (an ankle does not move at one speed while its foot is down), and the 60% `stretch` bar had animals' strides cut to as little as a twentieth. One number missed a real fault: the pony's fore hoof pulls into a spike at full stride.

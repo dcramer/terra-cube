@@ -151,7 +151,10 @@ pub fn write(glb: &mut Glb, sk: &Skeleton, clips: &[Clip]) {
 /// frame of its idle, where Tripo gave one): a figure rigged in a T-pose rests with its arms
 /// out, so each recipe's turns are laid over `stand` instead.
 pub fn make(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option<&Pose>, upright: bool, metres: f32, gain: f32, ease: f32, hops: bool) -> Option<Clip> {
-    let mut clip = recipe(name, sk, roles, have, stand, upright, metres, gain, hops)?;
+    // (A stiff-skinned animal dies right over onto its back, its legs in the air: on its side
+    // its legs do not fold, and a toad and a tortoise lay dead propped a hand's breadth off
+    // the ground on the two under them. Seen only at full size, 2026-11-13.)
+    let mut clip = if name == "die" && ease < 1.0 && !upright { die(sk, roles, upright, 3.0) } else { recipe(name, sk, roles, have, stand, upright, metres, gain, hops)? };
     // A body whose skin tears is moved less: every joint's turn from rest, and the root's
     // travel, scaled down. Not the gaits, whose feet would slide, nor the fall, which must land.
     if ease != 1.0 && !matches!(name, "run" | "walk" | "sprint" | "die" | "lie") {
@@ -328,7 +331,7 @@ fn recipe(name: &str, sk: &Skeleton, roles: &Roles, have: &[Clip], stand: Option
         "land" => land(sk, roles, &stance, upright),
         "attack" => attack(sk, roles, &stance),
         "hurt" => hurt(sk, roles),
-        "die" => die(sk, roles, upright),
+        "die" => die(sk, roles, upright, 1.5),
         "eat" => eat(sk, roles),
         "lie" => lie(sk, roles),
         _ => return None,
@@ -1020,11 +1023,11 @@ fn hurt(sk: &Skeleton, roles: &Roles) -> Clip {
 
 /// Falls and lies still: an animal onto its side, an upright figure onto its back. `make`
 /// settles the body on the floor afterwards.
-fn die(sk: &Skeleton, roles: &Roles, upright: bool) -> Clip {
+fn die(sk: &Skeleton, roles: &Roles, upright: bool, over: f32) -> Clip {
     Clip::made("die", false, 1.4, sk, |t, pose| {
         let fall = die_fall(t);
         let limp = ramp(t, 0.3, 0.9);
-        let turn = if upright { pitch(roles, -1.5 * fall) } else { roll(roles, 1.5 * fall) };
+        let turn = if upright { pitch(roles, -1.5 * fall) } else { roll(roles, over * fall) };
         pose.rotations[sk.root] = sk.turned(sk.root, turn);
         curl(sk, pose, &roles.head, |a| if upright { pitch(roles, a) } else { roll(roles, a) }, 0.35 * limp);
         curl(sk, pose, &roles.tail, |a| pitch(roles, a), 0.3 * limp);
