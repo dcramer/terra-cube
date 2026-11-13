@@ -12,6 +12,8 @@
 
 use glam::{Quat, Vec2, Vec3};
 
+pub mod biped;
+
 /// How a four-legged body is built, metres. The whole skeleton: everything else follows.
 #[derive(Clone, Copy, Debug)]
 pub struct Build {

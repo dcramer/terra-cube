@@ -83,6 +83,8 @@ pub struct Args {
     pub torch: bool,
     /// A trial body of boxes, moved by its skeleton and its feet and no clips (`limbs`).
     pub limbs: bool,
+    /// The trial body is a person's, on two legs (`cube_anim::biped`).
+    pub person: bool,
     /// And a real creature beside it, moved the same way: its own model, its clips left off.
     pub limbs_as: Option<String>,
     /// The world's four-legged animals are moved by their feet for standing, going and lying,
@@ -170,6 +172,7 @@ stone on it, to the 5 cm bit, before the first frame: for looking at what broken
 twice the size, for a place and not a creature (`make wind` makes shots/wind.gif so).
 --limbs puts a four-legged body of boxes in a scene, moved by its skeleton and feet and no
 clips, going round the place looked at: standing, walking, running, lying down (`make limbs`).
+--limbs-person puts a person of boxes there instead: standing, walking, running, stopping.
 --limbs-as wolf does the same to a real creature's model, its clips left off, beside the boxes.
 --by-feet moves the world's four-legged animals by their feet for standing, going and lying
 (a trial: they play clips for those until the wolf on the ring is right).
@@ -251,6 +254,7 @@ fn parse_args() -> Args {
             "--speed" => args.speed = it.next().and_then(|v| v.parse().ok()).unwrap_or(1.0),
             "--torch" => args.torch = true,
             "--limbs" => args.limbs = true,
+            "--limbs-person" => (args.limbs, args.person) = (true, true),
             "--by-feet" => args.by_feet = true,
             "--limbs-as" => (args.limbs, args.limbs_as) = (true, it.next()),
             "--big" => args.big = true,

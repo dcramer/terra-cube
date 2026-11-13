@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: wind blow moves limbs beside features legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: wind blow moves limbs person beside features legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -125,6 +125,9 @@ sheet: need-id ## no window: shots/ID.png, every clip of one creature (ID=wolf)
 
 moves: need-id ## one creature's movement made and judged: forge fits the walker, bakes its gaits and checks them by number (a line), then one side sheet of walk, run and sprint (ID=wolf)
 	@tools/moves.sh $(ID)
+
+person: ## no window: shots/person.gif, a person of boxes moved by their skeleton and feet and no clips (cube_anim::biped): standing, walking, running, sprinting, stopping
+	@cargo sandbox --scene shots/person.gif --limbs-person --gif 16 --big --hour 13 2>&1 | grep -q '^gif' && echo "shots/person.gif"
 
 limbs: ## no window: shots/limbs.gif, a body of boxes moved by its skeleton and feet and no clips (cube_anim): standing, walking, running, lying down, getting up (ID=wolf: a real creature's model moved the same way beside it)
 	@cargo sandbox --scene shots/limbs.gif $(if $(ID),--limbs-as $(ID),--limbs) --gif 16 --dist 6.4 --pitch 0.55 --hour 13 2>&1 | grep -q '^gif' && echo "shots/limbs.gif"

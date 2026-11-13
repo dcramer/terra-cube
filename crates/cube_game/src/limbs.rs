@@ -11,7 +11,7 @@ pub struct LimbsPlugin;
 
 impl Plugin for LimbsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (walk, adopt)).add_systems(PostUpdate, (pose, wild).after(bevy::app::AnimationSystems).before(bevy::transform::TransformSystems::Propagate));
+        app.add_systems(Update, (walk, stride, adopt)).add_systems(PostUpdate, (pose, wild).after(bevy::app::AnimationSystems).before(bevy::transform::TransformSystems::Propagate));
     }
 }
 
@@ -261,7 +261,7 @@ fn asked(t: f32) -> (f32, f32) {
 }
 
 fn walk(mut commands: Commands, registry: Res<crate::creatures::Registry>, args: Res<crate::Args>, time: Res<Time>, loading: Res<crate::loading::Loading>, terrain: Option<Res<crate::world::Terrain>>, trial: Option<ResMut<Trial>>, mut parts: Query<(&Part, &mut Transform)>, mut cameras: Query<&mut Transform, (With<Camera3d>, Without<Part>)>, mut eye: Local<Option<Vec3>>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, mut speed: Local<f32>) {
-    let (true, Some(terrain)) = (args.limbs, terrain) else { return };
+    let (true, false, Some(terrain)) = (args.limbs, args.person, terrain) else { return };
     let ground = |x: f32, z: f32| cube_voxel::mesh::eased_under(&terrain.0, Vec3::new(x, terrain.ground(x, z), z)).unwrap_or_else(|| terrain.ground(x, z));
     let place = |turn: f32| {
         let (x, z) = (args.at.0 + turn.sin() * RING, args.at.1 + turn.cos() * RING);
@@ -301,6 +301,69 @@ fn walk(mut commands: Commands, registry: Res<crate::creatures::Registry>, args:
         let now = eye.map_or(want, |e| e.lerp(want, 1.0 - (-2.5 * dt).exp()));
         *eye = Some(now);
         *camera = Transform::from_translation(now).looking_at(trunk - Vec3::Y * 0.1, Vec3::Y);
+    }
+    let boxes = trial.0.boxes();
+    for (part, mut seen) in &mut parts {
+        if let Some(b) = boxes.get(part.0) {
+            *seen = Transform { translation: b.at, rotation: b.turn, scale: b.size };
+        }
+    }
+}
+
+/// The trial's person, how far round the ring they are, the seconds they have been going,
+/// and how fast.
+#[derive(Resource)]
+struct Person(cube_anim::biped::Biped, f32, f32, f32);
+
+/// What the person does when, m/s: stands, walks, runs, sprints, walks, stops.
+fn paced(t: f32) -> f32 {
+    match t % 16.0 {
+        t if t < 1.0 => 0.0,
+        t if t < 5.0 => 1.4,
+        t if t < 9.0 => 3.8,
+        t if t < 11.0 => 6.0,
+        t if t < 13.5 => 1.4,
+        _ => 0.0,
+    }
+}
+
+/// `--limbs-person`: a person of boxes sent round the ring, moved by `cube_anim::biped`.
+#[allow(clippy::too_many_arguments)]
+fn stride(mut commands: Commands, args: Res<crate::Args>, time: Res<Time>, loading: Res<crate::loading::Loading>, terrain: Option<Res<crate::world::Terrain>>, trial: Option<ResMut<Person>>, mut parts: Query<(&Part, &mut Transform)>, mut cameras: Query<&mut Transform, (With<Camera3d>, Without<Part>)>, mut eye: Local<Option<Vec3>>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
+    let (true, true, Some(terrain)) = (args.limbs, args.person, terrain) else { return };
+    let ground = |x: f32, z: f32| cube_voxel::mesh::eased_under(&terrain.0, Vec3::new(x, terrain.ground(x, z), z)).unwrap_or_else(|| terrain.ground(x, z));
+    // (A wider ring than the animal's: a sprint round a small one is all turning.)
+    let ring = RING * 2.5;
+    let place = |turn: f32| {
+        let (x, z) = (args.at.0 + turn.sin() * ring, args.at.1 + turn.cos() * ring);
+        Vec3::new(x, ground(x, z), z)
+    };
+    let Some(mut trial) = trial else {
+        let person = cube_anim::biped::Biped::new(cube_anim::biped::Frame::person(1.75), place(0.0), std::f32::consts::FRAC_PI_2);
+        let cube = meshes.add(Cuboid::new(1.0, 1.0, 1.0));
+        let colours = [Color::srgb(0.45, 0.4, 0.3), Color::srgb(0.25, 0.24, 0.22), Color::srgb(0.75, 0.58, 0.45), Color::srgb(0.5, 0.44, 0.34)];
+        let looks: Vec<_> = colours.iter().map(|c| materials.add(StandardMaterial { base_color: *c, perceptual_roughness: 0.9, ..default() })).collect();
+        for (i, b) in person.boxes().iter().enumerate() {
+            commands.spawn((Part(i), Mesh3d(cube.clone()), MeshMaterial3d(looks[b.part as usize].clone()), Transform::default()));
+        }
+        commands.insert_resource(Person(person, 0.0, 0.0, 0.0));
+        return;
+    };
+    let dt = time.delta_secs();
+    if !loading.up && dt > 0.0 {
+        trial.2 += dt;
+        let want = paced(trial.2);
+        trial.3 += (want - trial.3).clamp(-6.0 * dt, 4.0 * dt);
+        trial.1 += trial.3 / ring * dt;
+        let (at, turn) = (place(trial.1), trial.1 + std::f32::consts::FRAC_PI_2);
+        trial.0.step(dt, at, turn, ground);
+    }
+    if args.big && args.gif && let Some(mut camera) = cameras.iter_mut().next() {
+        let middle = trial.0.stance().pelvis.0;
+        let want = middle + Quat::from_rotation_y(trial.0.yaw + 1.9) * Vec3::Z * 2.9 + Vec3::Y * 0.3;
+        let now = eye.map_or(want, |e| e.lerp(want, 1.0 - (-4.0 * dt).exp()));
+        *eye = Some(now);
+        *camera = Transform::from_translation(now).looking_at(middle, Vec3::Y);
     }
     let boxes = trial.0.boxes();
     for (part, mut seen) in &mut parts {
