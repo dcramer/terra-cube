@@ -304,8 +304,8 @@ fn trace(time: Res<Time>, args: Res<Args>, live: Res<Live>, controlled: Query<(&
         let b = &agent.body;
         let yaw = cameras.iter().next().map_or(0.0, |o| o.yaw);
         println!(
-            "play t={:.1} pos={:.1},{:.1},{:.1} speed={:.2} grounded={} swimming={} clip={clip}x{:.2} yaw={yaw:.2} first={} health={:.0} held={} carries={} kills={}",
-            clock.0, b.pos.x, b.pos.y, b.pos.z, b.ground_speed(), b.grounded, b.swimming, creature.speed, c.first_person, agent.health, agent.pack.as_ref().and_then(|p| p.held()).map_or("nothing", |i| i.name()), agent.carries.map_or("nothing".to_owned(), |b| format!("{b:?}")), agent.log.kills
+            "play t={:.1} pos={:.1},{:.1},{:.1} speed={:.2} grounded={} swimming={} clip={clip}x{:.2} yaw={yaw:.2} first={} health={:.0} held={} carries={} landed={} kills={}",
+            clock.0, b.pos.x, b.pos.y, b.pos.z, b.ground_speed(), b.grounded, b.swimming, creature.speed, c.first_person, agent.health, agent.pack.as_ref().and_then(|p| p.held()).map_or("nothing", |i| i.name()), agent.carries.map_or("nothing".to_owned(), |b| format!("{b:?}")), agent.log.landed.map_or("nothing".to_owned(), |p| format!("{p:?}")), agent.log.kills
         );
     }
 }

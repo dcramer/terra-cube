@@ -459,8 +459,9 @@ pub struct Log {
     pub inside: u32,
     pub fell: u32,
     pub struck: u32,
-    /// What of it the last blow it took landed on.
+    /// What of it the last blow it took landed on; and what the last blow it landed struck.
     pub struck_at: Option<Part>,
+    pub landed: Option<Part>,
     pub fled: u32,
     /// Chases begun by what hunts, and times it set out for somewhere with a reason (to
     /// water, to fresh grazing, home to lie up, after prey).
@@ -917,6 +918,9 @@ impl Sim {
             self.loose.heard.push(fallen);
         }
         for hit in hits {
+            if self.agents.get(&hit.on).is_some_and(|a| a.dead.is_none()) && let Some(striker) = self.agents.get_mut(&hit.by) {
+                striker.log.landed = Some(hit.part);
+            }
             let Some(agent) = self.agents.get_mut(&hit.on).filter(|a| a.dead.is_none()) else { continue };
             agent.hurt = 0.5;
             agent.doing = None;
