@@ -9,15 +9,15 @@ triangles = 4453
 joints = 21
 
 [clips.attack]
-seconds = 0.8
+seconds = 1.3333334
 looping = false
-source = "made"
+source = "library"
 speed = 0.0
 
 [clips.die]
-seconds = 1.4
+seconds = 1.0333333
 looping = false
-source = "made"
+source = "library"
 speed = 0.0
 
 [clips.eat]
@@ -33,9 +33,9 @@ source = "made"
 speed = 0.0
 
 [clips.hurt]
-seconds = 0.5
+seconds = 0.6666667
 looping = false
-source = "made"
+source = "library"
 speed = 0.0
 
 [clips.idle]

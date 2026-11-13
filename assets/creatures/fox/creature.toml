@@ -3,8 +3,6 @@ kind = "wildlife"
 plan = "walked"
 subject = "a red fox with a bushy white-tipped tail and black legs"
 height = 0.5
-# Its head is one bone and the skin of its neck stretches when it bows: its other clips at two fifths.
-ease = 0.3
 rests = "crouch"
 
 [life]
