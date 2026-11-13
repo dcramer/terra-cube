@@ -44,6 +44,10 @@ pub struct Crawler {
     /// A bird's neck and head, from where its neck leaves its body to its beak's root.
     neck: f32,
     wide: f32,
+    /// A bird's own shape, for bringing its beak to the ground: where its neck leaves its
+    /// body, from its middle; its beak's tip from there; and how far its hips are under
+    /// its middle.
+    beak: (Vec3, Vec3, f32),
 }
 
 /// Boxes, each held by one bone, and the bones: the model with its skeleton.
@@ -188,7 +192,7 @@ impl Crawler {
             }
             sting = Some(first);
         }
-        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side, reach, long: l, high: mid, fowl: false, sting, leaps: b.leaps, neck: 0.0, wide }))
+        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side, reach, long: l, high: mid, fowl: false, sting, leaps: b.leaps, neck: 0.0, wide, beak: (Vec3::ZERO, Vec3::ZERO, 0.0) }))
     }
 
     /// A bird on the ground: `length` its body, `span` how long its legs are, `chord` its
@@ -237,7 +241,7 @@ impl Crawler {
             parents.extend([Some(0), Some(bone)]);
             names.extend([format!("wing_{s}"), format!("wing_{s}_tip")]);
         }
-        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side: 1, reach: legs, long: l, high: mid, fowl: true, sting: None, leaps: false, neck: neck + l * 0.2, wide }))
+        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side: 1, reach: legs, long: l, high: mid, fowl: true, sting: None, leaps: false, neck: neck + l * 0.2, wide, beak: (base - Vec3::Y * mid, Vec3::new(0.0, neck + l * 0.05, l * 0.39), thick / 2.0) }))
     }
 
 
@@ -399,11 +403,16 @@ impl Crawler {
             // of its back and never came near the ground, a heron's least of all: seen on
             // a sheet of all six from the side, 2026-11-13.)
             "eat" if self.fowl => (frames_of(4.0, &|t| {
-                let down = 1.6;
-                let beak = |tip: f32| self.high - self.long * 0.5 * tip.sin() + self.neck * (tip + down).cos();
-                let tip = (0..=22).map(|k| k as f32 * 0.05).find(|tip| beak(*tip) <= 0.02).unwrap_or(1.1) + 0.05 * (TAU * 4.0 * t).sin();
-                let mut pose = self.pose(sk, Vec3::ZERO, Quat::from_rotation_x(tip), |_| (self.reach * tip.sin(), 0.0));
-                pose.rotations[1] = Quat::from_rotation_x(down - 0.1 + 0.1 * (TAU * 4.0 * t).sin());
+                // (By its own boxes, to the centimetre: by a rule of thumb a duck's beak went
+                // into the ground and a heron's stopped short of it.)
+                let (neck, beak, hip) = self.beak;
+                let sunk = |tip: f32| hip * (1.0 - tip.cos());
+                let over = |tip: f32, down: f32| self.high - sunk(tip) + (Quat::from_rotation_x(tip) * (neck + Quat::from_rotation_x(down) * beak)).y;
+                let (tip, down) = [1.6f32, 1.9, 2.2].into_iter().find_map(|down| (0..=110).map(|k| k as f32 * 0.01).find(|tip| over(*tip, down) <= 0.004).map(|tip| (tip, down))).unwrap_or((1.1, 2.2));
+                // (Up from the ground and back to it, never past it.)
+                let tip = tip - 0.07 * (0.5 - 0.5 * (TAU * 4.0 * t).cos());
+                let mut pose = self.pose(sk, Vec3::NEG_Y * sunk(tip), Quat::from_rotation_x(tip), |_| (self.reach * tip.sin(), 0.0));
+                pose.rotations[1] = Quat::from_rotation_x(down);
                 pose
             }), true, None),
             "eat" => (frames_of(4.0, &|t| self.pose(sk, Vec3::NEG_Y * self.high * 0.12, Quat::from_rotation_x(0.2 + 0.05 * (TAU * 4.0 * t).sin()), still)), true, None),

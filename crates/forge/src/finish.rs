@@ -473,7 +473,10 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         // scorpion's abdomen went into the floor, and rolling over to die their legs and a
         // scorpion's tail did. Seen only at full size, 2026-11-13.) Not its gaits, whose feet
         // are on the ground by how they are made.
-        if crawler.is_some() && !matches!(name.as_str(), "walk" | "run" | "sprint" | "idle" | "eat") {
+        // (Nor is a blow or a flinch made for an animal on our own skeleton: thrown forward
+        // and down to strike, a hedgehog's and a rabbit's fore foot went under the floor.)
+        let struck = owned.is_some() && clip.source == "made" && matches!(name.as_str(), "attack" | "hurt");
+        if struck || crawler.is_some() && !matches!(name.as_str(), "walk" | "run" | "sprint" | "idle" | "eat") {
             let under = crate::check::off_floor(&glb, &skeleton, &clip.frames);
             for (pose, under) in clip.frames.iter_mut().zip(under) {
                 // (And what dies is let down onto it: limp, it lay a hand's breadth up.)
