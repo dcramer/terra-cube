@@ -5,7 +5,9 @@ subject = "a monstrous warty toad with a huge wide mouth, bulging orange eyes an
 height = 0.9
 without = ["sprint"]
 ease = 0.35
-gait_gain = -0.4
+# (Its stride at three fifths of full: at three tenths, as it was, its legs hardly stirred:
+# `legs swing` in the check, 2026-11-13.)
+gait_gain = 0.2
 rests = "stands"
 
 [life]

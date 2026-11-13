@@ -180,6 +180,9 @@ fn stretch(s: &Skin, sk: &Skeleton, rest_len: &[f32], clip: &Clip) -> f32 {
     worst
 }
 
+/// The least a going creature's foot must swing fore and aft, of its leg's length.
+const STIRS: f32 = 0.3;
+
 pub fn check(done: &Finished, required: &[String], bars: &Bars, max_stretch: f32, max_slide: f32) -> Result<Vec<Line>> {
     let (sk, roles, meta) = (&done.skeleton, &done.roles, &done.meta);
     let mut out = Vec::new();
@@ -254,6 +257,22 @@ pub fn check(done: &Finished, required: &[String], bars: &Bars, max_stretch: f32
             _ => 0.0,
         };
         if pace > 0.0 && roles.legs.len() >= 2 {
+            // Its legs go: how far the foot that goes furthest swings fore and aft under the
+            // body, of how far up its leg leaves it. A body carried along on legs that
+            // hardly stir passes every other bar (a hedgehog, a frog and a toad did, and were
+            // found only by looking).
+            let swing = roles.legs.iter().map(|l| {
+                let along: Vec<f32> = clip.frames.iter().map(|f| { let w = sk.pose_world(f); (w[l.foot()].w_axis.truncate() - w[sk.root].w_axis.truncate()).dot(roles.forward) }).collect();
+                let long = (sk.position(l.chain[0]).y - roles.floor).max(roles.height * 0.05);
+                (along.iter().copied().fold(f32::MIN, f32::max) - along.iter().copied().fold(f32::MAX, f32::min)) / long
+            }).fold(0.0f32, f32::max);
+            ok &= swing >= STIRS;
+            if std::env::var_os("FORGE_TRACE").is_some() {
+                println!("swing {} {:.0}%", clip.name, swing * 100.0);
+            }
+            if swing < STIRS {
+                notes.push(format!("legs swing {:.0}% of their length", swing * 100.0));
+            }
             // Moved at its measured speed, a foot that is down should stay where it is put.
             let slide = crate::clips::slide(sk, roles, &clip.frames, pace / done.scale);
             // Only a made gait is held to it: its feet are put down by rule. A recorded one is a

@@ -218,6 +218,7 @@ What finish does to every clip, so no creature needs hand fixes:
 
 
 - **Every number of a clip is a number** (`check`, 2026-11-13): a frame with a turn or a place that is not one fails. Such a clip draws nothing at all, and passed every other bar, since nothing compares with it: the hedgehog walked unseen until its sheet was looked at. A leg the made gait cannot solve is now left as it stands (`clips::gait`).
+- **Its legs go** (`check`, `legs swing`, 2026-11-13): in walk, run and sprint the foot that goes furthest must swing fore and aft at least 30% of its leg's length. A body carried along on legs that hardly stir passed every other bar: the hedgehog, the frog and the toad did, found only by looking. The toad was 21%; everything else is 36% to 213% (`FORGE_TRACE=1` prints it).
 - **What has died rests on the ground** whoever made the clip (`finish`): a made death is moved by how far its last frame is off the floor (`check::off_floor`), eased in.
 One line each, `ok` or `FAIL name value (bar)`; passing lines print only when something failed, or with `FORGE_VERBOSE=1`.
 
