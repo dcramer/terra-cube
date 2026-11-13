@@ -13,3 +13,7 @@ habitat = "rock"
 hours = "dusk"
 group = 1
 groups = 2
+# As the hawk: it keeps the rock and hunts well beyond it. At a walker's range, on an island
+# whose rock stood apart, nine reared two young in 24 years and were gone by the thirteenth.
+range = 300.0
+capacity = 8
