@@ -287,10 +287,11 @@ impl Crawler {
             // Gathered, and sprung: its legs pressed down, then drawn up under it.
             // Up: its wings thrown open and brought down hard, its legs pushing off.
             "jump" if self.fowl => (frames_of(0.3, &|t| self.wings(self.pose(sk, Vec3::ZERO, Quat::from_rotation_x(-0.25 * t), |_| (0.0, -0.2 + 0.7 * t)), ease((t / 0.4).min(1.0)), 0.9 * (TAU * t / 0.6).cos(), 0.9 * (TAU * (t - 0.05) / 0.6).cos())), false, None),
-            // On the wing: three beats a second, its legs drawn up, its body lifting on each.
+            // On the wing: three beats a second, its legs trailed behind it (hung straight down
+            // they were a heron standing in the air), its body lifting on each.
             "fall" if self.fowl => (frames_of(1.0, &|t| {
                 let (beat, after) = (0.75 * (TAU * 3.0 * t).sin(), 0.75 * (TAU * 3.0 * (t - 0.05)).sin());
-                self.wings(self.pose(sk, Vec3::Y * self.long * 0.05 * -beat, Quat::from_rotation_x(-0.12), |_| (-self.reach * 0.3, 0.55)), 1.0, beat, after)
+                self.wings(self.pose(sk, Vec3::Y * self.long * 0.05 * -beat, Quat::from_rotation_x(-0.12), |_| (-self.reach * 0.88, 0.08)), 1.0, beat, after)
             }), true, None),
             // Down: its wings held high as its feet take it, then folded.
             "land" if self.fowl => (frames_of(0.37, &|t| self.wings(self.pose(sk, Vec3::NEG_Y * self.high * 0.08 * (1.0 - ease(t)), Quat::from_rotation_x(-0.2 * (1.0 - t)), |_| (0.0, 0.4 * (1.0 - ease(t)))), 1.0 - ease(t), 0.6, 0.6)), false, None),
