@@ -22,7 +22,9 @@
 //!    moved as one body: tall on a small base (a tree) it goes over about its foot, away
 //!    from the cut; anything else drops.
 //! 4. **Landing**: when any of it meets the world it is put back, cell for cell where each
-//!    now lies (turned as it fell), and the piece is gone.
+//!    now lies (turned as it fell), and the piece is gone. Stone and earth that come down
+//!    hard do not land whole: they **shatter** into lumps that are thrown out, turn as
+//!    they go, and land each on its own, as rubble. Wood does not shatter.
 //!
 //! No engine types and nothing random: the same cut fells the same tree. `cargo world fell`
 //! judges it on a real tree with no window.
@@ -41,6 +43,9 @@ pub const HELD: usize = 30_000;
 pub const LAND: usize = 4_000;
 /// How far from its wood a piece's own leaves are gathered, cells.
 const LEAFY: u8 = 10;
+/// How fast stone or earth must come down to break up, metres a second: a drop of about
+/// half a metre.
+const SHATTERS: f32 = 4.5;
 /// Metres a second a second that a loose thing falls at (as a body does: `body`).
 const FALL: f32 = 22.0;
 
@@ -65,6 +70,11 @@ pub struct Piece {
     vel: Vec3,
     /// Going over like a tree: which way, how far it has tipped (radians) and how fast.
     over: Option<(Vec3, f32, f32)>,
+    /// How it turns as it flies, radians a second about each axis (a lump thrown from
+    /// something shattered).
+    spin: Vec3,
+    /// It will break up if it lands hard: stone or earth, not yet broken.
+    brittle: bool,
     /// How tall it is, metres, and the places of it that are tried against the world.
     tall: f32,
     feel: Vec<Vec3>,
@@ -108,6 +118,9 @@ pub struct Cut {
 pub struct Loose {
     pub pieces: Vec<Piece>,
     pub landed: Vec<Landed>,
+    /// The same, once the simulation has seen who was under each (`Sim::step`): for whoever
+    /// makes the sound of it.
+    pub heard: Vec<Landed>,
     next: u32,
 }
 
@@ -333,9 +346,54 @@ impl Loose {
         let mut order: Vec<IVec3> = of.clone();
         order.sort_by_key(|c| (c.y, c.z, c.x));
         let feel = order.iter().step_by(stride).map(|c| (c.as_vec3() + 0.5) * CELL).collect();
+        // Stone and earth break; wood (and what is mostly wood) does not.
+        let brittle = of.iter().filter(|c| match &cells[*c] { Part::Whole(b) => !b.wood(), Part::Bits(b) => !b.iter().any(|b| b.wood()) }).count() * 2 > of.len();
         self.next += 1;
-        self.pieces.push(Piece { id: self.next, cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, tall, feel, age: 0.0 });
+        self.pieces.push(Piece { id: self.next, cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, spin: Vec3::ZERO, brittle, tall, feel, age: 0.0 });
         changed
+    }
+
+    /// Breaks a piece that has come down hard into lumps some three cells across, each
+    /// thrown out from the middle and up, turning, to land on its own. What is too small
+    /// to be a lump is dust, and gone.
+    fn shatter(&mut self, piece: Piece, speed: f32) {
+        let mut lumps: HashMap<IVec3, HashMap<IVec3, Part>> = HashMap::new();
+        for (cell, part) in piece.cells {
+            // (Lumps of uneven size: which lump a cell is of goes by a grid that is itself
+            // shifted from place to place.)
+            let shove = IVec3::new((cell.y / 2).rem_euclid(2), (cell.z / 3).rem_euclid(2), (cell.x / 2).rem_euclid(2));
+            lumps.entry((cell + shove).div_euclid(IVec3::splat(3))).or_default().insert(cell, part);
+        }
+        let heart = piece.pivot + Vec3::Y * piece.tall / 2.0;
+        let mut keys: Vec<IVec3> = lumps.keys().copied().collect();
+        keys.sort_by_key(|k| (k.y, k.z, k.x));
+        for key in keys {
+            let cells = lumps.remove(&key).unwrap_or_default();
+            if cells.len() < 4 {
+                continue;
+            }
+            let middle = cells.keys().map(|c| (c.as_vec3() + 0.5) * CELL).sum::<Vec3>() / cells.len() as f32;
+            // (Nothing random: how each is thrown goes by where it was.)
+            let odd = |n: i32| ((key.x * 73 + key.y * 179 + key.z * 283 + n * 97).rem_euclid(200) as f32 / 100.0) - 1.0;
+            let out = (middle - heart).with_y(0.0).try_normalize().unwrap_or(Vec3::new(odd(1), 0.0, odd(2)).normalize_or(Vec3::X));
+            let feel = cells.keys().map(|c| (c.as_vec3() + 0.5) * CELL).collect();
+            self.next += 1;
+            self.pieces.push(Piece {
+                id: self.next,
+                cells,
+                // (Turning about its own middle, from where the whole had brought it.)
+                pivot: middle,
+                shift: piece.pivot + piece.shift + piece.turn * (middle - piece.pivot) - middle,
+                turn: piece.turn,
+                vel: piece.turn * (out * (0.18 + 0.1 * odd(3)) + Vec3::Y * (0.22 + 0.08 * odd(4))) * speed.min(14.0),
+                over: None,
+                spin: Vec3::new(odd(5), odd(6), odd(7)) * 5.0,
+                brittle: false,
+                tall: 3.0 * CELL,
+                feel,
+                age: 0.0,
+            });
+        }
     }
 
     /// One moment of everything loose: each piece falls or goes further over, and what
@@ -363,6 +421,7 @@ impl Loose {
                 None => {
                     piece.vel.y -= FALL * dt;
                     piece.shift += piece.vel * dt;
+                    piece.turn = (Quat::from_scaled_axis(piece.spin * dt) * piece.turn).normalize();
                     speed = piece.vel.length();
                 }
             }
@@ -396,6 +455,11 @@ impl Loose {
         }
         for (n, speed) in down.into_iter().rev() {
             let piece = self.pieces.swap_remove(n);
+            if piece.brittle && speed > SHATTERS && piece.cells.len() >= 8 {
+                self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put: 0, speed });
+                self.shatter(piece, speed);
+                continue;
+            }
             let (put, touched, lo, hi) = land(world, &piece);
             changed.extend(touched);
             // And what of it has come down on nothing (a limb left sticking out over a
@@ -565,6 +629,35 @@ mod tests {
             loose.cut(&mut w, Vec3::new(step as f32 * 0.2, 1.0, 0.0), 0.4, Vec3::NEG_X, &[&form]);
         }
         assert_eq!(loose.pieces.len(), 1, "cut through, it hangs by its neighbour");
+    }
+
+    #[test]
+    fn stone_that_drops_shatters_into_rubble_and_wood_does_not() {
+        for (block, breaks) in [(Block::Stone, true), (Block::Timber, false)] {
+            let mut w = floor();
+            w.fill(Vec3::new(0.0, 3.0, 0.0), Vec3::new(2.0, 4.5, 2.0), block);
+            let mut loose = Loose::default();
+            loose.loosen(&mut w, IVec3::new(-1, 11, -1), IVec3::new(9, 19, 9), Vec3::X);
+            assert_eq!(loose.pieces.len(), 1);
+            let cells = loose.pieces[0].cells.len();
+            let mut most = 1;
+            let mut t = 0.0;
+            while !loose.pieces.is_empty() && t < 30.0 {
+                loose.step(&mut w, crate::DT);
+                most = most.max(loose.pieces.len());
+                t += crate::DT;
+            }
+            let down = count(&w, Vec3::new(-8.0, 0.0, -8.0), Vec3::new(10.0, 3.0, 10.0), block);
+            let block_shape = count(&w, Vec3::new(0.0, 0.0, 0.0), Vec3::new(2.0, 1.5, 2.0), block);
+            if breaks {
+                // Many lumps, thrown wider than the block was, most of it still there, all at rest.
+                assert!(most >= 8, "it broke into {most}");
+                assert!(down as f32 > cells as f32 * 0.6 && (block_shape as f32) < cells as f32 * 0.8, "{down} of {cells} cells came down, {block_shape} of them where the block fell");
+            } else {
+                assert!(most == 1 && block_shape as f32 > cells as f32 * 0.9, "wood broke into {most}: {block_shape} of {cells} where it fell");
+            }
+            assert!(loose.pieces.is_empty(), "something never came to rest");
+        }
     }
 
     #[test]

@@ -49,7 +49,9 @@ The role model is Teardown: everything can be cut, and what a cut leaves standin
 - **A piece** is the loose cells taken out of the world and moved as one body: tall on a small foot it goes over about its foot the way it was pushed; anything else drops. When its wood or stone meets ground it is put back cell for cell where each now lies (every cell of the world it reaches is asked what of the piece is there, so no gaps however it is turned); what then rests on nothing falls in its turn; a crumb under four cells is gone.
 - **Cost** (`cargo world fell`): a bite 1.5 ms; a 10,000-cell tree down in 3 s, 97% of its cells put back, the dearest step (the landing) 6 to 10 ms.
 - **The game only draws** (`cube_game::loose`): each piece meshed by the world's own mesher from a world holding only the piece, so it looks falling as it did standing and will lying, and moved as the simulation moves it. A script's `chop` bites the nearest trunk.
-- **Not yet**: nothing is hurt by what falls; stone does not shatter; what is dug goes nowhere; water does not flow into holes.
+- **Stone and earth that come down hard shatter** (`Loose::shatter`, over 4.5 m/s): into lumps some three cells across, thrown out and up and turning, each landing on its own as rubble. Wood does not. Nothing random: how a lump is thrown goes by where it was.
+- **What comes down strikes whoever is under it** (`Sim::step`): harm by its speed and size, a tree a killing blow and a clod a bruise.
+- **Not yet**: a cut is one free ball whatever is in hand (the developer, 2026-11-12: it is to be earned, a tree chopped and ground dug, each tool on its own stuff); a tree's fall is not yet staged (which way by the notch, limbs breaking as it lands, leaves thrown); what is dug goes nowhere; water does not flow into holes; no sound of any of it.
 
 ### What grows is drawn as shapes
 

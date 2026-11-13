@@ -762,6 +762,16 @@ impl Sim {
                 hits.push(Hit { on: s.id, by: id, harm: agent.power, push: Vec3::new(away.x * 4.0, 2.5, away.y * 4.0) });
             }
         }
+        // What has come down (`loose`) strikes whoever was under it: by how fast it came and
+        // how big it was, a falling tree a killing blow and a clod a bruise.
+        for fallen in std::mem::take(&mut self.loose.landed) {
+            let size = (fallen.cells as f32).cbrt() * cube_voxel::CELL;
+            for (id, agent) in self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.body.pos.distance(fallen.at) < size * 0.9 + a.body.half + 0.4) {
+                let away = (agent.body.pos - fallen.at).with_y(0.0).normalize_or(Vec3::X);
+                hits.push(Hit { on: *id, by: 0, harm: (fallen.speed * size * 6.0).min(400.0), push: away * 3.0 + Vec3::Y * 1.5 });
+            }
+            self.loose.heard.push(fallen);
+        }
         for hit in hits {
             let Some(agent) = self.agents.get_mut(&hit.on).filter(|a| a.dead.is_none()) else { continue };
             agent.hurt = 0.5;
