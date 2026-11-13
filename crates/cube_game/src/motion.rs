@@ -315,7 +315,12 @@ fn bodies(show: Res<ShowBodies>, live: Res<Live>, creatures: Query<(&Mover, &Tra
         let (radius, reach) = kind.shape();
         let facing = Quat::from_rotation_y(at.rotation.to_euler(EulerRot::YXZ).0);
         // (And what of it a blow lands on: a box to its head, its trunk, each limb, its tail.)
-        for (part, lo, hi) in &kind.parts {
+        let parts = match live.agent(mover).map(|a| a.act) {
+            Some(Act::Eat) if !kind.feeding.is_empty() => &kind.feeding,
+            Some(Act::Lie) if !kind.lying.is_empty() => &kind.lying,
+            _ => &kind.parts,
+        };
+        for (part, lo, hi) in parts {
             let tint = match part {
                 cube_sim::life::Part::Head => Color::srgb(1.0, 0.3, 0.2),
                 cube_sim::life::Part::Trunk => Color::srgb(1.0, 0.85, 0.2),

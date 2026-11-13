@@ -231,6 +231,10 @@ pub struct Meta {
 pub struct HitBox {
     /// `head`, `trunk`, `tail`, `leg` or `arm`.
     pub part: String,
+    /// The clip it is so in, where that is not standing: `eat` (its head down at the
+    /// ground) or `lie`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub when: String,
     pub lo: [f32; 3],
     pub hi: [f32; 3],
 }

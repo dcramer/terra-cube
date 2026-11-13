@@ -576,6 +576,15 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
     // Its size as it stands (the first frame of idle), not as it rests: a T-pose is all arms.
     let stand = out.iter().find(|c| c.name == "idle").map_or_else(|| skeleton.rest(), |c| c.frames[0].clone());
     let (slo, shi) = crate::check::bounds(&glb, &skeleton, &stand).unwrap_or((lo, hi));
+    // What a blow can strike, as it stands; and with its head down to feed and lying, where
+    // it does those, since a head at the ground is not where a head held up was.
+    let mut hit = crate::check::parts(&glb, &skeleton, &stand, &roles, scale).unwrap_or_default();
+    for when in ["eat", "lie"] {
+        if let Some(clip) = out.iter().find(|c| c.name == when) {
+            let pose = &clip.frames[clip.frames.len() / 2];
+            hit.extend(crate::check::parts(&glb, &skeleton, pose, &roles, scale).unwrap_or_default().into_iter().map(|b| crate::spec::HitBox { when: when.into(), ..b }));
+        }
+    }
     let meta = Meta {
         height: creature.height,
         length: crate::check::extent(&glb, &skeleton, &stand, roles.forward).unwrap_or((shi - slo).dot(roles.forward).abs()) * scale,
@@ -589,7 +598,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         bones,
         stride: (strode.is_some() && plan.rig == "humanoid").then(|| crate::grip::rests(&skeleton)),
         grip: if plan.rig == "humanoid" { crate::grip::grips(&skeleton, scale) } else { Default::default() },
-        hit: crate::check::parts(&glb, &skeleton, &stand, &roles, scale).unwrap_or_default(),
+        hit,
     };
     Ok(Finished { glb, skeleton, roles, clips: out, meta, scale })
 }

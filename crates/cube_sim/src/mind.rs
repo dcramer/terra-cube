@@ -89,8 +89,9 @@ impl Mind {
 pub struct Seen {
     pub id: u32,
     pub pos: Vec3,
-    /// The way it faces, radians.
+    /// The way it faces, radians, and what it is doing.
     pub facing: f32,
+    pub act: crate::life::Act,
     pub vel: Vec3,
     pub temper: Temper,
     /// From its middle to its furthest edge over the ground.

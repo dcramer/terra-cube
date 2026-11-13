@@ -188,6 +188,10 @@ pub struct Kind {
     /// tail, as it stands (forge measures them from its skin: `[[hit]]` in `meta.toml`).
     /// Metres from the ground under its middle: x to its left, y up, z the way it faces.
     pub parts: Vec<(Part, Vec3, Vec3)>,
+    /// The same with its head down to feed, and lying, where forge measured them: a head
+    /// at the ground is struck there, not where it was held up.
+    pub feeding: Vec<(Part, Vec3, Vec3)>,
+    pub lying: Vec<(Part, Vec3, Vec3)>,
     pub height: f32,
     pub length: f32,
     pub width: f32,
@@ -226,8 +230,13 @@ impl Kind {
     /// What a blow along a line strikes: the first of its parts the line goes through, or
     /// failing any the one whose middle the line passes nearest. `from` and `along` are in
     /// its own frame, as its parts are (`Sim::own`). Its trunk, where it has no parts.
-    pub fn struck(&self, from: Vec3, along: Vec3) -> Part {
+    pub fn struck(&self, from: Vec3, along: Vec3, act: Act) -> Part {
         let along = along.normalize_or(Vec3::Z);
+        let parts = match act {
+            Act::Eat if !self.feeding.is_empty() => &self.feeding,
+            Act::Lie if !self.lying.is_empty() => &self.lying,
+            _ => &self.parts,
+        };
         let through = |lo: Vec3, hi: Vec3| {
             let (mut near, mut far) = (0.0f32, f32::MAX);
             for axis in 0..3 {
@@ -243,8 +252,8 @@ impl Kind {
             }
             (near <= far).then_some(near)
         };
-        let first = self.parts.iter().filter_map(|(part, lo, hi)| through(*lo, *hi).map(|t| (t, *part))).min_by(|a, b| a.0.total_cmp(&b.0));
-        let nearest = || self.parts.iter().map(|(part, lo, hi)| { let to = (*lo + *hi) / 2.0 - from; ((to - along * to.dot(along).max(0.0)).length(), *part) }).min_by(|a, b| a.0.total_cmp(&b.0));
+        let first = parts.iter().filter_map(|(part, lo, hi)| through(*lo, *hi).map(|t| (t, *part))).min_by(|a, b| a.0.total_cmp(&b.0));
+        let nearest = || parts.iter().map(|(part, lo, hi)| { let to = (*lo + *hi) / 2.0 - from; ((to - along * to.dot(along).max(0.0)).length(), *part) }).min_by(|a, b| a.0.total_cmp(&b.0));
         first.or_else(nearest).map_or(Part::Trunk, |p| p.1)
     }
 
@@ -316,6 +325,8 @@ impl Kind {
         #[derive(Deserialize)]
         struct HitBox {
             part: Part,
+            #[serde(default)]
+            when: String,
             lo: [f32; 3],
             hi: [f32; 3],
         }
@@ -348,7 +359,9 @@ impl Kind {
             let range = life.range.unwrap_or((60.0 + meta.height * 40.0) * if diet == Diet::Meat { 2.5 } else { 1.0 });
             kinds.push(Kind {
                 id,
-                parts: meta.hit.iter().map(|h| (h.part, Vec3::from(h.lo), Vec3::from(h.hi))).collect(),
+                parts: meta.hit.iter().filter(|h| h.when.is_empty()).map(|h| (h.part, Vec3::from(h.lo), Vec3::from(h.hi))).collect(),
+                feeding: meta.hit.iter().filter(|h| h.when == "eat").map(|h| (h.part, Vec3::from(h.lo), Vec3::from(h.hi))).collect(),
+                lying: meta.hit.iter().filter(|h| h.when == "lie").map(|h| (h.part, Vec3::from(h.lo), Vec3::from(h.hi))).collect(),
                 height: meta.height,
                 length: meta.length,
                 width: meta.width,
@@ -825,7 +838,7 @@ impl Sim {
         self.when = crate::sky::later(self.when, DT);
         self.wake(world);
         // Minds see the world as it was at the start of the tick.
-        let seen: Vec<mind::Seen> = self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.awake).map(|(&id, a)| mind::Seen { id, facing: a.facing, pos: a.body.pos, vel: a.body.vel, temper: self.kinds[a.kind].temper, kind: a.kind, errand: a.mind.errand(), reach: a.body.half + a.body.long.length() }).collect();
+        let seen: Vec<mind::Seen> = self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.awake).map(|(&id, a)| mind::Seen { id, facing: a.facing, act: a.act, pos: a.body.pos, vel: a.body.vel, temper: self.kinds[a.kind].temper, kind: a.kind, errand: a.mind.errand(), reach: a.body.half + a.body.long.length() }).collect();
         let mut hits = Vec::new();
         let when = self.when;
         // What is awake grows hungry and thirsty by the second, at the day's rates (`day`).
@@ -900,7 +913,7 @@ impl Sim {
                 // it faces). Not aimed, their trunk: a blow from in front does not find the
                 // head for being in the way, and every fight is as it was.
                 let own = |v: Vec3| Vec3::new(v.x * s.facing.cos() - v.z * s.facing.sin(), v.y, v.x * s.facing.sin() + v.z * s.facing.cos());
-                let part = agent.aim.map_or(Part::Trunk, |(eye, way)| self.kinds[s.kind].struck(own(eye - s.pos), own(way)));
+                let part = agent.aim.map_or(Part::Trunk, |(eye, way)| self.kinds[s.kind].struck(own(eye - s.pos), own(way), s.act));
                 hits.push(Hit { on: s.id, by: id, harm: agent.power * part.takes(), push: Vec3::new(away.x * 4.0, 2.5, away.y * 4.0), part });
             }
         }
@@ -1512,7 +1525,7 @@ mod tests {
     use cube_voxel::Block;
 
     fn kind(id: &str, temper: Temper, height: f32, speeds: [f32; 3]) -> Kind {
-        Kind { id: id.into(), parts: Vec::new(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None, winter: 1.0, diet: if matches!(temper, Temper::Hunter | Temper::Hostile) { Diet::Meat } else { Diet::Plants }, litter: 2.0, lifespan: 8.0, capacity: 8, range: 80.0, meal: 6.0, holds: None, share: 1.0, flies: false }
+        Kind { id: id.into(), parts: Vec::new(), feeding: Vec::new(), lying: Vec::new(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None, winter: 1.0, diet: if matches!(temper, Temper::Hunter | Temper::Hostile) { Diet::Meat } else { Diet::Plants }, litter: 2.0, lifespan: 8.0, capacity: 8, range: 80.0, meal: 6.0, holds: None, share: 1.0, flies: false }
     }
 
     /// Rabbit, wolf, bear, goblin and a person, on a floor of stone 60 m square.
@@ -1777,11 +1790,16 @@ mod tests {
         ];
         // From in front and level with its head, its head; from over it and down, its trunk;
         // low from its left, its leg; from behind, its tail; wide of all of it, the nearest.
-        assert_eq!(beast.struck(Vec3::new(0.0, 0.9, 3.0), Vec3::NEG_Z), Part::Head);
-        assert_eq!(beast.struck(Vec3::new(0.0, 3.0, 0.0), Vec3::NEG_Y), Part::Trunk);
-        assert_eq!(beast.struck(Vec3::new(-2.0, 0.2, 0.4), Vec3::X), Part::Leg);
-        assert_eq!(beast.struck(Vec3::new(0.0, 0.7, -3.0), Vec3::Z), Part::Tail);
-        assert_eq!(beast.struck(Vec3::new(0.0, 1.4, 3.0), Vec3::NEG_Z), Part::Head, "over its head, it is its head that is nearest");
+        assert_eq!(beast.struck(Vec3::new(0.0, 0.9, 3.0), Vec3::NEG_Z, Act::Idle), Part::Head);
+        assert_eq!(beast.struck(Vec3::new(0.0, 3.0, 0.0), Vec3::NEG_Y, Act::Idle), Part::Trunk);
+        assert_eq!(beast.struck(Vec3::new(-2.0, 0.2, 0.4), Vec3::X, Act::Idle), Part::Leg);
+        assert_eq!(beast.struck(Vec3::new(0.0, 0.7, -3.0), Vec3::Z, Act::Idle), Part::Tail);
+        assert_eq!(beast.struck(Vec3::new(0.0, 1.4, 3.0), Vec3::NEG_Z, Act::Idle), Part::Head, "over its head, it is its head that is nearest");
+        // With its head down to feed, its head is at the ground: the line that found it held
+        // up goes over it and finds its trunk behind, and one along the ground finds it.
+        beast.feeding = beast.parts.iter().map(|p| if p.0 == Part::Head { (Part::Head, Vec3::new(-0.15, 0.0, 0.5), Vec3::new(0.15, 0.4, 0.9)) } else { *p }).collect();
+        assert_eq!(beast.struck(Vec3::new(0.0, 0.9, 3.0), Vec3::NEG_Z, Act::Eat), Part::Trunk);
+        assert_eq!(beast.struck(Vec3::new(0.0, 0.2, 3.0), Vec3::NEG_Z, Act::Eat), Part::Head);
         // In a world: a person a pace in front of it, facing it. Not aiming, the blow is at
         // its trunk, though its head is in the way; aimed at its head, it takes half as
         // much again.

@@ -162,7 +162,7 @@ pub fn parts(glb: &Glb, sk: &Skeleton, pose: &Pose, roles: &crate::rig::Roles, s
             boxes[n].2 = 0;
         }
     }
-    Ok(boxes.iter().zip(&names).filter(|(b, _)| b.2 > 0).map(|(b, name)| crate::spec::HitBox { part: (*name).into(), lo: b.0.to_array().map(|v| (v * 1000.0).round() / 1000.0), hi: b.1.to_array().map(|v| (v * 1000.0).round() / 1000.0) }).collect())
+    Ok(boxes.iter().zip(&names).filter(|(b, _)| b.2 > 0).map(|(b, name)| crate::spec::HitBox { part: (*name).into(), when: String::new(), lo: b.0.to_array().map(|v| (v * 1000.0).round() / 1000.0), hi: b.1.to_array().map(|v| (v * 1000.0).round() / 1000.0) }).collect())
 }
 
 /// How far the skin reaches along a direction in a pose: its extent, in the file's units.
