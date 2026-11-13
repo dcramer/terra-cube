@@ -218,6 +218,9 @@ pub struct Meta {
 pub struct Walk {
     pub legs: Vec<String>,
     pub hips: Vec<[f32; 3]>,
+    /// And where its knee is, so that it goes on bending the way it is bent.
+    #[serde(default)]
+    pub knees: Vec<[f32; 3]>,
     pub bones: Vec<[f32; 2]>,
     pub ankle: Vec<f32>,
 }

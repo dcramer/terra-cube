@@ -85,7 +85,8 @@ fn pose(
             // walker's hip is taken that much lower.)
             let ankle: Vec<f32> = legs.iter().map(|l| l.3.y.max(0.0)).collect();
             let low: [Vec3; 4] = std::array::from_fn(|i| hips[i] - Vec3::Y * ankle[i]);
-            let walker = Walker::fitted(low, lengths, at, yaw);
+            let knees: [Vec3; 4] = std::array::from_fn(|i| legs[i].2);
+            let walker = Walker::fitted(low, lengths, knees, at, yaw);
             real.middle = Vec3::new(0.0, low.iter().map(|h| h.y).sum::<f32>() / 4.0, (low[0].z + low[2].z) / 2.0);
             if std::env::var_os("LIMBS_TRACE").is_some() {
                 println!("limbs: fitted · hips {hips:.2?} · bones {lengths:.2?} · ankles {ankle:.2?}");
@@ -110,14 +111,14 @@ fn pose(
             *eye = Some(now);
             *camera = Transform::from_translation(now).looking_at(trunk - Vec3::Y * 0.1, Vec3::Y);
         }
-        bend(entity, &placed, legs, walker.feet(), ankle, &parents, &mut poses);
+        bend(entity, &placed, legs, walker.feet(), walker.legs().map(|l| l[1]), ankle, &parents, &mut poses);
     }
 }
 
 /// Each leg is bent to its foot: the knee until the leg's end is as far from the hip as the
 /// foot is, then the whole leg swung to it.
-fn bend(entity: Entity, placed: &Transform, legs: &[[Entity; 3]], feet: [Vec3; 4], ankle: &[f32], parents: &Query<&ChildOf>, poses: &mut Query<&mut Transform, Without<crate::motion::Mover>>) {
-    for (([hip, knee, end], foot), ankle) in legs.iter().zip(feet).zip(ankle.iter()) {
+fn bend(entity: Entity, placed: &Transform, legs: &[[Entity; 3]], feet: [Vec3; 4], knees: [Vec3; 4], ankle: &[f32], parents: &Query<&ChildOf>, poses: &mut Query<&mut Transform, Without<crate::motion::Mover>>) {
+    for ((([hip, knee, end], foot), ankle), toward) in legs.iter().zip(feet).zip(ankle.iter()).zip(knees) {
         let of = |bone: Entity, poses: &Query<&mut Transform, Without<crate::motion::Mover>>| crate::feet::world_of(bone, entity, placed, parents, poses).map(|w| Vec3::from(w.translation));
         let (Some(a), Some(b), Some(p)) = (of(*hip, poses), of(*knee, poses), of(*end, poses)) else { continue };
         let target = foot + Vec3::Y * *ankle;
@@ -134,9 +135,18 @@ fn bend(entity: Entity, placed: &Transform, legs: &[[Entity; 3]], feet: [Vec3; 4
             continue;
         }
         let bent = b + bend * (p - b);
-        if let (Some(from), Some(to)) = ((bent - a).try_normalize(), (target - a).try_normalize()) {
-            crate::feet::turn_bone(*hip, Quat::from_rotation_arc(from, to), entity, placed, parents, poses);
-        }
+        let (Some(from), Some(to)) = ((bent - a).try_normalize(), (target - a).try_normalize()) else { continue };
+        let swing = Quat::from_rotation_arc(from, to);
+        // And the whole leg is turned about the line from hip to foot until its knee is on
+        // the side the walker's is: bent whichever way it happened to be, a leg nearly
+        // straight went over to bend backwards from one frame to the next.
+        let knee_now = a + swing * (b - a);
+        let off = |p: Vec3| (p - a) - to * (p - a).dot(to);
+        let twist = match (off(knee_now).try_normalize(), off(toward + Vec3::Y * *ankle).try_normalize()) {
+            (Some(now), Some(want)) => Quat::from_axis_angle(to, now.cross(want).dot(to).atan2(now.dot(want))),
+            _ => Quat::IDENTITY,
+        };
+        crate::feet::turn_bone(*hip, twist * swing, entity, placed, parents, poses);
     }
 }
 
@@ -207,7 +217,8 @@ fn wild(
             let low: [Vec3; 4] = std::array::from_fn(|i| (Vec3::from_array(walk.hips[i]) - Vec3::Y * walk.ankle[i]) * size);
             real.middle = Vec3::new(0.0, low.iter().map(|h| h.y).sum::<f32>() / 4.0, (low[0].z + low[2].z) / 2.0);
             real.ankle = walk.ankle.iter().map(|a| a * size).collect();
-            (real.size, real.walker) = (size, Some(Walker::fitted(low, std::array::from_fn(|i| (walk.bones[i][0] * size, walk.bones[i][1] * size)), at, yaw)));
+            let knees: [Vec3; 4] = std::array::from_fn(|i| walk.knees.get(i).map_or(Vec3::from_array(walk.hips[i]), |k| Vec3::from_array(*k)) * size);
+            (real.size, real.walker) = (size, Some(Walker::fitted(low, std::array::from_fn(|i| (walk.bones[i][0] * size, walk.bones[i][1] * size)), knees, at, yaw)));
         }
         let Real { walker: Some(walker), legs, ankle, middle, .. } = &mut *real else { continue };
         let ground = |x: f32, z: f32| crate::feet::ground_at(&terrain, x, z, at.y).unwrap_or(at.y);
@@ -217,7 +228,7 @@ fn wild(
         let (trunk, turned) = walker.trunk();
         let placed = Transform { translation: trunk - turned * *middle, rotation: turned, scale: seen.scale };
         *seen = placed;
-        bend(entity, &placed, legs, walker.feet(), ankle, &parents, &mut poses);
+        bend(entity, &placed, legs, walker.feet(), walker.legs().map(|l| l[1]), ankle, &parents, &mut poses);
     }
 }
 
@@ -241,7 +252,7 @@ fn asked(t: f32) -> (f32, f32) {
     }
 }
 
-fn walk(mut commands: Commands, registry: Res<crate::creatures::Registry>, args: Res<crate::Args>, time: Res<Time>, loading: Res<crate::loading::Loading>, terrain: Option<Res<crate::world::Terrain>>, trial: Option<ResMut<Trial>>, mut parts: Query<(&Part, &mut Transform)>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, mut speed: Local<f32>) {
+fn walk(mut commands: Commands, registry: Res<crate::creatures::Registry>, args: Res<crate::Args>, time: Res<Time>, loading: Res<crate::loading::Loading>, terrain: Option<Res<crate::world::Terrain>>, trial: Option<ResMut<Trial>>, mut parts: Query<(&Part, &mut Transform)>, mut cameras: Query<&mut Transform, (With<Camera3d>, Without<Part>)>, mut eye: Local<Option<Vec3>>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, mut speed: Local<f32>) {
     let (true, Some(terrain)) = (args.limbs, terrain) else { return };
     let ground = |x: f32, z: f32| cube_voxel::mesh::eased_under(&terrain.0, Vec3::new(x, terrain.ground(x, z), z)).unwrap_or_else(|| terrain.ground(x, z));
     let place = |turn: f32| {
@@ -274,6 +285,14 @@ fn walk(mut commands: Commands, registry: Res<crate::creatures::Registry>, args:
         trial.1 += *speed / RING * dt;
         let (at, turn) = (place(trial.1), trial.1 + std::f32::consts::FRAC_PI_2);
         trial.0.step(dt, at, turn, rest, ground);
+    }
+    // A big moving picture of the boxes alone follows them, from the side and a little ahead.
+    if args.big && args.gif && args.limbs_as.is_none() && let Some(mut camera) = cameras.iter_mut().next() {
+        let trunk = trial.0.trunk().0;
+        let want = trunk + Quat::from_rotation_y(trial.0.yaw + 1.9) * Vec3::Z * 2.6 + Vec3::Y * 0.5;
+        let now = eye.map_or(want, |e| e.lerp(want, 1.0 - (-2.5 * dt).exp()));
+        *eye = Some(now);
+        *camera = Transform::from_translation(now).looking_at(trunk - Vec3::Y * 0.1, Vec3::Y);
     }
     let boxes = trial.0.boxes();
     for (part, mut seen) in &mut parts {

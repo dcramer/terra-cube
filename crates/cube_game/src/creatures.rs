@@ -53,6 +53,8 @@ pub struct Meta {
 pub struct Walk {
     pub legs: Vec<String>,
     pub hips: Vec<[f32; 3]>,
+    #[serde(default)]
+    pub knees: Vec<[f32; 3]>,
     pub bones: Vec<[f32; 2]>,
     pub ankle: Vec<f32>,
 }

@@ -437,6 +437,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         spec::Walk {
             legs: legs.iter().map(|(j, _)| j.map(|j| skeleton.joints[j].name.clone()).join(">")).collect(),
             hips: legs.iter().map(|(_, hip)| hip.to_array()).collect(),
+            knees: legs.iter().map(|(j, _)| at(j[1]).to_array()).collect(),
             bones: legs.iter().map(|(j, _)| [at(j[0]).distance(at(j[1])), at(j[1]).distance(at(j[2]))]).collect(),
             ankle: legs.iter().map(|(j, _)| at(j[2]).y.max(0.0)).collect(),
         }
