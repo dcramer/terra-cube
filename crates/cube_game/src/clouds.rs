@@ -327,6 +327,8 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
                 // (And stand in a row of three or four along it, not one plank alone.)
                 for nth in 0..if high { 3 + (roll(&mut state) * 2.0) as usize } else { 1 } {
                     let at = at + WIND * (nth as f32 * longs[kind] * 2.3) + Vec3::new(-WIND.z, 0.0, WIND.x) * (if nth == 0 { 0.0 } else { (roll(&mut state) - 0.5) * 160.0 });
+                    // (Each its own shape: three of one shape in a row were seen to be.)
+                    let kind = if nth == 0 { kind } else { (kind + 1 + (roll(&mut state) * 4.0) as usize) % 6 };
                     commands.spawn((Cloud(at, scale * if nth == 0 { 1.0 } else { 0.7 + 0.5 * roll(&mut state) }, kind), Mesh3d(kinds[kind].1.clone()), MeshMaterial3d(white.clone()), Transform::from_translation(Vec3::new(0.0, -5000.0, 0.0)).with_rotation(turned), NotShadowCaster, NotShadowReceiver));
                 }
             }
@@ -338,11 +340,18 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
 /// The field goes downwind and stays round the camera. A cloud's foot is highest overhead
 /// and comes down toward the field's edge, where the cloud has dwindled to nothing; near
 /// ones are drawn in their fine cubes.
-fn drift(time: Res<Time>, kinds: Res<Kinds>, cameras: Query<&GlobalTransform, With<Camera3d>>, mut clouds: Query<(&Cloud, &mut Transform, &mut Mesh3d)>) {
+fn drift(time: Res<Time>, kinds: Res<Kinds>, cameras: Query<&GlobalTransform, With<Camera3d>>, mut clouds: Query<(&Cloud, &mut Transform, &mut Mesh3d)>, mut turn: Local<usize>) {
     let Some(eye) = cameras.iter().next().map(|c| c.translation()) else { return };
+    // An eighth of them each frame: a cloud goes 5 m in a second half a kilometre off, and
+    // moved eight times a second it is not seen to step; moved every frame, a thousand of
+    // them are a thousand things changed for the engine to carry to the picture.
+    *turn += 1;
     let blown = WIND * (time.elapsed_secs() * DRIFT);
     let sea = SEA as f32 * CELL;
-    for (cloud, mut at, mut mesh) in &mut clouds {
+    for (nth, (cloud, mut at, mut mesh)) in clouds.iter_mut().enumerate() {
+        if nth % 8 != *turn % 8 {
+            continue;
+        }
         let away = |home: f32, eye: f32| (home - eye + FIELD / 2.0).rem_euclid(FIELD) - FIELD / 2.0;
         let (dx, dz) = (away(cloud.0.x + blown.x, eye.x), away(cloud.0.z + blown.z, eye.z));
         let far = (dx * dx + dz * dz).sqrt();
@@ -381,6 +390,6 @@ fn lit(live: Option<Res<crate::motion::Live>>, kinds: Res<Kinds>, cameras: Query
         // The sky's blue is on a cloud's shaded side while the sun is low and still up or
         // just under: by day the engine's own sky light is enough, and at night there is none.
         let low = (1.0 - ((to_sun.y - 0.02) / 0.4).abs()).clamp(0.0, 1.0) * ((to_sun.y + 0.12) / 0.06).clamp(0.0, 1.0);
-        material.extension.shade = (Vec3::new(0.10, 0.15, 0.36) * (0.5 * low)).extend(0.0);
+        material.extension.shade = (Vec3::new(0.10, 0.15, 0.36) * (0.75 * low)).extend(0.0);
     }
 }
