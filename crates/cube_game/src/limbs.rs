@@ -28,6 +28,8 @@ pub struct Real {
     /// ground at rest; and where the trunk's middle is in the model as it stands.
     legs: Vec<[Entity; 3]>,
     ankle: Vec<f32>,
+    /// Where each leg meets the ground, in its last joint's frame: what is put on the foot.
+    sole: Vec<Vec3>,
     middle: Vec3,
     /// How big it was when fitted (the young are small), and whether its legs could not be found.
     size: f32,
@@ -80,20 +82,22 @@ fn pose(
             legs[..2].sort_by(|a, b| a.1.x.total_cmp(&b.1.x));
             legs[2..].sort_by(|a, b| a.1.x.total_cmp(&b.1.x));
             let hips: [Vec3; 4] = std::array::from_fn(|i| legs[i].1);
-            let lengths: [(f32, f32); 4] = std::array::from_fn(|i| (legs[i].1.distance(legs[i].2), legs[i].2.distance(legs[i].3)));
+            let lengths: [(f32, f32); 4] = std::array::from_fn(|i| (legs[i].1.distance(legs[i].2), legs[i].2.distance(legs[i].3.with_y(0.0))));
             // (The walker's foot is on the ground and the leg's end is the joint over it: the
             // walker's hip is taken that much lower.)
-            let ankle: Vec<f32> = legs.iter().map(|l| l.3.y.max(0.0)).collect();
-            let low: [Vec3; 4] = std::array::from_fn(|i| hips[i] - Vec3::Y * ankle[i]);
+            let sole: Vec<Vec3> = legs.iter().filter_map(|l| crate::feet::world_of(l.0[2], entity, &upright, &parents, &poses).map(|w| w.inverse().transform_point3((l.3 + stood.translation).with_y(stood.translation.y)))).collect();
+            let ankle: Vec<f32> = vec![0.0; 4];
+            let low: [Vec3; 4] = hips;
             let knees: [Vec3; 4] = std::array::from_fn(|i| legs[i].2);
             let walker = Walker::fitted(low, lengths, knees, at, yaw);
             real.middle = Vec3::new(0.0, low.iter().map(|h| h.y).sum::<f32>() / 4.0, (low[0].z + low[2].z) / 2.0);
             if std::env::var_os("LIMBS_TRACE").is_some() {
                 println!("limbs: fitted · hips {hips:.2?} · bones {lengths:.2?} · ankles {ankle:.2?}");
             }
+            real.sole = sole;
             (real.legs, real.ankle, real.walker) = (legs.iter().map(|l| l.0).collect(), ankle, Some(walker));
         }
-        let Real { walker: Some(walker), legs, ankle, middle, .. } = &mut *real else { continue };
+        let Real { walker: Some(walker), legs, ankle, sole, middle, .. } = &mut *real else { continue };
         if time.delta_secs() > 0.0 {
             walker.step(time.delta_secs(), at, yaw, asked(trial.2).1, ground);
         }
@@ -111,16 +115,19 @@ fn pose(
             *eye = Some(now);
             *camera = Transform::from_translation(now).looking_at(trunk - Vec3::Y * 0.1, Vec3::Y);
         }
-        bend(entity, &placed, legs, walker.feet(), walker.legs().map(|l| l[1]), ankle, &parents, &mut poses);
+        bend(entity, &placed, legs, walker.feet(), walker.legs().map(|l| l[1]), ankle, sole, &parents, &mut poses);
     }
 }
 
 /// Each leg is bent to its foot: the knee until the leg's end is as far from the hip as the
 /// foot is, then the whole leg swung to it.
-fn bend(entity: Entity, placed: &Transform, legs: &[[Entity; 3]], feet: [Vec3; 4], knees: [Vec3; 4], ankle: &[f32], parents: &Query<&ChildOf>, poses: &mut Query<&mut Transform, Without<crate::motion::Mover>>) {
-    for ((([hip, knee, end], foot), ankle), toward) in legs.iter().zip(feet).zip(ankle.iter()).zip(knees) {
+#[allow(clippy::too_many_arguments)]
+fn bend(entity: Entity, placed: &Transform, legs: &[[Entity; 3]], feet: [Vec3; 4], knees: [Vec3; 4], ankle: &[f32], sole: &[Vec3], parents: &Query<&ChildOf>, poses: &mut Query<&mut Transform, Without<crate::motion::Mover>>) {
+    for (n, ((([hip, knee, end], foot), ankle), toward)) in legs.iter().zip(feet).zip(ankle.iter()).zip(knees).enumerate() {
         let of = |bone: Entity, poses: &Query<&mut Transform, Without<crate::motion::Mover>>| crate::feet::world_of(bone, entity, placed, parents, poses).map(|w| Vec3::from(w.translation));
-        let (Some(a), Some(b), Some(p)) = (of(*hip, poses), of(*knee, poses), of(*end, poses)) else { continue };
+        // (The leg's end is the point of it that stands on the ground, carried by its last joint.)
+        let stands = crate::feet::world_of(*end, entity, placed, parents, poses).map(|w| w.transform_point3(sole.get(n).copied().unwrap_or(Vec3::ZERO)));
+        let (Some(a), Some(b), Some(p)) = (of(*hip, poses), of(*knee, poses), stands) else { continue };
         let target = foot + Vec3::Y * *ankle;
         let (upper, lower) = (a.distance(b), b.distance(p));
         if upper < 1e-5 || lower < 1e-5 {
@@ -217,10 +224,11 @@ fn wild(
             let low: [Vec3; 4] = std::array::from_fn(|i| (Vec3::from_array(walk.hips[i]) - Vec3::Y * walk.ankle[i]) * size);
             real.middle = Vec3::new(0.0, low.iter().map(|h| h.y).sum::<f32>() / 4.0, (low[0].z + low[2].z) / 2.0);
             real.ankle = walk.ankle.iter().map(|a| a * size).collect();
+            real.sole = walk.sole.iter().map(|s| Vec3::from_array(*s)).collect();
             let knees: [Vec3; 4] = std::array::from_fn(|i| walk.knees.get(i).map_or(Vec3::from_array(walk.hips[i]), |k| Vec3::from_array(*k)) * size);
             (real.size, real.walker) = (size, Some(Walker::fitted(low, std::array::from_fn(|i| (walk.bones[i][0] * size, walk.bones[i][1] * size)), knees, at, yaw)));
         }
-        let Real { walker: Some(walker), legs, ankle, middle, .. } = &mut *real else { continue };
+        let Real { walker: Some(walker), legs, ankle, sole, middle, .. } = &mut *real else { continue };
         let ground = |x: f32, z: f32| crate::feet::ground_at(&terrain, x, z, at.y).unwrap_or(at.y);
         if time.delta_secs() > 0.0 {
             walker.step(time.delta_secs(), at, yaw, if agent.act == Act::Lie { 1.0 } else { 0.0 }, ground);
@@ -228,7 +236,7 @@ fn wild(
         let (trunk, turned) = walker.trunk();
         let placed = Transform { translation: trunk - turned * *middle, rotation: turned, scale: seen.scale };
         *seen = placed;
-        bend(entity, &placed, legs, walker.feet(), walker.legs().map(|l| l[1]), ankle, &parents, &mut poses);
+        bend(entity, &placed, legs, walker.feet(), walker.legs().map(|l| l[1]), ankle, sole, &parents, &mut poses);
     }
 }
 

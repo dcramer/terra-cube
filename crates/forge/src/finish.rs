@@ -452,8 +452,9 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
             legs: legs.iter().map(|(j, _)| j.map(|j| skeleton.joints[j].name.clone()).join(">")).collect(),
             hips: legs.iter().map(|(_, hip)| hip.to_array()).collect(),
             knees: legs.iter().map(|(j, _)| at(j[1]).to_array()).collect(),
-            bones: legs.iter().map(|(j, _)| [at(j[0]).distance(at(j[1])), at(j[1]).distance(at(j[2]))]).collect(),
-            ankle: legs.iter().map(|(j, _)| at(j[2]).y.max(0.0)).collect(),
+            bones: legs.iter().map(|(j, _)| [at(j[0]).distance(at(j[1])), at(j[1]).distance(at(j[2]).with_y(0.0))]).collect(),
+            ankle: vec![0.0; 4],
+            sole: legs.iter().map(|(j, _)| { let p = world[j[2]].w_axis.truncate(); world[j[2]].inverse().transform_point3(p - Vec3::Y * at(j[2]).y.max(0.0) / scale).to_array() }).collect(),
         }
     }).filter(|w| {
         // (Each name must be one bone's and no other's, or the game cannot find it.)

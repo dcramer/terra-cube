@@ -653,9 +653,22 @@ fn stand_folded(sk: &Skeleton, roles: &Roles, pose: &mut Pose) {
     }
 }
 
-pub(crate) fn reach_by(sk: &Skeleton, roles: &Roles, pose: &mut Pose, leg: &crate::rig::Leg, (hip, knee): (usize, usize), tip: usize, target: Vec3) {
+pub(crate) fn reach_by(sk: &Skeleton, roles: &Roles, pose: &mut Pose, leg: &crate::rig::Leg, joints: (usize, usize), tip: usize, target: Vec3) {
+    reach_point(sk, roles, pose, leg, joints, (tip, Vec3::ZERO), target)
+}
+
+/// The same, for a point carried by the leg's last joint (`sole`, in that joint's own frame)
+/// and not the joint itself: where the foot meets the ground. A leg's bones may end at the
+/// ankle or, on a rig that came back short, at the hock (the wolf's off hind leg has a bone
+/// fewer than its near one): put down by its last joint, such a leg stood on its hock in
+/// the air and its paw went where it would.
+pub(crate) fn reach_point(sk: &Skeleton, roles: &Roles, pose: &mut Pose, leg: &crate::rig::Leg, (hip, knee): (usize, usize), (tip, sole): (usize, Vec3), target: Vec3) {
     let at = |pose: &Pose, j: usize| sk.pose_world(pose)[j].w_axis.truncate();
-    let (h, k, p) = (at(pose, hip), at(pose, knee), at(pose, tip));
+    // (The joint's own place where no point of it is given: a leg of two bones turns its
+    // last joint by no number at all, and that joint's place is still good where a point
+    // carried by it is not.)
+    let end = |pose: &Pose| if sole == Vec3::ZERO { sk.pose_world(pose)[tip].w_axis.truncate() } else { sk.pose_world(pose)[tip].transform_point3(sole) };
+    let (h, k, p) = (at(pose, hip), at(pose, knee), end(pose));
     let (a, b) = (k.distance(h), p.distance(k));
     // A leg of two bones has no knee to bend (one of the lengths is nothing): the bounds
     // cross, and the nearer one stands.
@@ -665,7 +678,7 @@ pub(crate) fn reach_by(sk: &Skeleton, roles: &Roles, pose: &mut Pose, leg: &crat
     let want = ((a * a + b * b - d * d) / (2.0 * a * b)).clamp(-1.0, 1.0).acos();
     let axis = (h - k).cross(p - k).try_normalize().unwrap_or(roles.side * if leg.front { -1.0 } else { 1.0 });
     turn_now(sk, pose, knee, Quat::from_axis_angle(axis, want - now));
-    let p = at(pose, tip);
+    let p = end(pose);
     turn_now(sk, pose, hip, Quat::from_rotation_arc((p - h).normalize(), (target - h).normalize()));
 }
 

@@ -34,15 +34,17 @@ pub fn stride(sk: &Skeleton, roles: &Roles, stand: &Pose, speed: f32, metres: f3
     let into = |p: Vec3| Vec3::new((p - origin).dot(right), p.y - origin.y, (p - origin).dot(ahead)) * metres;
     let out_of = |v: Vec3| (right * v.x + Vec3::Y * v.y + ahead * v.z) / metres;
     // Its legs, in the walker's order: fore before hind, of each pair the one on -x first.
+    // (A leg's end is where it meets the ground: the point of the floor under its last
+    // joint as it stands, carried by that joint. `sole` is that point in the joint's frame.)
+    let sole = |j: usize| stood[j].inverse().transform_point3(at(j).with_y(origin.y));
     let mut legs: Vec<(usize, [usize; 3], [Vec3; 3])> = roles.legs.iter().enumerate().map(|(i, l)| {
         let (hip, knee) = clips::folds_at(sk, l);
-        (i, [hip, knee, l.foot()], [into(at(hip)), into(at(knee)), into(at(l.foot()))])
+        (i, [hip, knee, l.foot()], [into(at(hip)), into(at(knee)), into(at(l.foot()).with_y(origin.y))])
     }).collect();
     legs.sort_by(|a, b| b.2[0].z.total_cmp(&a.2[0].z));
     legs[..2].sort_by(|a, b| a.2[0].x.total_cmp(&b.2[0].x));
     legs[2..].sort_by(|a, b| a.2[0].x.total_cmp(&b.2[0].x));
-    let ankle: [f32; 4] = std::array::from_fn(|i| legs[i].2[2].y.max(0.0));
-    let low: [Vec3; 4] = std::array::from_fn(|i| legs[i].2[0] - Vec3::Y * ankle[i]);
+    let low: [Vec3; 4] = std::array::from_fn(|i| legs[i].2[0]);
     let bones: [(f32, f32); 4] = std::array::from_fn(|i| (legs[i].2[0].distance(legs[i].2[1]), legs[i].2[1].distance(legs[i].2[2])));
     let (tall, mid) = (low.iter().map(|h| h.y).sum::<f32>() / 4.0, (low[0].z + low[2].z) / 2.0);
     let mut walker = Walker::fitted(low, bones, std::array::from_fn(|i| legs[i].2[1]), Vec3::ZERO, 0.0);
@@ -59,8 +61,8 @@ pub fn stride(sk: &Skeleton, roles: &Roles, stand: &Pose, speed: f32, metres: f3
         let want = middle + out_of(trunk - Vec3::new(0.0, tall, gone));
         pose.root_t += sk.base.inverse().transform_vector3(want - moved);
         for (n, (i, [hip, knee, end], _)) in legs.iter().enumerate() {
-            let foot = walker.feet()[n] - Vec3::Z * gone + Vec3::new(0.0, ankle[n], mid);
-            clips::reach_by(sk, roles, &mut pose, &roles.legs[*i], (*hip, *knee), *end, origin + out_of(foot));
+            let foot = walker.feet()[n] - Vec3::Z * gone + Vec3::new(0.0, 0.0, mid);
+            clips::reach_point(sk, roles, &mut pose, &roles.legs[*i], (*hip, *knee), (*end, sole(*end)), origin + out_of(foot));
         }
         pose
     };

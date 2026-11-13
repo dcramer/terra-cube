@@ -57,6 +57,9 @@ pub struct Walk {
     pub knees: Vec<[f32; 3]>,
     pub bones: Vec<[f32; 2]>,
     pub ankle: Vec<f32>,
+    /// Where each leg meets the ground, in its last joint's own frame.
+    #[serde(default)]
+    pub sole: Vec<[f32; 3]>,
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]
