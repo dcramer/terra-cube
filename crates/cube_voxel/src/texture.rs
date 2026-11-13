@@ -55,12 +55,14 @@ pub enum Grain {
     /// Fallen leaves.
     Litter,
     Moss,
+    /// Wood split along its grain: the faces of a hunk of it.
+    Split,
 }
 
 impl Grain {
-    pub const ALL: [Grain; 15] = [
+    pub const ALL: [Grain; 16] = [
         Grain::Plain, Grain::Grass, Grain::Soil, Grain::Rock, Grain::Strata, Grain::Sand, Grain::Snow, Grain::Pebbles,
-        Grain::Bark, Grain::BirchBark, Grain::EndGrain, Grain::Leaves, Grain::Needles, Grain::Litter, Grain::Moss,
+        Grain::Bark, Grain::BirchBark, Grain::EndGrain, Grain::Leaves, Grain::Needles, Grain::Litter, Grain::Moss, Grain::Split,
     ];
 
     /// The grain of a block's top (and underside) or of its sides.
@@ -69,8 +71,7 @@ impl Grain {
             Block::Grass | Block::Turf => Grain::Grass,
             Block::Dirt => Grain::Soil,
             Block::Stone | Block::Slate | Block::Chalk | Block::Broken | Block::Rock => if top { Grain::Rock } else { Grain::Strata },
-            // (Bark, pale: the cut end is a photograph of a round log on black, and is no face of a cube.)
-            Block::Billet => Grain::Bark,
+            Block::Billet => Grain::Split,
             Block::Cobble => Grain::Rock,
             Block::Sand => Grain::Sand,
             Block::Snow => Grain::Snow,
@@ -144,7 +145,8 @@ fn hue(grain: Grain, x: f32, y: f32) -> [f32; 3] {
         Grain::Pebbles => warm(lump((8, 8), 1) * 0.3),
         Grain::Bark => blend(warm(lump((8, 32), 1) * 0.2), [0.7, 1.15, 0.55], patch((16, 16), 2, 0.16, 0.07) * 0.8),
         Grain::BirchBark => blend([1.0; 3], [0.8, 1.0, 0.7], patch((16, 16), 2, 0.2, 0.08) * 0.5),
-        Grain::EndGrain => warm(lump((16, 16), 1) * 0.2),
+        // (Split wood is clean: no moss on it, as there is on bark.)
+        Grain::EndGrain | Grain::Split => warm(lump((16, 16), 1) * 0.2),
         Grain::Leaves => warm(lump((8, 8), 1) * 0.6 + lump((4, 4), 2) * 0.3),
         Grain::Needles => warm(lump((8, 8), 1) * 0.3 - 0.04),
         Grain::Litter => {
@@ -172,7 +174,7 @@ fn texel(grain: Grain, x: f32, y: f32) -> f32 {
     let fine = match grain {
         Grain::Plain | Grain::Snow => 0.0,
         Grain::Grass | Grain::Needles => dab((1, 4), 30, 0.25) * 0.3 + lump((2, 2), 31) * 0.12,
-        Grain::Bark => dab((1, 8), 30, 0.3) * 0.3 + lump((2, 4), 31) * 0.15,
+        Grain::Bark | Grain::Split => dab((1, 8), 30, 0.3) * 0.3 + lump((2, 4), 31) * 0.15,
         Grain::Strata => lump((8, 1), 30) * 0.22 + lump((2, 2), 31) * 0.14,
         Grain::Leaves | Grain::Litter | Grain::Moss => dab((2, 2), 30, 0.2) * 0.3 + lump((1, 1), 31) * 0.12,
         _ => lump((2, 2), 30) * 0.2 + lump((1, 1), 31) * 0.16,
@@ -190,7 +192,7 @@ fn texel(grain: Grain, x: f32, y: f32) -> f32 {
         // Stones: rounded lumps of their own shade with shadow between.
         Grain::Pebbles => 1.0 + dab((8, 8), 1, 0.15) * 0.3 + lump((16, 16), 2) * 0.15 - line((8, 8), 1, 0.06) * 0.3,
         // Ridges running up the trunk with deep grooves between.
-        Grain::Bark => 1.0 + dab((8, 32), 1, 0.25) * 0.3 + lump((4, 16), 2) * 0.2 - line((8, 64), 3, 0.05) * 0.4,
+        Grain::Bark | Grain::Split => 1.0 + dab((8, 32), 1, 0.25) * 0.3 + lump((4, 16), 2) * 0.2 - line((8, 64), 3, 0.05) * 0.4,
         // Pale, with dark eyes and dashes lying across it.
         // Pale and smooth, with what a birch has: short dark dashes lying across it (the
         // picture goes once round a trunk, so they are drawn wide), faint bands where the
@@ -309,7 +311,7 @@ pub fn atlas_with(photo: impl Fn(Grain) -> Option<Photo>) -> Atlas {
                 // hold. The painted grain has the shapes (strokes of blades, clods, furrows of
                 // bark, in clumps and patches) and none of the fineness. So these take both:
                 // the photograph for what is fine, the paint laid over it for what is broad.
-                let both = matches!(grain, Grain::Grass | Grain::Soil | Grain::Bark | Grain::Moss | Grain::Litter | Grain::EndGrain | Grain::BirchBark);
+                let both = matches!(grain, Grain::Grass | Grain::Soil | Grain::Bark | Grain::Moss | Grain::Litter | Grain::EndGrain | Grain::BirchBark | Grain::Split);
                 let over = |t: usize| -> [f32; 3] {
                     if !both {
                         return [1.0; 3];

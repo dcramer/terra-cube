@@ -16,6 +16,7 @@ convention), 512 px, shrunk from the 1K JPG set. `NAME` is a grain in
 | pebbles | Gravel023 |
 | bark | Bark012 |
 | endgrain | TreeEnd003 |
+| split | Wood049 |
 | litter | Ground106 |
 | moss | Moss002 |
 
