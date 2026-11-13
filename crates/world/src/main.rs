@@ -466,12 +466,16 @@ fn fell_command(args: &Args) -> ! {
     // A grown tree well inside what was made: a trunk as thick as a person can cut through.
     let inside = (2 * r) as f32 * CELL - 12.0;
     let Some(trunk) = form.limbs.iter().copied().filter(|l| l.roots > 0 && (0.18..0.4).contains(&l.ra) && (l.b.y - l.a.y) > 5.0 && l.a.x.abs() < inside && l.a.z.abs() < inside).min_by(|a, b| a.a.length().total_cmp(&b.a.length())) else { fail("no tree to fell near the start") };
+    // (All of it, not its first length of trunk: that is 6 m of a tree that stands 15.)
+    let tall = form.limbs.iter().filter(|l| l.tree == trunk.tree).map(|l| l.b.y).fold(trunk.b.y, f32::max) - trunk.a.y;
     let mut checks = Checks(Vec::new());
     let mut loose = cube_sim::loose::Loose::default();
     let solid = |world: &World, of: &dyn Fn(Block) -> bool| -> usize { world.chunks.values().map(|c| (0..cube_voxel::CHUNK.pow(3)).filter(|i| of(c.get(IVec3::new(i % 32, i / 1024, i / 32 % 32)))).count()).sum() };
     let wood_before = solid(&world, &|b| b.wood());
     // Through it a metre up, in bites, from one side to the other.
-    let up = trunk.a + Vec3::Y * (cube_sim::plants::Limb::UNDER + 1.0);
+    // (Where the trunk is at that height, not over its foot: one that leans is a bite's width
+    // aside by then, and on seed 1 sixty-three bites went past it.)
+    let up = trunk.a + (trunk.b - trunk.a) * ((cube_sim::plants::Limb::UNDER + 1.0) / (trunk.b.y - trunk.a.y));
     let started = std::time::Instant::now();
     let (mut bites, mut worked) = (0, 0);
     'cutting: for row in [0, -1, 1, -2, 2, -3, 3] {
@@ -509,9 +513,11 @@ fn fell_command(args: &Args) -> ! {
     let kept = down.map_or(0.0, |d| d.put as f32 / d.cells.max(1) as f32);
     checks.bar("fell kept", kept, kept > 0.8, "at least 0.8 of its cells are put back");
     // Lying: its middle is low, where a standing tree's is half its height up.
+    // (Half of all it stood, not of its first length of trunk, which is 6 m of a tree that
+    // stands 15: by that two trees lying right on seeds 11 and 13 were failed.)
     let ground = land.height((trunk.a.x / CELL) as i32, (trunk.a.z / CELL) as i32) as f32 * CELL;
     let high = down.map_or(99.0, |d| d.at.y - ground);
-    checks.bar("fell lies", high, high < (trunk.b.y - trunk.a.y) * 0.5, "its middle under half the height it stood");
+    checks.bar("fell lies", high, high < tall * 0.5, "its middle under half the height it stood");
     // And nothing of it is left in the air: looked through again, nothing more comes loose.
     let (lo, hi) = (((trunk.a - Vec3::splat(14.0)) / CELL).as_ivec3(), ((trunk.b + Vec3::splat(14.0)) / CELL).as_ivec3());
     loose.loosen(&mut world, lo.with_y((ground / CELL) as i32 - 2), hi, Vec3::X);
@@ -519,7 +525,7 @@ fn fell_command(args: &Args) -> ! {
     let wood_after = solid(&world, &|b| b.wood());
     println!(
         "felled a tree {:.0} m tall, {:.0} cm through, {:.0} m from the start: {bites} bites ({cutting:.1} ms each, {worked} cells made wrought) · a piece of {cells} cells came down in {took:.1} s at {:.1} m/s ({falling:.0} ms in all, worst step {worst:.1} ms) · {:.0}% of it put back · wood cells {wood_before} to {wood_after}",
-        trunk.b.y - trunk.a.y,
+        tall,
         trunk.ra * 200.0,
         trunk.a.with_y(0.0).length(),
         down.map_or(0.0, |d| d.speed),
@@ -559,7 +565,9 @@ fn replay_command(args: &Args) -> ! {
         }
     };
     // A tree felled; holes dug and earth put down, some while it falls; its trunk cut across.
-    let up = trunk.a + Vec3::Y * (cube_sim::plants::Limb::UNDER + 1.0);
+    // (Where the trunk is at that height, not over its foot: one that leans is a bite's width
+    // aside by then, and on seed 1 sixty-three bites went past it.)
+    let up = trunk.a + (trunk.b - trunk.a) * ((cube_sim::plants::Limb::UNDER + 1.0) / (trunk.b.y - trunk.a.y));
     'cutting: for row in [0, -1, 1, -2, 2] {
         for step in -4..=4 {
             loose.cut(&mut world, up + Vec3::new(step as f32 * 0.25, 0.0, row as f32 * 0.3), 0.42, Vec3::X, &[&form], Some(Stuff::Wood));

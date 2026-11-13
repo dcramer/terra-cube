@@ -576,6 +576,20 @@ impl Loose {
         // cells is of the same body, and that body was held (a loose one is out of the world).
         let mut seen: HashMap<IVec3, u32> = HashMap::new();
         let mut search = 0;
+        // A tree holds only itself up. Where two that have been cut into stand close, a cell
+        // is the one's whose wood it is nearest, and what is one tree's is not joined to
+        // what is another's: a birch cut clean through hung by its twigs from the tree half
+        // a metre off, which the same cut had made cells, and never fell (seed 1,
+        // 2026-11-13). Only looked into where two such trees stand.
+        let trees: Vec<(u32, Vec<(Vec3, Vec3, f32)>)> = self.things.iter().filter(|t| t.lies.is_none() && !t.limbs.is_empty()).map(|t| (t.id, t.limbs.iter().map(|l| (l.a, l.b, l.ra.max(l.rb))).collect())).collect();
+        let mut whose: HashMap<IVec3, u32> = HashMap::new();
+        let mut of = |cell: IVec3| -> u32 {
+            *whose.entry(cell).or_insert_with(|| {
+                let p = (cell.as_vec3() + 0.5) * CELL;
+                trees.iter().filter_map(|(id, limbs)| limbs.iter().map(|(a, b, r)| from_line(p, *a, *b) - r).min_by(|x, y| x.total_cmp(y)).map(|d| (d, *id))).filter(|(d, _)| *d < 0.5).min_by(|x, y| x.0.total_cmp(&y.0)).map_or(0, |(_, id)| id)
+            })
+        };
+        let rivals = trees.len() > 1;
         for y in lo.y..=hi.y {
             for z in lo.z..=hi.z {
                 for x in lo.x..=hi.x {
@@ -600,6 +614,12 @@ impl Loose {
                             let next = cell + side;
                             if !has(world, next, false) {
                                 continue;
+                            }
+                            if rivals && !earth && !world.get(next).ground() {
+                                let (mine, its) = (of(cell), of(next));
+                                if mine != 0 && its != 0 && mine != its {
+                                    continue;
+                                }
                             }
                             match seen.get(&next) {
                                 Some(by) if *by == search => continue,
@@ -764,6 +784,8 @@ impl Loose {
         self.steps += 1;
         let mut changed = HashSet::new();
         let mut down = Vec::new();
+        // (Every tree that has been cut into and still stands, for what falls to go through: below.)
+        let standing: Vec<(u32, Vec<(Vec3, Vec3, f32)>)> = if self.pieces.is_empty() { Vec::new() } else { self.things.iter().filter(|t| t.lies.is_none() && !t.limbs.is_empty()).map(|t| (t.id, t.limbs.iter().map(|l| (l.a, l.b, l.ra.max(l.rb))).collect())).collect() };
         for (n, piece) in self.pieces.iter_mut().enumerate() {
             piece.age += dt;
             let before = (piece.shift, piece.turn);
@@ -813,7 +835,13 @@ impl Loose {
             // leaf, and not by a tree still standing whole: in a wood every tree's limbs are
             // in its neighbours', and stopped by those nothing cut ever came down. It goes
             // through them, and where it lies across a standing trunk it is not put.)
-            let stops = |at: Vec3| bears(world.bit((at / BIT).floor().as_ivec3()));
+            // (Nor by another tree that stands though it has been cut into, which is cells
+            // and would bear: a birch felled beside one lay 14 m up in its crown.)
+            let mine = piece.thing;
+            let stops = |at: Vec3| {
+                let b = world.bit((at / BIT).floor().as_ivec3());
+                bears(b) && !(b.wood() && standing.iter().any(|(id, limbs)| Some(*id) != mine && limbs.iter().any(|(a, b, r)| from_line(at, *a, *b) < r + 0.3)))
+            };
             let tried = |piece: &Piece, p: &Vec3| !going_over || p.distance(piece.spare.0) > piece.spare.1;
             let meets = |piece: &Piece| piece.feel.iter().filter(|p| tried(piece, p)).any(|p| stops(piece.now(*p)));
             let met = meets(piece);
@@ -1227,5 +1255,38 @@ mod tests {
         let piece = &loose.pieces[0];
         assert!(piece.cells.values().any(|p| matches!(p, Part::Whole(b) if b.foliage())), "it left all its leaves behind");
         assert!(w.get(IVec3::new(13, 8, 1)) == Block::Timber, "the neighbour's trunk went with it");
+    }
+
+    #[test]
+    fn a_tree_cut_through_falls_though_its_boughs_touch_another_that_was_cut_into() {
+        use crate::plants::Limb;
+        // Two trees a metre and a half apart, a bough of each reaching the other's trunk,
+        // as `plants` grew them.
+        let trees = || {
+            let (mut w, mut form) = (floor(), Form::default());
+            for (tree, x) in [(1, 0.0f32), (2, 1.5)] {
+                let out = if tree == 1 { 1.5 } else { -1.5 };
+                for (a, b, ra, roots) in [(Vec3::new(x, 0.0, 0.0), Vec3::new(x, 6.0, 0.0), 0.3, 1), (Vec3::new(x, 4.0, 0.0), Vec3::new(x + out, 4.5, 0.0), 0.12, 0)] {
+                    let limb = Limb { a, b, ra, rb: ra * 0.8, bark: Block::Wood, roots, tree };
+                    limb.fill(CELL, |c| w.set(c, Block::Wood));
+                    form.limbs.push(limb);
+                }
+            }
+            (w, form)
+        };
+        let (mut w, form) = trees();
+        let mut loose = Loose::default();
+        // A bite that reaches both, which makes both cells; then the first cut through.
+        loose.cut(&mut w, Vec3::new(0.75, 1.0, 0.0), 0.5, Vec3::NEG_X, &[&form], Some(Stuff::Wood));
+        assert_eq!(loose.things.len(), 2, "both were to be cut into");
+        for x in [-0.3, 0.0, 0.3] {
+            loose.cut(&mut w, Vec3::new(x, 1.0, 0.0), 0.4, Vec3::NEG_X, &[&form], Some(Stuff::Wood));
+        }
+        assert_eq!(loose.pieces.len(), 1, "it hangs by a bough from the tree beside it");
+        // And comes down to the ground, through the other, which stands.
+        run(&mut loose, &mut w);
+        let lies = loose.landed.iter().map(|l| l.at.y).fold(f32::MAX, f32::min);
+        assert!(lies < 1.5, "it lies {lies} m up");
+        assert_ne!(w.get(IVec3::new(6, 12, 0)), Block::Air, "the other tree went with it");
     }
 }
