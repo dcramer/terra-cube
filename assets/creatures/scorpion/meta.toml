@@ -1,12 +1,12 @@
 # Measured by `cargo forge finish`; do not edit.
 height = 0.35
 length = 2.1225762
-width = 1.3594999
+width = 1.3279542
 walk_speed = 2.125
 run_speed = 5.1000004
 sprint_speed = 0.0
-triangles = 708
-joints = 19
+triangles = 2052
+joints = 27
 
 [clips.attack]
 seconds = 0.8
@@ -63,15 +63,23 @@ source = "made"
 speed = 2.125
 
 [bones]
-foot0 = "leg_l0_knee"
-foot1 = "leg_l1_knee"
-foot2 = "leg_l2_knee"
-foot3 = "leg_l3_knee"
-foot4 = "leg_r0_knee"
-foot5 = "leg_r1_knee"
-foot6 = "leg_r2_knee"
-foot7 = "leg_r3_knee"
+foot0 = "leg_l0_foot"
+foot1 = "leg_l1_foot"
+foot2 = "leg_l2_foot"
+foot3 = "leg_l3_foot"
+foot4 = "leg_r0_foot"
+foot5 = "leg_r1_foot"
+foot6 = "leg_r2_foot"
+foot7 = "leg_r3_foot"
 head = "head"
+leg0 = "leg_l0>leg_l0_knee>leg_l0_foot"
+leg1 = "leg_l1>leg_l1_knee>leg_l1_foot"
+leg2 = "leg_l2>leg_l2_knee>leg_l2_foot"
+leg3 = "leg_l3>leg_l3_knee>leg_l3_foot"
+leg4 = "leg_r0>leg_r0_knee>leg_r0_foot"
+leg5 = "leg_r1>leg_r1_knee>leg_r1_foot"
+leg6 = "leg_r2>leg_r2_knee>leg_r2_foot"
+leg7 = "leg_r3>leg_r3_knee>leg_r3_foot"
 neck = "head"
 root = "body"
 tail = "abdomen"

@@ -139,16 +139,37 @@ impl Crawler {
                 let end = Vec3::new(x * (wide / 2.0 + reach * if leaper { 0.6 } else { 1.0 }), knee, z + splay * if leaper { 2.0 } else { 1.0 });
                 let bone = places.len();
                 // The upper part, out to the knee (in three short boxes along its slant); the lower, down to the ground.
-                for i in 0..3 {
+                for i in 0..if leaper { 3 } else { 0 } {
                     let at = hip.lerp(end, (i as f32 + 0.5) / 3.0);
                     // (Each as long as its share of the way, whichever way that runs.)
-                    put(at, (end - hip).abs() / 3.0 + Vec3::splat(if leaper { leg * 1.5 } else { leg }), b.wing, bone);
+                    put(at, (end - hip).abs() / 3.0 + Vec3::splat(leg * 1.5), b.wing, bone);
                 }
-                put(Vec3::new(end.x, knee / 2.0, end.z), Vec3::new(leg * 0.8, knee, leg * 0.8), dark(b.wing, 0.8), bone + 1);
+                // (Not a leaper's: its leg rises from its side to a knee over its back, half
+                // way out, and comes down from there to a foot at its full reach. Until
+                // 2026-11-13 it went out level and straight down, a table's leg.)
+                let foot = end.with_y(0.0);
+                let end = if leaper {
+                    put(Vec3::new(end.x, knee / 2.0, end.z), Vec3::new(leg * 0.8, knee, leg * 0.8), dark(b.wing, 0.8), bone + 1);
+                    end
+                } else {
+                    let hip = Vec3::new(x * wide / 2.0, mid, z);
+                    let top = hip.lerp(foot, 0.5).with_y(knee * 1.45);
+                    // (Small cubes one after another along each part: a box as long as its
+                    // share of a slant is a slab, and eight of those were a wall.)
+                    for (from, to, thick, colour, bone) in [(hip, top, leg, b.wing, bone), (top, foot, leg * 0.8, dark(b.wing, 0.8), bone + 1)] {
+                        let n = (from.distance(to) / (thick * 0.9)).ceil().max(1.0) as usize;
+                        for i in 0..n {
+                            put(from.lerp(to, (i as f32 + 0.5) / n as f32), Vec3::splat(thick), colour, bone);
+                        }
+                    }
+                    top
+                };
+                let hip = if leaper { hip } else { hip.with_y(mid) };
                 let name = format!("leg_{}{k}", if s == 0 { 'l' } else { 'r' });
-                places.extend([hip, end]);
-                parents.extend([Some(0), Some(bone)]);
-                names.extend([name.clone(), format!("{name}_knee")]);
+                // (And a bone where its foot is, holding nothing: what is judged to stand and not slide.)
+                places.extend([hip, end, foot]);
+                parents.extend([Some(0), Some(bone), Some(bone + 1)]);
+                names.extend([name.clone(), format!("{name}_knee"), format!("{name}_foot")]);
             }
         }
         Ok((assemble(&boxes, &places, &parents, &names)?, Self { side, reach, long: l, high: mid, fowl: false, wide, over: if b.sting { l * 0.34 * 1.9 - thick / 2.0 } else { 0.0 } }))
@@ -204,9 +225,9 @@ impl Crawler {
     }
 
 
-    /// Bones a leg: a crawler's two, a bird's three (its foot one of them).
+    /// Bones a leg: three, its foot one of them.
     fn per(&self) -> usize {
-        if self.fowl { 3 } else { 2 }
+        3
     }
 
     /// Its roles, which are known: the bones are ours.
@@ -236,7 +257,7 @@ impl Crawler {
                 pose.rotations[5 + n * 3] = (turned * Quat::from_rotation_x(-swing + lift)).inverse();
                 continue;
             }
-            pose.rotations[3 + n * 2] = Quat::from_rotation_y(-x * swing) * Quat::from_rotation_z(x * lift);
+            pose.rotations[3 + n * 3] = Quat::from_rotation_y(-x * swing) * Quat::from_rotation_z(x * lift);
         }
         pose
     }

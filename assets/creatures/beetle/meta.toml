@@ -1,12 +1,12 @@
 # Measured by `cargo forge finish`; do not edit.
 height = 0.1
 length = 0.308
-width = 0.3554
+width = 0.34716168
 walk_speed = 0.55
 run_speed = 1.3199999
 sprint_speed = 0.0
-triangles = 372
-joints = 15
+triangles = 1380
+joints = 21
 
 [clips.attack]
 seconds = 0.8
@@ -63,13 +63,19 @@ source = "made"
 speed = 0.55
 
 [bones]
-foot0 = "leg_l0_knee"
-foot1 = "leg_l1_knee"
-foot2 = "leg_l2_knee"
-foot3 = "leg_r0_knee"
-foot4 = "leg_r1_knee"
-foot5 = "leg_r2_knee"
+foot0 = "leg_l0_foot"
+foot1 = "leg_l1_foot"
+foot2 = "leg_l2_foot"
+foot3 = "leg_r0_foot"
+foot4 = "leg_r1_foot"
+foot5 = "leg_r2_foot"
 head = "head"
+leg0 = "leg_l0>leg_l0_knee>leg_l0_foot"
+leg1 = "leg_l1>leg_l1_knee>leg_l1_foot"
+leg2 = "leg_l2>leg_l2_knee>leg_l2_foot"
+leg3 = "leg_r0>leg_r0_knee>leg_r0_foot"
+leg4 = "leg_r1>leg_r1_knee>leg_r1_foot"
+leg5 = "leg_r2>leg_r2_knee>leg_r2_foot"
 neck = "head"
 root = "body"
 tail = "abdomen"

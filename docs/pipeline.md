@@ -111,7 +111,7 @@ legs = 8           # default 6
 back = [..]  belly = [..]  wing = [..]  mark = [..]   # body, underside, legs, head
 ```
 
-Then `cargo forge finish ID` and `cargo sandbox --shot ID --view three --clips idle,walk,attack,die --cols 6`. Forge makes the boxes, a skeleton (body, head, abdomen, two bones a leg), and every clip of the plan: legs step in two alternating sets, the set on the ground going back at the body's speed. Each box is held whole by one bone, so stretch is always 0%.
+Then `cargo forge finish ID` and `cargo sandbox --shot ID --view three --clips idle,walk,attack,die --cols 6`. Forge makes the boxes, a skeleton (body, head, abdomen, three bones a leg: hip, knee, and a foot that holds nothing and is what standing and sliding are judged by), and every clip of the plan: legs step in two alternating sets, the set on the ground going back at the body's speed. Each box is held whole by one bone, so stretch is always 0%. A leg rises from the body's side to a knee over its back, half way out, and comes down to its foot at full reach, each part a run of small cubes along its line (out level and straight down it was a table's leg; one box a part was a slab).
 
 Its own parts, each a line in `[built]`: `claws = true` (pincers held out ahead: crab, scorpion), `sting = true` (a tail arched over its back: scorpion), `leaps = true` (long hind legs folded high: grasshopper; it still walks, it does not leap).
 
