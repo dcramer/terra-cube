@@ -585,11 +585,12 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
         // Not on top of itself: a lump it stood inside would hold it fast. Into air only:
         // what is put down lies on what is there, not through it. And one fewer is carried.
         let middle = hit - along * LUMP * 0.3;
-        live.0.loose.put(&mut terrain.0, middle, LUMP, block);
+        // (Earth comes to rest where it falls, not where it was let go: what changed is the simulation's to say.)
+        let changed = live.0.loose.put(&mut terrain.0, middle, LUMP, block);
         if std::env::var_os("LOOSE_TRACE").is_some() {
             println!("loose: put {block:?} at {middle:.2?}");
         }
-        terrain.ball_touched(&mut dirty, middle, LUMP);
+        terrain.touched(&mut dirty, changed);
         live.0.placed(mover.id);
     }
 }

@@ -469,6 +469,28 @@ fn round() -> impl Iterator<Item = IVec3> {
     (-1..=1).flat_map(|y| (-1..=1).flat_map(move |z| (-1..=1).map(move |x| IVec3::new(x, y, z)))).filter(|d| *d != IVec3::ZERO)
 }
 
+/// Where a lump of earth let go at `middle` comes to rest: straight down onto what is under
+/// it, and from there down any side that falls away by more than `STEEP`, a lump's width at
+/// a time, until it lies on ground no steeper. From the cells alone, in a fixed order: the
+/// same put on the same world rests in the same place, which the journal's replay needs.
+/// (Until 2026-11-13 it stayed where it was let go: each lump on the one before, earth
+/// could be built out into the air like stone.)
+fn heaped(world: &World, middle: Vec3, radius: f32) -> Vec3 {
+    const STEEP: f32 = 0.45;
+    let under = |at: Vec3| world.raycast(at, Vec3::NEG_Y, 48.0);
+    let Some(mut drop) = under(middle) else { return middle };
+    let mut at = middle;
+    for _ in 0..24 {
+        let sides = [Vec3::X, Vec3::NEG_X, Vec3::Z, Vec3::NEG_Z].map(|d| at + d * radius * 2.0);
+        // (A side it can get to: not through what stands beside it.)
+        let lower = sides.into_iter().filter(|s| !world.get((*s / CELL).floor().as_ivec3()).solid()).filter_map(|s| under(s).map(|d| (d, s))).filter(|(d, _)| *d > drop + STEEP).max_by(|a, b| a.0.total_cmp(&b.0));
+        let Some((d, side)) = lower else { break };
+        (drop, at) = (d, side);
+    }
+    // (Sunk a third into what it lies on, so it is one with it.)
+    at - Vec3::Y * (drop - radius * 0.6).max(0.0)
+}
+
 impl Loose {
     /// Digs a ball out of the world and looses what that leaves unsupported, pushed the way
     /// `push` points (the way whoever cut it was facing). Gives the chunks that changed.
@@ -533,12 +555,16 @@ impl Loose {
         Cut { changed, ..cut }
     }
 
+    /// (Earth does not stay where it is let go: it falls to what is under it and runs down
+    /// off a heap, [`heaped`]. Stone and timber stay, which is building.)
     /// Puts a ball of something down, into air only (what is put down lies on what is there,
     /// not through it). Gives the chunks changed.
     pub fn put(&mut self, world: &mut World, middle: Vec3, radius: f32, block: Block) -> HashSet<IVec3> {
         self.journal.push((self.steps, Edit::Put { middle, radius, block }));
+        let middle = if block == Block::Dirt { heaped(world, middle, radius) } else { middle };
         world.ellipsoid(middle, Vec3::splat(radius), block, true);
-        let (lo, hi) = (((middle - radius) / CELL).floor().as_ivec3(), ((middle + radius) / CELL).floor().as_ivec3());
+        // (And the cells beside it, whose faces toward it are drawn or not by what it is.)
+        let (lo, hi) = (((middle - radius) / CELL).floor().as_ivec3() - 1, ((middle + radius) / CELL).floor().as_ivec3() + 1);
         (lo.y..=hi.y).flat_map(|y| (lo.z..=hi.z).flat_map(move |z| (lo.x..=hi.x).map(move |x| IVec3::new(x, y, z).div_euclid(IVec3::splat(cube_voxel::CHUNK))))).collect()
     }
 
@@ -1122,6 +1148,23 @@ mod tests {
             }
             assert_eq!(!loose.pieces.is_empty(), falls, "after {bites} chops into a trunk a metre through");
         }
+    }
+
+    #[test]
+    fn earth_let_go_falls_to_the_ground_and_heaps_and_stone_stays_where_it_is_put() {
+        let mut w = floor();
+        let mut loose = Loose::default();
+        // Twenty lumps let go at one place two metres up: a heap on the ground, low and
+        // wide, and nothing left in the air.
+        for _ in 0..20 {
+            loose.put(&mut w, Vec3::new(0.1, 2.0, 0.1), 0.155, Block::Dirt);
+        }
+        let earth: Vec<IVec3> = (-12..12).flat_map(|x| (-12..12).flat_map(move |z| (0..16).map(move |y| IVec3::new(x, y, z)))).filter(|c| w.get(*c) != Block::Air).collect();
+        let (top, wide) = (earth.iter().map(|c| c.y).max().unwrap(), earth.iter().map(|c| c.x.abs().max(c.z.abs())).max().unwrap());
+        assert!(top <= 3 && wide >= 2, "a heap {top} cells high and {wide} out, of {} cells", earth.len());
+        // A stone put in the air stays there: that is building.
+        loose.put(&mut w, Vec3::new(4.1, 2.0, 0.1), 0.155, Block::Stone);
+        assert_ne!(w.get(IVec3::new(16, 8, 0)), Block::Air);
     }
 
     #[test]
