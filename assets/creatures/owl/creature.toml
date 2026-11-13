@@ -2,7 +2,20 @@ name = "Owl"
 kind = "wildlife"
 plan = "bird"
 subject = "a tawny owl with a round flat face and big orange eyes, mottled brown"
-height = 0.45
+height = 0.4
+
+# Made by forge of boxes, a bird on the ground with its own legs and gait (`crawl`): no
+# Tripo, no credits.
+[built]
+form = "fowl"
+length = 0.26
+span = 0.07
+chord = 0.1
+tail = 0.3
+back = [0.36, 0.26, 0.16]
+belly = [0.55, 0.46, 0.34]
+wing = [0.3, 0.2, 0.12]
+mark = [0.8, 0.45, 0.1]
 
 [life]
 temper = "hunter"

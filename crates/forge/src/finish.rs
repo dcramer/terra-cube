@@ -105,8 +105,8 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
     let mut crawler = None;
     let mut glb = match &creature.built {
         // (What crawls is made whole by `crawl`: its boxes, its bones and its motion.)
-        Some(built) if built.form == "crawler" => {
-            let (glb, made) = crate::crawl::Crawler::model(built)?;
+        Some(built) if built.form == "crawler" || built.form == "fowl" => {
+            let (glb, made) = if built.form == "fowl" { crate::crawl::Crawler::fowl(built)? } else { crate::crawl::Crawler::model(built)? };
             crawler = Some(made);
             glb
         }

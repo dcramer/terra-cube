@@ -2,7 +2,20 @@ name = "Heron"
 kind = "wildlife"
 plan = "bird"
 subject = "a grey heron with very long legs, a long S-shaped neck and a yellow dagger beak"
-height = 1.0
+height = 1.1
+
+# Made by forge of boxes, a bird on the ground with its own legs and gait (`crawl`): no
+# Tripo, no credits.
+[built]
+form = "fowl"
+length = 0.45
+span = 0.5
+chord = 0.8
+tail = 0.25
+back = [0.33, 0.36, 0.4]
+belly = [0.62, 0.63, 0.62]
+wing = [0.22, 0.25, 0.3]
+mark = [0.75, 0.6, 0.12]
 
 [life]
 temper = "timid"

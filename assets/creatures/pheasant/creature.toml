@@ -4,6 +4,19 @@ plan = "bird"
 subject = "a cock pheasant with a very long barred tail, a red face and a copper body"
 height = 0.4
 
+# Made by forge of boxes, a bird on the ground with its own legs and gait (`crawl`): no
+# Tripo, no credits.
+[built]
+form = "fowl"
+length = 0.3
+span = 0.14
+chord = 0.35
+tail = 1.6
+back = [0.5, 0.24, 0.08]
+belly = [0.42, 0.2, 0.08]
+wing = [0.4, 0.28, 0.14]
+mark = [0.6, 0.08, 0.06]
+
 [life]
 temper = "timid"
 habitat = "meadow"

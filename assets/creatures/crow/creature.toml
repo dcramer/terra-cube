@@ -4,6 +4,19 @@ plan = "bird"
 subject = "a glossy black crow with a heavy beak"
 height = 0.35
 
+# Made by forge of boxes, a bird on the ground with its own legs and gait (`crawl`): no
+# Tripo, no credits.
+[built]
+form = "fowl"
+length = 0.26
+span = 0.09
+chord = 0.2
+tail = 0.45
+back = [0.03, 0.03, 0.04]
+belly = [0.04, 0.04, 0.05]
+wing = [0.02, 0.02, 0.03]
+mark = [0.07, 0.07, 0.07]
+
 [life]
 temper = "timid"
 voice = "crow"
@@ -12,4 +25,4 @@ cover = "edge"
 hours = "day"
 group = 3
 # 0 until the bird plan reads its skeleton and its clips pass: it is built but not fit to be seen.
-groups = 0
+groups = 2

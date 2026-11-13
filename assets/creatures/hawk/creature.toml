@@ -1,9 +1,21 @@
 name = "Hawk"
 kind = "wildlife"
-plan = "flyer"
+plan = "bird"
 subject = "a hawk with a hooked yellow beak, barred chest and broad brown wings"
-height = 0.5
-span = 1.2
+height = 0.45
+
+# Made by forge of boxes, a bird on the ground with its own legs and gait (`crawl`): no
+# Tripo, no credits.
+[built]
+form = "fowl"
+length = 0.32
+span = 0.12
+chord = 0.2
+tail = 0.45
+back = [0.3, 0.2, 0.11]
+belly = [0.6, 0.52, 0.4]
+wing = [0.26, 0.17, 0.09]
+mark = [0.8, 0.65, 0.15]
 
 [life]
 temper = "hunter"

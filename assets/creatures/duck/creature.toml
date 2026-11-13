@@ -4,6 +4,19 @@ plan = "bird"
 subject = "a mallard duck with a glossy green head, a white neck ring and orange feet"
 height = 0.4
 
+# Made by forge of boxes, a bird on the ground with its own legs and gait (`crawl`): no
+# Tripo, no credits.
+[built]
+form = "fowl"
+length = 0.34
+span = 0.09
+chord = 0.3
+tail = 0.2
+back = [0.3, 0.22, 0.14]
+belly = [0.6, 0.55, 0.48]
+wing = [0.1, 0.28, 0.14]
+mark = [0.85, 0.4, 0.08]
+
 [life]
 temper = "timid"
 habitat = "shore"
