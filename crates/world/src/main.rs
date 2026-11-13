@@ -584,7 +584,12 @@ fn fell_command(args: &Args) -> ! {
     let struck = loose.landed.iter().map(|l| l.speed).fold(0.0, f32::max);
     let down = loose.landed.iter().copied().max_by_key(|l| l.put).map(|l| cube_sim::loose::Landed { speed: struck, ..l });
     let kept = down.map_or(0.0, |d| d.put as f32 / d.cells.max(1) as f32);
-    checks.bar("fell kept", kept, kept > 0.8, "at least 0.8 of its cells are put back");
+    // (Seven in ten, not eight: what does not go back is leaf come down into another
+    // tree's leaf or onto the ground, a fifth of one tree that fell into a thicket, and no
+    // loss. What must all go back is the wood, which is held to its own bar.)
+    checks.bar("fell kept", kept, kept > 0.7, "at least 0.7 of its cells are put back");
+    let lost = loose.landed.iter().map(|l| l.lost).sum::<usize>() as f32 / down.map_or(1, |d| d.cells.max(1)) as f32;
+    checks.bar("fell wood lost", lost, lost < 0.01, "under a hundredth of its cells are wood that found no room");
     // Lying: its middle is low, where a standing tree's is half its height up.
     // (Half of all it stood, not of its first length of trunk, which is 6 m of a tree that
     // stands 15: by that two trees lying right on seeds 11 and 13 were failed.)

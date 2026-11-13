@@ -140,6 +140,8 @@ pub struct Landed {
     pub at: Vec3,
     pub cells: usize,
     pub put: usize,
+    /// Whole cells of what bears (wood, stone) that found no room where it came down.
+    pub lost: usize,
     /// Metres a second it was going.
     pub speed: f32,
     /// A tree coming to rest after its top has already struck: that was the crash, and this
@@ -910,7 +912,7 @@ impl Loose {
             // A tree's top has struck: it is heard, its outermost twigs snap off, and it
             // settles about where it struck (below, once every piece has been looked at).
             if let (Some(top), Some((way, ..))) = (struck, piece.over) {
-                self.landed.push(Landed { at: piece.now(top), cells: piece.cells.len(), put: 0, speed, settled: false });
+                self.landed.push(Landed { at: piece.now(top), cells: piece.cells.len(), put: 0, lost: 0, speed, settled: false });
                 if speed > CRASHES {
                     let (foot, stem) = (piece.pivot, (piece.tall * 0.33).max(1.2));
                     piece = self.shatter(piece, speed, 0.04, |c| ((c.as_vec3() + 0.5) * CELL - foot).with_y(0.0).length() < stem);
@@ -922,11 +924,11 @@ impl Loose {
                 continue;
             }
             if piece.brittle && speed > SHATTERS && piece.cells.len() >= 8 {
-                self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put: 0, speed, settled: false });
+                self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put: 0, lost: 0, speed, settled: false });
                 self.shatter(piece, speed, 1.0, |_| false);
                 continue;
             }
-            let (put, touched, lo, hi) = land(world, &piece);
+            let (put, touched, lo, hi, lost) = land(world, &piece);
             changed.extend(touched);
             if let Some(thing) = self.things.iter_mut().find(|t| Some(t.id) == piece.thing) {
                 thing.lies = Some((piece.pivot, piece.shift, piece.turn));
@@ -934,7 +936,7 @@ impl Loose {
             // And what of it has come down on nothing (a limb left sticking out over a
             // hollow, a part cut off from the rest by what it fell across) falls in its turn.
             changed.extend(self.loosen(world, lo - 1, hi + 1, Vec3::X));
-            self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put, speed, settled: piece.settling });
+            self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put, lost, speed, settled: piece.settling });
         }
         self.pieces.extend(settling);
         changed
@@ -943,8 +945,9 @@ impl Loose {
 
 /// Puts a piece back into the world where it now lies: every cell of the world it reaches is
 /// asked what of the piece is there, so it goes back without gaps however it is turned.
-/// Only into what is not solid already. Gives how many cells were written, and their chunks.
-fn land(world: &mut World, piece: &Piece) -> (usize, HashSet<IVec3>, IVec3, IVec3) {
+/// Only into what is not solid already. Gives how many cells were written, their chunks, the
+/// box of cells it reached, and how many whole cells of what bears found no room.
+fn land(world: &mut World, piece: &Piece) -> (usize, HashSet<IVec3>, IVec3, IVec3, usize) {
     let (mut lo, mut hi) = (Vec3::MAX, Vec3::MIN);
     for cell in piece.cells.keys() {
         for corner in 0..8 {
@@ -954,7 +957,7 @@ fn land(world: &mut World, piece: &Piece) -> (usize, HashSet<IVec3>, IVec3, IVec
     }
     let (lo, hi) = ((lo / CELL).floor().as_ivec3(), (hi / CELL).floor().as_ivec3());
     let at = |now: Vec3| (piece.was(now) / CELL).floor().as_ivec3();
-    let (mut put, mut changed) = (0, HashSet::new());
+    let (mut put, mut changed, mut lost) = (0, HashSet::new(), 0);
     for y in lo.y..=hi.y {
         for z in lo.z..=hi.z {
             for x in lo.x..=hi.x {
@@ -968,7 +971,12 @@ fn land(world: &mut World, piece: &Piece) -> (usize, HashSet<IVec3>, IVec3, IVec
                         world.set(cell, *b);
                         put += 1;
                     }
-                    Part::Whole(_) => continue,
+                    // (What bears and found no room: wood into wood, stone into the ground.
+                    // Leaf that comes down into leaf or onto the ground is only crushed.)
+                    Part::Whole(b) => {
+                        lost += bears(*b) as usize;
+                        continue;
+                    }
                     Part::Bits(_) => {
                         // To the bit: each bit of this cell is asked for on its own.
                         let mut any = false;
@@ -996,7 +1004,7 @@ fn land(world: &mut World, piece: &Piece) -> (usize, HashSet<IVec3>, IVec3, IVec
             }
         }
     }
-    (put, changed, lo, hi)
+    (put, changed, lo, hi, lost)
 }
 
 #[cfg(test)]
