@@ -848,13 +848,16 @@ fn airborne(sk: &Skeleton, roles: &Roles, st: &Stance, pose: &mut Pose, upright:
             // One knee up, the other leg trailing.
             (if side > 0.0 { -0.85 } else { 0.2 } - 0.12 * wave * side, if side > 0.0 { 1.2 } else { 0.55 })
         } else if leg.front {
-            (-0.5 - 0.06 * wave * side, 0.08)
+            (-0.6 - 0.06 * wave * side, 0.1)
         } else {
-            (0.28 + 0.06 * wave * side, 0.12)
+            (0.55 + 0.06 * wave * side, -0.35)
         };
-        st.turn(sk, pose, leg.chain[0], pitch(roles, thigh * k));
+        // (An animal's leg proper, not the stub Tripo hangs it from: turned at the first two
+        // bones of the chain, a rabbit, a squirrel and a frog crossed the air as they stand.)
+        let (upper, lower) = if upright { (leg.chain[0], leg.chain[1]) } else { folds_at(sk, leg) };
+        st.turn(sk, pose, upper, pitch(roles, thigh * k));
         if leg.chain.len() > 2 {
-            st.turn(sk, pose, leg.chain[1], pitch(roles, knee * k));
+            st.turn(sk, pose, lower, pitch(roles, knee * k));
         }
     }
     for arm in &roles.arms {
