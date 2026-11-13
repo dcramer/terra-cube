@@ -75,6 +75,17 @@ pub fn sunk(glb: &Glb, sk: &Skeleton, frames: &[Pose]) -> Vec<f32> {
     frames.iter().map(|pose| (floor - lowest(pose)).max(0.0)).collect()
 }
 
+/// How low the skin comes in a pose, leaving out what goes mostly with the joints of `skip`
+/// (legs and tail, to find the belly).
+/// And only what is on one side of a place along the body (`part`: which way is ahead, how
+/// far along, and whether it is what is ahead of there that is wanted): the chest, or the loins.
+pub fn lowest(glb: &Glb, sk: &Skeleton, pose: &Pose, skip: &[usize], part: Option<(Vec3, f32, bool)>) -> Option<f32> {
+    let s = skin(glb).ok()?;
+    let at = posed(&s, sk, pose);
+    let most = |i: usize| (0..4).max_by(|a, b| s.weights[i][*a].total_cmp(&s.weights[i][*b])).map(|k| s.joints[i][k]).unwrap_or(0);
+    (0..at.len()).filter(|i| !skip.contains(&most(*i)) && part.is_none_or(|(ahead, along, fore)| (at[*i].dot(ahead) > along) == fore)).map(|i| at[i].y).min_by(f32::total_cmp)
+}
+
 fn posed(s: &Skin, sk: &Skeleton, pose: &Pose) -> Vec<Vec3> {
     let mats: Vec<Mat4> = sk.pose_world(pose).iter().zip(&sk.inverse_bind).map(|(w, ib)| *w * *ib).collect();
     s.positions
@@ -206,6 +217,9 @@ pub fn check(done: &Finished, required: &[String], bars: &Bars, max_stretch: f32
                 ok &= slide <= max_slide;
                 notes.push(format!("slide {:.0}%", slide * 100.0));
             }
+        }
+        if clip.name == "lie" && clip.source == "walker" && let Some((text, good)) = crate::walker::measured(&done.glb, sk, roles, &clip.frames[0]) {
+            out.push(line(good, "pose lie", text, "assets/creatures/poses.toml".into()));
         }
         out.push(line(ok, &format!("clip {}", clip.name), format!("{:.2}s {} · {}", clip.seconds(), clip.source, notes.join(" · ")), format!("stretch ≤ {:.0}%, gap ≤ {:.0}°, feet ≤ {:.0}%, slide ≤ {:.0}%", max_stretch * 100.0, bars.max_loop_gap.to_degrees(), bars.max_foot_error * 100.0, max_slide * 100.0)));
     }

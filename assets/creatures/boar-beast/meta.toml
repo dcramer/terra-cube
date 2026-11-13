@@ -59,7 +59,7 @@ speed = 0.0
 [clips.lie]
 seconds = 5.0
 looping = true
-source = "made"
+source = "walker"
 speed = 0.0
 
 [clips.run]

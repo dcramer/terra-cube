@@ -1,0 +1,38 @@
+# What a pose must be, written down from looking at the animal, so that it is built to that
+# and measured against it and not invented. The process, for any pose or motion:
+#   1. Look: real photographs of the animal doing it, a dozen at once on one small sheet
+#      (Wikimedia Commons has categories of them: `seen` says which were looked at).
+#   2. Write here what makes it that pose, as things that can be measured on a skeleton.
+#   3. Build it in forge (`crates/forge/src/walker.rs`), to these.
+#   4. Forge measures what it built against these and says each in a line of
+#      `cargo forge check` (`pose lie …`): ok, or FAIL and by how much.
+#   5. Look at one sheet (`make moves ID=wolf lie`); write what was learned under `learned`,
+#      and tighten or add a measure when the eye catches what the numbers passed.
+# Lengths are parts of the creature's leg (hip to ground as it stands), angles degrees.
+
+[lie]
+what = "Lying awake on its chest, as a dog or a wolf does: chest and belly on the ground, back level, head up; elbows on the ground with the forearms flat and pointing ahead; each hind leg folded in a Z, the thigh ahead from the hip to a knee beside the belly, the shank back to a hock on the ground, the lower leg flat from hock to paw and pointing ahead; the tail on the ground."
+seen = [
+    "https://commons.wikimedia.org/wiki/Category:Lying_dogs (twelve at once, 2026-11-12: two black labradors and a white dog side-on show the legs plainly)",
+]
+# The chest's and the loins' lowest skin over the ground, each: on it, neither sunk nor held up.
+belly = [-0.05, 0.08]
+# Elbows and hocks: how high the joint may be.
+elbow = 0.2
+hock = 0.2
+# Forearm and lower hind leg: how far from flat, and each paw ahead of its elbow or hock.
+forearm = 20.0
+lower_hind = 25.0
+# Knee ahead of its hip, and the back within so many degrees of level.
+back = 12.0
+# The tail's lowest skin over the ground: on it or over it, not through it.
+tail = -0.05
+learned = [
+    "Standing on its paws with the body let down is a squat, not lying (three tries).",
+    "Legs folded to nothing under the hips go through the body.",
+    "Legs stretched straight out ahead is not how anything lies.",
+    "The body comes down until its belly is on the ground, by the skin of the trunk alone: by its legs' lengths a bear lay a hand deep in the floor, and by all its skin (legs and tail too) a wolf was held up off it.",
+    "A leg is put down by the point of it that meets the ground: a rig may end at the hock.",
+    "The chest and the loins are measured apart: by the lowest of the whole trunk the wolf's chest stood a hand over the ground with its loins on it, and every number passed. The eye caught it on the sheet; the measure was added.",
+    "The tail is measured too: it went through the floor behind a wolf that passed everything else.",
+]

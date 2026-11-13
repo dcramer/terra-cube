@@ -326,6 +326,22 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         {
             (clip.frames, clip.source) = (frames, "walker");
         }
+        // And it lies down as a dog lies (`walker::lie`), where it is one that lies on its
+        // belly and the pose does not tear it.
+        if plan.rig != "humanoid" && creature.plan == "quadruped" && name == "lie" && creature.rests == "belly"
+            && let Some(frames) = crate::walker::lie(&glb, &skeleton, &roles, out.iter().find(|c| c.name == "idle").map_or(&skeleton.rest(), |c| &c.frames[0]))
+            && crate::check::tears(&glb, &skeleton, &frames) <= plan.max_stretch.unwrap_or(1.0) * 0.95
+        {
+            // Kept only if it is lying by every measure of `poses.toml`; what it falls short
+            // by is said either way (`FORGE_TRACE=1`), for whoever is to make it lie.
+            let (text, good) = crate::walker::measured(&glb, &skeleton, &roles, &frames[0]).unwrap_or_default();
+            if std::env::var_os("FORGE_TRACE").is_some() {
+                eprintln!("lie {}: {text}", if good { "kept" } else { "not kept" });
+            }
+            if good {
+                (clip.frames, clip.source) = (frames, "walker");
+            }
+        }
         // Its own speed over the ground: the library's, where the library says (its figure's, by this one's size).
         if matches!(name.as_str(), "walk" | "run" | "sprint") {
             // (By its size, and not in step with it: a figure twice as tall takes strides twice
