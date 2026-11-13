@@ -40,6 +40,9 @@ touch = 0.03
 # with its numbers by `FORGE_TRACE=1 cargo forge finish ID`, and `FORGE_KEEP=1` keeps a pose
 # that fails so it can be looked at.
 learned = [
+    "Got right on the boxes first (`cube_anim`, `Lie::sphinx`), which was skipped: the box creature had table legs, hip to knee to foot, and nothing about them could lie down. With an animal's joints (elbow at the chest's underside, knee at the belly, a hock) lying is small: the elbows stay where they are and the forearms fold forward; the knee comes down ahead of the hip, the shank lies back to the hock, the lower leg flat forward.",
+    "Which way a joint folds is part of the pose: knees and elbows go down to the ground. Folded up, a knee stands over the back: the leg that stuck up at the wolf's rump.",
+    "Most animals lie differently: a way of lying is data (`cube_anim::Lie`), one per kind, each got right on the boxes before a model is asked for it.",
     "The pose is fitted as a whole (`walker::lie`): six numbers searched together against every measure at once, on the skin. Placed part by part, each mend broke another measure.",
     "A leg has a thickness, read from the skin round each joint; elbows and hocks are measured over that, and legs are measured against the trunk so they cannot be hidden in it.",
     "Standing on its paws with the body let down is a squat, not lying (three tries).",
