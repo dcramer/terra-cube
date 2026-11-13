@@ -31,19 +31,21 @@ impl Plugin for VaultPlugin {
 /// The night's floor and the low sun's blue: both stay round the camera.
 #[derive(Component)]
 struct Vault;
-/// The glow round the sun, and the ring round the moon.
+/// The glow round the sun, the low sun itself, and the ring round the moon.
 #[derive(Component)]
 struct Aureole;
+#[derive(Component)]
+struct LowSun;
 #[derive(Component)]
 struct Halo;
 
 /// Their materials, in that order, and what each was last set to.
 #[derive(Resource)]
-struct Lights([Handle<StandardMaterial>; 4]);
+struct Lights([Handle<StandardMaterial>; 5]);
 
 /// The night sky with no moon, overhead: what is added to the air's own. (As the picture has
 /// it, not as light: these are not lit and the camera's exposure does not touch them.)
-const NIGHT: Vec3 = Vec3::new(0.006, 0.012, 0.034);
+const NIGHT: Vec3 = Vec3::new(0.005, 0.010, 0.028);
 /// The blue the sky overhead is turned toward while the sun is low, and how far at most.
 const BLUE: Vec3 = Vec3::new(0.10, 0.17, 0.44);
 const BLUED: f32 = 0.62;
@@ -81,13 +83,16 @@ fn bowl(colour: impl Fn(f32) -> [f32; 4]) -> Mesh {
         .with_inserted_indices(Indices::U32(indices))
 }
 
-/// A round glow one across, brightest at its middle and gone at its rim, falling off fast
-/// at first as light round a lamp does.
-fn glow() -> Mesh {
+/// A round thing one across, as rings of (how far out, how much of it): a glow, brightest
+/// at its middle and gone at its rim, falling off fast at first as light round a lamp does.
+const GLOW: [(f32, f32); 6] = [(0.0, 1.0), (0.06, 0.62), (0.16, 0.3), (0.34, 0.12), (0.62, 0.035), (1.0, 0.0)];
+/// And a disc: all of it bright, to a soft rim.
+const DISC: [(f32, f32); 3] = [(0.0, 1.0), (0.86, 1.0), (1.0, 0.0)];
+
+fn round(rings: &[(f32, f32)]) -> Mesh {
     const ROUND: u32 = 40;
-    const RINGS: [(f32, f32); 6] = [(0.0, 1.0), (0.06, 0.62), (0.16, 0.3), (0.34, 0.12), (0.62, 0.035), (1.0, 0.0)];
     let (mut positions, mut normals, mut colors, mut indices) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-    for (out, bright) in RINGS {
+    for &(out, bright) in rings {
         for step in 0..=ROUND {
             let turn = TAU * step as f32 / ROUND as f32;
             positions.push([turn.cos() * out, turn.sin() * out, 0.0]);
@@ -95,7 +100,7 @@ fn glow() -> Mesh {
             colors.push([1.0, 1.0, 1.0, bright]);
         }
     }
-    for ring in 0..RINGS.len() as u32 - 1 {
+    for ring in 0..rings.len() as u32 - 1 {
         for step in 0..ROUND {
             let (a, b) = (ring * (ROUND + 1) + step, (ring + 1) * (ROUND + 1) + step);
             indices.extend([a, b, a + 1, a + 1, b, b + 1]);
@@ -112,11 +117,11 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     // Each has its own light and no other, is not hazed, and is laid over what is behind it:
     // added to it, or (the blue) blended with it by how much of it there is at each point.
     let mut laid = |mode: AlphaMode| materials.add(StandardMaterial { base_color: Color::BLACK, unlit: true, alpha_mode: mode, fog_enabled: false, cull_mode: None, ..default() });
-    let lights = [laid(AlphaMode::Add), laid(AlphaMode::Blend), laid(AlphaMode::Add), laid(AlphaMode::Add)];
+    let lights = [laid(AlphaMode::Add), laid(AlphaMode::Blend), laid(AlphaMode::Add), laid(AlphaMode::Add), laid(AlphaMode::Blend)];
     let far = Transform::from_xyz(0.0, -50_000.0, 0.0);
-    // The night's floor: twice as light at the land's edge as overhead.
+    // The night's floor: three times as light at the land's edge as overhead.
     let floor = bowl(|up| {
-        let edge = 1.0 + 1.1 * (1.0 - up.max(0.0)).powi(3);
+        let edge = 1.0 + 2.2 * (1.0 - up.max(0.0)).powi(3);
         [edge, edge, edge, 1.0]
     });
     // The blue: none of it at the land's edge, all of it from a third of the way up.
@@ -126,9 +131,10 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     });
     commands.spawn((Vault, Mesh3d(meshes.add(floor)), MeshMaterial3d(lights[0].clone()), far, NotShadowCaster));
     commands.spawn((Vault, Mesh3d(meshes.add(blue)), MeshMaterial3d(lights[1].clone()), far, NotShadowCaster));
-    let round = meshes.add(glow());
-    commands.spawn((Aureole, Mesh3d(round.clone()), MeshMaterial3d(lights[2].clone()), far, NotShadowCaster));
-    commands.spawn((Halo, Mesh3d(round), MeshMaterial3d(lights[3].clone()), far, NotShadowCaster));
+    let glow = meshes.add(round(&GLOW));
+    commands.spawn((Aureole, Mesh3d(glow.clone()), MeshMaterial3d(lights[2].clone()), far, NotShadowCaster));
+    commands.spawn((Halo, Mesh3d(glow), MeshMaterial3d(lights[3].clone()), far, NotShadowCaster));
+    commands.spawn((LowSun, Mesh3d(meshes.add(round(&DISC))), MeshMaterial3d(lights[4].clone()), far, NotShadowCaster));
     commands.insert_resource(Lights(lights));
 }
 
@@ -146,10 +152,11 @@ fn turn(
     lights: Res<Lights>,
     cameras: Query<&GlobalTransform, With<Camera3d>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut vaults: Query<&mut Transform, (With<Vault>, Without<Aureole>, Without<Halo>)>,
-    mut aureole: Query<&mut Transform, (With<Aureole>, Without<Halo>)>,
-    mut halo: Query<&mut Transform, With<Halo>>,
-    mut was: Local<[Vec4; 4]>,
+    mut vaults: Query<&mut Transform, (With<Vault>, Without<Aureole>, Without<Halo>, Without<LowSun>)>,
+    mut aureole: Query<&mut Transform, (With<Aureole>, Without<Halo>, Without<LowSun>)>,
+    mut halo: Query<&mut Transform, (With<Halo>, Without<LowSun>)>,
+    mut low_sun: Query<&mut Transform, With<LowSun>>,
+    mut was: Local<[Vec4; 5]>,
 ) {
     let Some(eye) = cameras.iter().next().map(|c| c.translation()) else { return };
     let when = live.map_or(sky::START, |l| l.0.when);
@@ -165,6 +172,11 @@ fn turn(
     if let Ok(mut at) = halo.single_mut() {
         *at = place(to_moon, HALO);
     }
+    // The low sun: larger the lower it is, as it looks.
+    let sunk = 1.0 - ((to_sun.y - 0.12) / 0.28).clamp(0.0, 1.0);
+    if let Ok(mut at) = low_sun.single_mut() {
+        *at = place(to_sun, 0.011 + 0.006 * sunk);
+    }
     // The floor comes up as twilight ends (the stars' own hour), less under a moon, whose
     // light the air already has in it.
     let dark = ((-0.105 - to_sun.y) / 0.12).clamp(0.0, 1.0);
@@ -179,7 +191,12 @@ fn turn(
     let sun = (tint / tint.max_element() * 0.5 + 0.5) * (0.6 * ((to_sun.y + 0.04) / 0.08).clamp(0.0, 1.0));
     // The moon's ring by how full it is, in the night only.
     let moon = Vec3::new(0.55, 0.68, 1.0) * (0.2 * sky::moon_lit(when) * (1.0 - day) * ((to_moon.y + 0.02) / 0.06).clamp(0.0, 1.0));
-    let now = [floor.extend(1.0), BLUE.extend(blued), sun.extend(1.0), moon.extend(1.0)];
+    // The sun itself while it is low: the engine's disc has no red at any brightness, so
+    // under a quarter of the way up it is not drawn (`world::sky`) and this is: its colour
+    // at that height, deepened, and brighter than the picture's white so that it glows.
+    let own = (tint / tint.max_element()).powf(1.4) * 2.6;
+    let disc = own.extend(sunk.min(((to_sun.y + 0.03) / 0.03).clamp(0.0, 1.0)));
+    let now = [floor.extend(1.0), BLUE.extend(blued), sun.extend(1.0), moon.extend(1.0), disc];
     for (i, colour) in now.into_iter().enumerate() {
         if (colour - was[i]).abs().max_element() < 0.0004 {
             continue;
