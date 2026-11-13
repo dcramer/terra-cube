@@ -17,9 +17,12 @@ seen = [
 ]
 # The chest's and the loins' lowest skin over the ground, each: on it, neither sunk nor held up.
 belly = [-0.05, 0.08]
-# Elbows and hocks: how high the joint may be.
-elbow = 0.2
-hock = 0.2
+# Elbows and hocks: how far the joint may be over the ground, less its own thickness (a leg
+# is not a line: laid down, its joint lies its own radius up; forge reads that off the skin).
+elbow = 0.08
+hock = 0.08
+# How far any knee, hock or paw may be inside the trunk.
+inside = 0.04
 # Forearm and lower hind leg: how far from flat, and each paw ahead of its elbow or hock.
 forearm = 20.0
 lower_hind = 25.0
@@ -29,10 +32,16 @@ back = 12.0
 tail = -0.05
 # The lowest skin of the whole animal over the ground: nothing of it is in the floor.
 ground = -0.02
-# State 2026-11-12: the boar-beast passes every measure. The wolf and the bear do not (out of
-# the ground, their hocks stand 23% of a leg up, and the wolf's legs were drawn up into its
-# body: looked at with `FORGE_KEEP=1`), so they keep what they had; the wolf rests standing.
+# And it is on the ground: the lowest of it (its tail apart) no further over it than this.
+touch = 0.03
+# State 2026-11-12, fitted as a whole: the bear and the boar-beast pass every measure and lie
+# so. The wolf comes near and is not kept (its back 14 degrees from level, its hocks 10% over
+# their thickness: its rump stays up); squirrel, goat and badger are further off. Each is said
+# with its numbers by `FORGE_TRACE=1 cargo forge finish ID`, and `FORGE_KEEP=1` keeps a pose
+# that fails so it can be looked at.
 learned = [
+    "The pose is fitted as a whole (`walker::lie`): six numbers searched together against every measure at once, on the skin. Placed part by part, each mend broke another measure.",
+    "A leg has a thickness, read from the skin round each joint; elbows and hocks are measured over that, and legs are measured against the trunk so they cannot be hidden in it.",
     "Standing on its paws with the body let down is a squat, not lying (three tries).",
     "Legs folded to nothing under the hips go through the body.",
     "Legs stretched straight out ahead is not how anything lies.",

@@ -75,17 +75,6 @@ pub fn sunk(glb: &Glb, sk: &Skeleton, frames: &[Pose]) -> Vec<f32> {
     frames.iter().map(|pose| (floor - lowest(pose)).max(0.0)).collect()
 }
 
-/// How low the skin comes in a pose, leaving out what goes mostly with the joints of `skip`
-/// (legs and tail, to find the belly).
-/// And only what is on one side of a place along the body (`part`: which way is ahead, how
-/// far along, and whether it is what is ahead of there that is wanted): the chest, or the loins.
-pub fn lowest(glb: &Glb, sk: &Skeleton, pose: &Pose, skip: &[usize], part: Option<(Vec3, f32, bool)>) -> Option<f32> {
-    let s = skin(glb).ok()?;
-    let at = posed(&s, sk, pose);
-    let most = |i: usize| (0..4).max_by(|a, b| s.weights[i][*a].total_cmp(&s.weights[i][*b])).map(|k| s.joints[i][k]).unwrap_or(0);
-    (0..at.len()).filter(|i| !skip.contains(&most(*i)) && part.is_none_or(|(ahead, along, fore)| (at[*i].dot(ahead) > along) == fore)).map(|i| at[i].y).min_by(f32::total_cmp)
-}
-
 fn posed(s: &Skin, sk: &Skeleton, pose: &Pose) -> Vec<Vec3> {
     let mats: Vec<Mat4> = sk.pose_world(pose).iter().zip(&sk.inverse_bind).map(|(w, ib)| *w * *ib).collect();
     s.positions
@@ -118,6 +107,33 @@ pub fn extent(glb: &Glb, sk: &Skeleton, pose: &Pose, along: Vec3) -> Result<f32>
     let s = skin(glb)?;
     let (lo, hi) = posed(&s, sk, pose).iter().map(|p| p.dot(along)).fold((f32::MAX, f32::MIN), |(lo, hi), v| (lo.min(v), hi.max(v)));
     Ok(hi - lo)
+}
+
+/// A model's skin read once, to be posed many times: for whoever searches for a pose and
+/// must look at where the skin goes at each try.
+pub struct Skinned {
+    s: Skin,
+    rest_len: Vec<f32>,
+    /// The joint each corner follows most.
+    pub most: Vec<usize>,
+}
+
+impl Skinned {
+    pub fn of(glb: &Glb, sk: &Skeleton) -> Option<Self> {
+        let s = skin(glb).ok()?;
+        let rest = posed(&s, sk, &sk.rest());
+        let rest_len = s.edges.iter().map(|&(a, b)| rest[a].distance(rest[b])).collect();
+        let most = (0..s.positions.len()).map(|i| (0..4).max_by(|a, b| s.weights[i][*a].total_cmp(&s.weights[i][*b])).map_or(0, |k| s.joints[i][k])).collect();
+        Some(Self { s, rest_len, most })
+    }
+    /// Where every corner of the skin is in a pose.
+    pub fn at(&self, sk: &Skeleton, pose: &Pose) -> Vec<Vec3> {
+        posed(&self.s, sk, pose)
+    }
+    /// How far a pose pulls the skin, as a clip's check measures it.
+    pub fn tears(&self, sk: &Skeleton, pose: &Pose) -> f32 {
+        stretch(&self.s, sk, &self.rest_len, &Clip { name: String::new(), looping: true, frames: vec![pose.clone()], source: "walker", speed: None })
+    }
 }
 
 /// How far a run of poses pulls the skin, as the check of a clip will measure it: for
