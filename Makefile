@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: sky wind blow moves limbs person beside features legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: forget sky wind blow moves limbs person beside features legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -77,6 +77,7 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 	@cargo world trunks | tail -1 | sed 's/^ok$$/ok trunks: what stops a body at a tree is the wood that is drawn/'
 	@cargo world fell | tail -1 | sed 's/^ok$$/ok fell: a tree cut through comes down whole and lies where it fell, as cells/'
 	@cargo world replay | tail -1 | sed 's/^ok$$/ok replay: the land made again from its seed with the same edits done to it is the same world/'
+	@tools/forget.sh
 	@cargo world drawn | tail -1 | sed 's/^ok$$/ok drawn: a body rests on the ground as it is drawn/'
 	@python3 tools/audio/level.py | tail -1
 	@python3 tools/audio/loops.py | tail -1
@@ -130,6 +131,9 @@ moves: need-id ## one creature's movement made and judged: forge fits the walker
 
 person: ## no window: shots/person.gif, a person of boxes moved by their skeleton and feet and no clips (cube_anim::biped): standing, walking, running, sprinting, stopping
 	@cargo sandbox --scene shots/person.gif --limbs-person --gif 16 --big --hour 13 2>&1 | grep -q '^gif' && echo "shots/person.gif"
+
+forget: ## no window: a tree felled and cut up in the real game, its regions dropped and made again from the seed and the journal of edits: no cell may differ
+	@tools/forget.sh
 
 limbs: ## no window: shots/limbs.gif, a body of boxes moved by its skeleton and feet and no clips (cube_anim): standing, walking, running, lying down, getting up
 	@cargo sandbox --scene shots/limbs.gif --limbs --gif 16 --dist 6.4 --pitch 0.55 --hour 13 2>&1 | grep -q '^gif' && echo "shots/limbs.gif"

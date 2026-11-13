@@ -50,6 +50,8 @@ pub struct Controls {
     pub chop: bool,
     /// (And a block of stone let go five metres up, three ahead: to see what comes down hard do.)
     pub drop: bool,
+    /// (And every changed region dropped and made again from the seed and the journal: `world::regions`.)
+    pub forget: bool,
     /// Something to do on the spot, once: a blow, a bite of grass, a flinch.
     pub act: Option<cube_sim::life::Act>,
     /// What is in hand is to be used, once: a blow, a bite, a spadeful.
@@ -259,6 +261,7 @@ fn script(time: Res<Time>, args: Res<Args>, stage: Option<Res<crate::shot::Stage
                 "dig" => controls.dig = true,
                 "chop" => controls.chop = true,
                 "drop" => controls.drop = true,
+                "forget" => controls.forget = true,
                 "put" => controls.put = true,
                 "surface" => controls.dive = false,
                 "hop" => clock.1 = now + 0.04,
@@ -473,9 +476,12 @@ const LUMP: f32 = 0.18;
 
 /// Digs or builds where the controlled creature looks: along the camera's line, from its eyes.
 #[allow(clippy::too_many_arguments)]
-fn edit(mut controls: ResMut<Controls>, mut live: ResMut<Live>, mut forms: ResMut<crate::flora::Forms>, mut grown: ResMut<crate::flora::Grown>, terrain: Option<ResMut<Terrain>>, mut dirty: ResMut<crate::world::Dirty>, controlled: Query<(&Mover, &Transform), With<Controlled>>, cameras: Query<&Transform, With<Orbit>>, mut chopping: Local<Option<(Vec3, u32)>>, mut felled: Local<bool>) {
+fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Controls>, mut live: ResMut<Live>, mut forms: ResMut<crate::flora::Forms>, mut grown: ResMut<crate::flora::Grown>, terrain: Option<ResMut<Terrain>>, mut dirty: ResMut<crate::world::Dirty>, controlled: Query<(&Mover, &Transform), With<Controlled>>, cameras: Query<&Transform, With<Orbit>>, mut chopping: Local<Option<(Vec3, u32)>>, mut felled: Local<bool>) {
     let (mut dig, put, chop, mut tool, lump) = (std::mem::take(&mut controls.dig), std::mem::take(&mut controls.put), std::mem::take(&mut controls.chop), controls.tool.take(), controls.lump.take());
     let (Some(mut terrain), Ok((mover, at)), Some(camera)) = (terrain, controlled.single(), cameras.iter().next()) else { return };
+    if std::mem::take(&mut controls.forget) {
+        regions.forget = true;
+    }
     if std::mem::take(&mut controls.drop) {
         let middle = at.translation + at.rotation * Vec3::Z * 3.0 + Vec3::Y * 5.0;
         terrain.0.fill(middle - Vec3::splat(0.75), middle + Vec3::splat(0.75), cube_voxel::Block::Stone);

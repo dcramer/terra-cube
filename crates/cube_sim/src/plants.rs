@@ -582,7 +582,7 @@ pub fn specimen(world: &mut World, foot: IVec3, name: &str, rng: &mut Rng) -> bo
         (_, "bush") => bush(world, foot, rng),
         (_, "log") => log(world, foot, rng),
         (_, "stump") => stump(world, foot, rng),
-        (_, "rock") => rock(world, foot, 2.4, rng),
+        (_, "rock") => rock(world, foot, 2.4, rng, &|_, _| None),
         _ => return false,
     }
     true
@@ -678,7 +678,12 @@ fn ground(world: &World, at: Vec3) -> f32 {
 /// it at angles, as rock breaks. Not a ball, and not one shape at every size: it is a block,
 /// a slab lying flat, a tooth standing up or a low hump mostly buried, with smaller pieces
 /// lying against it and, round a large one, stones fallen from it.
-pub fn rock(world: &mut World, foot: IVec3, across: f32, rng: &mut Rng) {
+///
+/// `height` says where the ground is at a column (cells), where whoever grows it knows
+/// without looking (the land, as it is being made a part at a time: a rock astride two parts
+/// must come out the same from both, and each has only its own ground); nothing, and the
+/// world is looked at.
+pub fn rock(world: &mut World, foot: IVec3, across: f32, rng: &mut Rng, height: &dyn Fn(i32, i32) -> Option<i32>) {
     let foot = (foot.as_vec3() + Vec3::new(0.5, 0.0, 0.5)) * CELL;
     let stone = [Block::Stone, Block::Stone, Block::Slate, Block::Chalk][rng.below(4)];
     let piece = |world: &mut World, at: Vec3, radii: Vec3, sunk: f32, rng: &mut Rng| {
@@ -692,14 +697,24 @@ pub fn rock(world: &mut World, foot: IVec3, across: f32, rng: &mut Rng) {
         // Longer one way than the other, turned any way round.
         let (turn, long) = (rng.between(0.0, TAU), rng.between(1.0, 1.5));
         let (sin, cos) = turn.sin_cos();
-        let middle = Vec3::new(at.x, ground(world, at) + radii.y * (0.55 - sunk), at.z);
+        let under = height((at.x / CELL).floor() as i32, (at.z / CELL).floor() as i32).map_or_else(|| ground(world, at), |h| h as f32 * CELL);
+        let middle = Vec3::new(at.x, under + radii.y * (0.55 - sunk), at.z);
         NOTED.with(|n| {
             if let Some(form) = n.borrow_mut().as_mut() {
                 form.stones.push(Stone { middle, radii: Vec3::new(radii.x * long, radii.y, radii.z), turn, faces: faces.clone(), kind: stone });
             }
         });
         let reach = Vec3::new(radii.x * long, radii.y, (radii.x * long).max(radii.z));
-        world.shape(middle - reach, middle + reach, |p| {
+        // (Only the columns being made, as a tree's cells are: `only`.)
+        let (mut lo, mut hi) = (middle - reach, middle + reach);
+        if let Some(b) = ONLY.get() {
+            lo = lo.max(Vec3::new(b[0] as f32 * CELL, f32::MIN, b[1] as f32 * CELL));
+            hi = hi.min(Vec3::new(b[2] as f32 * CELL - 0.001, f32::MAX, b[3] as f32 * CELL - 0.001));
+            if lo.x > hi.x || lo.z > hi.z {
+                return;
+            }
+        }
+        world.shape(lo, hi, |p| {
             let d = p - middle;
             let q = Vec3::new((d.x * cos + d.z * sin) / (radii.x * long), d.y / radii.y, (d.z * cos - d.x * sin) / radii.z);
             q.length_squared() < 1.0 && faces.iter().all(|(n, d)| q.dot(*n) < *d)

@@ -402,6 +402,8 @@ const CLEARING: f32 = 22.0;
 /// How far a tree reaches from its foot, cells: one whose foot is this near a part being
 /// made is built with it, so no crown is cut off at the part's edge.
 const CROWN: i32 = (19.0 / CELL) as i32;
+/// And how far a small thing (a young tree, a bush, a log, a rock) may reach from its foot.
+const SMALL: i32 = 20;
 
 thread_local! {
     /// Seconds `fill` has spent on this thread in each of its three parts: the ground, what
@@ -517,10 +519,14 @@ pub fn fill(world: &mut World, land: &Land, lo: (i32, i32), hi: (i32, i32)) {
         }
     }
     let clock = spent(0, clock);
-    // What stands on it. Trees whose crowns reach in from outside are built too; the small
-    // things only where their own ground has been made.
+    // What stands on it. What reaches in from outside is built too, a tree's crown or a
+    // bush's edge, and all of it writes only the columns being made (`plants::only`): each
+    // cell once, by its own part, whatever is made round it and in whatever order. (Until
+    // 2026-11-13 the small things were grown only by the part their foot was in and written
+    // whole, over its edge: a part dropped and made again alone had lost what its
+    // neighbours' young trees, bushes and rocks had laid over it, 136 cells of one.)
     for (pass, room) in [scale::TREE_ROOM, scale::SMALL_ROOM].into_iter().enumerate() {
-        let (grid, reach) = (cells(room), if pass == 0 { CROWN } else { 0 });
+        let (grid, reach) = (cells(room), if pass == 0 { CROWN } else { SMALL });
         for gz in (lo.1 - reach).div_euclid(grid)..=(hi.1 + reach).div_euclid(grid) {
             for gx in (lo.0 - reach).div_euclid(grid)..=(hi.0 + reach).div_euclid(grid) {
                 let Some(thing) = land.thing(pass, gx, gz) else { continue };
@@ -528,18 +534,24 @@ pub fn fill(world: &mut World, land: &Land, lo: (i32, i32), hi: (i32, i32)) {
                 if !inside(reach) {
                     continue;
                 }
+                let trees = cells(scale::TREE_ROOM);
+                let crowded = pass == 1
+                    && ((foot.z - 6).div_euclid(trees)..=(foot.z + 6).div_euclid(trees)).any(|tz| {
+                        ((foot.x - 6).div_euclid(trees)..=(foot.x + 6).div_euclid(trees)).any(|tx| land.thing(0, tx, tz).is_some_and(|t| matches!(t.what, What::Tree(..)) && (t.foot.x - foot.x).abs() <= 6 && (t.foot.z - foot.z).abs() <= 6))
+                    });
                 let mut rng = Rng::new(thing.seed);
                 match thing.what {
                     What::Tree(kind, age) => {
                         plants::only(lo, hi, || plants::tree(world, foot, kind, age, &mut rng));
                     }
-                    // A trunk or a root is already here.
-                    _ if world.get(foot) != Block::Air => {}
-                    What::Young(needles) => plants::young(world, foot, needles, &mut rng),
-                    What::Bush => plants::bush(world, foot, &mut rng),
-                    What::Log => plants::log(world, foot, &mut rng),
-                    What::Stump => plants::stump(world, foot, &mut rng),
-                    What::Rock(across) => plants::rock(world, foot, across, &mut rng),
+                    // A trunk or a root is already here: told from where the trees stand, not
+                    // from the cells, which a part that is not the foot's own does not have.
+                    _ if crowded => {}
+                    What::Young(needles) => plants::only(lo, hi, || plants::young(world, foot, needles, &mut rng)),
+                    What::Bush => plants::only(lo, hi, || plants::bush(world, foot, &mut rng)),
+                    What::Log => plants::only(lo, hi, || plants::log(world, foot, &mut rng)),
+                    What::Stump => plants::only(lo, hi, || plants::stump(world, foot, &mut rng)),
+                    What::Rock(across) => plants::only(lo, hi, || plants::rock(world, foot, across, &mut rng, &|x, z| Some(land.height(x, z)))),
                 }
             }
         }

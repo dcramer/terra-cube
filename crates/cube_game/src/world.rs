@@ -74,6 +74,14 @@ pub struct Regions {
     /// Regions being made on other threads: their cells, and the shapes of what grew.
     pending: std::collections::HashMap<(i32, i32), bevy::tasks::Task<(Voxels, cube_sim::plants::Form)>>,
     pub kept: HashSet<(i32, i32)>,
+    /// Changed regions that have been dropped and made again from the seed, and have not
+    /// yet had what was done to them done again (`cube_sim::loose::replay`).
+    stale: HashSet<(i32, i32)>,
+    /// (A script's `forget`: every changed region is to be dropped now, however near, to
+    /// try that it comes back the same; and what it all came to before, to hold it to.)
+    pub forget: bool,
+    held: Option<usize>,
+    was: Vec<(IVec3, std::sync::Arc<cube_voxel::Chunk>)>,
     /// Regions wanted and not yet made, and which.
     pub waiting: usize,
     unmade: HashSet<(i32, i32)>,
@@ -857,7 +865,8 @@ fn seasons(args: Res<crate::Args>, live: Option<Res<crate::motion::Live>>, look:
 /// thread and apart from the world, which takes it in when it is done (`Voxels::join`); drops those it has left well behind, unless someone dug or
 /// built there. So what is held in cells is what is near, and the island can be a kilometre
 /// across (or ten) for the price of the ground underfoot.
-fn regions(args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrain: Option<ResMut<Terrain>>, mut forms: ResMut<crate::flora::Forms>, mut regions: ResMut<Regions>, mut dirty: ResMut<Dirty>, mut cost: ResMut<Cost>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
+#[allow(clippy::too_many_arguments)]
+fn regions(args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrain: Option<ResMut<Terrain>>, live: Option<Res<crate::motion::Live>>, mut grown: ResMut<crate::flora::Grown>, mut forms: ResMut<crate::flora::Forms>, mut regions: ResMut<Regions>, mut dirty: ResMut<Dirty>, mut cost: ResMut<Cost>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
     let (Some(mut terrain), Some(eye)) = (terrain, cameras.iter().next().map(|t| t.translation())) else { return };
     let began = std::time::Instant::now();
     let size = terrain::REGION as f32 * CELL;
@@ -916,6 +925,11 @@ fn regions(args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrai
             }
         }
         forms.0.insert(r, std::sync::Arc::new(form));
+        // (A changed region made again is the land as the seed has it, until what was done
+        // to it is done again, below.)
+        if terrain.3.contains(&r) {
+            regions.stale.insert(r);
+        }
         regions.made.insert(r);
         regions.waiting -= 1;
         regions.unmade.remove(&r);
@@ -939,7 +953,109 @@ fn regions(args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrai
             }));
         }
     }
-    let gone: Vec<(i32, i32)> = regions.made.iter().copied().filter(|r| away(*r) > DROP && !terrain.3.contains(r)).collect();
+    // A region that has been changed is its seed and what was done to it (`loose::replay`),
+    // so it is dropped like any other, with the changed regions it touches: all of them
+    // together, when all are far enough, since what fell in one may lie in the next. Made
+    // again, they are the land as the seed has it until every one of them and the regions
+    // round them are there; then what was done is done again, in the order it was done.
+    let groups = {
+        let mut left: Vec<(i32, i32)> = terrain.3.iter().copied().collect();
+        left.sort_unstable();
+        let mut groups: Vec<Vec<(i32, i32)>> = Vec::new();
+        while let Some(first) = left.pop() {
+            let mut group = vec![first];
+            let mut i = 0;
+            while i < group.len() {
+                let at = group[i];
+                let (near, far): (Vec<_>, Vec<_>) = left.iter().partition(|r| (r.0 - at.0).abs() <= 1 && (r.1 - at.1).abs() <= 1);
+                group.extend(near);
+                left = far;
+                i += 1;
+            }
+            groups.push(group);
+        }
+        groups
+    };
+    if let Some(live) = &live {
+        for group in &groups {
+            if !group.iter().all(|r| regions.stale.contains(r)) {
+                continue;
+            }
+            let round = |r: &(i32, i32)| { let r = *r; (-1..=1).flat_map(move |z| (-1..=1).map(move |x| (r.0 + x, r.1 + z))) };
+            if !group.iter().flat_map(round).all(|r| regions.made.contains(&r) || r.0 < -edge || r.0 >= edge || r.1 < -edge || r.1 >= edge) {
+                continue;
+            }
+            let mine: Vec<(u64, cube_sim::loose::Edit)> = live.0.loose.journal.iter().copied().filter(|(_, e)| {
+                let (cube_sim::loose::Edit::Cut { middle, .. } | cube_sim::loose::Edit::Put { middle, .. }) = e;
+                group.contains(&region_of((*middle / CELL).floor().as_ivec3()))
+            }).collect();
+            let near: Vec<(i32, i32)> = group.iter().flat_map(round).collect::<HashSet<_>>().into_iter().filter(|r| forms.0.contains_key(r)).collect();
+            let again = {
+                let shapes: Vec<&cube_sim::plants::Form> = near.iter().map(|r| &*forms.0[r]).collect();
+                cube_sim::loose::replay(&mut terrain.0, &shapes, &mine)
+            };
+            // What is cells again is no longer among the shapes drawn.
+            for r in &near {
+                let Some(form) = forms.0.get_mut(r).map(std::sync::Arc::make_mut) else { continue };
+                let cut: HashSet<u32> = form.limbs.iter().filter(|l| again.things.iter().any(|t| t.limbs.iter().any(|m| m.a == l.a && m.b == l.b))).map(|l| l.tree).collect();
+                let before = (form.limbs.len(), form.stones.len());
+                form.limbs.retain(|l| !cut.contains(&l.tree));
+                form.clumps.retain(|c| !cut.contains(&c.tree));
+                form.stones.retain(|s| !again.things.iter().any(|t| t.stone.as_ref().is_some_and(|m| m.middle == s.middle)));
+                if before != (form.limbs.len(), form.stones.len()) {
+                    grown.again(*r);
+                }
+            }
+            for r in group {
+                regions.stale.remove(r);
+                redraw(&terrain.0, *r, &mut dirty);
+            }
+            // (A script's `forget`: held against the cells as they were. Leaf of a tree that
+            // stands in the next region is counted apart: a region made again alone does not
+            // get back what overhangs it from its neighbours, changed or not, which is the
+            // streaming's own seam and none of the journal's.)
+            if let Some(edits) = regions.held.take() {
+                let (mut differ, mut leaf, mut first) = (0, 0, String::new());
+                let mut kinds: std::collections::BTreeMap<String, (usize, IVec3, IVec3)> = Default::default();
+                for (place, chunk) in std::mem::take(&mut regions.was) {
+                    for i in 0..CHUNK * CHUNK * CHUNK {
+                        let l = IVec3::new(i % CHUNK, i / (CHUNK * CHUNK), i / CHUNK % CHUNK);
+                        let (a, b) = (chunk.get(l), terrain.0.get(place * CHUNK + l));
+                        let plain = |x: Block| if x.sprig() { Block::Air } else { x };
+                        if plain(a) != plain(b) || chunk.bits(l).map(|x| x.to_vec()) != terrain.0.bits_at(place * CHUNK + l).map(|x| x.to_vec()) {
+                            if a.shaped() && a.foliage() && plain(b) == Block::Air {
+                                leaf += 1;
+                            } else {
+                                differ += 1;
+                                let at = place * CHUNK + l;
+                                let k = kinds.entry(format!("{a:?}>{b:?}")).or_insert((0, at, at));
+                                (k.0, k.1, k.2) = (k.0 + 1, k.1.min(at), k.2.max(at));
+                                if first.is_empty() {
+                                    first = format!(" (first at {:?}: {a:?} was, {b:?} is)", place * CHUNK + l);
+                                }
+                            }
+                        }
+                    }
+                }
+                if std::env::var_os("LOOSE_TRACE").is_some() {
+                    println!("forget kinds: {kinds:?}");
+                }
+                println!("{} forget: {} changed regions dropped and made again from the seed and {} of {edits} edits · {differ} cells differ{first} · {leaf} cells of a neighbour's overhanging leaf not come back", if differ == 0 { "ok" } else { "FAIL" }, group.len(), mine.len());
+            }
+        }
+    }
+    // (Held to how it is once whatever is falling has come to rest: taken as a tree was
+    // still coming down, what it was held to had the tree in the air.)
+    let falling = live.as_ref().is_some_and(|l| !l.0.loose.pieces.is_empty());
+    if regions.forget && !falling && !terrain.3.is_empty() {
+        regions.forget = false;
+        regions.held = Some(live.as_ref().map_or(0, |l| l.0.loose.journal.len()));
+        regions.was = terrain.0.chunks.iter().filter(|(c, _)| terrain.3.contains(&region_of(**c * CHUNK))).map(|(c, k)| (*c, k.clone())).collect();
+    }
+    let forgetting = regions.held.is_some() && regions.stale.is_empty();
+    let far = |r: &(i32, i32)| groups.iter().find(|g| g.contains(r)).is_none_or(|g| g.iter().all(|r| forgetting || away(*r) > DROP));
+    // (Nothing is dropped while anything is falling there: a fall is finished first.)
+    let gone: Vec<(i32, i32)> = regions.made.iter().copied().filter(|r| if terrain.3.contains(r) { !falling && !regions.stale.contains(r) && far(r) } else { away(*r) > DROP }).collect();
     for r in gone {
         redraw(&terrain.0, r, &mut dirty);
         terrain.0.chunks.retain(|c, _| (c.x.div_euclid(terrain::REGION / CHUNK), c.z.div_euclid(terrain::REGION / CHUNK)) != r);
