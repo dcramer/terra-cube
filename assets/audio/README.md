@@ -109,6 +109,8 @@ Made here, not recorded (2026-11-11), for creatures that had no sound of their o
 | buzz_1.ogg | 0.50 | A dragonfly's wings: three tones at 170 Hz and its multiples, beating 38 times a second | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
 | hiss_1.ogg | 0.63 | A lizard's hiss: noise between 2.5 and 7 kHz, quick in and slow out | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
 | click_1.ogg | 0.30 | A crab's claws: three short ticks of noise | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
+| click_2.ogg | 0.30 | A crab's claws: three short ticks of noise | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
+| click_3.ogg | 0.30 | A crab's claws: three short ticks of noise | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
 | grunt_1.ogg | 0.30 | A tortoise's grunt: a short low thud of noise under 380 Hz | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
 | beaver_1.ogg | 0.70 | A beaver's tail on the water: splash_1 lowered a fifth and cut short | made here: tools/audio/make.sh | none | ours (generated with ffmpeg; from splash_1.ogg, CC0) | n/a |
 
