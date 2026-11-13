@@ -33,7 +33,7 @@ async function show(client: Studio, a: Args): Promise<void> {
     flags,
     running: d.running_operator?.type,
     rig: op.rigging?.type ? { type: op.rigging.type, status: op.rigging.status } : undefined,
-    animations: (op.retarget ?? []).map((r) => ({ name: motionName(r), status: r.status })),
+    animations: (op.retarget ?? []).map((r) => ({ name: motionName(r), status: r.status, ...(r.motion_asset_id ? { asset: r.motion_asset_id } : {}) })),
     steps: history.map((h) => ({ operator: h.operator_id, type: h.type, at: new Date(h.created_at * 1000).toISOString() })),
   };
   console.log(JSON.stringify(shown, null, 2));

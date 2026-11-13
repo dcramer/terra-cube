@@ -295,6 +295,11 @@ fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, mut l
         if creature.walked && matches!(agent.act, Act::Idle | Act::Walk | Act::Run | Act::Sprint | Act::Lie) && let Some(idle) = find("idle") {
             (creature.clip, creature.hold, creature.pace, creature.blow) = (idle, Some(0.0), None, false);
         }
+        // With a hunk in their arms, the clip is the one that holds it: the walker's legs
+        // go under it, and the chest up is the clip's (`stride`).
+        if agent.carries.is_some() && agent.dead.is_none() && matches!(agent.act, Act::Idle | Act::Walk | Act::Run | Act::Sprint) && let Some(carry) = find("carry") {
+            (creature.clip, creature.hold, creature.pace, creature.blow, creature.speed) = (carry, None, None, false, 1.0);
+        }
     }
 }
 

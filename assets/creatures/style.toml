@@ -48,7 +48,7 @@ upright = true
 # a sword stroke or a fall reads 81% to 98% on the heavy ones (goblin, troll, golem, shambler)
 # and, drawn large, tears nothing (2026-11-12).
 max_stretch = 1.0
-clips = ["idle", "walk", "run", "sprint", "jump", "fall", "land", "swim", "attack", "hurt", "die"]
+clips = ["idle", "walk", "run", "sprint", "jump", "fall", "land", "swim", "attack", "hurt", "die", "carry"]
 # Tripo's own `hurt` is a figure sat wounded on the ground for 14 s and its `jump` is skipping
 # on the spot. The leap and the flinch are motions Tripo made from a description instead
 # (2026-11-11, 20 credits each, once: `[plans.biped.motions]`), cut to the parts the game
@@ -65,6 +65,10 @@ jump = "a man crouches and jumps straight up"
 fall = "a man crouches and jumps straight up"
 land = "a man crouches and jumps straight up"
 hurt = "a man standing is hit in the chest"
+# A hunk of wood or stone held at the chest in both arms (`Agent::carries`): from the chest
+# up, over the walker's legs. The library has no carrying (its `Push_Loop` is a man leaning
+# into a wall), so this is Tripo's, from a description (2026-11-13, 20 credits).
+carry = "a man stands still holding a heavy box"
 [plans.biped.trim]
 # The library's sword stroke is a second and a half; the game's blow is one and lands a third
 # of a second in.
@@ -95,6 +99,7 @@ die = "Death01"
 [plans.biped.motions]
 "a man crouches and jumps straight up" = "79006979-7587-49b6-8001-929f9a783f07"
 "a man standing is hit in the chest" = "4771a4f0-4c39-4c4c-957b-9ae4c8372be4"
+"a man stands still holding a heavy box" = "d9eb5c13-5358-4e40-a2cc-6634c34ab945"
 
 # A figure made and animated by hand, its own clips under our names, kept as they are: the
 # library's own (`assets/creatures/mannequin`), to set ours beside.

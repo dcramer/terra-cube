@@ -40,5 +40,9 @@ voice = true             # a `voice` in `[life]` with a file behind it
 [a-person-moves-as-a-person]
 who = { plan = ["biped"] }
 recorded = ["idle", "walk", "run", "sprint", "jump", "fall", "land", "attack", "hurt", "die"]
+[a-person-carries-a-hunk]
+who = { plan = ["biped"] }
+clips = ["carry"]        # arms out before them under a hunk of wood or stone (`Agent::carries`); the monsters are `without` it
+recorded = ["carry"]
 [carries-what-it-holds]
 holds = true             # what `holds` names is a thing in assets/world/held.toml

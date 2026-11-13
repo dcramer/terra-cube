@@ -13,7 +13,7 @@ pub struct LoosePlugin;
 
 impl Plugin for LoosePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (fall, told, chips, carried).after(crate::motion::tick));
+        app.add_systems(Update, (fall, told, chips).after(crate::motion::tick)).add_systems(PostUpdate, carried.after(bevy::transform::TransformSystems::Propagate));
     }
 }
 
@@ -22,21 +22,29 @@ impl Plugin for LoosePlugin {
 #[derive(Component)]
 struct Carried(u32, Block);
 
-fn carried(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<crate::world::Look>>, bearers: Query<(&crate::motion::Mover, &Transform), Without<Carried>>, mut drawn: Query<(Entity, &Carried, &mut Transform)>, mut meshes: ResMut<Assets<Mesh>>, mut made: Local<std::collections::HashMap<Block, Handle<Mesh>>>) {
+fn carried(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<crate::world::Look>>, bearers: Query<(&crate::motion::Mover, &Transform, Option<&crate::stride::Strode>), Without<Carried>>, places: Query<&GlobalTransform, Without<Carried>>, mut drawn: Query<(Entity, &Carried, &mut Transform, &mut GlobalTransform)>, mut meshes: ResMut<Assets<Mesh>>, mut made: Local<std::collections::HashMap<Block, Handle<Mesh>>>) {
     let (Some(live), Some(look)) = (live, look) else { return };
     let side = cube_sim::loose::HUNK as f32 * cube_voxel::CELL;
-    // (At his middle, a little out from his chest, and turned as he is.)
-    let held = |at: &Transform, tall: f32| Transform { translation: at.translation + at.rotation * Vec3::new(-side / 2.0, tall * 0.5, 0.3), rotation: at.rotation, scale: Vec3::ONE };
+    // On his hands, where they are drawn, and turned as he is: its underside a little under
+    // his palms, its middle between them. (Where the simulation has him is not where his
+    // body is drawn on a climb, which the walker takes a step behind: put there, it rode
+    // at his head.) Whoever has no hands the walker knows holds it before their middle.
+    let held = |at: &Transform, tall: f32, strode: Option<&crate::stride::Strode>| {
+        let hands = strode.map(|s| s.hands()).and_then(|[r, l]| Some((places.get(r).ok()?.translation() + places.get(l).ok()?.translation()) / 2.0));
+        let middle = hands.map_or(at.translation + at.rotation * Vec3::new(0.0, tall * 0.44 + side / 2.0, 0.45), |h| h + Vec3::Y * (side / 2.0 - 0.06) + at.rotation * Vec3::Z * 0.12);
+        Transform { translation: middle - at.rotation * Vec3::splat(side / 2.0), rotation: at.rotation, scale: Vec3::ONE }
+    };
     let carries = |m: &crate::motion::Mover| live.agent(m).filter(|a| a.dead.is_none()).and_then(|a| a.carries).zip(live.kind(m).map(|k| k.height));
-    for (entity, carried, mut at) in &mut drawn {
-        match bearers.iter().find(|(m, _)| m.id == carried.0).and_then(|(m, t)| carries(m).filter(|c| c.0 == carried.1).map(|c| held(t, c.1))) {
-            Some(to) => *at = to,
+    for (entity, carried, mut at, mut seen) in &mut drawn {
+        match bearers.iter().find(|(m, ..)| m.id == carried.0).and_then(|(m, t, s)| carries(m).filter(|c| c.0 == carried.1).map(|c| held(t, c.1, s))) {
+            // (Both: this runs once every body has been placed for the frame.)
+            Some(to) => (*at, *seen) = (to, GlobalTransform::from(to)),
             None => commands.entity(entity).despawn(),
         }
     }
-    for (m, at) in &bearers {
+    for (m, at, strode) in &bearers {
         let Some((block, tall)) = carries(m) else { continue };
-        if drawn.iter().any(|(_, c, _)| c.0 == m.id) {
+        if drawn.iter().any(|(_, c, ..)| c.0 == m.id) {
             continue;
         }
         let mesh = made.entry(block).or_insert_with(|| {
@@ -50,7 +58,7 @@ fn carried(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<cra
                 .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, data.tangents)
                 .with_inserted_indices(Indices::U32(data.indices)))
         }).clone();
-        commands.spawn((Carried(m.id, block), Mesh3d(mesh), MeshMaterial3d(look.solid.clone()), held(at, tall)));
+        commands.spawn((Carried(m.id, block), Mesh3d(mesh), MeshMaterial3d(look.solid.clone()), held(at, tall, strode)));
     }
 }
 

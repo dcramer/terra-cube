@@ -628,6 +628,16 @@ fn strew(world: &mut World, mut places: Vec<(f32, IVec3)>, many: usize, block: B
     put
 }
 
+/// Sets one hunk down at a place: on the square it is over, at that height or the least
+/// above it that has room, as high as three more hunks. Gives its corner, if it found room.
+fn set_down(world: &mut World, at: Vec3, block: Block, changed: &mut HashSet<IVec3>) -> Option<IVec3> {
+    let cell = (at / CELL).floor().as_ivec3();
+    let (x, z) = (cell.x.div_euclid(HUNK) * HUNK, cell.z.div_euclid(HUNK) * HUNK);
+    let corner = (0..=3 * HUNK).map(|up| IVec3::new(x, cell.y + up, z)).find(|c| hunk().all(|d| room(world.get(*c + d))))?;
+    strew(world, vec![(0.0, corner)], 1, block, changed);
+    Some(corner)
+}
+
 /// Takes what a tool's stuff is out of a box of cells, where `of` says a place is its own:
 /// whole cells of it, and broken cells that hold nothing else. Says how much, in bits.
 fn emptied(world: &mut World, lo: IVec3, hi: IVec3, stuff: impl Fn(Block) -> bool, of: impl Fn(Vec3) -> bool, changed: &mut HashSet<IVec3>) -> u32 {
@@ -750,6 +760,18 @@ impl Loose {
             self.cuts.push((middle, cut.taken));
         }
         let mut changed = std::mem::take(&mut cut.changed);
+        // Stone dug from the land with a pick comes away as a hunk: a bite that took half
+        // a hunk's worth or more leaves one, on the side the blow came from, to be carried
+        // off. (By the bite alone, with nothing kept from one to the next: a region's
+        // edits are done again on their own, `Replay`.) Not from a boulder, which is
+        // chipped ([`Loose::chip`]).
+        let boulder = self.things.iter().any(|t| t.stone.is_some() && t.reached(middle, radius));
+        if stuff == Some(Stuff::Stone) && !boulder && cut.taken[Stuff::Stone as usize] * 2 >= (SPLIT * SPLIT * SPLIT * HUNK * HUNK * HUNK) as u32 {
+            let back = middle - push.with_y(0.0).normalize_or_zero() * (radius + CELL);
+            if let Some(corner) = set_down(world, back, Block::Cobble, &mut changed) {
+                changed.extend(self.loosen(world, corner - 1, corner + HUNK, push));
+            }
+        }
         for z in lo.z..=hi.z {
             for x in lo.x..=hi.x {
                 changed.insert(IVec3::new(x, lo.y, z).div_euclid(IVec3::splat(cube_voxel::CHUNK)));
@@ -1149,12 +1171,9 @@ impl Loose {
     /// from there it comes down onto what is under it. Nothing, if there is no room; else
     /// the corner it was put at, and the chunks changed.
     pub fn lay(&mut self, world: &mut World, at: Vec3, block: Block) -> Option<(IVec3, HashSet<IVec3>)> {
-        let cell = (at / CELL).floor().as_ivec3();
-        let (x, z) = (cell.x.div_euclid(HUNK) * HUNK, cell.z.div_euclid(HUNK) * HUNK);
-        let corner = (0..=3 * HUNK).map(|up| IVec3::new(x, cell.y + up, z)).find(|c| hunk().all(|d| room(world.get(*c + d))))?;
-        self.journal.push((self.steps, Edit::Lay { at, block }));
         let mut changed = HashSet::new();
-        strew(world, vec![(0.0, corner)], 1, block, &mut changed);
+        let corner = set_down(world, at, block, &mut changed)?;
+        self.journal.push((self.steps, Edit::Lay { at, block }));
         changed.extend(self.loosen(world, corner - 1, corner + HUNK, Vec3::X));
         Some((corner, changed))
     }
@@ -2252,8 +2271,15 @@ mod tests {
         assert!(loose.chip(&mut w, top, Vec3::NEG_Y, &[&form]).is_none());
         loose.cut(&mut w, top, 0.3, Vec3::NEG_Y, &[&form], Some(Stuff::Stone));
         assert_eq!(count(&w, &|b| b == Block::Cobble), cobbles);
+        // Stone dug from the land comes away as a hunk, a bite a hunk.
+        w.fill(Vec3::new(-8.0, 0.0, -8.0), Vec3::new(-5.0, 2.0, -5.0), Block::Stone);
+        loose.cut(&mut w, Vec3::new(-6.5, 1.9, -6.5), 0.3, Vec3::NEG_Y, &[&form], Some(Stuff::Stone));
+        run(&mut loose, &mut w);
+        let cobbles = cobbles + 8;
+        assert_eq!(count(&w, &|b| b == Block::Cobble), cobbles, "a bite of the land's stone left no hunk");
         // And the same blows on the same land give the same land.
         let (mut again, mut form2) = (floor(), Form::default());
+        again.fill(Vec3::new(-8.0, 0.0, -8.0), Vec3::new(-5.0, 2.0, -5.0), Block::Stone);
         again.ellipsoid(Vec3::new(0.1, 0.6, 0.1), Vec3::new(1.0, 0.8, 0.9), Block::Rock, true);
         again.fill(Vec3::new(6.0, 0.0, 6.0), Vec3::new(6.75, 0.75, 7.0), Block::Shard);
         form2.stones.push(form.stones[0].clone());

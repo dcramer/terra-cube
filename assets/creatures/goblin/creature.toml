@@ -3,6 +3,9 @@ kind = "monster"
 plan = "biped"
 subject = "a green goblin raider with big pointed ears, a hunched wiry body, a leather loincloth and shoulder strap, both arms held straight out sideways at shoulder height"
 height = 1.2
+# It carries nothing (the developer, 2026-11-13: "the monsters wont be carrying stuff"): the
+# clip that holds a hunk is the player's.
+without = ["carry"]
 
 [life]
 holds = "Club"

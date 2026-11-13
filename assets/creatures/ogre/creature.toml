@@ -3,6 +3,9 @@ kind = "monster"
 plan = "biped"
 subject = "a frost ogre with pale blue skin, a mane of white fur, icicle tusks and a ragged hide kilt, standing in a strict T-pose with both arms held perfectly horizontal straight out to the sides at shoulder height, palms down"
 height = 3.4
+# It carries nothing (the developer, 2026-11-13: "the monsters wont be carrying stuff"): the
+# clip that holds a hunk is the player's.
+without = ["carry"]
 
 [life]
 holds = "Club"

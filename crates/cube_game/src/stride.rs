@@ -5,7 +5,8 @@
 //! or a stop or a leap is the walker's own, and nothing is mixed from one clip to another.
 //!
 //! What the walker does not do is still a clip's: a blow and a flinch from the chest up, over
-//! the walker's legs (so a blow can be struck at a run); dying and swimming, the whole body.
+//! the walker's legs (so a blow can be struck at a run), and so the arms that hold a hunk
+//! carried; dying and swimming, the whole body.
 //!
 //! Only for what forge marks (`[stride]` in its `meta.toml`: `walked = [..]` in its
 //! `creature.toml`). Proven on a figure of boxes first (`make person`).
@@ -46,6 +47,13 @@ pub struct Strode {
     whole: f32,
     /// Seconds it has been off the ground.
     off: f32,
+}
+
+impl Strode {
+    /// Its hands, right and left: for whoever puts something in them.
+    pub fn hands(&self) -> [Entity; 2] {
+        [self.arms[0][2], self.arms[1][2]]
+    }
 }
 
 struct Fitted {
@@ -182,8 +190,9 @@ pub(crate) fn pose(time: Res<Time>, live: Option<Res<Live>>, terrain: Option<Res
                 }
             }
         }
-        // What is the clip's: a blow or a flinch from the chest up; dying or swimming, all of it.
-        let blow = agent.swing.is_some() || agent.doing.is_some_and(|d| d.0 == Act::Attack) || agent.act == Act::Hurt;
+        // What is the clip's: a blow or a flinch from the chest up, and the arms round a hunk
+        // that is carried (`motion` plays that clip); dying or swimming, all of it.
+        let blow = agent.swing.is_some() || agent.doing.is_some_and(|d| d.0 == Act::Attack) || agent.act == Act::Hurt || agent.carries.is_some();
         let all = agent.dead.is_some() || matches!(agent.act, Act::Swim | Act::Die | Act::Lie | Act::Eat);
         let ease = 1.0 - (-12.0 * dt).exp();
         strode.upper += (blow as u8 as f32 - strode.upper) * ease;

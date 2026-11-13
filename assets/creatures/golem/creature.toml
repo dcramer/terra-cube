@@ -3,7 +3,9 @@ kind = "monster"
 plan = "biped"
 subject = "a golem of stacked grey boulders with glowing blue cracks, huge forearms and a small head sunk between the shoulders, both arms held straight out sideways at shoulder height"
 height = 3.6
-without = ["swim"]
+# It carries nothing (the developer, 2026-11-13: "the monsters wont be carrying stuff"): the
+# clip that holds a hunk is the player's.
+without = ["swim", "carry"]
 ease = 1.0
 gait_gain = 0.75
 # Its skin tears crumpled on the ground (stretch over the bar), so its death stays the made topple.

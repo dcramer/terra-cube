@@ -14,6 +14,12 @@ looping = false
 source = "library"
 speed = 0.0
 
+[clips.carry]
+seconds = 2.9666667
+looping = true
+source = "tripo"
+speed = 0.0
+
 [clips.die]
 seconds = 2.4
 looping = false
