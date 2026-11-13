@@ -73,7 +73,8 @@ impl Plugin for MotionPlugin {
             }))
             .add_systems(FixedUpdate, tick)
             .add_systems(Update, (populate, mirror, enrol, drivers, show, far_off).chain())
-            .add_systems(Update, bodies);
+            .add_systems(Update, bodies)
+            .add_systems(PostUpdate, watch.before(bevy::transform::TransformSystems::Propagate));
     }
 }
 
@@ -332,5 +333,23 @@ fn far_off(cameras: Query<&GlobalTransform, With<Camera3d>>, mut movers: Query<(
         if let Some(Ok(mut player)) = rig.map(|r| players.get_mut(r.0)) {
             if near { player.resume_all(); } else { player.pause_all(); }
         }
+    }
+}
+
+/// `--watch KIND`: the scene's camera is kept on the nearest creature of a kind that lives by
+/// its own mind, from a few of its lengths off, a little above and to one side. Looking for
+/// wildlife by pointing a camera at where it is said to live found empty ground three times
+/// in four; this finds the animal. Says once which it found and how far from the place asked.
+fn watch(args: Res<crate::Args>, registry: Res<Registry>, wild: Query<(&Creature, &Transform), (With<Wild>, Without<Camera3d>)>, mut cameras: Query<&mut Transform, With<Camera3d>>, mut said: Local<bool>) {
+    let Some(kind) = args.watch.as_deref() else { return };
+    let from = Vec3::new(args.at.0, 0.0, args.at.1);
+    let near = wild.iter().filter(|(c, _)| registry.0.get(c.def).is_some_and(|d| d.id == kind)).min_by(|a, b| a.1.translation.with_y(0.0).distance(from).total_cmp(&b.1.translation.with_y(0.0).distance(from)));
+    let (Some((creature, at)), Some(mut camera)) = (near, cameras.iter_mut().next()) else { return };
+    let size = registry.0[creature.def].meta.height.max(registry.0[creature.def].meta.length).max(0.3);
+    let focus = at.translation + Vec3::Y * size * 0.4;
+    *camera = Transform::from_translation(focus + (at.rotation * Vec3::new(0.8, 0.0, 0.6)).normalize() * size * 4.0 + Vec3::Y * size * 0.9).looking_at(focus, Vec3::Y);
+    if !*said {
+        *said = true;
+        println!("watch {kind}: found {:.0} m from the place asked, of {} of its kind awake", at.translation.with_y(0.0).distance(from), wild.iter().filter(|(c, _)| registry.0.get(c.def).is_some_and(|d| d.id == kind)).count());
     }
 }

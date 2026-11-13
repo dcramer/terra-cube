@@ -103,6 +103,9 @@ pub struct Args {
     pub day: Option<u32>,
     /// The world starts with its creatures in it, living by their own minds.
     pub wild: bool,
+    /// In a scene of the living world: the camera keeps on the nearest creature of this kind
+    /// that lives by its own mind (`motion::watch`).
+    pub watch: Option<String>,
     /// Where spawned creatures are put and a scene looks, metres (x, z).
     pub at: (f32, f32),
     /// A scene's camera: metres from what it looks at, and radians above level.
@@ -159,6 +162,8 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
                                         low-poly shapes, not fine cubes; --blades: grass as pointed
                                         blades, --bits: as columns of bits, not slats; --blocky: as the world's cells
         … --wild --at 47,28 [--dist 12] [--pitch 0.3] [--yaw 1.0] [--view high]
+        … --watch deer --at -32,-40      the living world with the camera kept on the nearest deer
+                                        living by its own mind (prints `watch` with how far off it is)
                                         a scene somewhere else: metres east and south of the start
                                         (`cargo world who` says where creatures live), the camera
                                         that far off and that high; `--view high` is from the air
@@ -248,6 +253,7 @@ fn parse_args() -> Args {
                 args.yaw_given = true;
             }
             "--wild" => args.wild = true,
+            "--watch" => (args.wild, args.watch) = (true, it.next()),
             "--plain" => args.plain = true,
             "--continue" => args.resume = true,
             "--no-reflect" => args.reflect = false,
