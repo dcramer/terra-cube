@@ -555,6 +555,14 @@ fn setup(mut commands: Commands, args: Res<crate::Args>, mut meshes: ResMut<Asse
     for (x, z, w, d) in [(0.0, -(edge + far) / 2.0, far, (far - edge) / 2.0), (0.0, (edge + far) / 2.0, far, (far - edge) / 2.0), (-(edge + far) / 2.0, 0.0, (far - edge) / 2.0, edge), ((edge + far) / 2.0, 0.0, (far - edge) / 2.0, edge)] {
         commands.spawn((Mesh3d(meshes.add(Plane3d::default().mesh().size(w * 2.0, d * 2.0))), MeshMaterial3d(sea.clone()), Transform::from_xyz(x, level, z)));
     }
+    // And plain sea on to the horizon. Past the sheets' edge the engine's own ground showed
+    // from anywhere high, a tan slab under the sky with the far land's hazed trees standing
+    // against it. Out there it is all the haze's colour, as they are, and needs no waves.
+    let out = 40_000.0;
+    let beyond = materials.add(StandardMaterial { base_color: Color::linear_rgb(r, g, b), perceptual_roughness: 0.5, ..default() });
+    for (x, z, w, d) in [(0.0, -(far + out) / 2.0, out, (out - far) / 2.0), (0.0, (far + out) / 2.0, out, (out - far) / 2.0), (-(far + out) / 2.0, 0.0, (out - far) / 2.0, far), ((far + out) / 2.0, 0.0, (out - far) / 2.0, far)] {
+        commands.spawn((Mesh3d(meshes.add(Plane3d::default().mesh().size(w * 2.0, d * 2.0))), MeshMaterial3d(beyond.clone()), Transform::from_xyz(x, level, z), bevy::light::NotShadowCaster));
+    }
     // The island measured for living in (`cube_sim::ecology`): what the small life the game
     // draws is placed by.
     let ecology = cube_sim::ecology::Ecology::new(&land);
