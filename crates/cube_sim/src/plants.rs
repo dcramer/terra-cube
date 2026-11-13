@@ -147,8 +147,17 @@ fn wood(world: &mut World, limb: &Limb) {
         let g = limb.near();
         let n = (g / cube_voxel::BIT).round() as i32;
         let cubes = bound.map(|b| [(b[0] as f32 * CELL / g).floor() as i32, (b[1] as f32 * CELL / g).floor() as i32, (b[2] as f32 * CELL / g).ceil() as i32, (b[3] as f32 * CELL / g).ceil() as i32]);
-        limb.fill_span(g, cubes, (f32::MIN, fine), |cube| {
+        // (Every cube that begins under where the whole cells take over, and of the one
+        // that crosses it the bits under: by cubes whose middles are under it, a cube of
+        // 10 cm from 11.70 m was left out below cells that begin at 11.75, and every trunk
+        // had a slit of air 5 cm high through it three metres up. Nobody saw it while a
+        // tree was drawn as its shape; cut into and drawn as its cells, a leaning birch
+        // stood in two parts, 2026-11-13.)
+        limb.fill_span(g, cubes, (f32::MIN, fine + g / 2.0), |cube| {
             for dy in 0..n {
+                if ((cube.y * n + dy) as f32 + 0.5) * cube_voxel::BIT > fine {
+                    continue;
+                }
                 for dz in 0..n {
                     for dx in 0..n {
                         let bit = cube * n + IVec3::new(dx, dy, dz);
