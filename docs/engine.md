@@ -48,8 +48,8 @@ The role model is Teardown: everything can be cut, and what a cut leaves standin
 - **An untouched tree is scenery**: it bears nothing and stops nothing loose. Stopped by standing wood, nothing cut in a wood ever came down.
 - **A piece** is the loose cells taken out of the world and moved as one body: tall on a small foot it goes over about its foot the way it was pushed; anything else drops. When its wood or stone meets ground it is put back cell for cell where each now lies (every cell of the world it reaches is asked what of the piece is there, so no gaps however it is turned); what then rests on nothing falls in its turn; a crumb under four cells is gone.
 - **Cost** (`cargo world fell`): a bite 1.5 ms; a 10,000-cell tree down in 3 s, 97% of its cells put back, the dearest step (the landing) 6 to 10 ms.
-- **The game only draws** (`cube_game::loose`): each piece as cubes, moved as the simulation moves it. A script's `chop` bites the nearest trunk.
-- **Not yet**: the falling piece is drawn in plain colour, not the paint; nothing is hurt by what falls; stone does not shatter; what is dug goes nowhere; water does not flow into holes.
+- **The game only draws** (`cube_game::loose`): each piece meshed by the world's own mesher from a world holding only the piece, so it looks falling as it did standing and will lying, and moved as the simulation moves it. A script's `chop` bites the nearest trunk.
+- **Not yet**: nothing is hurt by what falls; stone does not shatter; what is dug goes nowhere; water does not flow into holes.
 
 ### What grows is drawn as shapes
 
