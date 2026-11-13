@@ -637,19 +637,23 @@ fn fell_command(args: &Args) -> ! {
     let up = trunk.a + (trunk.b - trunk.a) * ((cube_sim::plants::Limb::UNDER + 1.0) / (trunk.b.y - trunk.a.y));
     let started = std::time::Instant::now();
     let (mut bites, mut worked) = (0, 0);
-    'cutting: for row in [0, -1, 1, -2, 2, -3, 3] {
-        for step in -4..=4 {
-            let cut = loose.cut(&mut world, up + Vec3::new(step as f32 * 0.25, 0.0, row as f32 * 0.3), 0.42, Vec3::X, &[&form], Some(cube_sim::items::Stuff::Wood));
-            worked += cut.worked;
-            // (As the game does: what is cells now is no longer among the shapes.)
-            form.limbs.retain(|l| !cut.trees.contains(&(0, l.tree)));
-            form.clumps.retain(|c| !cut.trees.contains(&(0, c.tree)));
-            bites += 1;
-            if !loose.pieces.is_empty() {
-                break 'cutting;
-            }
+    // With an axe, as a person does: blows at its trunk until it is through (`Loose::chop`).
+    // It must stand until the last of the blows its girth asks.
+    let needs = cube_sim::loose::BLOWS(trunk.ra + (trunk.rb - trunk.ra) * 0.25);
+    let mut early = 0;
+    for blow in 1..=12 {
+        let cut = loose.chop(&mut world, up - Vec3::X * (trunk.ra + 0.2), Vec3::X, &[&form]);
+        worked += cut.worked;
+        // (As the game does: what is cells now is no longer among the shapes.)
+        form.limbs.retain(|l| !cut.trees.contains(&(0, l.tree)));
+        form.clumps.retain(|c| !cut.trees.contains(&(0, c.tree)));
+        bites += 1;
+        if !loose.pieces.is_empty() {
+            early = needs.saturating_sub(blow);
+            break;
         }
     }
+    checks.bar("fell blows", bites as f32, early == 0 && bites as u32 <= needs, "it stands until the last of the blows its girth asks, and no longer");
     let cutting = started.elapsed().as_secs_f32() * 1000.0 / bites as f32;
     checks.bar("fell pieces", loose.pieces.len() as f32, loose.pieces.len() == 1, "one piece comes loose");
     let cells = loose.pieces.first().map_or(0, |p| p.cells.len());
@@ -670,18 +674,46 @@ fn fell_command(args: &Args) -> ! {
     let struck = loose.landed.iter().map(|l| l.speed).fold(0.0, f32::max);
     let down = loose.landed.iter().copied().max_by_key(|l| l.put).map(|l| cube_sim::loose::Landed { speed: struck, ..l });
     let kept = down.map_or(0.0, |d| d.put as f32 / d.cells.max(1) as f32);
-    // (Seven in ten, not eight: what does not go back is leaf come down into another
+    // (Half, since its twigs give way under it and are crushed where they go into the
+    // ground: it was seven in ten while it lay propped on them, and before that eight.)
+    // (What does not go back is leaf come down into another
     // tree's leaf or onto the ground, a fifth of one tree that fell into a thicket, and no
     // loss. What must all go back is the wood, which is held to its own bar.)
-    checks.bar("fell kept", kept, kept > 0.7, "at least 0.7 of its cells are put back");
+    checks.bar("fell kept", kept, kept > 0.4, "at least two fifths of its cells are put back");
     let lost = loose.landed.iter().map(|l| l.lost).sum::<usize>() as f32 / down.map_or(1, |d| d.cells.max(1)) as f32;
-    checks.bar("fell wood lost", lost, lost < 0.01, "under a hundredth of its cells are wood that found no room");
+    // (A twentieth: its lesser boughs give way under it now, and what of them is driven
+    // into the ground is lost. It was a hundredth while they held it up.)
+    checks.bar("fell wood lost", lost, lost < 0.05, "under a twentieth of its cells are wood that found no room");
     // Lying: its middle is low, where a standing tree's is half its height up.
     // (Half of all it stood, not of its first length of trunk, which is 6 m of a tree that
     // stands 15: by that two trees lying right on seeds 11 and 13 were failed.)
     let ground = land.height((trunk.a.x / CELL) as i32, (trunk.a.z / CELL) as i32) as f32 * CELL;
     let high = down.map_or(99.0, |d| d.at.y - ground);
     checks.bar("fell lies", high, high < tall * 0.5, "its middle under half the height it stood");
+    // And its trunk on the ground from end to end: how high each end of the trunk it was cut
+    // from now is over the ground under it, by where the tree came to rest (`Thing.lies`).
+    // (A felled birch lay level a metre and a half up, its butt on its stump and its top on
+    // its own boughs, and passed every bar here: the developer saw it, 2026-11-13.)
+    let ends = loose.things.iter().filter_map(|t| t.lies.map(|l| (t, l))).find(|(t, _)| t.limbs.iter().any(|l| l.a == trunk.a)).map(|(t, (pivot, shift, turn))| {
+        let top = t.limbs.iter().filter(|l| l.ra.max(l.rb) > trunk.ra * 0.5).map(|l| l.b).fold(trunk.b, |a, b| if b.y > a.y { b } else { a });
+        let now = |p: Vec3| pivot + shift + turn * (p - pivot);
+        // (The air under it, by the world as it now is: from just under its wood down to
+        // whatever is there. By the land's height where it lies, a trunk lying on a bank
+        // that the land's own figure put lower read 0.8 m up along all its length.)
+        let thick = trunk.ra.max(trunk.rb) + 0.15;
+        let over = |p: Vec3| { let q = now(p) - Vec3::Y * thick; if world.get((q / CELL).floor().as_ivec3()).solid() { 0.0 } else { world.raycast(q, Vec3::NEG_Y, 30.0).unwrap_or(30.0) } };
+        (over(trunk.a + (trunk.b - trunk.a) * 0.25), over(trunk.a.lerp(top, 0.5)), over(top))
+    });
+    if let Some((butt, middle, top)) = ends {
+        println!("under its trunk there is {butt:.1} m of air near its butt, {middle:.1} m at its middle, {top:.1} m at its top");
+        // (On the ground somewhere along it and near it at its middle. Not at every point: a
+        // trunk is stiff, and felled up a bank or across a hump it lies on two places with
+        // its butt or its top in the air, which is right: `LOOSE_TRACE=1` says what each
+        // time it was stopped by. Propped on its own twigs, as every one was, its middle
+        // was 1.4 to 2.4 m up and no part of it within a metre.)
+        let low = butt.min(middle).min(top);
+        checks.bar("fell trunk down", low.max(middle - 1.5), low < 0.3 && middle < 1.8, "its trunk is on the ground somewhere along it, and within 1.8 m of it at its middle");
+    }
     // And over: how far from upright it has come to rest, which a height alone does not say
     // (a tree put back standing where it stood has its middle under half its height too,
     // and passed, 2026-11-13). Forty degrees: one felled up a steep bank rests at 45.
@@ -693,7 +725,7 @@ fn fell_command(args: &Args) -> ! {
     checks.bar("fell hanging", loose.pieces.len() as f32, loose.pieces.is_empty(), "nothing left loose in the air");
     let wood_after = solid(&world, &|b| b.wood());
     println!(
-        "felled a tree {:.0} m tall, {:.0} cm through, {:.0} m from the start: {bites} bites ({cutting:.1} ms each, {worked} cells made wrought) · a piece of {cells} cells came down in {took:.1} s at {:.1} m/s ({falling:.0} ms in all, worst step {worst:.1} ms) · {:.0}% of it put back · wood cells {wood_before} to {wood_after}",
+        "felled a tree {:.0} m tall, {:.0} cm through, {:.0} m from the start: {bites} blows ({cutting:.1} ms each, {worked} cells made wrought) · a piece of {cells} cells came down in {took:.1} s at {:.1} m/s ({falling:.0} ms in all, worst step {worst:.1} ms) · {:.0}% of it put back · wood cells {wood_before} to {wood_after}",
         tall,
         trunk.ra * 200.0,
         trunk.a.with_y(0.0).length(),
@@ -737,12 +769,10 @@ fn replay_command(args: &Args) -> ! {
     // (Where the trunk is at that height, not over its foot: one that leans is a bite's width
     // aside by then, and on seed 1 sixty-three bites went past it.)
     let up = trunk.a + (trunk.b - trunk.a) * ((cube_sim::plants::Limb::UNDER + 1.0) / (trunk.b.y - trunk.a.y));
-    'cutting: for row in [0, -1, 1, -2, 2] {
-        for step in -4..=4 {
-            loose.cut(&mut world, up + Vec3::new(step as f32 * 0.25, 0.0, row as f32 * 0.3), 0.42, Vec3::X, &[&form], Some(Stuff::Wood));
-            if !loose.pieces.is_empty() {
-                break 'cutting;
-            }
+    for _ in 0..12 {
+        loose.chop(&mut world, up - Vec3::X * (trunk.ra + 0.2), Vec3::X, &[&form]);
+        if !loose.pieces.is_empty() {
+            break;
         }
     }
     let ground = |x: f32, z: f32| Vec3::new(x, land.height((x / CELL).floor() as i32, (z / CELL).floor() as i32) as f32 * CELL, z);

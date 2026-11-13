@@ -991,7 +991,7 @@ fn regions(args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrai
                 continue;
             }
             let mine: Vec<(u64, cube_sim::loose::Edit)> = live.0.loose.journal.iter().copied().filter(|(_, e)| {
-                let (cube_sim::loose::Edit::Cut { middle, .. } | cube_sim::loose::Edit::Put { middle, .. }) = e;
+                let (cube_sim::loose::Edit::Cut { middle, .. } | cube_sim::loose::Edit::Put { middle, .. } | cube_sim::loose::Edit::Chop { at: middle, .. }) = e;
                 group.contains(&region_of((*middle / CELL).floor().as_ivec3()))
             }).collect();
             let near: Vec<(i32, i32)> = group.iter().flat_map(round).collect::<HashSet<_>>().into_iter().filter(|r| forms.0.contains_key(r)).collect();

@@ -130,6 +130,11 @@ fn told(mut commands: Commands, live: Option<ResMut<Live>>, bank: Option<ResMut<
         bank.play(&mut commands, name, Some(at), 0.8);
         throw(&mut commands, at, block, 7, 0.4, 2.2);
     }
+    // What a blow knocked off a fallen tree: thrown a little way, and gone as chips go.
+    for (at, block) in loose.shed.drain(..).take(80) {
+        throw(&mut commands, at, block, 2, 0.5, 1.6);
+    }
+    loose.shed.clear();
     for (at, cells, over) in loose.begun.drain(..) {
         if over && cells > 200 {
             bank.play(&mut commands, "crack", Some(at), 1.0);

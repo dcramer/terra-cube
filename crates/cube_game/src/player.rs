@@ -502,7 +502,8 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
     if !(dig || put || chop) {
         return;
     }
-    // A script's chop: at the nearest trunk the first time, and across it bite by bite.
+    // A script's chop: a blow at the nearest standing trunk until it is down, then blows
+    // along it as it lies (`Loose::chop` says what each does: limbs it, then breaks it).
     let mut aimed = None;
     if chop {
         let near = |l: &&cube_sim::plants::Limb| l.roots > 0 && l.a.with_y(0.0).distance(at.translation.with_y(0.0)) < 14.0;
@@ -518,14 +519,15 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
                 let (pivot, shift, turn) = t.lies?;
                 let trunk = t.limbs.iter().find(|l| l.roots > 0).or(t.limbs.first())?;
                 let now = |p: Vec3| pivot + shift + turn * (p - pivot);
-                Some((now(trunk.a.lerp(trunk.b, 0.4)), (now(trunk.b) - now(trunk.a)).with_y(0.0).normalize_or(Vec3::X)))
+                let along = 0.2 + 0.18 * (chopping.map_or(0, |c| c.1) % 5) as f32;
+                Some((now(trunk.a.lerp(trunk.b, along)), (now(trunk.b) - now(trunk.a)).with_y(0.0).normalize_or(Vec3::X)))
             }).min_by(|a, b| a.0.distance(at.translation).total_cmp(&b.0.distance(at.translation)))
         };
         if foot.is_none() && let Some((middle, along_it)) = lying() {
             let bites = chopping.map_or(0, |c| c.1);
             *chopping = Some((chopping.map_or(middle, |c| c.0), bites + 1));
             let across = Vec3::Y.cross(along_it);
-            aimed = Some((middle + across * ((bites % 5) as f32 - 2.0) * 0.22 + Vec3::Y * (0.25 - (bites / 5 % 3) as f32 * 0.22) + across * 0.12, across));
+            aimed = Some((middle + Vec3::Y * 0.2, across));
             (dig, tool) = (true, Some((cube_sim::items::Stuff::Wood, 0.7)));
         }
         let Some(foot) = foot.filter(|_| aimed.is_none()).or(aimed.map(|a| a.0)) else { return };
@@ -533,9 +535,7 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
         let bites = chopping.map_or(0, |c| c.1);
         *chopping = Some((foot, bites + 1));
         let away = (foot - at.translation).with_y(0.0).normalize_or(Vec3::X);
-        let across = Vec3::Y.cross(away);
-        let (row, step) = ([0.0, -1.0, 1.0, -2.0, 2.0][(bites / 7 % 5) as usize], (bites % 7) as f32 - 3.0);
-        aimed = Some((foot + away * step * 0.25 + across * row * 0.3, away));
+        aimed = Some((foot - away * 0.3, away));
         (dig, tool) = (true, Some((cube_sim::items::Stuff::Wood, 0.8)));
         }
     }
@@ -567,7 +567,8 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
         let near: Vec<(i32, i32)> = (-1..=1).flat_map(|z| (-1..=1).map(move |x| (here.0 + x, here.1 + z))).filter(|r| forms.0.contains_key(r)).collect();
         let cut = {
             let shapes: Vec<&cube_sim::plants::Form> = near.iter().map(|r| &*forms.0[r]).collect();
-            live.0.loose.cut(&mut terrain.0, middle, bite, along, &shapes, stuff)
+            // (An axe does not dig wood: its blow is the tree's to answer, `Loose::chop`.)
+            if stuff == Some(cube_sim::items::Stuff::Wood) { live.0.loose.chop(&mut terrain.0, middle, along, &shapes) } else { live.0.loose.cut(&mut terrain.0, middle, bite, along, &shapes, stuff) }
         };
         for (n, region) in near.iter().enumerate() {
             let (trees, mut stones): (Vec<u32>, Vec<usize>) = (cut.trees.iter().filter(|t| t.0 == n).map(|t| t.1).collect(), cut.stones.iter().filter(|s| s.0 == n).map(|s| s.1).collect());
