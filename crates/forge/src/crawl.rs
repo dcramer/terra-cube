@@ -37,6 +37,9 @@ pub struct Crawler {
     /// On two legs, under it: a bird. (Its `reach` is its legs' length.) And how wide it is.
     fowl: bool,
     wide: f32,
+    /// How far over its back anything of it stands (a scorpion's sting): on its back, dead,
+    /// it lies that much higher, on it.
+    over: f32,
 }
 
 /// Boxes, each held by one bone, and the bones: the model with its skeleton.
@@ -148,7 +151,7 @@ impl Crawler {
                 names.extend([name.clone(), format!("{name}_knee")]);
             }
         }
-        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side, reach, long: l, high: mid, fowl: false, wide }))
+        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side, reach, long: l, high: mid, fowl: false, wide, over: if b.sting { l * 0.34 * 1.9 - thick / 2.0 } else { 0.0 } }))
     }
 
     /// A bird on the ground: `length` its body, `span` how long its legs are, `chord` its
@@ -187,7 +190,7 @@ impl Crawler {
             parents.extend([Some(0), Some(bone), Some(bone + 1)]);
             names.extend([format!("leg_{s}0"), format!("leg_{s}0_knee"), format!("leg_{s}0_foot")]);
         }
-        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side: 1, reach: legs, long: l, high: mid, fowl: true, wide }))
+        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side: 1, reach: legs, long: l, high: mid, fowl: true, wide, over: 0.0 }))
     }
 
 
@@ -280,7 +283,7 @@ impl Crawler {
                 if self.fowl {
                     return self.pose(sk, Vec3::Y * (self.wide / 2.0 - self.high) * k, Quat::from_rotation_z(PI / 2.0 * k), |_| (0.0, 0.7 * k));
                 }
-                self.pose(sk, Vec3::Y * (self.high * 0.5 * (PI * k).sin() - self.high * 0.35 * k), Quat::from_rotation_z(PI * k), |_| (0.0, -1.1 * k))
+                self.pose(sk, Vec3::Y * (self.high * 0.5 * (PI * k).sin() - self.high * 0.35 * k + self.over * k), Quat::from_rotation_z(PI * k), |_| (0.0, -1.1 * k))
             }), false, None),
             "swim" => (frames_of(1.2, &|t| self.pose(sk, Vec3::ZERO, Quat::IDENTITY, |n| (self.reach * 0.4 * (TAU * t + self.set(n) as f32 * PI).sin(), 0.25))), true, None),
             // (A bird pecks: its head goes down on its neck, and its body stays on its feet.)
