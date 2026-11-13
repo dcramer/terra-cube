@@ -42,10 +42,14 @@ pub struct Controls {
     /// A blow with a tool that is on its way: the seconds until it lands and cuts, and what
     /// it cuts and how big a bite.
     pub blow: Option<(f32, cube_sim::items::Stuff, f32)>,
+    /// What a `put` puts down: what is in hand, as the block it is in the world.
+    pub lump: Option<cube_voxel::Block>,
     pub put: bool,
     /// (A script's, for trying what a cut does: a bite out of the nearest tree's trunk, a
     /// metre up, each one further across it than the last.)
     pub chop: bool,
+    /// (And a block of stone let go five metres up, three ahead: to see what comes down hard do.)
+    pub drop: bool,
     /// Something to do on the spot, once: a blow, a bite of grass, a flinch.
     pub act: Option<cube_sim::life::Act>,
     /// What is in hand is to be used, once: a blow, a bite, a spadeful.
@@ -254,6 +258,7 @@ fn script(time: Res<Time>, args: Res<Args>, stage: Option<Res<crate::shot::Stage
                 "hurt" => controls.act = Some(cube_sim::life::Act::Hurt),
                 "dig" => controls.dig = true,
                 "chop" => controls.chop = true,
+                "drop" => controls.drop = true,
                 "put" => controls.put = true,
                 "surface" => controls.dive = false,
                 "hop" => clock.1 = now + 0.04,
@@ -327,6 +332,10 @@ fn drive(mut controls: ResMut<Controls>, time: Res<Time>, args: Res<Args>, terra
             if let cube_sim::items::Used::Cut(stuff, across) = used {
                 controls.blow = Some((cube_sim::life::SWING, stuff, across));
             }
+            // Earth, stone or timber in hand is put down where he looks.
+            if let cube_sim::items::Used::Place(block) = used {
+                (controls.put, controls.lump) = (true, Some(block));
+            }
             // A shot: an arrow is seen to fly the way the archer faces.
             if let Some(a) = live.agent(mover).filter(|a| used == cube_sim::items::Used::Swing && a.pack.as_ref().and_then(|p| p.held()) == Some(cube_sim::items::Item::Bow)) {
                 controls.shot = Some((a.body.pos + Vec3::Y * 1.4, Vec3::new(a.facing.sin(), 0.0, a.facing.cos())));
@@ -337,8 +346,10 @@ fn drive(mut controls: ResMut<Controls>, time: Res<Time>, args: Res<Args>, terra
         // The right button guards, with anything but a tool that cuts in hand.
         let shovel = m.pack.as_ref().and_then(|p| p.held()).is_some_and(|i| i.cuts().is_some());
         m.guard = controls.guard && !shovel;
-        if !shovel {
-            controls.put = false;
+        // (The middle button puts down what is in hand too, if it is a thing that is put down.)
+        if controls.put && controls.lump.is_none() {
+            controls.lump = m.pack.as_ref().and_then(|p| p.held()).and_then(|i| i.places());
+            controls.put = controls.lump.is_some();
         }
         m.intent.dir = Vec2::new(cos, -sin) * controls.dir.x + Vec2::new(-sin, -cos) * controls.dir.y;
         m.intent.speed = speed;
@@ -463,8 +474,15 @@ const LUMP: f32 = 0.18;
 /// Digs or builds where the controlled creature looks: along the camera's line, from its eyes.
 #[allow(clippy::too_many_arguments)]
 fn edit(mut controls: ResMut<Controls>, mut live: ResMut<Live>, mut forms: ResMut<crate::flora::Forms>, mut grown: ResMut<crate::flora::Grown>, terrain: Option<ResMut<Terrain>>, mut dirty: ResMut<crate::world::Dirty>, controlled: Query<(&Mover, &Transform), With<Controlled>>, cameras: Query<&Transform, With<Orbit>>, mut chopping: Local<Option<(Vec3, u32)>>) {
-    let (mut dig, put, chop, mut tool) = (std::mem::take(&mut controls.dig), std::mem::take(&mut controls.put), std::mem::take(&mut controls.chop), controls.tool.take());
+    let (mut dig, put, chop, mut tool, lump) = (std::mem::take(&mut controls.dig), std::mem::take(&mut controls.put), std::mem::take(&mut controls.chop), controls.tool.take(), controls.lump.take());
     let (Some(mut terrain), Ok((mover, at)), Some(camera)) = (terrain, controlled.single(), cameras.iter().next()) else { return };
+    if std::mem::take(&mut controls.drop) {
+        let middle = at.translation + at.rotation * Vec3::Z * 3.0 + Vec3::Y * 5.0;
+        terrain.0.fill(middle - Vec3::splat(0.75), middle + Vec3::splat(0.75), cube_voxel::Block::Stone);
+        let (lo, hi) = (((middle - Vec3::splat(1.0)) / cube_voxel::CELL).floor().as_ivec3(), ((middle + Vec3::splat(1.0)) / cube_voxel::CELL).floor().as_ivec3());
+        let changed = live.0.loose.loosen(&mut terrain.0, lo, hi, Vec3::X);
+        terrain.touched(&mut dirty, changed);
+    }
     if !(dig || put || chop) {
         return;
     }
@@ -532,9 +550,13 @@ fn edit(mut controls: ResMut<Controls>, mut live: ResMut<Live>, mut forms: ResMu
         let reached = (lo.y..=hi.y).flat_map(|y| (lo.z..=hi.z).flat_map(move |z| (lo.x..=hi.x).map(move |x| IVec3::new(x, y, z))));
         terrain.touched(&mut dirty, cut.changed.into_iter().chain(reached));
         live.0.took(mover.id, cut.taken);
-    } else if far > 1.0 {
-        // Not on top of itself: a lump it stood inside would hold it fast.
-        terrain.ball(&mut dirty, hit - along * LUMP * 0.3, LUMP, cube_voxel::Block::Stone);
+    } else if let Some(block) = lump.filter(|_| far > 1.0) {
+        // Not on top of itself: a lump it stood inside would hold it fast. Into air only:
+        // what is put down lies on what is there, not through it. And one fewer is carried.
+        let middle = hit - along * LUMP * 0.3;
+        terrain.0.ellipsoid(middle, Vec3::splat(LUMP), block, true);
+        terrain.ball_touched(&mut dirty, middle, LUMP);
+        live.0.placed(mover.id);
     }
 }
 

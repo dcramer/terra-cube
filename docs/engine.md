@@ -55,7 +55,11 @@ The role model is Teardown: everything can be cut, and what a cut leaves standin
 - **A tree's fall is staged** (the same day: what is cut down should behave in a specific way, so it looks interesting): it goes the way it leans more than the way it was pushed; it hangs a moment on its stump and then goes faster and faster; as its crown strikes (its top over 8 m/s) what stood out from the trunk breaks off in lumps thrown a little way, and the trunk lands whole along the line it fell.
 - **A cut lands with the blow** (`Sim::use_held`, `player::drive`): a tool is swung as anything is, one blow at a time, and what it cuts is cut `SWING` (0.35 s) later.
 - **It is heard and seen** (`cube_game::loose::told`): the simulation notes each cut, each thing come loose and each landing (`Loose::cuts`, `begun`, `heard`); the game plays an axe, a spade or a pick, a tree's crack, a crash or a clatter (at most one clatter in an eighth of a second: a crown that breaks is ninety limbs landing at once), and throws up chips of what was cut. The sounds are made with ffmpeg (`tools/audio/make.sh`) until recordings are found.
-- **Not yet**: what is carried cannot be put down as itself (a click still builds a lump of stone); water does not flow into holes; the falling piece is meshed on the frame's thread; a boulder shattering has not been looked at in the game.
+- **What is carried is put down as what it was** (`Item::places`, `Used::Place`, `Sim::placed`): earth, stone or timber in hand goes into the air where he looks, a lump for each one carried. The free lump of stone a click used to build is gone.
+- **Water runs into what is opened to it** (`loose::flow`, after every cut): from water beside the cut, sideways, down, and up no higher than it stood, to 6,000 cells. A hole dug at a lake's edge fills to the lake's level. By the cell; a lake is not drained by it.
+- **Stone that comes loose is rubble** (`Block::Shard`): the land's own stone is drawn eased into the ground round it and takes its colour, and a lump of it lying in a meadow was drawn half grass.
+- A script's `drop` lets a block of stone go five metres up, to see it (looked at 2026-11-12: it breaks, piles, and a second breaks on the pile).
+- **Not yet**: the falling piece is meshed on the frame's thread; a falling tree goes through standing ones; water is by the cell and does not run out of what it left.
 
 ### What grows is drawn as shapes
 

@@ -149,11 +149,10 @@ impl Terrain {
         }
     }
 
-    /// Digs (with air) or builds a ball in the world, to the bit, and marks what to redraw.
-    pub fn ball(&mut self, dirty: &mut Dirty, middle: Vec3, radius: f32, block: Block) {
-        self.0.ball(middle, radius, block);
+    /// Marks what a ball reached to be drawn again, and a cell beyond (a neighbour's faces
+    /// change too); the region is kept.
+    pub fn ball_touched(&mut self, dirty: &mut Dirty, middle: Vec3, radius: f32) {
         self.3.insert(region_of((middle / CELL).floor().as_ivec3()));
-        // Every chunk the ball reaches, and a cell beyond: a neighbour's faces change too.
         let reach = Vec3::splat(radius + CELL);
         let (lo, hi) = (((middle - reach) / CELL).floor().as_ivec3().div_euclid(IVec3::splat(CHUNK)), ((middle + reach) / CELL).floor().as_ivec3().div_euclid(IVec3::splat(CHUNK)));
         for y in lo.y..=hi.y {

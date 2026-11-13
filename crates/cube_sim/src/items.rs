@@ -111,6 +111,17 @@ impl Item {
         }
     }
 
+    /// What it is when it is put down in the world: earth, stone and timber go back as what
+    /// they were cut from.
+    pub fn places(self) -> Option<cube_voxel::Block> {
+        match self {
+            Item::Earth => Some(cube_voxel::Block::Dirt),
+            Item::Stone => Some(cube_voxel::Block::Stone),
+            Item::Timber => Some(cube_voxel::Block::Timber),
+            _ => None,
+        }
+    }
+
     /// How far its blow reaches past the body, metres, and to how far either side of straight
     /// ahead (radians): a blade a step and a wide sweep, a bow thirty metres and a narrow line.
     pub fn reach(self) -> (f32, f32) {
@@ -147,6 +158,9 @@ pub enum Used {
     /// What is in front is to be cut, if it is this stuff: a bite so far across (which is
     /// the caller's to do: the world is not ours here).
     Cut(Stuff, f32),
+    /// What is in hand is to be put down where they look, as this (the caller's to do; when
+    /// it is done, one is taken from the pack: `Sim::placed`).
+    Place(cube_voxel::Block),
     Nothing,
 }
 

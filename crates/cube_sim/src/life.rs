@@ -599,6 +599,13 @@ impl Sim {
     /// is not ours here).
     ///
     /// And what a cut took is theirs: [`Sim::took`].
+    /// One of what is in hand has been put down in the world.
+    pub fn placed(&mut self, id: u32) {
+        if let Some(pack) = self.agents.get_mut(&id).and_then(|a| a.pack.as_mut()) {
+            pack.take(pack.hand);
+        }
+    }
+
     pub fn took(&mut self, id: u32, taken: [u32; 3]) {
         use crate::items::Stuff;
         let Some(pack) = self.agents.get_mut(&id).and_then(|a| a.pack.as_mut()) else { return };
@@ -623,6 +630,7 @@ impl Sim {
                 self.swing(id);
                 Used::Cut(stuff, across)
             }
+            Some(item) if item.places().is_some() => Used::Place(item.places().unwrap()),
             Some(item) if item.heals().is_some() => {
                 let full = self.kinds[agent.kind].health();
                 if agent.health >= full || agent.doing.is_some() {
@@ -1452,6 +1460,24 @@ mod tests {
     }
 
     #[test]
+    fn what_comes_down_strikes_whoever_is_under_it_and_nobody_beside() {
+        let (world, mut sim) = stage();
+        let under = sim.add(&world, 4, at(0.0, 0.0), 0.0, Driver::Stand);
+        let beside = sim.add(&world, 4, at(9.0, 0.0), 0.0, Driver::Stand);
+        let full = sim.agents[&under].health;
+        // A tree's worth, down fast; and a clod.
+        sim.loose.landed.push(crate::loose::Landed { at: at(0.3, 0.0) + Vec3::Y, cells: 6000, put: 6000, speed: 20.0 });
+        sim.step(&world);
+        assert!(sim.agents[&under].dead.is_some(), "a tree came down on him and he has {} of {full}", sim.agents[&under].health);
+        assert_eq!(sim.agents[&beside].health, full, "it struck someone nine metres off");
+        sim.loose.landed.push(crate::loose::Landed { at: at(9.0, 0.2) + Vec3::Y, cells: 8, put: 8, speed: 5.0 });
+        sim.step(&world);
+        let left = sim.agents[&beside].health;
+        assert!(left < full && left > full * 0.5, "a clod took {} of {full}", full - left);
+        assert_eq!(sim.loose.heard.len(), 2, "what landed was not passed on to be heard");
+    }
+
+    #[test]
     fn what_is_in_hand_decides_what_using_it_does() {
         use crate::items::{Item, Used};
         let (world, mut sim) = stage();
@@ -1472,6 +1498,12 @@ mod tests {
         assert_eq!(sim.use_held(person), Used::Cut(crate::items::Stuff::Earth, 0.8));
         assert_eq!(sim.use_held(person), Used::Nothing, "one spadeful at a time");
         (sim.agents.get_mut(&person).unwrap().swing, sim.agents.get_mut(&person).unwrap().doing) = (None, None);
+        // What was dug is carried, and is put down again as what it was.
+        sim.took(person, [300, 0, 0]);
+        hand(&mut sim, Item::Earth);
+        assert_eq!(sim.use_held(person), Used::Place(cube_voxel::Block::Dirt));
+        sim.placed(person);
+        assert_eq!(sim.agents[&person].pack.as_ref().unwrap().count(Item::Earth), 1);
         hand(&mut sim, Item::Berries);
         assert_eq!(sim.use_held(person), Used::Nothing);
         sim.agents.get_mut(&person).unwrap().health = 40.0;

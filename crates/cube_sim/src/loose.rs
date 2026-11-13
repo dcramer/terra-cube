@@ -32,6 +32,10 @@
 //! its limbs break from it and are thrown a little way, each to lie on its own, while the
 //! trunk comes down whole along the line it fell.
 //!
+//! **Water runs into what is opened to it** ([`flow`]): from water beside a cut, sideways and
+//! down into air and up no higher than it stood, so a hole dug at a lake's edge fills to the lake's level and a
+//! trench leads it downhill. By the cell; a lake is not drained by it (the sea is the sea).
+//!
 //! No engine types and nothing random: the same cut fells the same tree. `cargo world fell`
 //! judges it on a real tree with no window.
 
@@ -152,6 +156,43 @@ fn has(world: &World, cell: IVec3, leaf: bool) -> bool {
         Block::Broken => world.bits_at(cell).is_some_and(|bits| bits.iter().any(|b| want(*b))),
         whole => want(whole),
     }
+}
+
+/// How many cells water may run into from one cut: a pit or a length of trench, not a valley.
+const FLOWS: usize = 6_000;
+
+/// Water beside or in a box of cells runs into the air it can reach: sideways, down, and up
+/// no higher than it stood. What grows low (grass, a flower) is drowned. Gives the chunks
+/// changed.
+pub fn flow(world: &mut World, lo: IVec3, hi: IVec3) -> HashSet<IVec3> {
+    let mut queue: VecDeque<IVec3> = VecDeque::new();
+    for y in lo.y - 1..=hi.y + 1 {
+        for z in lo.z - 1..=hi.z + 1 {
+            for x in lo.x - 1..=hi.x + 1 {
+                let cell = IVec3::new(x, y, z);
+                if world.get(cell) == Block::Water {
+                    queue.push_back(cell);
+                }
+            }
+        }
+    }
+    // (It finds its own level: up, too, as far as the highest of the water it came from. A
+    // pit joined to a pool below the pool's top fills to the top.)
+    let level = queue.iter().map(|c| c.y).max().unwrap_or(i32::MIN);
+    let (mut changed, mut filled) = (HashSet::new(), 0);
+    while let Some(cell) = queue.pop_front() {
+        for side in [IVec3::NEG_Y, IVec3::X, IVec3::NEG_X, IVec3::Z, IVec3::NEG_Z, IVec3::Y] {
+            let next = cell + side;
+            let there = world.get(next);
+            if filled < FLOWS && next.y <= level && (there == Block::Air || there.sprig()) {
+                world.set(next, Block::Water);
+                changed.insert(next.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
+                queue.push_back(next);
+                filled += 1;
+            }
+        }
+    }
+    changed
 }
 
 /// Takes out of the world what of a ball is `stuff` (or all of it), to the bit. Says how many
@@ -295,6 +336,7 @@ impl Loose {
             }
         }
         changed.extend(self.loosen(world, lo, hi, push));
+        changed.extend(flow(world, lo, hi));
         Cut { changed, ..cut }
     }
 
@@ -379,10 +421,14 @@ impl Loose {
         let mut cells = HashMap::with_capacity(own.len());
         let mut changed = HashSet::new();
         for cell in own {
+            // (Stone that comes loose is rubble from then on, not the land: the land is drawn
+            // eased into the ground round it and takes its colour, and a lump of it lying
+            // in a meadow was drawn half grass.)
+            let rubble = |b: Block| if matches!(b, Block::Stone | Block::Slate | Block::Chalk) { Block::Shard } else { b };
             let part = match world.get(cell) {
-                Block::Broken => world.bits_at(cell).map(|b| Part::Bits(Box::new(*b))),
+                Block::Broken => world.bits_at(cell).map(|b| Part::Bits(Box::new(b.map(rubble)))),
                 Block::Air => None,
-                whole => Some(Part::Whole(whole)),
+                whole => Some(Part::Whole(rubble(whole))),
             };
             if let Some(part) = part {
                 cells.insert(cell, part);
@@ -684,7 +730,8 @@ mod tests {
         assert_eq!(loose.pieces.len(), 1);
         let cells = loose.pieces[0].cells.len();
         run(&mut loose, &mut w);
-        let (low, up) = (count(&w, Vec3::new(-1.0, 0.0, -1.0), Vec3::new(4.0, 1.5, 2.0), Block::Stone), count(&w, Vec3::new(-1.0, 1.75, -1.0), Vec3::new(4.0, 4.0, 2.0), Block::Stone));
+        // (Come loose, stone is rubble.)
+        let (low, up) = (count(&w, Vec3::new(-1.0, 0.0, -1.0), Vec3::new(4.0, 1.5, 2.0), Block::Shard), count(&w, Vec3::new(-1.0, 1.75, -1.0), Vec3::new(4.0, 4.0, 2.0), Block::Shard));
         assert!(low as f32 > cells as f32 * 0.85 && up == 0, "{low} of {cells} cells are down, {up} are still up");
     }
 
@@ -736,8 +783,9 @@ mod tests {
                 most = most.max(loose.pieces.len());
                 t += crate::DT;
             }
-            let down = count(&w, Vec3::new(-8.0, 0.0, -8.0), Vec3::new(10.0, 3.0, 10.0), block);
-            let block_shape = count(&w, Vec3::new(0.0, 0.0, 0.0), Vec3::new(2.0, 1.5, 2.0), block);
+            let lies = if block == Block::Stone { Block::Shard } else { block };
+            let down = count(&w, Vec3::new(-8.0, 0.0, -8.0), Vec3::new(10.0, 3.0, 10.0), lies);
+            let block_shape = count(&w, Vec3::new(0.0, 0.0, 0.0), Vec3::new(2.0, 1.5, 2.0), lies);
             if breaks {
                 // Many lumps, thrown wider than the block was, most of it still there, all at rest.
                 assert!(most >= 8, "it broke into {most}");
@@ -763,6 +811,20 @@ mod tests {
         let cut = loose.cut(&mut w, Vec3::new(1.0, 0.0, 0.25), 0.4, Vec3::X, &[], Some(Stuff::Stone));
         assert!(cut.taken[Stuff::Stone as usize] > 100 && cut.taken[Stuff::Wood as usize] == 0, "took {:?}", cut.taken);
         assert_eq!(count(&w, Vec3::splat(-12.0), Vec3::splat(12.0), Block::Timber), wood);
+    }
+
+    #[test]
+    fn water_runs_into_a_hole_dug_beside_it_and_no_higher_than_it_stood() {
+        let mut w = floor();
+        // A pool in the floor, and a wall of earth between it and a dry pit, lower.
+        w.fill(Vec3::new(0.0, -1.0, 0.0), Vec3::new(2.0, 0.0, 2.0), Block::Water);
+        w.fill(Vec3::new(2.5, -1.0, 0.0), Vec3::new(4.5, 0.0, 2.0), Block::Air);
+        assert_eq!(count(&w, Vec3::splat(-6.0), Vec3::splat(6.0), Block::Water), 256);
+        let mut loose = Loose::default();
+        loose.cut(&mut w, Vec3::new(2.25, -0.5, 1.0), 0.45, Vec3::X, &[], None);
+        let pit = count(&w, Vec3::new(2.5, -1.0, 0.0), Vec3::new(4.5, 0.0, 2.0), Block::Water);
+        let over = count(&w, Vec3::new(-6.0, 0.0, -6.0), Vec3::new(6.0, 4.0, 6.0), Block::Water);
+        assert!(pit == 256 && over == 0, "{pit} of 256 cells of the pit filled, {over} cells of water above where it stood");
     }
 
     #[test]
