@@ -63,7 +63,7 @@ source = "walker"
 speed = 0.0
 
 [clips.run]
-seconds = 0.2
+seconds = 0.16666667
 looping = true
 source = "walker"
 speed = 1.3413812

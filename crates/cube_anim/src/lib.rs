@@ -287,6 +287,10 @@ impl Walker {
             let p = at + turn * (Vec3::new(h.x, 0.0, h.z) + out + stood) + (Vec3::new(flat.x, 0.0, flat.y) * takes * 0.9).clamp_length_max(reach * 0.5);
             Vec3::new(p.x, ground(p.x, p.z), p.z)
         });
+        // (In a bound a pair steps sooner, at a third of the stride and not a half: while it is
+        // in the air the body goes on as far again, and the pair on the ground was left further
+        // behind than a leg is long. The body came down to reach it: a bear's belly was on the
+        // ground in the middle of every bound, 2026-11-13.)
         // The feet go in diagonal pairs, as a trot: fore left with hind right. A foot steps
         // when it has been left further from where it belongs than the stride allows (or the
         // body has turned under it), and only while the other pair has its feet down.
@@ -294,7 +298,7 @@ impl Walker {
         let pairs = if gallops { [[0, 1], [2, 3]] } else { [[0, 3], [1, 2]] };
         for (n, pair) in pairs.into_iter().enumerate() {
             let other = pairs[1 - n];
-            let wants = pair.iter().any(|&i| self.feet[i].step.is_none() && far(&self.feet[i], homes[i]) > stride * 0.5 + if speed < 0.05 && turned.abs() < 1e-3 && !lies { 0.06 } else { 0.0 } - if lies { stride * 0.5 - 0.03 } else { 0.0 });
+            let wants = pair.iter().any(|&i| self.feet[i].step.is_none() && far(&self.feet[i], homes[i]) > stride * if gallops { 0.36 } else { 0.5 } + if speed < 0.05 && turned.abs() < 1e-3 && !lies { 0.06 } else { 0.0 } - if lies { stride * 0.5 - 0.03 } else { 0.0 });
             let free = other.iter().all(|&i| self.feet[i].step.is_none());
             // (At a gallop it need not wait: there is a moment in each bound with no foot down.
             // Made to wait, a foot was left behind further than its leg is long.)
@@ -350,7 +354,7 @@ impl Walker {
             let across = Vec2::new(hip.x - f.at.x, hip.z - f.at.z).length();
             hip.y - (f.at.y + (reach * reach - across * across).max(0.0).sqrt())
         }).fold(0.0f32, f32::max);
-        self.trunk.0.y -= over.min(b.tall * 0.45);
+        self.trunk.0.y -= over.min(b.tall * if gallops { 0.26 } else { 0.45 });
         // The tail's end comes after the body, and hangs.
         let tail_root = self.trunk.0 - self.trunk.1 * Vec3::Z * b.long / 2.0;
         let hangs = tail_root - self.trunk.1 * Vec3::Z * b.tail * 0.8 - Vec3::Y * b.tail * (0.45 + 0.4 * self.down);

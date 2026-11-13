@@ -154,6 +154,8 @@ The game draws them as `creatures::Picture`: a model and its clips with no body 
 
 ## Judging motion
 
+**A bound keeps the belly off the ground** (`cube_anim::Walker`, 2026-11-13): seen on `make gaits ID="wolf bear"`, not by any number: mid-bound a bear's trunk came down to the ground, a stumble in every stride. In a bound a pair of feet now steps when it is a third of a stride from where it belongs (not a half: the body goes as far again while the pair is in the air, and the pair on the ground was left further behind than a leg is long), and the trunk comes down to its feet by a quarter of its height at the most. Wolf, bear, boar and moose looked at after.
+
 **A number that passes is not a clip that looks right.** Two bars failed good motion for weeks: `slide` read a recorded human walk as 88% (an ankle does not move at one speed while its foot is down), and the 60% `stretch` bar had animals' strides cut to as little as a twentieth. One number missed a real fault: the pony's fore hoof pulls into a spike at full stride.
 
 - `make gaits ID="wolf deer"` draws walk, run and sprint from the side, eight moments each, large enough to see a spine and a hoof: `shots/gaits.png`. Look at it after any change to a gait, a plan or a creature's knobs, and set a changed clip beside what it came from.

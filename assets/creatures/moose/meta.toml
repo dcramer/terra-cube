@@ -63,13 +63,13 @@ source = "made"
 speed = 0.0
 
 [clips.run]
-seconds = 0.36666667
+seconds = 0.33333334
 looping = true
 source = "walker"
 speed = 4.1998663
 
 [clips.sprint]
-seconds = 0.23333333
+seconds = 0.2
 looping = true
 source = "walker"
 speed = 7.504173
