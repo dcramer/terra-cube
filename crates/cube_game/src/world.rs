@@ -385,6 +385,7 @@ fn sky(
     terrain: Option<Res<Terrain>>,
     mut cameras: Query<(&mut Exposure, &mut DistanceFog, &mut ColorGrading, &mut AtmosphereEnvironmentMapLight, &GlobalTransform)>,
     mut mists: Query<&mut FogVolume>,
+    torches: Query<(), With<crate::player::Torch>>,
 ) {
     let hour = live.map_or(cube_sim::sky::START, |l| l.0.when);
     let (to_sun, day) = (cube_sim::sky::sun(hour), cube_sim::sky::daylight(hour));
@@ -439,7 +440,10 @@ fn sky(
         // the tonemapper leaves while the sun is at the horizon, which is when it takes most.
         let dusk = ((to_sun.y + 0.26) / 0.15).clamp(0.0, 1.0);
         let golden = (1.0 - (to_sun.y / 0.25).abs()).max(0.0);
-        grade.global.post_saturation = 0.6 + 0.4 * dusk + 0.15 * golden;
+        // (Nor by firelight: a torch's pool is amber, and with the night's colour drained
+        // from it it was straw.)
+        let fire = if torches.is_empty() { 0.0 } else { 0.35 };
+        grade.global.post_saturation = (0.6 + 0.4 * dusk + 0.15 * golden).max(0.6 + fire);
         // With the sun under, the air's own twilight is a dull brown-red all the way up; the
         // hour is wanted blue over a red rim, as the eye has it. Cooler, until night proper.
         let blue = ((-0.02 - to_sun.y) / 0.1).clamp(0.0, 1.0) * ((to_sun.y + 0.26) / 0.1).clamp(0.0, 1.0);

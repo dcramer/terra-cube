@@ -587,13 +587,14 @@ fn torch(
     bearers: Query<(&Transform, &Mover), With<Controlled>>,
     flames: Query<&GlobalTransform, With<crate::held::Flame>>,
     mut torches: Query<(Entity, &mut Transform, &mut PointLight), (With<Torch>, Without<Controlled>)>,
+    mut embers: Query<(Entity, &mut Transform, &mut PointLight), (With<Ember>, Without<Torch>, Without<Controlled>)>,
 ) {
     // Lit while the torch is the thing in hand (T takes it from the bar); `--torch` lights
     // it whatever is held, for pictures.
     let held = |m: &Mover| live.agent(m).is_some_and(|a| a.dead.is_none() && a.act != cube_sim::life::Act::Swim && a.pack.as_ref().and_then(|p| p.held()).is_some_and(|i| i.lights()));
     // (Not behind the loading screen: it would be heard to catch.)
     let Some((bearer, _)) = bearers.iter().next().filter(|(_, m)| !loading.up && (args.torch || held(m))) else {
-        for (entity, ..) in &torches {
+        for (entity, ..) in torches.iter().chain(&embers) {
             commands.entity(entity).despawn();
         }
         return;
@@ -602,17 +603,48 @@ fn torch(
     let at = flames.iter().next().map_or(bearer.translation + bearer.rotation * Vec3::new(0.3, 1.55, -0.2), |f| f.translation() + Vec3::Y * 0.08);
     let t = time.elapsed_secs();
     let waver = 1.0 + 0.1 * (t * 11.0).sin() + 0.06 * (t * 23.0 + 1.3).sin() + 0.04 * (t * 5.3).sin();
+    let stir = Vec3::new((t * 7.0).sin(), (t * 9.0).cos(), (t * 6.0).sin()) * 0.015;
+    // The light that lights the way stands over the flame, not in it (see `LIFT`), and is
+    // two lights in one place: most of it throws shadows, and a part does not.
+    let over = at + Vec3::Y * LIFT + stir;
+    let glow = |shadows: bool, lumens: f32| PointLight { color: Color::srgb(1.0, 0.6, 0.26), intensity: lumens, range: 16.0, radius: 0.05, shadow_maps_enabled: shadows, ..default() };
     if let Ok((_, mut place, mut light)) = torches.single_mut() {
-        place.translation = at + Vec3::new((t * 7.0).sin(), (t * 9.0).cos(), (t * 6.0).sin()) * 0.015;
+        place.translation = over;
         light.intensity = TORCH * waver;
     } else {
-        commands.spawn((Torch, PointLight { color: Color::srgb(1.0, 0.62, 0.28), intensity: TORCH, range: 16.0, radius: 0.05, shadow_maps_enabled: true, ..default() }, Transform::from_translation(at)));
+        commands.spawn((Torch, glow(true, TORCH), Transform::from_translation(over)));
+    }
+    let mut fill = false;
+    for (_, mut place, mut light) in &mut embers {
+        (place.translation, light.intensity) = if light.range > 5.0 { (over, FILL * waver) } else { (at + stir, EMBER * waver) };
+        fill = true;
+    }
+    if !fill {
+        commands.spawn((Ember, glow(false, FILL), Transform::from_translation(over)));
+        commands.spawn((Ember, PointLight { range: 2.5, ..glow(false, EMBER) }, Transform::from_translation(at)));
     }
 }
 
 /// How bright the torch is, lumens. Set for the camera as it is at night; by day it is lost
 /// in the sun, as a real one is.
-const TORCH: f32 = 2600.0;
+const TORCH: f32 = 3000.0;
+/// How far over the flame that light stands, metres. In the flame itself, a hand from the
+/// bearer's face and a man's height from the ground, it gave his face thirty times the light
+/// it gave the ground at his feet (by the square of how far): he was a white figure in a dim
+/// pool, and every blade of grass threw a shadow many times its own length. From overhead
+/// the ground and the bearer are lit alike, as a camera that could see both would have it.
+const LIFT: f32 = 1.4;
+/// The part of it that throws no shadow, lumens: what a fire's light does by coming off
+/// everything it falls on. Without it a shadow from the torch was a black hole in the
+/// ground and grass was black sticks. (It is also seen faintly through a trunk or a wall.)
+const FILL: f32 = 520.0;
+/// The flame's own light on what is right beside it (his hand, the side of his face, the
+/// torch's head), lumens: a little, with no shadows, in the flame.
+const EMBER: f32 = 20.0;
+
+/// The torch's lights that throw no shadow (`FILL`, `EMBER`).
+#[derive(Component)]
+struct Ember;
 
 /// An arrow in flight: which way, and how long it has flown. It is only to be seen: what
 /// the shot hit was decided by the simulation when the bow was loosed.

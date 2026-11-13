@@ -146,7 +146,7 @@ feet: ## no window: the player and a deer walked over a hillside with feet as th
 	@tools/feet.sh player -60,20 2.0
 	@tools/feet.sh deer 30,-40 0.5
 
-sky: ## no window: shots/sky.png, the sky and the light at sixteen fixed hours and places (dawn to full night, the torch, a wood), one sheet; look after any change to sky, sun, moon, cloud, exposure or a light (tools/sky.sh dusk for one)
+sky: ## no window: shots/sky.png, the sky and the light at eighteen fixed hours and places (dawn to full night, the clouds, the torch, a wood), one sheet; look after any change to sky, sun, moon, cloud, exposure or a light (tools/sky.sh dusk for one)
 	@tools/sky.sh
 
 held: ## no window: shots/held.png, the sword and the torch in the player's hand, standing, walking and striking
