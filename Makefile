@@ -78,6 +78,7 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 	@for seed in 6 1 11; do cargo world fell --seed $$seed | grep -E '^FAIL' | sed "s/^/seed $$seed: /"; done; cargo world fell | tail -1 | sed 's/^ok$$/ok fell: a tree cut through comes down whole and lies where it fell, as cells/'
 	@tools/fells.sh 30
 	@for seed in 1 7; do cargo world quarry --seed $$seed | grep -E '^FAIL' | sed "s/^/seed $$seed: /"; done; cargo world quarry | tail -1 | sed 's/^ok$$/ok quarry: a boulder dug out from under comes down, breaks if it comes down hard, and its stone lies where it fell/'
+	@for seed in 5 7; do cargo world hunks --seed $$seed | grep -E '^FAIL' | sed "s/^/seed $$seed: /"; done; cargo world hunks | tail -1 | sed 's/^ok$$/ok hunks: a tree and a boulder worked to the pieces that are carried, each whole and lying on something, one taken up and put down/'
 	@cargo world replay | tail -1 | sed 's/^ok$$/ok replay: the land made again from its seed with the same edits done to it is the same world/'
 	@tools/forget.sh
 	@tools/dig.sh
@@ -143,7 +144,7 @@ forget: ## no window: a tree felled and cut up in the real game, its regions dro
 dig: ## no window: the ground dug with the shovel and the earth put back in the real game, the region dropped and made again from seed and journal: no cell may differ
 	@tools/dig.sh
 
-build: ## no window: a tree chopped for timber in the real game and the timber put down piece on piece: each stays, and the region made again is the same
+build: ## no window: a tree felled, limbed, broken and split into hunks in the real game, four taken up one at a time and put down each on the last; the region made again is the same
 	@tools/build.sh
 
 fells: ## no window: the tree nearest each of 25 places felled with an axe: each stands to its last blow, comes loose, goes over and lies on the ground

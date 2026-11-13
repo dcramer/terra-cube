@@ -90,6 +90,11 @@ pub enum Block {
     BrushPale,
     BrushDeep,
     BrushNeedles,
+    /// What is carried and built with: a piece of wood split from a log, and a piece of
+    /// stone broken from a boulder ([`Block::hunk`]). Each is a cube of these, two cells a
+    /// side, and is taken up and put down whole (`cube_sim::loose`).
+    Billet,
+    Cobble,
 }
 
 impl Block {
@@ -103,6 +108,10 @@ impl Block {
     /// Leaves or needles: what a crown is made of.
     pub fn foliage(self) -> bool {
         matches!(self, Block::Leaves | Block::LeavesPale | Block::LeavesDeep | Block::Needles | Block::Brush | Block::BrushPale | Block::BrushDeep | Block::BrushNeedles)
+    }
+    /// A piece to carry and build with: no tool cuts it, and it does not break when it falls.
+    pub fn hunk(self) -> bool {
+        matches!(self, Block::Billet | Block::Cobble)
     }
     /// A tree's wood, standing or cut.
     pub fn wood(self) -> bool {
@@ -178,6 +187,8 @@ impl Block {
             Block::Fern => ([0.12, 0.25, 0.09], [0.10, 0.21, 0.08]),
             Block::Mushroom => ([0.55, 0.14, 0.08], [0.70, 0.66, 0.56]),
             Block::Rock => ([0.30, 0.30, 0.31], [0.26, 0.26, 0.275]),
+            Block::Billet => ([0.46, 0.33, 0.18], [0.38, 0.26, 0.14]),
+            Block::Cobble => ([0.37, 0.37, 0.38], [0.32, 0.32, 0.335]),
             // (Never reached: `grown` has made each of these the block it was.)
             Block::Timber | Block::TimberBirch | Block::Shard | Block::Brush | Block::BrushPale | Block::BrushDeep | Block::BrushNeedles => ([0.0; 3], [0.0; 3]),
         }

@@ -45,9 +45,20 @@ pub struct Controls {
     /// What a `put` puts down: what is in hand, as the block it is in the world.
     pub lump: Option<cube_voxel::Block>,
     pub put: bool,
+    /// A hunk of wood or stone is to be taken up (the one looked at, or the nearest within
+    /// reach), or the one carried put down: F, or a script's `lift`. And the one carried is
+    /// to be put down where he looks (using what is in hand, with a hunk in the hands).
+    pub grab: bool,
+    /// (A script's reach: it cannot walk up to what it felled, so it takes a hunk up from as
+    /// far off as it chops, and puts it down by itself. Not one within its hands' reach:
+    /// that is one it has put down, and it took the same one up four times running.)
+    pub far: bool,
+    pub lay: Option<cube_voxel::Block>,
     /// (A script's, for trying what a cut does: a bite out of the nearest tree's trunk, a
     /// metre up, each one further across it than the last.)
     pub chop: bool,
+    /// (And a blow of a pick at the nearest boulder: a script's `pick`.)
+    pub pick: bool,
     /// (And a block of stone let go five metres up, three ahead: to see what comes down hard do.)
     pub drop: bool,
     /// (And every changed region dropped and made again from the seed and the journal: `world::regions`.)
@@ -203,6 +214,7 @@ fn keys(keys: Res<ButtonInput<KeyCode>>, buttons: Res<ButtonInput<MouseButton>>,
     // (Building was the right button's, a click; held, the right button now aims, and a
     // lump is laid with the middle button or B.)
     controls.put |= (buttons.just_pressed(MouseButton::Middle) || keys.just_pressed(KeyCode::KeyB)) && !controlled.is_empty();
+    controls.grab |= keys.just_pressed(KeyCode::KeyF) && !controlled.is_empty();
     controls.guard = buttons.pressed(MouseButton::Right);
     controls.aim = buttons.pressed(MouseButton::Right) && !controlled.is_empty();
     if keys.just_pressed(KeyCode::KeyV) {
@@ -260,6 +272,8 @@ fn script(time: Res<Time>, args: Res<Args>, stage: Option<Res<crate::shot::Stage
                 "hurt" => controls.act = Some(cube_sim::life::Act::Hurt),
                 "dig" => controls.dig = true,
                 "chop" => controls.chop = true,
+                "lift" => (controls.grab, controls.far) = (true, true),
+                "pick" => controls.pick = true,
                 "drop" => controls.drop = true,
                 "forget" => controls.forget = true,
                 "put" => controls.put = true,
@@ -335,17 +349,26 @@ fn drive(mut controls: ResMut<Controls>, time: Res<Time>, args: Res<Args>, terra
             if let cube_sim::items::Used::Cut(stuff, across) = used {
                 controls.blow = Some((cube_sim::life::SWING, stuff, across));
             }
-            // Earth, stone or timber in hand is put down where he looks.
+            // Earth in hand is put down where he looks; and so is a hunk in the hands.
             if let cube_sim::items::Used::Place(block) = used {
                 (controls.put, controls.lump) = (true, Some(block));
+            }
+            if let cube_sim::items::Used::Lay(block) = used {
+                controls.lay = Some(block);
             }
             // A shot: an arrow is seen to fly the way the archer faces.
             if let Some(a) = live.agent(mover).filter(|a| used == cube_sim::items::Used::Swing && a.pack.as_ref().and_then(|p| p.held()) == Some(cube_sim::items::Item::Bow)) {
                 controls.shot = Some((a.body.pos + Vec3::Y * 1.4, Vec3::new(a.facing.sin(), 0.0, a.facing.cos())));
             }
         }
-        let Some(speed) = live.kind(mover).map(|k| k.speed(controls.gait)) else { continue };
+        // (With a hunk in his hands he walks: it is heavy, and hauling is meant to be work.)
+        let gait = if live.agent(mover).is_some_and(|a| a.carries.is_some()) { Gait::Walk } else { controls.gait };
+        let Some(speed) = live.kind(mover).map(|k| k.speed(gait)) else { continue };
         let Some(m) = live.agent_mut(mover) else { continue };
+        // (F with a hunk in the hands puts it down.)
+        if controls.grab && m.carries.is_some() {
+            (controls.grab, controls.lay) = (false, m.carries);
+        }
         // The right button guards, with anything but a tool that cuts in hand.
         let shovel = m.pack.as_ref().and_then(|p| p.held()).is_some_and(|i| i.cuts().is_some());
         m.guard = controls.guard && !shovel;
@@ -484,11 +507,14 @@ const HOLE: f32 = 0.4;
 /// (A lump is one cell's worth, as one carried is: at 0.18 m it was a cell and a half, and
 /// earth dug and put back came to more than was dug.)
 const LUMP: f32 = 0.155;
+/// How far he reaches with his hands, to take a hunk up or put one down, metres.
+const HANDS: f32 = 2.5;
 
 /// Digs or builds where the controlled creature looks: along the camera's line, from its eyes.
 #[allow(clippy::too_many_arguments)]
 fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Controls>, mut live: ResMut<Live>, mut forms: ResMut<crate::flora::Forms>, mut grown: ResMut<crate::flora::Grown>, terrain: Option<ResMut<Terrain>>, mut dirty: ResMut<crate::world::Dirty>, controlled: Query<(&Mover, &Transform), With<Controlled>>, cameras: Query<&Transform, With<Orbit>>, mut chopping: Local<Option<(Vec3, u32)>>, mut felled: Local<bool>) {
     let (mut dig, put, chop, mut tool, lump) = (std::mem::take(&mut controls.dig), std::mem::take(&mut controls.put), std::mem::take(&mut controls.chop), controls.tool.take(), controls.lump.take());
+    let (grab, lay, pick) = (std::mem::take(&mut controls.grab), controls.lay.take(), std::mem::take(&mut controls.pick));
     let (Some(mut terrain), Ok((mover, at)), Some(camera)) = (terrain, controlled.single(), cameras.iter().next()) else { return };
     if std::mem::take(&mut controls.forget) {
         regions.forget = true;
@@ -499,20 +525,59 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
         let changed = live.0.loose.put(&mut terrain.0, middle, 0.75, cube_voxel::Block::Stone);
         terrain.touched(&mut dirty, changed);
     }
-    if !(dig || put || chop) {
+    // A hunk taken up or put down, by hand: no tool. Taken up, the one he looks at, or
+    // failing that the nearest within his reach; put down, where he looks if that is within
+    // his reach and not on himself, or else a step ahead of him.
+    if grab || lay.is_some() {
+        use cube_voxel::CELL;
+        let along = *camera.forward();
+        let (feet, ahead) = (at.translation, at.translation + at.rotation * Vec3::Z * 1.1 + Vec3::Y * 0.3);
+        let seen = terrain.0.raycast(camera.translation, along, HANDS + camera.translation.distance(feet)).map(|far| camera.translation + along * far).filter(|hit| hit.distance(feet + Vec3::Y) < HANDS);
+        if let Some(block) = lay {
+            let to = seen.filter(|_| !controls.far).map(|hit| hit - along * CELL * 0.5).filter(|to| to.with_y(0.0).distance(feet.with_y(0.0)) > 0.8).unwrap_or(ahead);
+            if let Some((corner, changed)) = live.0.loose.lay(&mut terrain.0, to, block) {
+                if std::env::var_os("LOOSE_TRACE").is_some() {
+                    // (And what is under it there, for whoever asks whether it was put on another.)
+                    let under = (1..=8).map(|down| terrain.0.get(corner - IVec3::Y * down)).find(|b| b.solid());
+                    println!("loose: laid {block:?} at cell {} {} {} on {under:?}", corner.x, corner.y, corner.z);
+                }
+                terrain.touched(&mut dirty, changed);
+                live.0.laid(mover.id);
+            }
+        } else if live.0.free(mover.id) {
+            let looked = seen.map(|hit| hit + along * 0.05).filter(|hit| cube_sim::loose::hunk_at(&terrain.0, (*hit / CELL).floor().as_ivec3()).is_some());
+            let near = || {
+                let (c, r) = (((feet + Vec3::Y) / CELL).floor().as_ivec3(), (if controls.far { 14.0 } else { HANDS } / CELL) as i32);
+                (-r.min(16)..=r.min(16)).flat_map(|y| (-r..=r).flat_map(move |z| (-r..=r).map(move |x| c + IVec3::new(x, y, z)))).filter(|cell| terrain.0.get(*cell).hunk()).map(|cell| (cell.as_vec3() + 0.5) * CELL).filter(|p| !controls.far || p.distance(feet) > HANDS).min_by(|a, b| a.distance(feet + Vec3::Y).total_cmp(&b.distance(feet + Vec3::Y)))
+            };
+            if let Some(from) = looked.or_else(near)
+                && let Some((block, changed)) = live.0.loose.lift(&mut terrain.0, from)
+            {
+                if std::env::var_os("LOOSE_TRACE").is_some() {
+                    println!("loose: lifted {block:?} at {from:.2?}");
+                }
+                terrain.touched(&mut dirty, changed);
+                live.0.lifted(mover.id, block);
+            }
+        }
+    }
+    if !(dig || put || chop || pick) {
         return;
     }
     // A script's chop: a blow at the nearest standing trunk until it is down, then blows
     // along it as it lies (`Loose::chop` says what each does: limbs it, then breaks it).
+    // (Not while what it cut is still coming down: it went on to the trees beyond, a blow each.)
     let mut aimed = None;
-    if chop {
+    if chop && live.0.loose.pieces.iter().all(|p| p.cells.len() < 200) {
         // (A tree, not a stump: something over three metres of trunk.)
         let near = |l: &&cube_sim::plants::Limb| l.roots > 0 && l.b.y - l.a.y > 3.0 && l.a.with_y(0.0).distance(at.translation.with_y(0.0)) < 14.0;
         // (What was being chopped has come down: the count begins again on what is next.)
         if chopping.is_some() && live.0.loose.things.iter().any(|t| t.lies.is_some()) && !*felled {
             (*chopping, *felled) = (None, true);
         }
-        let foot = chopping.filter(|_| !*felled).map(|c| c.0).or_else(|| forms.0.values().flat_map(|f| f.limbs.iter()).filter(near).min_by(|a, b| a.a.distance(at.translation).total_cmp(&b.a.distance(at.translation))).map(|l| l.a + Vec3::Y * (cube_sim::plants::Limb::UNDER + 1.0)));
+        // (Once one is down the blows are for it as it lies, not for the next one standing:
+        // each tree round it took a blow.)
+        let foot = if *felled { None } else { chopping.map(|c| c.0) }.or_else(|| if *felled { None } else { forms.0.values().flat_map(|f| f.limbs.iter()).filter(near).min_by(|a, b| a.a.distance(at.translation).total_cmp(&b.a.distance(at.translation))).map(|l| l.a + Vec3::Y * (cube_sim::plants::Limb::UNDER + 1.0)) });
         // (Nothing standing: then across what lies felled nearest, two fifths of the way
         // along it, to see a trunk cut into lengths.)
         let lying = || {
@@ -539,6 +604,11 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
         aimed = Some((foot - away * 0.3, away));
         (dig, tool) = (true, Some((cube_sim::items::Stuff::Wood, 0.8)));
         }
+    }
+    // A script's pick: a blow at the top of the nearest boulder.
+    if pick && let Some(stone) = forms.0.values().flat_map(|f| f.stones.iter()).map(|s| (s.middle, s.radii)).chain(live.0.loose.things.iter().filter_map(|t| t.stone.as_ref().map(|s| (s.middle, s.radii)))).min_by(|a, b| a.0.distance(at.translation).total_cmp(&b.0.distance(at.translation))).filter(|s| s.0.distance(at.translation) < 14.0) {
+        aimed = Some((stone.0 + Vec3::Y * (stone.1.y - 0.1 + HOLE * 0.3), Vec3::NEG_Y));
+        (dig, tool) = (true, Some((cube_sim::items::Stuff::Stone, 0.6)));
     }
     let Some(height) = live.kind(mover).map(|k| k.height) else { return };
     // Where the middle of the picture is: along the camera's own line, as far as he reaches
@@ -569,7 +639,16 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
         let cut = {
             let shapes: Vec<&cube_sim::plants::Form> = near.iter().map(|r| &*forms.0[r]).collect();
             // (An axe does not dig wood: its blow is the tree's to answer, `Loose::chop`.)
-            if stuff == Some(cube_sim::items::Stuff::Wood) { live.0.loose.chop(&mut terrain.0, middle, along, &shapes) } else { live.0.loose.cut(&mut terrain.0, middle, bite, along, &shapes, stuff) }
+            // (Nor does a pick dig a boulder: it chips it until it breaks, `Loose::chip`. The
+            // land's own stone it digs.)
+            match stuff {
+                Some(cube_sim::items::Stuff::Wood) => live.0.loose.chop(&mut terrain.0, middle, along, &shapes),
+                Some(cube_sim::items::Stuff::Stone) => match live.0.loose.chip(&mut terrain.0, middle, along, &shapes) {
+                    Some(cut) => cut,
+                    None => live.0.loose.cut(&mut terrain.0, middle, bite, along, &shapes, stuff),
+                },
+                _ => live.0.loose.cut(&mut terrain.0, middle, bite, along, &shapes, stuff),
+            }
         };
         for (n, region) in near.iter().enumerate() {
             let (trees, mut stones): (Vec<u32>, Vec<usize>) = (cut.trees.iter().filter(|t| t.0 == n).map(|t| t.1).collect(), cut.stones.iter().filter(|s| s.0 == n).map(|s| s.1).collect());
@@ -639,7 +718,7 @@ fn torch(
 ) {
     // Lit while the torch is the thing in hand (T takes it from the bar); `--torch` lights
     // it whatever is held, for pictures.
-    let held = |m: &Mover| live.agent(m).is_some_and(|a| a.dead.is_none() && a.act != cube_sim::life::Act::Swim && a.pack.as_ref().and_then(|p| p.held()).is_some_and(|i| i.lights()));
+    let held = |m: &Mover| live.agent(m).is_some_and(|a| a.dead.is_none() && a.act != cube_sim::life::Act::Swim && a.carries.is_none() && a.pack.as_ref().and_then(|p| p.held()).is_some_and(|i| i.lights()));
     // (Not behind the loading screen: it would be heard to catch.)
     let Some((bearer, _)) = bearers.iter().next().filter(|(_, m)| !loading.up && (args.torch || held(m))) else {
         for entity in torches.iter().map(|t| t.0).chain(embers.iter().map(|e| e.0)).chain(cores.iter().map(|c| c.0)) {

@@ -79,6 +79,21 @@ pub const LIMBS: f32 = 3.5;
 /// How long the logs are that a bare trunk breaks into, metres.
 pub const LOG: f32 = 2.0;
 
+/// How many cells a side a piece to carry is: half a metre, of wood ([`Block::Billet`]) or of
+/// stone ([`Block::Cobble`]). One size for both, and the one place it is said. (Called a hunk
+/// here: a chunk is already sixteen cells of the world.) The developer, 2026-11-13:
+/// "resources are effectively these chunks, that are kind of just larger voxels ... all of
+/// similar size ... you have to carry them in your hands, probably one at a time"; the
+/// size was left to us.
+pub const HUNK: i32 = 2;
+/// How many blows of a pick a boulder takes before it breaks into hunks, by how far across
+/// it is at its widest (metres, its radius): three to five ("maybe that takes 3-5 chips
+/// depending on size of rock").
+#[allow(non_snake_case)]
+pub fn CHIPS(wide: f32) -> u32 {
+    3 + (wide > 0.8) as u32 + (wide > 1.5) as u32
+}
+
 /// How many cells a piece may be and still be looked through to its end: what reaches
 /// further is held to be standing on the land. A great oak with its crown is some 12,000.
 pub const HELD: usize = 30_000;
@@ -122,6 +137,8 @@ pub struct Piece {
     spin: Vec3,
     /// It will break up if it lands hard: stone or earth, not yet broken.
     brittle: bool,
+    /// Hunks and nothing else: it comes down where they lie two cells apart, and does not roll.
+    hunk: bool,
     /// Which thing it is the fallen part of, if it is a tree gone over.
     thing: Option<u32>,
     /// How it was turned when it began the turn it is making (nothing, going over; as its
@@ -192,11 +209,13 @@ pub struct Thing {
     /// Come down: what it turned about, how far that moved, and how it is turned (a point of
     /// it that stood at `p` lies at pivot + shift + turn (p - pivot), as [`Piece::now`]).
     pub lies: Option<(Vec3, Vec3, Quat)>,
-    /// Blows of an axe taken standing; whether its boughs and leaf have been knocked off
-    /// since it fell; and which of its break points have been cut through ([`Loose::chop`]).
+    /// Blows of an axe taken standing (or of a pick, a boulder), and whether its boughs and
+    /// leaf have been knocked off since it fell ([`Loose::chop`]). From then on it is
+    /// timber, and nothing more is kept of it: [`Loose::timber`].
     pub blows: u32,
     pub limbed: bool,
-    pub bucked: u32,
+    /// It has taken one blow at its boughs since it fell: the next takes all that is left.
+    pub lopped: bool,
 }
 
 impl Thing {
@@ -216,6 +235,20 @@ pub enum Edit {
     Cut { middle: Vec3, radius: f32, push: Vec3, stuff: Option<Stuff> },
     Put { middle: Vec3, radius: f32, block: Block },
     Chop { at: Vec3, push: Vec3 },
+    Chip { at: Vec3, push: Vec3 },
+    /// A hunk taken up, and one put down.
+    Lift { at: Vec3 },
+    Lay { at: Vec3, block: Block },
+}
+
+impl Edit {
+    /// Where it was done.
+    pub fn at(&self) -> Vec3 {
+        match *self {
+            Edit::Cut { middle, .. } | Edit::Put { middle, .. } => middle,
+            Edit::Chop { at, .. } | Edit::Chip { at, .. } | Edit::Lift { at } | Edit::Lay { at, .. } => at,
+        }
+    }
 }
 
 /// Does a journal's edits to a world again, each at its moment, and lets what falls come to
@@ -250,6 +283,9 @@ impl Replay {
                 Edit::Cut { middle, radius, push, stuff } => drop(self.loose.cut(world, middle, radius, push, forms, stuff)),
                 Edit::Put { middle, radius, block } => drop(self.loose.put(world, middle, radius, block)),
                 Edit::Chop { at, push } => drop(self.loose.chop(world, at, push, forms)),
+                Edit::Chip { at, push } => drop(self.loose.chip(world, at, push, forms)),
+                Edit::Lift { at } => drop(self.loose.lift(world, at)),
+                Edit::Lay { at, block } => drop(self.loose.lay(world, at, block)),
             }
             self.next += 1;
             if began.elapsed() > budget {
@@ -523,6 +559,98 @@ fn work(world: &mut World, middle: Vec3, radius: f32, forms: &[&Form], stuff: Op
     cut
 }
 
+/// `LOOSE_TRACE=1`: a line of what was done, for whoever is finding out why.
+fn trace(what: std::fmt::Arguments) {
+    if std::env::var_os("LOOSE_TRACE").is_some() {
+        eprintln!("loose: {what}");
+    }
+}
+
+/// Whether a hunk's cell may go where this is: into air, water, what grows low, and leaf,
+/// which gives way under it.
+fn room(there: Block) -> bool {
+    !there.solid() || there.foliage()
+}
+
+/// The cells of a hunk, from its lowest corner.
+fn hunk() -> impl Iterator<Item = IVec3> {
+    (0..HUNK).flat_map(|y| (0..HUNK).flat_map(move |z| (0..HUNK).map(move |x| IVec3::new(x, y, z))))
+}
+
+/// The hunk a cell is part of: its lowest corner, and what it is of. Nothing is kept of
+/// where hunks are: a hunk is the cells it is. It lies on the squares two cells a side that
+/// start at even cells, and at whatever height it came to rest, counted in hunks from the
+/// lowest of its kind under it (one put on another is one hunk higher).
+pub fn hunk_at(world: &World, cell: IVec3) -> Option<(IVec3, Block)> {
+    let block = world.get(cell);
+    if !block.hunk() {
+        return None;
+    }
+    let (x, z) = (cell.x.div_euclid(HUNK) * HUNK, cell.z.div_euclid(HUNK) * HUNK);
+    let low = (1..64).map(|d| cell.y - d).find(|y| world.get(IVec3::new(x, *y, z)) != block).map_or(cell.y, |y| y + 1);
+    let corner = IVec3::new(x, low + (cell.y - low).div_euclid(HUNK) * HUNK, z);
+    hunk().all(|d| world.get(corner + d) == block).then_some((corner, block))
+}
+
+/// Puts hunks down: as many as asked, at the first of the places given (each a lowest
+/// corner, with what it is ordered by) that have room. Says how many found room.
+fn strew(world: &mut World, mut places: Vec<(f32, IVec3)>, many: usize, block: Block, changed: &mut HashSet<IVec3>) -> usize {
+    places.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| (a.1.y, a.1.z, a.1.x).cmp(&(b.1.y, b.1.z, b.1.x))));
+    let mut put = 0;
+    for (_, corner) in places {
+        if put == many {
+            break;
+        }
+        if hunk().all(|d| room(world.get(corner + d))) {
+            for d in hunk() {
+                world.set(corner + d, block);
+                changed.insert((corner + d).div_euclid(IVec3::splat(cube_voxel::CHUNK)));
+            }
+            put += 1;
+        }
+    }
+    put
+}
+
+/// Takes what a tool's stuff is out of a box of cells, where `of` says a place is its own:
+/// whole cells of it, and broken cells that hold nothing else. Says how much, in bits.
+fn emptied(world: &mut World, lo: IVec3, hi: IVec3, stuff: impl Fn(Block) -> bool, of: impl Fn(Vec3) -> bool, changed: &mut HashSet<IVec3>) -> u32 {
+    let mut bits = 0;
+    for y in lo.y..=hi.y {
+        for z in lo.z..=hi.z {
+            for x in lo.x..=hi.x {
+                let cell = IVec3::new(x, y, z);
+                if !of((cell.as_vec3() + 0.5) * CELL) {
+                    continue;
+                }
+                // (A broken cell that holds something else too gives up only its bits of this.)
+                if world.get(cell) == Block::Broken && world.bits_at(cell).is_some_and(|b| b.iter().any(|b| stuff(*b)) && !b.iter().all(|b| *b == Block::Air || stuff(*b))) {
+                    for i in 0..SPLIT * SPLIT * SPLIT {
+                        let bit = cell * SPLIT + IVec3::new(i % SPLIT, i / SPLIT % SPLIT, i / (SPLIT * SPLIT));
+                        if stuff(world.bit(bit)) {
+                            world.set_bit(bit, Block::Air);
+                            bits += 1;
+                        }
+                    }
+                    changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
+                    continue;
+                }
+                let held = match world.get(cell) {
+                    Block::Broken => world.bits_at(cell).filter(|b| b.iter().all(|b| *b == Block::Air || stuff(*b))).map_or(0, |b| b.iter().filter(|b| stuff(**b)).count() as u32),
+                    b if stuff(b) => (SPLIT * SPLIT * SPLIT) as u32,
+                    _ => 0,
+                };
+                if held > 0 {
+                    world.set(cell, Block::Air);
+                    changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
+                    bits += held;
+                }
+            }
+        }
+    }
+    bits
+}
+
 const SIDES: [IVec3; 6] = [IVec3::X, IVec3::NEG_X, IVec3::Y, IVec3::NEG_Y, IVec3::Z, IVec3::NEG_Z];
 
 /// Every cell round a cell: by a face, an edge or a corner. What bears is joined through any
@@ -555,6 +683,26 @@ fn heaped(world: &World, middle: Vec3, radius: f32) -> Vec3 {
 }
 
 impl Loose {
+    /// Notes each tree and boulder a cut has made cells of, once, as a [`Thing`].
+    fn note(&mut self, cut: &Cut, forms: &[&Form]) {
+        for (n, tree) in &cut.trees {
+            let limbs: Vec<crate::plants::Limb> = forms[*n].limbs.iter().filter(|l| l.tree == *tree).copied().collect();
+            // (Once: whoever keeps the shapes is to drop it from them, and may not have yet.)
+            if self.things.iter().any(|t| t.limbs.first().map(|l| l.a) == limbs.first().map(|l| l.a)) {
+                continue;
+            }
+            self.next += 1;
+            self.things.push(Thing { id: self.next, limbs, clumps: forms[*n].clumps.iter().filter(|c| c.tree == *tree).copied().collect(), stone: None, cuts: Vec::new(), lies: None, blows: 0, limbed: false, lopped: false });
+        }
+        for (n, stone) in &cut.stones {
+            if self.things.iter().any(|t| t.stone.as_ref().map(|s| s.middle) == forms[*n].stones.get(*stone).map(|s| s.middle)) {
+                continue;
+            }
+            self.next += 1;
+            self.things.push(Thing { id: self.next, limbs: Vec::new(), clumps: Vec::new(), stone: forms[*n].stones.get(*stone).cloned(), cuts: Vec::new(), lies: None, blows: 0, limbed: false, lopped: false });
+        }
+    }
+
     /// Digs a ball out of the world and looses what that leaves unsupported, pushed the way
     /// `push` points (the way whoever cut it was facing). Gives the chunks that changed.
     ///
@@ -573,22 +721,7 @@ impl Loose {
         let known: Vec<Vec3> = self.things.iter().filter_map(|t| t.limbs.first().map(|l| l.a)).collect();
         let mut cut = work(world, middle, radius, forms, stuff, &known);
         // Each thing made wrought is noted, and every bite out of a thing noted on it.
-        for (n, tree) in &cut.trees {
-            let limbs: Vec<crate::plants::Limb> = forms[*n].limbs.iter().filter(|l| l.tree == *tree).copied().collect();
-            // (Once: whoever keeps the shapes is to drop it from them, and may not have yet.)
-            if self.things.iter().any(|t| t.limbs.first().map(|l| l.a) == limbs.first().map(|l| l.a)) {
-                continue;
-            }
-            self.next += 1;
-            self.things.push(Thing { id: self.next, limbs, clumps: forms[*n].clumps.iter().filter(|c| c.tree == *tree).copied().collect(), stone: None, cuts: Vec::new(), lies: None, blows: 0, limbed: false, bucked: 0 });
-        }
-        for (n, stone) in &cut.stones {
-            if self.things.iter().any(|t| t.stone.as_ref().map(|s| s.middle) == forms[*n].stones.get(*stone).map(|s| s.middle)) {
-                continue;
-            }
-            self.next += 1;
-            self.things.push(Thing { id: self.next, limbs: Vec::new(), clumps: Vec::new(), stone: forms[*n].stones.get(*stone).cloned(), cuts: Vec::new(), lies: None, blows: 0, limbed: false, bucked: 0 });
-        }
+        self.note(&cut, forms);
         for thing in self.things.iter_mut().filter(|t| t.lies.is_none() && t.reached(middle, radius)) {
             thing.cuts.push((middle, radius, stuff));
         }
@@ -625,10 +758,12 @@ impl Loose {
     ///    from, and the tree stands until it has taken as many as its girth asks ([`BLOWS`]):
     ///    the last cuts it through, and it falls.
     /// 2. Fallen, it is still a tree: a blow knocks off its boughs and leaf for some way
-    ///    either side ([`LIMBS`]), which are noted in `shed` for whoever shows them.
-    /// 3. Bare, a blow breaks its trunk through at the nearest of the places it breaks,
-    ///    one to each [`LOG`] of its length.
-    /// 4. In logs, nothing more is done to it.
+    ///    either side ([`LIMBS`]), which are noted in `shed` for whoever shows them, and a
+    ///    second knocks off whatever the first left.
+    /// 3. Bare, it is timber ([`Loose::timber`]): a blow breaks what it strikes through at
+    ///    the nearest of the places it breaks, one to each [`LOG`] of its length.
+    /// 4. And a blow at a log splits it into hunks ([`HUNK`]): pieces of wood all of one
+    ///    size, to be carried and built with.
     ///
     /// Says what changed as a cut does; a tree it made cells of is in `trees`.
     pub fn chop(&mut self, world: &mut World, at: Vec3, push: Vec3, forms: &[&Form]) -> Cut {
@@ -643,20 +778,17 @@ impl Loose {
         // beside a great tree was nearer the blow than the tree's own trunk, took every
         // blow, and the tree stood. Something with three metres of height to it.)
         let tree = |t: &Thing| t.lies.is_some() || t.limbs.iter().map(|l| l.a.y.max(l.b.y)).fold(f32::MIN, f32::max) - t.limbs.iter().map(|l| l.a.y.min(l.b.y)).fold(f32::MAX, f32::min) >= 3.0;
-        let near = |things: &[Thing]| things.iter().enumerate().filter(|(_, t)| !t.limbs.is_empty() && tree(t)).map(|(n, t)| (reached(t), n)).filter(|(d, _)| *d < 0.7).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, n)| n);
+        let near = |things: &[Thing]| things.iter().enumerate().filter(|(_, t)| !t.limbs.is_empty() && tree(t) && !(t.lies.is_some() && t.limbed)).map(|(n, t)| (reached(t), n)).filter(|(d, _)| *d < 0.7).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, n)| n);
         let mut cut = Cut::default();
         let mut which = near(&self.things);
+        // (No tree that stands or lies in its boughs: then it is at timber, if any is there.)
+        if which.is_none() && let Some(cut) = self.timber(world, at, push) {
+            return cut;
+        }
         if which.is_none() {
             let known: Vec<Vec3> = self.things.iter().filter_map(|t| t.limbs.first().map(|l| l.a)).collect();
             cut = work(world, at, 0.5, forms, Some(Stuff::Wood), &known);
-            for (n, tree) in &cut.trees {
-                let limbs: Vec<crate::plants::Limb> = forms[*n].limbs.iter().filter(|l| l.tree == *tree).copied().collect();
-                if self.things.iter().any(|t| t.limbs.first().map(|l| l.a) == limbs.first().map(|l| l.a)) {
-                    continue;
-                }
-                self.next += 1;
-                self.things.push(Thing { id: self.next, limbs, clumps: forms[*n].clumps.iter().filter(|c| c.tree == *tree).copied().collect(), stone: None, cuts: Vec::new(), lies: None, blows: 0, limbed: false, bucked: 0 });
-            }
+            self.note(&cut, forms);
             which = near(&self.things);
         }
         let Some(n) = which else { return cut };
@@ -679,6 +811,7 @@ impl Loose {
                 }
                 let blows = thing.blows + 1;
                 self.things[n].blows = blows;
+                trace(format_args!("chop: standing, blow {blows} of {needs}"));
                 let into = push.with_y(0.0).try_normalize().unwrap_or(Vec3::X);
                 if blows < needs {
                     // The notch, a blow deeper: a wedge on the side the blows come from.
@@ -744,7 +877,7 @@ impl Loose {
                 }
                 let (bl, bh) = ((from / CELL).floor().as_ivec3(), (to / CELL).floor().as_ivec3());
                 let (lo, hi);
-                if !thing.limbed {
+                {
                     // Its boughs and leaf, for a way either side of the blow: whatever of
                     // this tree is not its trunk or a heavy limb. And whether any is left.
                     let mut left = 0usize;
@@ -766,7 +899,7 @@ impl Loose {
                                 if !its {
                                     continue;
                                 }
-                                if here.distance(at) < LIMBS {
+                                if thing.lopped || here.distance(at) < LIMBS {
                                     clear(world, cell, &mut cut);
                                     gone += b.wood() as u32;
                                     if (x + y * 3 + z * 7).rem_euclid(9) == 0 {
@@ -778,39 +911,16 @@ impl Loose {
                             }
                         }
                     }
+                    // (Two blows at the most: "chop it maybe once or twice to get rid of
+                    // the bark kind of thing", the developer, 2026-11-13. By reach alone a
+                    // willow, whose crown is wider than any blow along its trunk reaches,
+                    // was never bare, whatever was done to it.)
+                    self.things[n].lopped = true;
                     self.things[n].limbed = left == 0;
+                    trace(format_args!("chop: fallen, boughs and leaf knocked off, {left} cells of them left"));
                     (lo, hi) = (bl, bh);
-                } else {
-                    // Its trunk from where it was cut to the end of its last heavy limb, and
-                    // the places along that where it breaks.
-                    let Some(trunk) = thing.limbs.iter().find(|l| l.roots > 0).or(thing.limbs.first()).copied() else { return cut };
-                    let top = heavy.iter().map(|l| l.b).fold(trunk.b, |a, b| if b.y > a.y { b } else { a });
-                    let (a, b) = (now(trunk.a.lerp(trunk.b, 0.2)), now(top));
-                    let (long, along) = (a.distance(b), (b - a).normalize_or(Vec3::X));
-                    let places = ((long - LOG * 0.5) / LOG).floor().max(0.0) as u32;
-                    let nearest = (1..=places.min(31)).filter(|k| thing.bucked & (1 << k) == 0).map(|k| (k, a + along * k as f32 * LOG)).min_by(|x, y| x.1.distance(at).total_cmp(&y.1.distance(at)));
-                    let Some((k, place)) = nearest else { return cut };
-                    self.things[n].bucked |= 1 << k;
-                    let c = (place / CELL).floor().as_ivec3();
-                    let r = (1.2 / CELL) as i32;
-                    for y in -r..=r {
-                        for z in -r..=r {
-                            for x in -r..=r {
-                                let cell = c + IVec3::new(x, y, z);
-                                let off = (cell.as_vec3() + 0.5) * CELL - place;
-                                if off.dot(along).abs() < CELL * 0.75 && wood(world.get(cell)) && !world.get(cell).shaped() {
-                                    clear(world, cell, &mut cut);
-                                    gone += 1;
-                                    if (x + y + z).rem_euclid(4) == 0 {
-                                        self.shed.push(((cell.as_vec3() + 0.5) * CELL, Block::Timber));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    (lo, hi) = (c - r, c + r);
                 }
-                // (What a blow leaves on nothing comes down in its turn: a bough's end, a log.)
+                // (What a blow leaves on nothing comes down in its turn: a bough's end, its trunk.)
                 cut.changed.extend(self.loosen(world, lo - 1, hi + 1, push));
             }
         }
@@ -818,6 +928,190 @@ impl Loose {
         cut.taken[Stuff::Wood as usize] += gone * (SPLIT * SPLIT * SPLIT) as u32 / 2;
         self.cuts.push((at, cut.taken));
         cut
+    }
+
+    /// A blow of an axe at timber: wood that lies cut, whatever tree it was and wherever it
+    /// has come to rest since. The piece struck is all the cut wood joined to what the blow
+    /// landed on. Longer than a log and a half, it is broken through at the nearest of its
+    /// break points, one to each [`LOG`] from its end; a log, it is split into hunks, as
+    /// many as it has wood for, which lie where it lay. Nothing, if no cut wood is there.
+    ///
+    /// (By what is there, not by where a tree's logs ought to be: asked of the tree, a log
+    /// that had dropped a metre when its trunk was broken was not found by any blow, and
+    /// half the wood of a thin tree could not be split. `cargo world hunks`, 2026-11-13.)
+    fn timber(&mut self, world: &mut World, at: Vec3, push: Vec3) -> Option<Cut> {
+        let holds = |world: &World, cell: IVec3| match world.get(cell) {
+            Block::Broken => world.bits_at(cell).is_some_and(|b| b.iter().any(|b| b.wood() && !b.shaped())),
+            b => b.wood() && !b.shaped(),
+        };
+        // (Not what stands: a tree cut into and not yet down is for the blows that fell it.)
+        let stands = |p: Vec3| self.things.iter().any(|t| t.lies.is_none() && t.limbs.iter().any(|l| from_line(p, l.a, l.b) < l.ra.max(l.rb) * if l.roots > 0 { 2.6 } else { 1.0 } + CELL * 2.0));
+        let c = (at / CELL).floor().as_ivec3();
+        let first = (-2..=2).flat_map(|y| (-2..=2).flat_map(move |z| (-2..=2).map(move |x| c + IVec3::new(x, y, z)))).filter(|cell| holds(world, *cell)).map(|cell| (((cell.as_vec3() + 0.5) * CELL).distance(at), cell)).filter(|(d, _)| *d < 0.45).min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| (a.1.y, a.1.z, a.1.x).cmp(&(b.1.y, b.1.z, b.1.x))))?.1;
+        if stands((first.as_vec3() + 0.5) * CELL) {
+            return None;
+        }
+        // The piece: every cell of cut wood joined to that one, by faces, edges or corners.
+        let (mut body, mut queue, mut seen) = (vec![first], VecDeque::from([first]), HashSet::from([first]));
+        while let Some(cell) = queue.pop_front() {
+            for side in round() {
+                let next = cell + side;
+                if body.len() < 6_000 && holds(world, next) && seen.insert(next) {
+                    body.push(next);
+                    queue.push_back(next);
+                }
+            }
+        }
+        // Its length: from the cell furthest from the blow to the one furthest from that.
+        let middle = |c: &IVec3| (c.as_vec3() + 0.5) * CELL;
+        let furthest = |from: Vec3| body.iter().map(middle).max_by(|a, b| a.distance(from).total_cmp(&b.distance(from)).then_with(|| (a.x, a.y, a.z).partial_cmp(&(b.x, b.y, b.z)).unwrap_or(std::cmp::Ordering::Equal))).unwrap_or(from);
+        let a = furthest(at);
+        let b = furthest(a);
+        let (long, along) = (a.distance(b), (b - a).normalize_or(Vec3::X));
+        let mut cut = Cut::default();
+        let (mut lo, mut hi) = (IVec3::MAX, IVec3::MIN);
+        let mut wood = 0u32;
+        // (Its own wood out of a cell: all of a whole one, the bits of a broken one.)
+        let mut empty = |world: &mut World, cell: IVec3, cut: &mut Cut| {
+            if world.get(cell) == Block::Broken {
+                for i in 0..SPLIT * SPLIT * SPLIT {
+                    let bit = cell * SPLIT + IVec3::new(i % SPLIT, i / SPLIT % SPLIT, i / (SPLIT * SPLIT));
+                    if world.bit(bit).wood() {
+                        world.set_bit(bit, Block::Air);
+                        wood += 1;
+                    }
+                }
+            } else {
+                world.set(cell, Block::Air);
+                wood += (SPLIT * SPLIT * SPLIT) as u32;
+            }
+            cut.changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
+            (lo, hi) = (lo.min(cell), hi.max(cell));
+        };
+        let places = ((long - LOG * 0.5) / LOG).floor().max(0.0) as u32;
+        if long > LOG * 1.5 && places > 0 {
+            // Broken through, a cell's width of it, at the place nearest the blow.
+            let k = ((at - a).dot(along) / LOG).round().clamp(1.0, places as f32);
+            for cell in &body {
+                if ((middle(cell) - a).dot(along) - k * LOG).abs() < CELL * 0.75 {
+                    empty(world, *cell, &mut cut);
+                    if (cell.x + cell.y + cell.z).rem_euclid(4) == 0 {
+                        self.shed.push((middle(cell), Block::Timber));
+                    }
+                }
+            }
+            trace(format_args!("chop: timber {long:.1} m long, broken at place {k} of {places}"));
+        } else {
+            // A log: all of it into hunks, nearest its middle line first.
+            let mut places: Vec<(f32, IVec3)> = body.iter().flat_map(|c| [0, -1].map(|down| IVec3::new(c.x.div_euclid(HUNK) * HUNK, c.y + down, c.z.div_euclid(HUNK) * HUNK))).collect::<HashSet<_>>().into_iter().map(|corner| (from_line((corner.as_vec3() + HUNK as f32 * 0.5) * CELL, a, b), corner)).collect();
+            places.sort_by(|x, y| x.0.total_cmp(&y.0).then_with(|| (x.1.y, x.1.z, x.1.x).cmp(&(y.1.y, y.1.z, y.1.x))));
+            for cell in &body {
+                empty(world, *cell, &mut cut);
+            }
+            // (To the nearest hunk, and none from a scrap of under half of one: with one
+            // at the least from anything, a tree's twigs' ends made a fifth more wood than
+            // it had.)
+            let many = (wood as f32 / (SPLIT * SPLIT * SPLIT * HUNK * HUNK * HUNK) as f32).round() as usize;
+            let put = strew(world, places, many, Block::Billet, &mut cut.changed);
+            for k in 0..6 {
+                self.shed.push((a.lerp(b, (k as f32 + 0.5) / 6.0) + Vec3::Y * 0.3, Block::Timber));
+            }
+            trace(format_args!("chop: a log {long:.1} m long split into {put} hunks of {many}"));
+        }
+        if lo.x <= hi.x {
+            cut.changed.extend(self.loosen(world, lo - HUNK - 1, hi + HUNK + 1, push));
+        }
+        cut.taken[Stuff::Wood as usize] = wood;
+        self.cuts.push((at, cut.taken));
+        Some(cut)
+    }
+
+    /// A blow of a pick on a boulder. As an axe to a tree, so a pick to a boulder: it is
+    /// chipped, a little off it at each blow, until it has taken as many as its size asks
+    /// ([`CHIPS`]), and at the last it breaks into hunks, as many as it has stone for, lying
+    /// where it lay. Nothing, if what is struck is no boulder (the land's own stone is dug).
+    pub fn chip(&mut self, world: &mut World, at: Vec3, push: Vec3, forms: &[&Form]) -> Option<Cut> {
+        // (By where the boulder lies, not by what is at the blow: a blow into the hollow an
+        // earlier one left is at air, and was taken for a blow at no boulder.)
+        // Every boulder the blow reaches is cells from now and noted, and the blow is at the
+        // one it is deepest in that is not yet broken. (The first found that it reached: of
+        // two that lay against each other the one already noted took every blow at the
+        // other, which never broke: seed 5, 2026-11-13.)
+        let cut = work(world, at, 0.3, forms, Some(Stuff::Stone), &[]);
+        self.note(&cut, forms);
+        let deep = |t: &Thing| t.stone.as_ref().filter(|s| t.blows < CHIPS(s.radii.max_element())).map(|s| ((at - s.middle) / (s.radii + 0.35)).length_squared()).filter(|d| *d < 1.0);
+        let n = self.things.iter().enumerate().filter_map(|(n, t)| deep(t).map(|d| (d, n))).min_by(|a, b| a.0.total_cmp(&b.0))?.1;
+        let mut cut = cut;
+        let Some(stone) = self.things[n].stone.clone() else { return Some(cut) };
+        let needs = CHIPS(stone.radii.max_element());
+        self.journal.push((self.steps, Edit::Chip { at, push }));
+        self.things[n].blows += 1;
+        let (lo, hi);
+        if self.things[n].blows < needs {
+            cut.taken = carve(world, at, 0.22, Some(Stuff::Stone));
+            (lo, hi) = (((at - 0.5) / CELL).floor().as_ivec3(), ((at + 0.5) / CELL).floor().as_ivec3());
+            for k in 0..3 {
+                self.shed.push((at + Vec3::new(k as f32 * 0.1 - 0.1, 0.1, 0.0), Block::Shard));
+            }
+        } else {
+            let reach = stone.radii.max_element() + 0.3;
+            (lo, hi) = (((stone.middle - reach) / CELL).floor().as_ivec3(), ((stone.middle + reach) / CELL).floor().as_ivec3());
+            let its = |here: Vec3| here.distance(stone.middle) < reach;
+            let held = emptied(world, lo, hi, |b| b == Block::Shard, its, &mut cut.changed);
+            let many = ((held as f32 / (SPLIT * SPLIT * SPLIT * HUNK * HUNK * HUNK) as f32).round() as usize).max(1);
+            // From the ground up and from its middle out: a heap where it lay.
+            let mut places = Vec::new();
+            for y in lo.y..=hi.y {
+                for z in (lo.z.div_euclid(HUNK) * HUNK..=hi.z).step_by(HUNK as usize) {
+                    for x in (lo.x.div_euclid(HUNK) * HUNK..=hi.x).step_by(HUNK as usize) {
+                        let corner = IVec3::new(x, y, z);
+                        let middle = (corner.as_vec3() + HUNK as f32 * 0.5) * CELL;
+                        if its(middle) {
+                            places.push((y as f32 * 8.0 + (middle - stone.middle).with_y(0.0).length(), corner));
+                        }
+                    }
+                }
+            }
+            let put = if held > 0 { strew(world, places, many, Block::Cobble, &mut cut.changed) } else { 0 };
+            trace(format_args!("chip: a boulder {:.1} m across broke at blow {needs} into {put} hunks of {many}", stone.radii.max_element() * 2.0));
+            for k in 0..8 {
+                let turn = k as f32 * 0.8;
+                self.shed.push((stone.middle + Vec3::new(turn.cos(), 0.4, turn.sin()) * stone.radii * 0.7, Block::Shard));
+            }
+            cut.taken[Stuff::Stone as usize] = held;
+        }
+        cut.changed.extend(self.loosen(world, lo - 1, hi + 1, push));
+        self.cuts.push((at, cut.taken));
+        Some(cut)
+    }
+
+    /// Takes up the hunk that is at a place, if one is: it is gone from the world, and what
+    /// lay on it comes down. Gives what it was of, and the chunks changed.
+    pub fn lift(&mut self, world: &mut World, at: Vec3) -> Option<(Block, HashSet<IVec3>)> {
+        let (corner, block) = hunk_at(world, (at / CELL).floor().as_ivec3())?;
+        self.journal.push((self.steps, Edit::Lift { at }));
+        let mut changed = HashSet::new();
+        for d in hunk() {
+            world.set(corner + d, Block::Air);
+            changed.insert((corner + d).div_euclid(IVec3::splat(cube_voxel::CHUNK)));
+        }
+        changed.extend(self.loosen(world, corner - 1, corner + HUNK, Vec3::X));
+        Some((block, changed))
+    }
+
+    /// Puts a hunk down at a place: on the square it is over, at that height or the least
+    /// above it that has room (as high as three more hunks: what a person lifts to), and
+    /// from there it comes down onto what is under it. Nothing, if there is no room; else
+    /// the corner it was put at, and the chunks changed.
+    pub fn lay(&mut self, world: &mut World, at: Vec3, block: Block) -> Option<(IVec3, HashSet<IVec3>)> {
+        let cell = (at / CELL).floor().as_ivec3();
+        let (x, z) = (cell.x.div_euclid(HUNK) * HUNK, cell.z.div_euclid(HUNK) * HUNK);
+        let corner = (0..=3 * HUNK).map(|up| IVec3::new(x, cell.y + up, z)).find(|c| hunk().all(|d| room(world.get(*c + d))))?;
+        self.journal.push((self.steps, Edit::Lay { at, block }));
+        let mut changed = HashSet::new();
+        strew(world, vec![(0.0, corner)], 1, block, &mut changed);
+        changed.extend(self.loosen(world, corner - 1, corner + HUNK, Vec3::X));
+        Some((corner, changed))
     }
 
     /// (Earth does not stay where it is let go: it falls to what is under it and runs down
@@ -895,6 +1189,30 @@ impl Loose {
                         for side in round().filter(|d| !earth || d.abs().element_sum() == 1) {
                             let next = cell + side;
                             if !has(world, next, false) {
+                                // (What lies on a boulder nobody has cut lies on something:
+                                // a boulder as it grew is no body to look through, and a
+                                // hunk that came down on one was let go again the moment it
+                                // landed, for as long as anyone waited. Seed 5, 2026-11-13.)
+                                // (Not so a tree nobody has cut: a felled one would hang on
+                                // its neighbour's boughs.)
+                                // (A hunk does lie on one's foot: it is no part of any tree.)
+                                // (Its outside is cells part filled: by what is in them.)
+                                let under = |of: &dyn Fn(Block) -> bool| match world.get(next) {
+                                    Block::Broken => world.bits_at(next).is_some_and(|bits| bits.iter().any(|b| of(*b))),
+                                    b => of(b),
+                                };
+                                if side == IVec3::NEG_Y && (under(&|b| b == Block::Rock) || world.get(cell).hunk() && under(&|b| b.wood())) {
+                                    held = true;
+                                    break 'through;
+                                }
+                                continue;
+                            }
+                            // A hunk is a body of its own, held by what is under it and by
+                            // nothing beside it: joined as cells are, one put against
+                            // another that lay on the ground hung in the air (four of a
+                            // tree's twelve did, `cargo world hunks`, 2026-11-13).
+                            let (this, that) = (world.get(cell), world.get(next));
+                            if (this.hunk() || that.hunk()) && side != IVec3::NEG_Y && !(this == that && hunk_at(world, cell).map(|h| h.0) == hunk_at(world, next).map(|h| h.0)) {
                                 continue;
                             }
                             if rivals && !earth && !world.get(next).ground() {
@@ -921,7 +1239,19 @@ impl Loose {
                         }
                     }
                     if !held {
-                        changed.extend(self.take(world, own, push));
+                        // Each hunk of it falls as itself, apart from the rest: a log's end
+                        // that lay on one came down with it as one piece, which landed as
+                        // cells do, and the hunk's cells that met the ground were put
+                        // wherever there was room (seed 7, 2026-11-13).
+                        let mut apart: HashMap<Option<IVec3>, Vec<IVec3>> = HashMap::new();
+                        for cell in own {
+                            apart.entry(hunk_at(world, cell).map(|h| h.0)).or_default().push(cell);
+                        }
+                        let mut apart: Vec<(Option<IVec3>, Vec<IVec3>)> = apart.into_iter().collect();
+                        apart.sort_by_key(|(corner, _)| corner.map(|c| (c.y, c.z, c.x)));
+                        for (_, cells) in apart {
+                            changed.extend(self.take(world, cells, push));
+                        }
                     }
                 }
             }
@@ -933,7 +1263,10 @@ impl Loose {
     fn take(&mut self, world: &mut World, mut own: Vec<IVec3>, push: Vec3) -> HashSet<IVec3> {
         // Its leaves: what foliage is within a few cells of it, through foliage.
         let mut near: HashMap<IVec3, u8> = own.iter().map(|c| (*c, 0)).collect();
-        let mut queue: VecDeque<IVec3> = own.iter().copied().collect();
+        // (A hunk has none: one that came down beside leaf lying on the ground took it up,
+        // was no longer hunks and nothing else, and landed as cells do. Seed 7, 2026-11-13.)
+        let bare = own.iter().all(|c| world.get(*c).hunk());
+        let mut queue: VecDeque<IVec3> = if bare { VecDeque::new() } else { own.iter().copied().collect() };
         while let Some(cell) = queue.pop_front() {
             let far = near[&cell];
             if far >= LEAFY {
@@ -987,7 +1320,9 @@ impl Loose {
         let lean = (heart - middle).with_y(0.0) / (tall * 0.08).max(0.1);
         let way = (push.with_y(0.0).normalize_or_zero() + lean.clamp_length_max(2.5)).try_normalize().unwrap_or(Vec3::X);
         // (Slowly at first: it hangs on its stump a moment and then goes.)
-        let over = (tall > 2.0 && tall > wide * 2.5).then_some((way, 0.05, 0.16));
+        // (Hunks one on another are not a pole: they come straight down.)
+        let hunk = cells.values().all(|p| matches!(p, Part::Whole(b) if b.hunk()));
+        let over = (!hunk && tall > 2.0 && tall > wide * 2.5).then_some((way, 0.05, 0.16));
         // Where it is tried against the world: some hundreds of its cells, spread through it.
         // (Its wood and stone, not its leaves: a crown goes through another crown, and
         // into the ground a little, before the wood under it is stopped.)
@@ -996,7 +1331,7 @@ impl Loose {
         order.sort_by_key(|c| (c.y, c.z, c.x));
         let feel: Vec<Vec3> = order.iter().step_by(stride).map(|c| (c.as_vec3() + 0.5) * CELL).collect();
         // Stone and earth break; wood (and what is mostly wood) does not.
-        let brittle = of.iter().filter(|c| match &cells[*c] { Part::Whole(b) => !b.wood(), Part::Bits(b) => !b.iter().any(|b| b.wood()) }).count() * 2 > of.len();
+        let brittle = !hunk && of.iter().filter(|c| match &cells[*c] { Part::Whole(b) => !b.wood(), Part::Bits(b) => !b.iter().any(|b| b.wood()) }).count() * 2 > of.len();
         self.next += 1;
         self.begun.push((pivot, cells.len(), over.is_some()));
         // (A tree gone over is the thing whose trunk stood here.)
@@ -1017,7 +1352,7 @@ impl Loose {
             }
             None => feel,
         };
-        self.pieces.push(Piece { id: self.next, cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, spin: Vec3::ZERO, brittle, thing, base: Quat::IDENTITY, settling: false, spare: (pivot, tall * 0.3), tall, feel, age: 0.0, rolls: 0 });
+        self.pieces.push(Piece { id: self.next, cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, spin: Vec3::ZERO, brittle, hunk, thing, base: Quat::IDENTITY, settling: false, spare: (pivot, tall * 0.3), tall, feel, age: 0.0, rolls: 0 });
         changed
     }
 
@@ -1070,6 +1405,7 @@ impl Loose {
             self.next += 1;
             self.pieces.push(Piece {
                 id: self.next,
+                hunk: false,
                 cells,
                 // (Turning about its own middle, from where the whole had brought it.)
                 pivot: middle,
@@ -1146,10 +1482,17 @@ impl Loose {
             // through them, and where it lies across a standing trunk it is not put.)
             // (Nor by another tree that stands though it has been cut into, which is cells
             // and would bear: a birch felled beside one lay 14 m up in its crown.)
-            let mine = piece.thing;
+            let (mine, lone) = (piece.thing, piece.hunk);
             let stops = |at: Vec3| {
                 let b = world.bit((at / BIT).floor().as_ivec3());
-                bears(b) && !(b.wood() && standing.iter().any(|(id, limbs)| Some(*id) != mine && limbs.iter().any(|l| outside(at, l) < 0.3)))
+                // (A boulder as it grew stops what falls on it, as one cut into does: until
+                // it was cut a tree came down through it.)
+                // (And a hunk by any wood: it is no tree, to go through a tree, and one let go
+                // over a standing trunk went into it and was lost.)
+                if lone && b.wood() {
+                    return true;
+                }
+                (bears(b) || b == Block::Rock) && !(b.wood() && standing.iter().any(|(id, limbs)| Some(*id) != mine && limbs.iter().any(|l| outside(at, l) < 0.3)))
             };
             let tried = |piece: &Piece, p: &Vec3| !going_over || p.distance(piece.spare.0) > piece.spare.1;
             let meets = |piece: &Piece| piece.feel.iter().filter(|p| tried(piece, p)).any(|p| stops(piece.now(*p)));
@@ -1189,7 +1532,10 @@ impl Loose {
             // falls again, three times at the most. (Left where they met, the lumps of one
             // broken stone stood on one another two metres high, 2026-11-13.) In a fixed
             // order of sides, so the same fall heaps the same way.
-            if piece.thing.is_none() && piece.over.is_none() && !piece.settling && piece.cells.len() < 80 && piece.rolls < 3 {
+            // (Not wood: a thin log rolled from where its tree lay, and the axe, which asks
+            // the tree where its logs are, could not find it to split. Seed 2, 2026-11-13.)
+            let wooden = || piece.cells.values().any(|p| matches!(p, Part::Whole(b) if b.wood()));
+            if piece.thing.is_none() && piece.over.is_none() && !piece.settling && !piece.hunk && piece.cells.len() < 80 && piece.rolls < 3 && !wooden() {
                 let (middle, reach) = (piece.now(piece.pivot), piece.tall.max(2.0 * CELL));
                 let below = |at: Vec3| world.raycast(at, Vec3::NEG_Y, 12.0);
                 let sides = [Vec3::X, Vec3::NEG_X, Vec3::Z, Vec3::NEG_Z].map(|d| middle + d * reach);
@@ -1229,6 +1575,20 @@ impl Loose {
             if piece.thing.is_none() && piece.over.is_none() && !piece.settling {
                 square(&mut piece);
             }
+            // (A hunk comes down whole or not at all: up, a cell at a time, until every cell
+            // of it has room. Put where it met the ground a quarter of a cell in, one lost
+            // two of its eight cells and was no hunk: seed 5, 2026-11-13.)
+            if piece.hunk {
+                for _ in 0..8 {
+                    let by = (piece.shift / CELL).round().as_ivec3();
+                    // (Leaf is room: it is crushed under what comes down on it, and a hunk
+                    // set down on top of it lay on nothing that bears and fell again.)
+                    if piece.cells.keys().all(|c| room(world.get(*c + by))) {
+                        break;
+                    }
+                    piece.shift.y += CELL;
+                }
+            }
             let (put, touched, lo, hi, lost) = land(world, &piece);
             changed.extend(touched);
             if let Some(thing) = self.things.iter_mut().find(|t| Some(t.id) == piece.thing) {
@@ -1260,7 +1620,9 @@ fn square(piece: &mut Piece) {
     let turn = Quat::from_mat3(&glam::Mat3::from_cols(x, y, x.cross(y))).normalize();
     // (Where the piece's own origin now is: that is what must be on a cell's corner.)
     let at = piece.pivot + piece.shift - turn * piece.pivot;
-    let to = Vec3::new((at.x / CELL).round(), (at.y / CELL - 0.25).ceil(), (at.z / CELL).round()) * CELL;
+    // (Hunks to the squares hunks lie on: [`hunk_at`].)
+    let wide = if piece.hunk { HUNK as f32 } else { 1.0 };
+    let to = Vec3::new((at.x / CELL / wide).round() * wide, (at.y / CELL - 0.25).ceil(), (at.z / CELL / wide).round() * wide) * CELL;
     (piece.turn, piece.shift) = (turn, piece.shift + (to - at));
 }
 
@@ -1291,6 +1653,22 @@ fn land(world: &mut World, piece: &Piece) -> (usize, HashSet<IVec3>, IVec3, IVec
                     Part::Whole(b) if (!there.solid() || (there.foliage() && !b.foliage())) && there != Block::Broken => {
                         world.set(cell, *b);
                         put += 1;
+                    }
+                    // (Into a cell that is part filled, what of it there is room for, to the
+                    // bit: the ground a felled trunk lies on is such cells, and a log cut
+                    // from it that dropped a hand's width found no room for two thirds of
+                    // itself, which was gone. Seed 2, 2026-11-13.)
+                    Part::Whole(b) if there == Block::Broken && !b.hunk() => {
+                        let mut any = false;
+                        for i in 0..SPLIT * SPLIT * SPLIT {
+                            let bit = cell * SPLIT + IVec3::new(i % SPLIT, i / (SPLIT * SPLIT), i / SPLIT % SPLIT);
+                            if !world.bit(bit).solid() {
+                                world.set_bit(bit, *b);
+                                any = true;
+                            }
+                        }
+                        put += any as usize;
+                        lost += (!any && bears(*b)) as usize;
                     }
                     // (What bears and found no room: wood into wood, stone into the ground.
                     // Leaf that comes down into leaf or onto the ground is only crushed.)
@@ -1753,17 +2131,79 @@ mod tests {
         }
         assert!(loose.things[0].limbed && count(&w, &|b| b.foliage()) == 0, "{} cells of leaf left", count(&w, &|b| b.foliage()));
         assert!(!loose.shed.is_empty() && count(&w, &|b| b.wood()) * 10 > trunk * 7, "its trunk went with its boughs: {} of {trunk}", count(&w, &|b| b.wood()));
-        // Bare: each blow breaks it at one of its places, and once at all of them no more.
-        let before = count(&w, &|b| b.wood());
-        for blow in 0..8 {
-            loose.chop(&mut w, now(Vec3::new(0.1, 2.0 + blow as f32, 0.1)), Vec3::NEG_Y, &[&form]);
+        // Bare, it is timber: a blow at what is longer than a log breaks it through, and a
+        // blow at a log splits it into hunks. Blows all along it, until it is all hunks.
+        let (after, mut breaks, mut splits) = (count(&w, &|b| b.wood()), 0, 0);
+        for blow in 0..24 {
+            let (wood, billets) = (count(&w, &|b| b.wood()), count(&w, &|b| b == Block::Billet));
+            loose.chop(&mut w, now(Vec3::new(0.1, 1.5 + (blow * 5 % 13) as f32 * 0.5, 0.1)), Vec3::NEG_Y, &[&form]);
             run(&mut loose, &mut w);
+            let split = count(&w, &|b| b == Block::Billet) > billets;
+            (breaks, splits) = (breaks + (!split && count(&w, &|b| b.wood()) < wood) as u32, splits + split as u32);
         }
-        let logs = loose.things[0].bucked.count_ones();
-        assert!((2..=4).contains(&logs), "broken at {logs} places");
-        let after = count(&w, &|b| b.wood());
-        assert!(after < before && after * 10 > before * 7, "{before} cells of wood, then {after}");
-        loose.chop(&mut w, now(Vec3::new(0.1, 4.0, 0.1)), Vec3::NEG_Y, &[&form]);
-        assert_eq!(count(&w, &|b| b.wood()), after, "a log was chopped further");
+        assert!(breaks >= 1 && splits >= 2, "broken through {breaks} times and split {splits}");
+        let (left, billets) = (count(&w, &|b| b.wood()), count(&w, &|b| b == Block::Billet));
+        // (All of it but its stump, which stands where it stood.)
+        let stump = (-4..=4).flat_map(|x| (-4..=4).flat_map(move |z| (0..8).map(move |y| IVec3::new(x, y, z)))).filter(|c| w.get(*c).wood()).count();
+        let (left, after) = (left - stump, after - stump);
+        assert!(left * 10 < after, "{left} cells of wood left in logs, of {after}");
+        // (As much wood in hunks as there was in logs, to the nearest hunk a log.)
+        assert!(billets % 8 == 0 && billets * 10 > after * 6 && billets * 10 < after * 14, "{billets} cells of hunks from {after} of logs");
+        // Every cell of them is a hunk that can be found, taken up, and put down elsewhere.
+        let cells = |w: &World| -> Vec<IVec3> { (-60..60).flat_map(|x| (-40..40).flat_map(move |z| (0..24).map(move |y| IVec3::new(x, y, z)))).filter(|c| w.get(*c) == Block::Billet).collect() };
+        let all = cells(&w);
+        assert!(all.iter().all(|c| hunk_at(&w, *c).is_some()), "a cell of a hunk that is no hunk");
+        assert!(all.iter().all(|c| c.y < 6), "a hunk left in the air at {:?}", all.iter().map(|c| c.y).max());
+        let at = (all[0].as_vec3() + 0.5) * CELL;
+        assert_eq!(loose.lift(&mut w, at).map(|l| l.0), Some(Block::Billet));
+        run(&mut loose, &mut w);
+        assert_eq!(cells(&w).len(), billets - 8);
+        assert!(loose.lay(&mut w, Vec3::new(-5.1, 2.0, -5.1), Block::Billet).is_some());
+        run(&mut loose, &mut w);
+        let laid = hunk_at(&w, (Vec3::new(-5.1, 0.1, -5.1) / CELL).floor().as_ivec3());
+        assert_eq!(laid.map(|l| l.0), Some(IVec3::new(-22, 0, -22)), "put down in the air, it came down onto the ground on its square");
+        // One put on it lies on it, and each is still its own hunk.
+        assert!(loose.lay(&mut w, Vec3::new(-5.1, 0.1, -5.1), Block::Billet).is_some());
+        run(&mut loose, &mut w);
+        assert_eq!(hunk_at(&w, IVec3::new(-21, 3, -21)).map(|l| l.0), Some(IVec3::new(-22, 2, -22)));
+        assert_eq!(cells(&w).len(), billets + 8);
+    }
+
+    #[test]
+    fn a_pick_chips_a_boulder_until_it_breaks_into_hunks_and_digs_the_lands_own_stone() {
+        let (mut w, mut form) = (floor(), Form::default());
+        let stone = crate::plants::Stone { middle: Vec3::new(0.1, 0.6, 0.1), radii: Vec3::new(1.0, 0.8, 0.9), turn: 0.0, faces: Vec::new(), kind: Block::Rock };
+        w.ellipsoid(stone.middle, stone.radii, Block::Rock, true);
+        form.stones.push(stone);
+        let count = |w: &World, of: &dyn Fn(Block) -> bool| (-40..40).flat_map(|x| (-40..40).flat_map(move |z| (0..24).map(move |y| IVec3::new(x, y, z)))).filter(|c| of(w.get(*c))).count();
+        // (Three cubic metres of it: 24 hunks' worth, less what is under the ground.)
+        let whole = count(&w, &|b| b.grown() == Block::Rock || b == Block::Broken);
+        let (mut loose, needs) = (Loose::default(), CHIPS(1.0));
+        assert_eq!(needs, 4);
+        for blow in 1..needs {
+            assert!(loose.chip(&mut w, Vec3::new(0.1, 1.3, 0.1), Vec3::NEG_Y, &[&form]).is_some());
+            run(&mut loose, &mut w);
+            let left = count(&w, &|b| b.grown() == Block::Rock || b == Block::Broken);
+            assert!(left * 10 > whole * 8 && count(&w, &|b| b == Block::Cobble) == 0, "after {blow} blows of {needs}, {left} cells of {whole}");
+        }
+        assert!(loose.chip(&mut w, Vec3::new(0.1, 1.1, 0.1), Vec3::NEG_Y, &[&form]).is_some());
+        run(&mut loose, &mut w);
+        let (left, cobbles) = (count(&w, &|b| b.grown() == Block::Rock), count(&w, &|b| b == Block::Cobble));
+        assert!(left == 0 && (20..=24).contains(&(cobbles / 8)) && cobbles % 8 == 0, "{left} cells of boulder left, {cobbles} of hunks");
+        // They lie on the ground and on one another, each one that can be taken up.
+        let all: Vec<IVec3> = (-40..40).flat_map(|x| (-40..40).flat_map(move |z| (0..24).map(move |y| IVec3::new(x, y, z)))).filter(|c| w.get(*c) == Block::Cobble).collect();
+        assert!(all.iter().all(|c| hunk_at(&w, *c).is_some()));
+        assert!(all.iter().all(|c| c.y == 0 || w.get(*c - IVec3::Y).solid()), "a hunk of stone in the air");
+        // A hunk is no boulder and is not cut: a pick does nothing to it, nor to the ground.
+        let top = (all.iter().max_by_key(|c| c.y).unwrap().as_vec3() + 0.5) * CELL;
+        assert!(loose.chip(&mut w, top, Vec3::NEG_Y, &[&form]).is_none());
+        loose.cut(&mut w, top, 0.3, Vec3::NEG_Y, &[&form], Some(Stuff::Stone));
+        assert_eq!(count(&w, &|b| b == Block::Cobble), cobbles);
+        // And the same blows on the same land give the same land.
+        let (mut again, mut form2) = (floor(), Form::default());
+        again.ellipsoid(Vec3::new(0.1, 0.6, 0.1), Vec3::new(1.0, 0.8, 0.9), Block::Rock, true);
+        form2.stones.push(form.stones[0].clone());
+        replay(&mut again, &[&form2], &loose.journal);
+        assert_eq!(count(&again, &|b| b == Block::Cobble), cobbles);
     }
 }

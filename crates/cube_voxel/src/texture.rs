@@ -69,6 +69,9 @@ impl Grain {
             Block::Grass | Block::Turf => Grain::Grass,
             Block::Dirt => Grain::Soil,
             Block::Stone | Block::Slate | Block::Chalk | Block::Broken | Block::Rock => if top { Grain::Rock } else { Grain::Strata },
+            // (Bark, pale: the cut end is a photograph of a round log on black, and is no face of a cube.)
+            Block::Billet => Grain::Bark,
+            Block::Cobble => Grain::Rock,
             Block::Sand => Grain::Sand,
             Block::Snow => Grain::Snow,
             Block::Gravel => Grain::Pebbles,

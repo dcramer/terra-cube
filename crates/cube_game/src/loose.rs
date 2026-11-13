@@ -13,7 +13,44 @@ pub struct LoosePlugin;
 
 impl Plugin for LoosePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (fall, told, chips).after(crate::motion::tick));
+        app.add_systems(Update, (fall, told, chips, carried).after(crate::motion::tick));
+    }
+}
+
+/// The hunk in somebody's hands, drawn before them as the cells it will be when it is put
+/// down: whose it is, and of what.
+#[derive(Component)]
+struct Carried(u32, Block);
+
+fn carried(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<crate::world::Look>>, bearers: Query<(&crate::motion::Mover, &Transform), Without<Carried>>, mut drawn: Query<(Entity, &Carried, &mut Transform)>, mut meshes: ResMut<Assets<Mesh>>, mut made: Local<std::collections::HashMap<Block, Handle<Mesh>>>) {
+    let (Some(live), Some(look)) = (live, look) else { return };
+    let side = cube_sim::loose::HUNK as f32 * cube_voxel::CELL;
+    // (At his middle, a little out from his chest, and turned as he is.)
+    let held = |at: &Transform, tall: f32| Transform { translation: at.translation + at.rotation * Vec3::new(-side / 2.0, tall * 0.5, 0.3), rotation: at.rotation, scale: Vec3::ONE };
+    let carries = |m: &crate::motion::Mover| live.agent(m).filter(|a| a.dead.is_none()).and_then(|a| a.carries).zip(live.kind(m).map(|k| k.height));
+    for (entity, carried, mut at) in &mut drawn {
+        match bearers.iter().find(|(m, _)| m.id == carried.0).and_then(|(m, t)| carries(m).filter(|c| c.0 == carried.1).map(|c| held(t, c.1))) {
+            Some(to) => *at = to,
+            None => commands.entity(entity).despawn(),
+        }
+    }
+    for (m, at) in &bearers {
+        let Some((block, tall)) = carries(m) else { continue };
+        if drawn.iter().any(|(_, c, _)| c.0 == m.id) {
+            continue;
+        }
+        let mesh = made.entry(block).or_insert_with(|| {
+            let cells = (0..cube_sim::loose::HUNK.pow(3)).map(|i| (IVec3::new(i % 2, i / 2 % 2, i / 4), Part::Whole(block))).collect();
+            let data = shape(&cells);
+            meshes.add(Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
+                .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
+                .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
+                .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, data.colors)
+                .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs)
+                .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, data.tangents)
+                .with_inserted_indices(Indices::U32(data.indices)))
+        }).clone();
+        commands.spawn((Carried(m.id, block), Mesh3d(mesh), MeshMaterial3d(look.solid.clone()), held(at, tall)));
     }
 }
 

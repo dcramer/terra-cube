@@ -19,9 +19,8 @@ pub enum Item {
     /// which digs earth: a thing is cut by the tool that is for it, [`Item::cuts`].)
     Axe,
     Pick,
-    /// What was cut, carried: timber, stone and earth.
-    Timber,
-    Stone,
+    /// Earth that was dug, carried. (Wood and stone are not carried in a pack: they are
+    /// hunks, taken up in the hands one at a time: `loose::HUNK`, `Agent::carries`.)
     Earth,
 }
 
@@ -44,18 +43,15 @@ impl Stuff {
             _ => None,
         }
     }
-    /// What cutting it gives.
-    pub fn yields(self) -> Item {
-        match self {
-            Stuff::Earth => Item::Earth,
-            Stuff::Wood => Item::Timber,
-            Stuff::Stone => Item::Stone,
-        }
+    /// What cutting it puts in the pack: earth. Wood and stone are left lying as what they
+    /// were cut into.
+    pub fn yields(self) -> Option<Item> {
+        (self == Stuff::Earth).then_some(Item::Earth)
     }
 }
 
 impl Item {
-    pub const ALL: [Item; 12] = [Item::Torch, Item::Sword, Item::Shovel, Item::Berries, Item::Meat, Item::Bow, Item::Jerkin, Item::Axe, Item::Pick, Item::Timber, Item::Stone, Item::Earth];
+    pub const ALL: [Item; 10] = [Item::Torch, Item::Sword, Item::Shovel, Item::Berries, Item::Meat, Item::Bow, Item::Jerkin, Item::Axe, Item::Pick, Item::Earth];
 
     /// What it cuts, and how big a bite it takes of it, metres across: a spadeful of earth,
     /// a chip of wood, a lump of stone. Nothing else cuts anything.
@@ -79,8 +75,6 @@ impl Item {
             Item::Jerkin => "Leather jerkin",
             Item::Axe => "Axe",
             Item::Pick => "Pick",
-            Item::Timber => "Timber",
-            Item::Stone => "Stone",
             Item::Earth => "Earth",
         }
     }
@@ -94,7 +88,7 @@ impl Item {
         match self {
             Item::Berries => 20,
             Item::Meat => 10,
-            Item::Timber | Item::Stone | Item::Earth => 99,
+            Item::Earth => 99,
             _ => 1,
         }
     }
@@ -107,17 +101,14 @@ impl Item {
             Item::Axe => Some(20.0),
             Item::Torch => Some(9.0),
             Item::Bow => Some(16.0),
-            Item::Berries | Item::Meat | Item::Jerkin | Item::Timber | Item::Stone | Item::Earth => None,
+            Item::Berries | Item::Meat | Item::Jerkin | Item::Earth => None,
         }
     }
 
-    /// What it is when it is put down in the world: earth, stone and timber go back as what
-    /// they were cut from.
+    /// What it is when it is put down in the world: earth goes back as what it was dug from.
     pub fn places(self) -> Option<cube_voxel::Block> {
         match self {
             Item::Earth => Some(cube_voxel::Block::Dirt),
-            Item::Stone => Some(cube_voxel::Block::Stone),
-            Item::Timber => Some(cube_voxel::Block::Timber),
             _ => None,
         }
     }
@@ -161,6 +152,9 @@ pub enum Used {
     /// What is in hand is to be put down where they look, as this (the caller's to do; when
     /// it is done, one is taken from the pack: `Sim::placed`).
     Place(cube_voxel::Block),
+    /// The hunk in their hands is to be put down where they look (the caller's to do; when
+    /// it is done, their hands are empty: `Sim::laid`).
+    Lay(cube_voxel::Block),
     Nothing,
 }
 

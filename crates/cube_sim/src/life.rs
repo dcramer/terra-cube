@@ -454,6 +454,9 @@ pub struct Agent {
     pub thirst: f32,
     /// What it carries, if it is a person (`items`).
     pub pack: Option<crate::items::Pack>,
+    /// The hunk of wood or stone in their hands (`loose::HUNK`): one, and while it is there
+    /// nothing in the pack is used.
+    pub carries: Option<cube_voxel::Block>,
     landing: f32,
     airborne: f32,
     jumped: bool,
@@ -616,18 +619,41 @@ impl Sim {
         }
     }
 
+    /// A hunk has been taken up from the world, if their hands were empty to take it (ask
+    /// first: [`Sim::free`]); and the one they carried has been put down.
+    pub fn lifted(&mut self, id: u32, block: cube_voxel::Block) {
+        if let Some(agent) = self.agents.get_mut(&id) {
+            agent.carries = Some(block);
+        }
+    }
+    pub fn laid(&mut self, id: u32) {
+        if let Some(agent) = self.agents.get_mut(&id) {
+            agent.carries = None;
+        }
+    }
+    /// Whether they could take a hunk up: alive, on their feet, and carrying none.
+    pub fn free(&self, id: u32) -> bool {
+        self.agents.get(&id).is_some_and(|a| a.dead.is_none() && a.carries.is_none() && a.act != Act::Swim)
+    }
+
     pub fn took(&mut self, id: u32, taken: [u32; 3]) {
         use crate::items::Stuff;
         let Some(pack) = self.agents.get_mut(&id).and_then(|a| a.pack.as_mut()) else { return };
         for (stuff, bits) in [Stuff::Earth, Stuff::Wood, Stuff::Stone].into_iter().zip(taken) {
             // (One carried for each cell's worth cut, and one for the odd half.)
-            pack.add(stuff.yields(), (bits + 62) / 125);
+            if let Some(item) = stuff.yields() {
+                pack.add(item, (bits + 62) / 125);
+            }
         }
     }
 
     pub fn use_held(&mut self, id: u32) -> crate::items::Used {
         use crate::items::Used;
         let Some(agent) = self.agents.get_mut(&id).filter(|a| a.dead.is_none()) else { return Used::Nothing };
+        // (With a hunk in their hands, that is what is used: it is put down.)
+        if let Some(block) = agent.carries {
+            return Used::Lay(block);
+        }
         let held = agent.pack.as_ref().and_then(|p| p.held());
         match held {
             Some(item) if item.cuts().is_some() => {
@@ -695,7 +721,7 @@ impl Sim {
         let mind = Mind::new(Vec2::new(pos.x, pos.z), &mut self.rng);
         self.agents.insert(
             id,
-            Agent { kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), guard: false, calm: 0.0, awake: true, born, hunger, thirst, pack: (k.temper == Temper::Person).then(crate::items::Pack::starting), stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
+            Agent { carries: None, kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), guard: false, calm: 0.0, awake: true, born, hunger, thirst, pack: (k.temper == Temper::Person).then(crate::items::Pack::starting), stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
         );
         id
     }
@@ -1601,6 +1627,12 @@ mod tests {
         assert_eq!(sim.use_held(person), Used::Place(cube_voxel::Block::Dirt));
         sim.placed(person);
         assert_eq!(sim.agents[&person].pack.as_ref().unwrap().count(Item::Earth), 1);
+        // With a hunk in their hands that is what is used, whatever the pack has to hand.
+        assert!(sim.free(person));
+        sim.lifted(person, cube_voxel::Block::Billet);
+        assert!(!sim.free(person));
+        assert_eq!(sim.use_held(person), Used::Lay(cube_voxel::Block::Billet));
+        sim.laid(person);
         hand(&mut sim, Item::Berries);
         assert_eq!(sim.use_held(person), Used::Nothing);
         sim.agents.get_mut(&person).unwrap().health = 40.0;

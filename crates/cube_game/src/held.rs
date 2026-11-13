@@ -120,7 +120,7 @@ fn hold(
         // (Nothing while it swims: both hands are for the water, a sword was waved over his
         // head at every stroke, and a torch does not burn there.)
         let agent = live.agent(m).filter(|a| a.dead.is_none() && a.act != cube_sim::life::Act::Swim)?;
-        agent.pack.as_ref().and_then(|p| p.held()).map(|i| i.name().to_owned()).or_else(|| live.kind(m).and_then(|k| k.holds.clone()))
+        agent.pack.as_ref().filter(|_| agent.carries.is_none()).and_then(|p| p.held()).map(|i| i.name().to_owned()).or_else(|| live.kind(m).and_then(|k| k.holds.clone()))
     };
     let first = |owner: Entity| firsts.get(owner).is_ok_and(|c| c.first_person);
     for (entity, Held(owner, item, _, before_eye, _)) in &held {
