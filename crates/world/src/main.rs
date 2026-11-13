@@ -527,11 +527,10 @@ fn quarry_command(args: &Args) -> ! {
     checks.bar("quarry seconds", took, took < 10.0, "it has come to rest within ten seconds");
     let (put, lost, fast) = (loose.landed.iter().map(|l| l.put).sum::<usize>(), loose.landed.iter().map(|l| l.lost).sum::<usize>(), loose.landed.iter().map(|l| l.speed).fold(0.0, f32::max));
     // (By its stone, not by cells put: what comes loose has earth and grass on it, and
-    // broken on landing it is counted lump by lump. Seven tenths, where 74 to 100 are seen on
-    // seven seeds: it was a half to two thirds until what is too small for a lump and what finds its place taken were kept;
-    // what still goes is the thin broken outside of a lump that lands turned.)
+    // broken on landing it is counted lump by lump. 98 to 100% on seven seeds; it was a half
+    // to two thirds before what breaks kept its stuff and lay square: engine.md.)
     let kept = stone_bits(&world) as f32 / before.max(1) as f32;
-    checks.bar("quarry stone kept", kept, kept > 0.7, "seven tenths of its stone is in the world again");
+    checks.bar("quarry stone kept", kept, kept > 0.95, "nineteen twentieths of its stone is in the world again");
     // And nothing of it is left on nothing.
     let (lo, hi) = (((stone.middle - stone.radii - 3.0) / CELL).floor().as_ivec3(), ((stone.middle + stone.radii + 3.0) / CELL).floor().as_ivec3());
     loose.loosen(&mut world, lo, hi, Vec3::X);

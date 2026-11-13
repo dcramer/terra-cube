@@ -943,6 +943,15 @@ impl Loose {
                 self.shatter(piece, speed, 1.0, |_| false);
                 continue;
             }
+            // A lump or a thing dropped straight comes to rest square to the world: turned to
+            // the nearest quarter turn each way and moved to the nearest whole cell (up, not
+            // down into what it lies on). The world is cells, and what lies turned between
+            // them is asked cell by cell what of it is there: a boulder's broken outside,
+            // a bit thick, was mostly lost that way, a quarter of its stone (2026-11-13).
+            // A tree lies as it fell: it is long, and squared it would jump.
+            if piece.thing.is_none() && piece.over.is_none() && !piece.settling {
+                square(&mut piece);
+            }
             let (put, touched, lo, hi, lost) = land(world, &piece);
             changed.extend(touched);
             if let Some(thing) = self.things.iter_mut().find(|t| Some(t.id) == piece.thing) {
@@ -956,6 +965,25 @@ impl Loose {
         self.pieces.extend(settling);
         changed
     }
+}
+
+/// Turns a piece to the nearest of the ways a cube can lie and moves it to whole cells.
+fn square(piece: &mut Piece) {
+    let m = glam::Mat3::from_quat(piece.turn);
+    let snap = |v: Vec3, not: Option<usize>| -> (usize, Vec3) {
+        let a = v.abs().to_array();
+        let i = (0..3).filter(|i| Some(*i) != not).max_by(|x, y| a[*x].total_cmp(&a[*y])).unwrap_or(0);
+        let mut out = [0.0; 3];
+        out[i] = v.to_array()[i].signum();
+        (i, Vec3::from(out))
+    };
+    let (ix, x) = snap(m.x_axis, None);
+    let (_, y) = snap(m.y_axis, Some(ix));
+    let turn = Quat::from_mat3(&glam::Mat3::from_cols(x, y, x.cross(y))).normalize();
+    // (Where the piece's own origin now is: that is what must be on a cell's corner.)
+    let at = piece.pivot + piece.shift - turn * piece.pivot;
+    let to = Vec3::new((at.x / CELL).round(), (at.y / CELL - 0.25).ceil(), (at.z / CELL).round()) * CELL;
+    (piece.turn, piece.shift) = (turn, piece.shift + (to - at));
 }
 
 /// Puts a piece back into the world where it now lies: every cell of the world it reaches is
