@@ -3,10 +3,12 @@
 # card, no window, and what it cost: how long the world took to be ready, what was made, and
 # every frame's time while he ran (the middle one, the one in a hundred, the worst). Fails if
 # he did not get anywhere (a rock in the way measures nothing), if the world was slow to be
-# ready, or if frames were slow. Compare numbers only with the same machine's.
+# ready, or if frames were slow. Compare numbers only with the same machine's. `--as-played`:
+# what is first drawn is made ready off the frame, as in the game, not on it as a picture
+# needs; without it one frame of every run was 50 to 70 ms for that alone.
 #   tools/pace.sh [--at X,Z] [--yaw R]   another place or heading
 log="${TMPDIR:-/tmp}/terra-pace.log"
-cargo sandbox --scene shots/pace.png --play --wild --trace --script '0.5 fwd run' --strip 10 --after 2 --every 3 --view three --yaw 2.6 "$@" > "$log" 2>&1
+cargo sandbox --scene shots/pace.png --play --wild --trace --as-played --script '0.5 fwd run' --strip 10 --after 2 --every 3 --view three --yaw 2.6 "$@" > "$log" 2>&1
 awk -v load_bar="${PACE_LOAD:-20}" -v p99_bar="${PACE_P99:-30}" -v worst_bar="${PACE_WORST:-100}" '
     /^play/ { split($0, a, "pos="); split(a[2], p, /[, ]/); if (!seen) { fx = p[1]; fz = p[3]; seen = 1 } lx = p[1]; lz = p[3] }
     /^load / { load = $2 + 0; made = $0 }

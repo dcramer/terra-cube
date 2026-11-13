@@ -110,6 +110,9 @@ pub struct Args {
     pub limbs: bool,
     /// A person is moved by clips alone, as before the two-legged walker (`stride`): to set the two side by side.
     pub clips_only: bool,
+    /// `--as-played`: a scene whose frames are timed makes what is drawn as the game does,
+    /// off the frame, and not at once as a picture needs (`make pace`).
+    pub as_played: bool,
     /// The trial body is a person's, on two legs (`cube_anim::biped`).
     pub person: bool,
     /// How hard the wind blows, 0 to 1, in place of the weather's.
@@ -286,6 +289,7 @@ fn parse_args() -> Args {
             "--torch" => args.torch = true,
             "--limbs" => args.limbs = true,
             "--clips-only" => args.clips_only = true,
+            "--as-played" => args.as_played = true,
             "--limbs-person" => (args.limbs, args.person) = (true, true),
             "--big" => args.big = true,
             "--wind" => args.wind = it.next().and_then(|v| v.parse().ok()),
@@ -367,7 +371,11 @@ fn main() {
     let mut app = App::new();
     // A shot draws to an image, with no window: it works on a machine with no screen (winit
     // still wants a display to exist, so a server runs Xvfb; docs/development.md).
-    app.add_plugins(DefaultPlugins.set(bevy::render::RenderPlugin { synchronous_pipeline_compilation: shot, ..default() }).set(if shot {
+    // (A picture must have everything in it, so what is first drawn is made ready on the
+    // frame it is first drawn in: 41 ms of a 54 ms frame, once, each time a new kind of thing
+    // came into view (the engine's own trace, 2026-11-13). The game as played makes it ready
+    // off the frame; `--as-played` has a timed scene do the same.)
+    app.add_plugins(DefaultPlugins.set(bevy::render::RenderPlugin { synchronous_pipeline_compilation: shot && !args.as_played, ..default() }).set(if shot {
         WindowPlugin { primary_window: None, exit_condition: bevy::window::ExitCondition::DontExit, ..default() }
     } else {
         WindowPlugin { primary_window: Some(Window { title: "terra-cube sandbox".into(), resolution: (1600, 900).into(), ..default() }), ..default() }

@@ -327,6 +327,8 @@ Built 2026-11-11: the island is a kilometre across (`terrain::RADIUS`), and only
 - **The tools judge what the game has**: `cargo world` makes the whole island's land and the cells within 160 m of the start, and lives the creatures near a person there.
 - **Not done**: saving (so dropped regions forget nothing only because edited ones are kept); the far land has no rocks or undergrowth and its trees are plain shapes; the land itself is still one island held as one array (64 MB), not made as it is come to: ten kilometres wants `Land` in pieces too.
 
+**The slowest frame of a timed run was the picture's, not the game's** (2026-11-13). Every `make pace` run had one frame of 50 to 70 ms at the same moment. It was not the day's turn, a region taken in, a first jump, or any system of ours (`SLOW_TRACE`, `crate::Slow`): the engine's own trace (`--features bevy/trace_chrome`, `TRACE_CHROME=file`, 2 GB for ten seconds) had 41 ms of it in `PipelineCache::process_pipeline_queue_system`, making ready what a new kind of thing is drawn with, on the frame it first came into view. A scene does that on the frame so no picture lacks anything; the game does it off the frame. `--as-played` has a scene do as the game does, and `make pace` uses it: worst frame 27 to 42 ms in three runs. Profile before a fourth guess.
+
 ## Seeing far
 
 Started 2026-11-10, when the island was drawn whole at full detail and hazed out from 80 m.
