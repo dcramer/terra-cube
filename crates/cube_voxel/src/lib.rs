@@ -95,6 +95,16 @@ pub enum Block {
     /// side, and is taken up and put down whole (`cube_sim::loose`).
     Billet,
     Cobble,
+    /// A tree that an axe has brought down, or is bringing down, and has not yet broken up
+    /// ([`Block::felled`]): its wood and leaf are cells like any other to whatever falls,
+    /// rests or walks, and are drawn by someone else as the tree they are, not as cells
+    /// ([`Block::whole`]). Wood and birch; the four leaves.
+    Log,
+    LogBirch,
+    Bough,
+    BoughPale,
+    BoughDeep,
+    BoughNeedles,
 }
 
 impl Block {
@@ -107,7 +117,7 @@ impl Block {
     }
     /// Leaves or needles: what a crown is made of.
     pub fn foliage(self) -> bool {
-        matches!(self, Block::Leaves | Block::LeavesPale | Block::LeavesDeep | Block::Needles | Block::Brush | Block::BrushPale | Block::BrushDeep | Block::BrushNeedles)
+        matches!(self, Block::Leaves | Block::LeavesPale | Block::LeavesDeep | Block::Needles | Block::Brush | Block::BrushPale | Block::BrushDeep | Block::BrushNeedles | Block::Bough | Block::BoughPale | Block::BoughDeep | Block::BoughNeedles)
     }
     /// A piece to carry and build with: no tool cuts it, and it does not break when it falls.
     pub fn hunk(self) -> bool {
@@ -115,16 +125,38 @@ impl Block {
     }
     /// A tree's wood, standing or cut.
     pub fn wood(self) -> bool {
-        matches!(self, Block::Wood | Block::Birch | Block::Timber | Block::TimberBirch)
+        matches!(self, Block::Wood | Block::Birch | Block::Timber | Block::TimberBirch | Block::Log | Block::LogBirch)
     }
     /// Drawn by someone else as part of a whole shape (a tree, a boulder: `cube_game::flora`)
     /// and not as cells: wood, a boulder's stone and leaf, as they grew.
     pub fn shaped(self) -> bool {
         matches!(self, Block::Wood | Block::Birch | Block::Rock | Block::Leaves | Block::LeavesPale | Block::LeavesDeep | Block::Needles)
     }
+    /// A felled tree's: cells in every way but that they are not drawn as cells.
+    pub fn whole(self) -> bool {
+        matches!(self, Block::Log | Block::LogBirch | Block::Bough | Block::BoughPale | Block::BoughDeep | Block::BoughNeedles)
+    }
+    /// The same stuff of a tree an axe is bringing down: cells, drawn still as the tree.
+    pub fn felled(self) -> Block {
+        match self {
+            Block::Wood => Block::Log,
+            Block::Birch => Block::LogBirch,
+            Block::Leaves => Block::Bough,
+            Block::LeavesPale => Block::BoughPale,
+            Block::LeavesDeep => Block::BoughDeep,
+            Block::Needles => Block::BoughNeedles,
+            other => other,
+        }
+    }
     /// The same stuff once it has been cut into or brought down: drawn as the cells it is.
     pub fn wrought(self) -> Block {
         match self {
+            Block::Log => Block::Timber,
+            Block::LogBirch => Block::TimberBirch,
+            Block::Bough => Block::Brush,
+            Block::BoughPale => Block::BrushPale,
+            Block::BoughDeep => Block::BrushDeep,
+            Block::BoughNeedles => Block::BrushNeedles,
             Block::Wood => Block::Timber,
             Block::Birch => Block::TimberBirch,
             Block::Rock => Block::Shard,
@@ -138,8 +170,12 @@ impl Block {
     /// What it was as it grew: a wrought block's colour and grain are that one's.
     pub fn grown(self) -> Block {
         match self {
-            Block::Timber => Block::Wood,
-            Block::TimberBirch => Block::Birch,
+            Block::Timber | Block::Log => Block::Wood,
+            Block::TimberBirch | Block::LogBirch => Block::Birch,
+            Block::Bough => Block::Leaves,
+            Block::BoughPale => Block::LeavesPale,
+            Block::BoughDeep => Block::LeavesDeep,
+            Block::BoughNeedles => Block::Needles,
             Block::Shard => Block::Rock,
             Block::Brush => Block::Leaves,
             Block::BrushPale => Block::LeavesPale,
@@ -191,6 +227,7 @@ impl Block {
             Block::Cobble => ([0.37, 0.37, 0.38], [0.32, 0.32, 0.335]),
             // (Never reached: `grown` has made each of these the block it was.)
             Block::Timber | Block::TimberBirch | Block::Shard | Block::Brush | Block::BrushPale | Block::BrushDeep | Block::BrushNeedles => ([0.0; 3], [0.0; 3]),
+            Block::Log | Block::LogBirch | Block::Bough | Block::BoughPale | Block::BoughDeep | Block::BoughNeedles => ([0.0; 3], [0.0; 3]),
         }
     }
 }

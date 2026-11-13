@@ -6,8 +6,8 @@
 # was laid), and the region dropped and made again from seed and journal must be the same.
 #   tools/build.sh [X,Z]     default: 47,28 (a wood)
 at=${1:-47,28}
-script=$(python3 -c "print('; '.join(['%.2f chop' % (0.6 + i * 0.25) for i in range(60)] + [s for i in range(4) for s in ('%.1f lift' % (16 + i * 1.5), '%.1f use' % (16.7 + i * 1.5))] + ['24 forget']))")
-out=$(LOOSE_TRACE=1 cargo sandbox --scene shots/build.png --play --at "$at" --hour 13 --after 28 --script "$script" 2>&1 | grep -E '^(loose: (lifted|laid|chop: a log)|(ok|FAIL) forget)')
+script=$(python3 -c "print('; '.join(['%.2f chop' % (0.6 + i * 0.2) for i in range(110)] + [s for i in range(4) for s in ('%.1f lift' % (23.5 + i * 1.5), '%.1f use' % (24.2 + i * 1.5))] + ['31 forget']))")
+out=$(LOOSE_TRACE=1 cargo sandbox --scene shots/build.png --play --at "$at" --hour 13 --after 35 --script "$script" 2>&1 | grep -E '^(loose: (lifted|laid|chop: a log)|(ok|FAIL) forget)')
 hunks=$(echo "$out" | grep -c '^loose: chop: a log'); lifted=$(echo "$out" | grep -c '^loose: lifted'); laid=$(echo "$out" | grep -c '^loose: laid'); forget=$(echo "$out" | grep -E '^(ok|FAIL) forget')
 # (On another, by what was under each as it was put: taken up from the nearest, the same
 # hunk went up and down four times, and four taken up and four put down passed.)

@@ -418,6 +418,24 @@ fn grow(mut commands: Commands, args: Res<crate::Args>, loading: Res<crate::load
 }
 
 /// The mesh of everything that grows in a region, at one level of detail.
+/// One tree alone, as it is drawn up close, about `origin`: for a tree that an axe has
+/// felled, which is drawn as the tree it was wherever it now is (`loose::felled`). Nothing
+/// of it bends in the wind: it is not standing.
+pub fn alone(form: &Form, land: &cube_sim::terrain::Land, origin: Vec3) -> Mesh {
+    let mut shape = shape_of(form, land, origin, 0, false);
+    for high in &mut shape.high {
+        high[0] = 0.0;
+    }
+    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, shape.positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, shape.normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, shape.colors)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, shape.uvs)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_1, shape.high)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, shape.tangents)
+        .with_inserted_indices(Indices::U32(shape.indices))
+}
+
 fn shape_of(form: &Form, land: &cube_sim::terrain::Land, origin: Vec3, level: u8, shapes: bool) -> Shape {
     let ground = |x: f32, z: f32| land.height((x / CELL).floor() as i32, (z / CELL).floor() as i32) as f32 * CELL;
     let mut shape = Shape::default();

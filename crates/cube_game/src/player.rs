@@ -601,20 +601,21 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
         let foot = if *felled { None } else { chopping.map(|c| c.0) }.or_else(|| if *felled { None } else { forms.0.values().flat_map(|f| f.limbs.iter()).filter(near).min_by(|a, b| a.a.distance(at.translation).total_cmp(&b.a.distance(at.translation))).map(|l| l.a + Vec3::Y * (cube_sim::plants::Limb::UNDER + 1.0)) });
         // (Nothing standing: then across what lies felled nearest, two fifths of the way
         // along it, to see a trunk cut into lengths.)
+        // (At cut wood that is there, as a person aims, a different piece of it each blow:
+        // aimed along where the tree had lain, the blows went on at the same two logs when
+        // the rest had dropped or been broken away, and a great willow came to three hunks.)
         let lying = || {
-            live.0.loose.things.iter().filter_map(|t| {
-                let (pivot, shift, turn) = t.lies?;
-                let trunk = t.limbs.iter().find(|l| l.roots > 0).or(t.limbs.first())?;
-                let now = |p: Vec3| pivot + shift + turn * (p - pivot);
-                let along = 0.2 + 0.18 * (chopping.map_or(0, |c| c.1) % 5) as f32;
-                Some((now(trunk.a.lerp(trunk.b, along)), (now(trunk.b) - now(trunk.a)).with_y(0.0).normalize_or(Vec3::X)))
-            }).min_by(|a, b| a.0.distance(at.translation).total_cmp(&b.0.distance(at.translation)))
+            let stump = chopping.map(|c| c.0);
+            let (c, r) = ((at.translation / cube_voxel::CELL).floor().as_ivec3(), (16.0 / cube_voxel::CELL) as i32);
+            let mut wood: Vec<IVec3> = (-16..=24).flat_map(|y| (-r..=r).flat_map(move |z| (-r..=r).map(move |x| c + IVec3::new(x, y, z)))).filter(|cell| { let b = terrain.0.get(*cell); b.wood() && !b.shaped() }).filter(|cell| stump.is_none_or(|s| ((cell.as_vec3() + 0.5) * cube_voxel::CELL).with_y(0.0).distance(s.with_y(0.0)) > 1.5)).collect();
+            wood.sort_by_key(|c| (c.x, c.z, c.y));
+            let pick = chopping.map_or(0, |c| c.1) as usize * 37;
+            (!wood.is_empty()).then(|| (wood[pick % wood.len()].as_vec3() + 0.5) * cube_voxel::CELL)
         };
-        if foot.is_none() && let Some((middle, along_it)) = lying() {
+        if foot.is_none() && let Some(middle) = lying() {
             let bites = chopping.map_or(0, |c| c.1);
             *chopping = Some((chopping.map_or(middle, |c| c.0), bites + 1));
-            let across = Vec3::Y.cross(along_it);
-            aimed = Some((middle + Vec3::Y * 0.2, across));
+            aimed = Some((middle, Vec3::NEG_Y));
             (dig, tool) = (true, Some((cube_sim::items::Stuff::Wood, 0.7)));
         }
         let Some(foot) = foot.filter(|_| aimed.is_none()).or(aimed.map(|a| a.0)) else { return };

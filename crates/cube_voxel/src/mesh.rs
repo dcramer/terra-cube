@@ -502,7 +502,7 @@ pub fn eased_under(world: &World, feet: Vec3) -> Option<f32> {
 pub static MODELLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn modelled(block: Block) -> bool {
-    block.shaped() && MODELLED.load(std::sync::atomic::Ordering::Relaxed)
+    (block.shaped() || block.whole()) && MODELLED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Whether a block, as it is drawn, hides what is behind it: one drawn elsewhere as a shape

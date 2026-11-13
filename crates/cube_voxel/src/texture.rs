@@ -90,6 +90,7 @@ impl Grain {
             Block::Air | Block::Water | Block::Tuft | Block::Flower | Block::Reed | Block::Fern | Block::Mushroom => Grain::Plain,
             // (Never reached: `grown` has made each of these the block it was.)
             Block::Timber | Block::TimberBirch | Block::Shard | Block::Brush | Block::BrushPale | Block::BrushDeep | Block::BrushNeedles => Grain::Plain,
+            Block::Log | Block::LogBirch | Block::Bough | Block::BoughPale | Block::BoughDeep | Block::BoughNeedles => Grain::Plain,
         }
     }
 

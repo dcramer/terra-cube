@@ -13,7 +13,90 @@ pub struct LoosePlugin;
 
 impl Plugin for LoosePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (fall, told, chips).after(crate::motion::tick)).add_systems(PostUpdate, carried.after(bevy::transform::TransformSystems::Propagate));
+        app.add_systems(Update, (fall, felled, notched, told, chips).after(crate::motion::tick)).add_systems(PostUpdate, carried.after(bevy::transform::TransformSystems::Propagate));
+    }
+}
+
+/// A felled tree, drawn as the tree it was: which ([`cube_sim::loose::Thing::id`]), and
+/// whether as drawn it had its boughs and leaf.
+#[derive(Component)]
+struct Felled(u32, bool);
+
+/// A tree an axe has cut through is drawn as the tree it grew as, where the simulation has
+/// it: going over, lying, and bare once its boughs are off, until it is broken into logs
+/// and is cells (`Thing::cells`). Its cells are in the world all the while and are not
+/// drawn (`Block::whole`). Its shape is made on another thread from its first blow, so it
+/// is ready when it goes.
+fn felled(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<crate::world::Look>>, terrain: Option<Res<crate::world::Terrain>>, mut drawn: Query<(Entity, &Felled, &mut Transform, &mut Visibility)>, mut meshes: ResMut<Assets<Mesh>>, mut making: Local<std::collections::HashMap<(u32, bool), bevy::tasks::Task<Mesh>>>) {
+    let (Some(live), Some(look), Some(terrain)) = (live, look, terrain) else { return };
+    let loose = &live.0.loose;
+    let trees = || loose.things.iter().filter(|t| !t.limbs.is_empty() && !t.cells);
+    // Where it is: where it grew, moved as it lies and then as the piece it is while it
+    // falls or settles moves it.
+    let place = |t: &cube_sim::loose::Thing| {
+        let origin = t.limbs[0].a;
+        let lain = |p: Vec3| t.lies.map_or(p, |(pivot, shift, turn)| pivot + shift + turn * (p - pivot));
+        let piece = loose.pieces.iter().find(|p| p.of() == Some(t.id));
+        let at = piece.map_or(lain(origin), |p| p.now(lain(origin)));
+        let turn = piece.map_or(Quat::IDENTITY, |p| p.turn) * t.lies.map_or(Quat::IDENTITY, |l| l.2);
+        Transform { translation: at, rotation: turn, scale: Vec3::ONE }
+    };
+    // (As it was drawn, until it is ready as it now is: bare, once its boughs are off.)
+    let have: std::collections::HashSet<(u32, bool)> = drawn.iter().map(|(_, f, ..)| (f.0, f.1)).collect();
+    for (entity, felled, mut at, mut seen) in &mut drawn {
+        match trees().find(|t| t.id == felled.0 && (t.limbed == felled.1 || !have.contains(&(t.id, t.limbed)))) {
+            Some(tree) => (*at, *seen) = (place(tree), if tree.felled { Visibility::Inherited } else { Visibility::Hidden }),
+            None => commands.entity(entity).despawn(),
+        }
+    }
+    making.retain(|key, _| trees().any(|t| (t.id, t.limbed) == *key));
+    for tree in trees() {
+        let key = (tree.id, tree.limbed);
+        if drawn.iter().any(|(_, f, ..)| (f.0, f.1) == key) {
+            continue;
+        }
+        match making.get_mut(&key).map(bevy::tasks::futures::check_ready) {
+            Some(Some(mesh)) => {
+                making.remove(&key);
+                commands.spawn((Felled(key.0, key.1), Mesh3d(meshes.add(mesh)), MeshMaterial3d(look.whole.clone()), place(tree), if tree.felled { Visibility::Inherited } else { Visibility::Hidden }));
+            }
+            Some(None) => {}
+            None => {
+                let (form, land, origin) = (tree.form(), terrain.1.clone(), tree.limbs[0].a);
+                making.insert(key, bevy::tasks::AsyncComputeTaskPool::get().spawn(async move { crate::flora::alone(&form, &land, origin) }));
+            }
+        }
+    }
+}
+
+/// The notch in a tree an axe is at: whose, and how deep it was when this was drawn.
+#[derive(Component)]
+struct Notch(u32, f32);
+
+/// A standing tree's notch, drawn on it: a wedge of pale cut wood let into its trunk on the
+/// side the blows come from, a blow deeper each time, with the dark of the cut over and
+/// under it. The tree itself is still drawn as the tree (`felled`), which shows no cut.
+fn notched(mut commands: Commands, live: Option<Res<Live>>, drawn: Query<(Entity, &Notch)>, mut meshes: ResMut<Assets<Mesh>>, mut paints: ResMut<Assets<StandardMaterial>>, mut paint: Local<Option<[Handle<StandardMaterial>; 2]>>) {
+    let Some(live) = live else { return };
+    let cut = |t: &cube_sim::loose::Thing| t.notch.filter(|_| !t.felled && !t.cells);
+    for (entity, notch) in &drawn {
+        if !live.0.loose.things.iter().any(|t| t.id == notch.0 && cut(t).is_some_and(|n| n.3 == notch.1)) {
+            commands.entity(entity).despawn();
+        }
+    }
+    let [pale, dark] = paint.get_or_insert_with(|| [Color::srgb(0.78, 0.62, 0.40), Color::srgb(0.10, 0.07, 0.05)].map(|c| paints.add(StandardMaterial { base_color: c, perceptual_roughness: 0.95, ..default() }))).clone();
+    for tree in &live.0.loose.things {
+        let Some((middle, into, thick, deep)) = cut(tree) else { continue };
+        if drawn.iter().any(|(_, n)| n.0 == tree.id && n.1 == deep) {
+            continue;
+        }
+        // (Standing a little proud of the bark, which swells and furrows: sunk flush it was hidden.)
+        let turn = Quat::from_rotation_arc(Vec3::Z, into);
+        let face = middle - into * (thick * 1.25 - deep / 2.0);
+        commands.spawn((Notch(tree.id, deep), Mesh3d(meshes.add(Cuboid::new(thick * 1.7, 0.22, deep + thick * 0.3))), MeshMaterial3d(pale.clone()), Transform { translation: face, rotation: turn, scale: Vec3::ONE }));
+        for up in [-1.0f32, 1.0] {
+            commands.spawn((Notch(tree.id, deep), Mesh3d(meshes.add(Cuboid::new(thick * 1.8, 0.05, deep + thick * 0.34))), MeshMaterial3d(dark.clone()), Transform { translation: face + Vec3::Y * up * 0.135, rotation: turn, scale: Vec3::ONE }));
+        }
     }
 }
 
