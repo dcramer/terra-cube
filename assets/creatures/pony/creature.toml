@@ -16,4 +16,6 @@ water = "near"
 cover = "open"
 hours = "day"
 group = 4
-groups = 1
+# Not in the world for now (the developer, 2026-11-12: it looks stupid in the game). Its
+# model is kept; put `groups` back to 1 when it has been made right.
+groups = 0
