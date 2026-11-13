@@ -339,7 +339,7 @@ fn spawn_sun(commands: &mut Commands, mediums: &mut Assets<ScatteringMedium>, im
     commands.insert_resource(GlobalAmbientLight::NONE);
     commands.spawn(Atmosphere::earth(mediums.add(ScatteringMedium::earth(256, 256))));
     let shadows = || CascadeShadowConfigBuilder { first_cascade_far_bound: 12.0, maximum_distance: 220.0, ..default() }.build();
-    commands.spawn((Sun, DirectionalLight { illuminance: lux::RAW_SUNLIGHT, shadow_maps_enabled: true, ..default() }, shadows(), SunDisk::EARTH, VolumetricLight, DirectionalLightTexture { image: images.add(clouds()), tiled: true }));
+    commands.spawn((Sun, DirectionalLight { illuminance: lux::RAW_SUNLIGHT, shadow_maps_enabled: true, ..default() }, shadows(), SunDisk { angular_size: SunDisk::EARTH.angular_size * 2.0, intensity: 1.0 }, VolumetricLight, DirectionalLightTexture { image: images.add(clouds()), tiled: true }));
     // Mist: thin lit air lying in the low ground and under the trees, so the sun comes
     // through the crowns in shafts and far woods stand in haze. Low, so the sky stays clear.
     commands.spawn((FogVolume { density_factor: 0.0011, scattering: 0.4, absorption: 0.0, light_tint: Color::srgb(1.0, 0.95, 0.86), ..default() }, Transform::from_xyz(0.0, SEA as f32 * CELL + 11.0, 0.0).with_scale(Vec3::new(800.0, 24.0, 800.0))));
@@ -353,19 +353,27 @@ const DAY_EV: f32 = 13.4;
 const NIGHT_EV: f32 = 1.3;
 const MOONLIGHT: f32 = 2.4;
 
-/// The camera's exposure for a sun this high (the sine of its height): what light there is
-/// falls away fast in the last few degrees over the horizon, and a noon sun is brighter than
-/// an afternoon one. Set by eye against pictures at each hour, as a photographer would.
-fn exposure_for(sun_up: f32) -> f32 {
-    let between = |lo: f32, hi: f32, from: f32, to: f32| from + (to - from) * ((sun_up - lo) / (hi - lo)).clamp(0.0, 1.0);
-    if sun_up < 0.05 {
-        between(-0.105, 0.05, NIGHT_EV, 10.5)
-    } else if sun_up < 0.35 {
-        between(0.05, 0.35, 10.5, 13.4)
-    } else {
-        between(0.35, 0.85, 13.4, 14.4)
+/// A number read off a table of (the sine of the sun's height, the number) pairs, straight
+/// between one pair and the next.
+fn by_height(table: &[(f32, f32)], sun_up: f32) -> f32 {
+    let next = table.partition_point(|p| p.0 < sun_up);
+    match (next.checked_sub(1).map(|i| table[i]), table.get(next)) {
+        (Some(lo), Some(hi)) => lo.1 + (hi.1 - lo.1) * (sun_up - lo.0) / (hi.0 - lo.0),
+        (lo, hi) => lo.or(hi.copied()).map_or(0.0, |p| p.1),
     }
 }
+
+/// The camera's exposure for a sun this high: what light there is falls away fast in the last
+/// few degrees over the horizon and goes on falling for an hour after, and a noon sun is
+/// brighter than an afternoon one. Set by eye against pictures at each hour (`make sky`), as
+/// a photographer would, and for the sky as much as the land: with the sun on the horizon
+/// the sky round it is far brighter than anything it lights, and an exposure set for the
+/// land alone leaves a sunset white.
+const EXPOSURE: [(f32, f32); 7] = [(-0.24, NIGHT_EV), (-0.16, 4.0), (-0.105, 7.0), (-0.03, 10.4), (0.05, 12.0), (0.35, 13.4), (0.85, 14.4)];
+/// How much the sky lights the land, against what the air alone would give: more while the
+/// sun is low or just under, so that the land is not a silhouette at the hours the sky is
+/// at its best.
+const SKYLIGHT: [(f32, f32); 5] = [(-0.26, 1.0), (-0.16, 3.5), (-0.105, 3.0), (0.05, 2.5), (0.3, 1.0)];
 
 /// The sky follows the hour: the sun goes round and under, the moon comes up opposite it, the
 /// camera opens as the light goes, and the haze takes the colour of the hour.
@@ -376,7 +384,7 @@ fn sky(
     mut sun: Query<(&mut Transform, &mut DirectionalLight), (With<Sun>, Without<Moon>)>,
     mut moon: Query<(&mut Transform, &mut DirectionalLight), (With<Moon>, Without<Sun>)>,
     terrain: Option<Res<Terrain>>,
-    mut cameras: Query<(&mut Exposure, &mut DistanceFog, &mut ColorGrading, &GlobalTransform)>,
+    mut cameras: Query<(&mut Exposure, &mut DistanceFog, &mut ColorGrading, &mut AtmosphereEnvironmentMapLight, &GlobalTransform)>,
     mut mists: Query<&mut FogVolume>,
 ) {
     let hour = live.map_or(cube_sim::sky::START, |l| l.0.when);
@@ -392,7 +400,12 @@ fn sky(
         // hour of sun is weak and the sky's flat fill takes the picture; the gold of evening
         // is wanted more than the truth.
         let low = 1.0 - ((to_sun.y - 0.05) / 0.4).clamp(0.0, 1.0);
-        light.illuminance = lux::RAW_SUNLIGHT * up * (1.0 + 0.8 * low * low);
+        // Nor is it put out here as it goes under: the engine's own shading takes its light
+        // off the land where the world is in the way, and the air over the horizon is still
+        // lit by it, which is twilight. Only well under (fifteen degrees: night proper) is
+        // it gone, so the last of the glow fades out and is not cut off.
+        let glow = ((to_sun.y + 0.26) / 0.1).clamp(0.0, 1.0);
+        light.illuminance = lux::RAW_SUNLIGHT * glow * (1.0 + 0.8 * low * low);
         // The air here reddens a low sun only a little; an evening wants amber.
         light.color = Color::srgb(1.0, 1.0 - 0.08 * low * low, 1.0 - 0.18 * low * low);
         // Mist thins as the sun drops, or the low light floods it and whites the picture out,
@@ -417,13 +430,26 @@ fn sky(
     // Low sun warms the haze; night takes nearly all of it away.
     let low = (1.0 - to_sun.y.abs() * 4.0).clamp(0.0, 1.0) * day;
     let lit = 0.015 + 0.985 * day;
-    for (mut exposure, mut fog, mut grade, eye) in &mut cameras {
-        exposure.ev100 = exposure_for(to_sun.y);
+    for (mut exposure, mut fog, mut grade, mut skylight, eye) in &mut cameras {
+        exposure.ev100 = by_height(&EXPOSURE, to_sun.y);
+        skylight.intensity = by_height(&SKYLIGHT, to_sun.y);
         // By moonlight there is little colour to see.
         // No more colour than the light gives: the grade only takes some away at night.
-        grade.global.post_saturation = 0.6 + 0.4 * day;
+        // (Moonlight, not twilight: the hour after sunset has the most colour of the day.
+        // Night proper begins with the sun fifteen degrees under.) And a little more than
+        // the tonemapper leaves while the sun is at the horizon, which is when it takes most.
+        let dusk = ((to_sun.y + 0.26) / 0.15).clamp(0.0, 1.0);
+        let golden = (1.0 - (to_sun.y / 0.25).abs()).max(0.0);
+        grade.global.post_saturation = 0.6 + 0.4 * dusk + 0.15 * golden;
+        // With the sun under, the air's own twilight is a dull brown-red all the way up; the
+        // hour is wanted blue over a red rim, as the eye has it. Cooler, until night proper.
+        let blue = ((-0.02 - to_sun.y) / 0.1).clamp(0.0, 1.0) * ((to_sun.y + 0.26) / 0.1).clamp(0.0, 1.0);
+        // (More so the further under: the air's twilight browns as it dims.)
+        let deep = 1.0 + 0.7 * ((-0.1 - to_sun.y) / 0.1).clamp(0.0, 1.0);
+        grade.global.temperature = -0.07 * blue * deep;
+        grade.global.tint = 0.05 * blue * deep;
         fog.color = Color::srgba((0.62 + 0.25 * low) * lit, (0.74 - 0.08 * low) * lit, (0.88 - 0.3 * low) * lit, 1.0);
-        fog.directional_light_color = Color::srgba(1.0 * lit, (0.86 - 0.25 * low) * lit, (0.62 - 0.35 * low) * lit, 0.6);
+        fog.directional_light_color = Color::srgba(1.0 * lit, (0.86 - 0.25 * low) * lit, (0.62 - 0.35 * low) * lit, 0.6 * ((to_sun.y + 0.02) / 0.08).clamp(0.0, 1.0));
         // Under the water: green-blue murk a few metres deep, dimmer the further down.
         let eye = eye.translation();
         let under = terrain.as_ref().is_some_and(|t| eye.y < SEA as f32 * CELL - 0.05 && t.ground(eye.x, eye.z) < eye.y);
