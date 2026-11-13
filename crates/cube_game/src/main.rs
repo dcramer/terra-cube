@@ -13,6 +13,7 @@
 mod air;
 mod audio;
 mod camera;
+mod clouds;
 mod creatures;
 mod far;
 mod feet;
@@ -356,14 +357,14 @@ fn main() {
         app.insert_resource(bevy::winit::WinitSettings { focused_mode: at_once, unfocused_mode: at_once });
     }
     if scene {
-        app.add_plugins((world::WorldPlugin, far::FarPlugin, flora::FloraPlugin, air::AirPlugin, audio::SoundPlugin, motion::MotionPlugin, player::PlayPlugin, shot::ScenePlugin));
+        app.add_plugins((world::WorldPlugin, far::FarPlugin, flora::FloraPlugin, air::AirPlugin, clouds::CloudsPlugin, audio::SoundPlugin, motion::MotionPlugin, player::PlayPlugin, shot::ScenePlugin));
         if app.world().resource::<Args>().hud.is_some() {
             app.add_plugins((bevy_egui::EguiPlugin::default(), hud::HudPlugin));
         }
     } else if shot {
         app.add_plugins(shot::ShotPlugin);
     } else {
-        app.add_plugins((world::WorldPlugin, far::FarPlugin, flora::FloraPlugin, air::AirPlugin, audio::SoundPlugin, camera::CameraPlugin, motion::MotionPlugin, player::PlayPlugin, ui::UiPlugin, hud::HudPlugin));
+        app.add_plugins((world::WorldPlugin, far::FarPlugin, flora::FloraPlugin, air::AirPlugin, clouds::CloudsPlugin, audio::SoundPlugin, camera::CameraPlugin, motion::MotionPlugin, player::PlayPlugin, ui::UiPlugin, hud::HudPlugin));
         // The window opens on a loading screen when someone is to play in it. Never a scene:
         // a picture does its own waiting (`shot`).
         if app.world().resource::<Args>().play {
