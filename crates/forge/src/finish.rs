@@ -466,6 +466,17 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
                 }
             }
         }
+        // What is built of boxes is never under the ground: any moment its lowest box would
+        // be, all of it is raised by that. (Rearing to strike, a beetle's, a spider's and a
+        // scorpion's abdomen went into the floor, and rolling over to die their legs and a
+        // scorpion's tail did. Seen only at full size, 2026-11-13.) Not its gaits, whose feet
+        // are on the ground by how they are made.
+        if crawler.is_some() && !matches!(name.as_str(), "walk" | "run" | "sprint" | "idle" | "eat") {
+            let under = crate::check::off_floor(&glb, &skeleton, &clip.frames);
+            for (pose, under) in clip.frames.iter_mut().zip(under) {
+                pose.root_t += skeleton.base.inverse().transform_vector3(Vec3::Y * under.max(0.0));
+            }
+        }
         // And what has died rests on the ground, however its death was made: not under it
         // and not over it. (A frog, a toad and a tortoise made to roll onto their backs ended
         // a hand's breadth up in the air.) By how far the last of it is off, eased in over
