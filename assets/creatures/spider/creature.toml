@@ -5,6 +5,9 @@ subject = "a giant spider with eight long jointed legs, a swollen black abdomen 
 height = 0.5
 
 # Made by forge of boxes, with its own legs and gait (`crawl`): no Tripo, no credits.
+# A spider makes no sound a person hears.
+without = ["voice"]
+
 [built]
 form = "crawler"
 length = 1.2

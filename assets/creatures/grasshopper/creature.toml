@@ -18,6 +18,8 @@ mark = [0.24, 0.46, 0.1]
 
 [life]
 temper = "timid"
+# (A cricket's chirp: no grasshopper was found recorded free of conditions.)
+voice = "cricket"
 habitat = "meadow"
 cover = "open"
 hours = "day"

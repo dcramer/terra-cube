@@ -55,3 +55,8 @@ c Cicada_orni.ogg insect --count 3 --swell 2.6 --high 2500 --from 4
 c Hummel_bee.ogg insect --count 2 --swell 2.2 --high 120 --low 3000 --from 7
 # Leaves in a gust: the loudest stretches of the wind in the trees, without its low end.
 c $W rustle --count 5 --swell 3.2 --high 700
+# The birds that walk: a mallard's quack, a heron's croak, and a pheasant's crow whole (a
+# second long: too short for `cut.py` to find its quiet).
+c romo-MALLROMO672017BierstadtLake.mp3 duck --count 2 --min 0.12 --max 1.5 --high 400 --gap 0.15
+c Great_Blue_Heron.ogg heron --count 2 --min 0.15 --max 2 --high 300 --gap 0.15
+[ -s "$src/Phasianus_colchicus.ogg" ] && ffmpeg -hide_banner -loglevel error -y -i "$src/Phasianus_colchicus.ogg" -af "highpass=f=300,afade=t=in:d=0.02,afade=t=out:st=0.9:d=0.09" -ac 1 -ar 44100 -c:a libvorbis -q:a 4 "$out/pheasant_1.ogg"

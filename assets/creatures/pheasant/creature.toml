@@ -19,6 +19,7 @@ mark = [0.6, 0.08, 0.06]
 
 [life]
 temper = "timid"
+voice = "pheasant"
 # Goes up from what frightens it and glides down after (`Sim::step`).
 flies = true
 habitat = "meadow"

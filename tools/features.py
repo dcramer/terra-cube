@@ -16,7 +16,7 @@ missing, rows, unseen, total = [], [], 0, 0
 for spec in sorted(creatures.glob("*/creature.toml")):
     c = tomllib.loads(spec.read_text())
     life, meta_file = c.get("life"), spec.parent / "meta.toml"
-    if not life or life.get("groups", 1) == 0 or "built" in c or not meta_file.exists():
+    if not life or life.get("groups", 1) == 0 or not meta_file.exists():
         continue
     name, meta = spec.parent.name, tomllib.loads(meta_file.read_text())
     clips, cells = meta.get("clips", {}), []
@@ -29,7 +29,7 @@ for spec in sorted(creatures.glob("*/creature.toml")):
         lacks += [f"{clip} is made up" for clip in need.get("recorded", []) if clips.get(clip, {}).get("source") == "made"]
         if need.get("speeds") and not 0 < meta.get("walk_speed", 0) < meta.get("run_speed", 0):
             lacks.append(f"walk {meta.get('walk_speed', 0):.2f} run {meta.get('run_speed', 0):.2f}")
-        if need.get("voice") and not any(s.startswith(life.get("voice", "\0") + "_") or s == life.get("voice", "\0") + ".ogg" for s in sounds):
+        if need.get("voice") and "voice" not in c.get("without", []) and not any(s.startswith(life.get("voice", "\0") + "_") or s == life.get("voice", "\0") + ".ogg" for s in sounds):
             if about["temper"] != "person":
                 lacks.append("no voice" if "voice" not in life else f"voice {life['voice']} has no file")
         if need.get("says") and need["says"] not in c:
