@@ -109,6 +109,62 @@ pub fn bounds(glb: &Glb, sk: &Skeleton, pose: &Pose) -> Result<(Vec3, Vec3)> {
     Ok(posed(&s, sk, pose).iter().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), p| (lo.min(*p), hi.max(*p))))
 }
 
+/// The box each part of it fills in a pose: its head (from the neck out), its tail, each leg
+/// and arm, and its trunk, which is all the rest. A corner of the skin is of the part whose
+/// bone it follows most, or the nearest such bone up from that one (an ear is the head's, a
+/// finger the arm's). In metres (`scale` to a unit of the file) from the ground under the
+/// middle of the whole: x to its left, y up, z the way it faces. A part with too little
+/// skin to be struck (under eight corners) is left to the trunk.
+pub fn parts(glb: &Glb, sk: &Skeleton, pose: &Pose, roles: &crate::rig::Roles, scale: f32) -> Result<Vec<crate::spec::HitBox>> {
+    let s = skin(glb)?;
+    let at = posed(&s, sk, pose);
+    let mut of: Vec<Option<usize>> = vec![None; sk.joints.len()];
+    let mut names: Vec<&str> = vec!["trunk"];
+    let mut claim = |bones: &[usize], name: &'static str, names: &mut Vec<&str>| {
+        names.push(name);
+        for b in bones {
+            of[*b] = Some(names.len() - 1);
+        }
+    };
+    claim(&roles.head, "head", &mut names);
+    claim(&roles.tail, "tail", &mut names);
+    for leg in &roles.legs {
+        claim(&leg.chain, "leg", &mut names);
+    }
+    for arm in &roles.arms {
+        claim(&arm.chain, "arm", &mut names);
+    }
+    let part = |mut j: usize| loop {
+        if let Some(p) = of[j] {
+            return p;
+        }
+        match sk.joints[j].parent {
+            Some(up) => j = up,
+            None => return 0,
+        }
+    };
+    let up = roles.side.cross(roles.forward).normalize_or(Vec3::Y);
+    let up = if up.y < 0.0 { -up } else { up };
+    let frame = |p: Vec3| Vec3::new(p.dot(roles.side), p.dot(up), p.dot(roles.forward));
+    let all = at.iter().map(|p| frame(*p)).fold((Vec3::MAX, Vec3::MIN), |(lo, hi), p| (lo.min(p), hi.max(p)));
+    let origin = Vec3::new((all.0.x + all.1.x) / 2.0, all.0.y, (all.0.z + all.1.z) / 2.0);
+    let mut boxes: Vec<(Vec3, Vec3, usize)> = vec![(Vec3::MAX, Vec3::MIN, 0); names.len()];
+    for (i, p) in at.iter().enumerate() {
+        let most = (0..4).max_by(|a, b| s.weights[i][*a].total_cmp(&s.weights[i][*b])).map_or(0, |k| s.joints[i][k]);
+        let (b, p) = (&mut boxes[part(most)], (frame(*p) - origin) * scale);
+        *b = (b.0.min(p), b.1.max(p), b.2 + 1);
+    }
+    // (What is too slight is the trunk's.)
+    for n in 1..boxes.len() {
+        if boxes[n].2 > 0 && boxes[n].2 < 8 {
+            let small = boxes[n];
+            boxes[0] = (boxes[0].0.min(small.0), boxes[0].1.max(small.1), boxes[0].2 + small.2);
+            boxes[n].2 = 0;
+        }
+    }
+    Ok(boxes.iter().zip(&names).filter(|(b, _)| b.2 > 0).map(|(b, name)| crate::spec::HitBox { part: (*name).into(), lo: b.0.to_array().map(|v| (v * 1000.0).round() / 1000.0), hi: b.1.to_array().map(|v| (v * 1000.0).round() / 1000.0) }).collect())
+}
+
 /// How far the skin reaches along a direction in a pose: its extent, in the file's units.
 /// True whatever way the direction points, where a bounding box is only for the axes.
 pub fn extent(glb: &Glb, sk: &Skeleton, pose: &Pose, along: Vec3) -> Result<f32> {

@@ -589,6 +589,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         bones,
         stride: (strode.is_some() && plan.rig == "humanoid").then(|| crate::grip::rests(&skeleton)),
         grip: if plan.rig == "humanoid" { crate::grip::grips(&skeleton, scale) } else { Default::default() },
+        hit: crate::check::parts(&glb, &skeleton, &stand, &roles, scale).unwrap_or_default(),
     };
     Ok(Finished { glb, skeleton, roles, clips: out, meta, scale })
 }

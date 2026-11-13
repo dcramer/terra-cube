@@ -523,6 +523,11 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
     if std::mem::take(&mut controls.forget) {
         regions.forget = true;
     }
+    // Aiming, a blow or an arrow goes along the line he looks: what of a body it lands on
+    // is the simulation's to say (`Kind::struck`).
+    if let Some(m) = live.agent_mut(mover) {
+        m.aim = controls.aim.then(|| (camera.translation, *camera.forward()));
+    }
     if std::mem::take(&mut controls.drop) {
         let middle = at.translation + at.rotation * Vec3::Z * 3.0 + Vec3::Y * 5.0;
         // (Put, as anything is: it is in the journal, and with nothing under it it falls.)

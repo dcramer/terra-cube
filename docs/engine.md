@@ -293,7 +293,8 @@ Built 2026-11-11, in the simulation (`cube_sim::life`, `items`) and tested there
 - **An arrow is seen** to fly from the archer when the bow is loosed (`player::arrows`); what it hit was already decided by the simulation.
 - **The player's state is saved** (`Sim::save`, `load`, tested): when it is, where they are, their health and pack, as a few lines of text in `terra-cube.save` where the game is run from. F5 writes it, F9 reads it, `--continue` starts from it; in a script, `save` and `load`. The land is the seed's and is not written, so what was dug or built is lost, as are the creatures' whereabouts.
 - **Armour**: a leather jerkin, while it is anywhere in the pack, takes a quarter off every blow (the admin panel gives one; none is found in the world yet).
-- **Not done**: hit shapes per limb, anything lying on the ground to be picked up, saving what was dug.
+- **A blow lands on a part of a body** (2026-11-13; `Kind::struck`, `life::Part`). Forge measures a box for the head, the trunk, each limb and the tail from the skin as the model stands (`check::parts`: a corner of skin is of the part whose bone it follows most, or the nearest such bone up from it) and writes them to `meta.toml` (`[[hit]]`: metres from the ground under its middle, x to its left, z the way it faces); `--bodies` draws them. A person who is aiming (the right button) strikes along the line they look, and what that line goes through first is what is struck: half as much again to the head, seven tenths to a limb, half to a tail. Not aiming, a blow is at the trunk, as every blow was: tried along a line from the shoulder, a blow from in front found the head for being in the way, and every fight was half as deadly again without anyone meaning it. An animal's bite is at the trunk. The boxes are of the body standing and do not follow its clips: a head bowed to graze is struck where it was held up.
+- **Not done**: anything of a creature's lying on the ground to be picked up, saving what was dug.
 
 ## Sound
 
@@ -418,7 +419,7 @@ Built 2026-11-10. The rules are `cube_sim::body`; the game only feeds it keys an
 2. ~~Player control in the sandbox~~ (2026-11-10; see Moving through the world).
 3. ~~A world worth walking in~~ (2026-11-10): terrain from a seed, creatures living in it, `cargo world` to judge both.
 4. ~~Destruction by tool~~ (2026-11-13; [What is cut loose falls](#what-is-cut-loose-falls-cube_simloose-2026-11-12)): a shovel digs earth to the bit and what is dug is carried and put back; an axe fells a tree and works it down to hunks; a pick chips a boulder, breaks rubble and quarries the land's stone into hunks; what a cut leaves on nothing falls, breaks if it is stone and comes down hard, and hurts who is under it; water runs into a hole beside it; every edit is a line of a journal that makes the same world again. Still to do: merging the faces of broken cells (2,900 faces to draw a dug chunk again, `cargo world dig`); the journal written to disk; building and crafting with hunks, which the developer has put off.
-5. Combat: health, the player's attack, death. With it, **hit shapes**: a box for the head, the trunk and each limb, fitted by forge to each bone's share of the skin, written to `meta.toml` and drawn by `--bodies`. The one capsule stays for walking and bumping; these answer what a blow or an arrow struck.
+5. ~~Combat~~: health, the player's attack, death (2026-11-11), and what of a body a blow lands on (2026-11-13, above).
 6. Shaped blocks (the Eco look), then textures or material colour by block.
 7. Needs for creatures (hunger, sleep, a day and night), so behaviour has reasons.
 8. More body plans (bird, spider, serpent) and their clips; a real gallop.

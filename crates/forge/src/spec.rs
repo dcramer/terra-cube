@@ -220,6 +220,19 @@ pub struct Meta {
     /// How each hand (`Left`, `Right`) holds a handle, where it has hands (`grip.rs`).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub grip: BTreeMap<String, Grip>,
+    /// What a blow or an arrow can strike: a box for its head, its trunk, each limb and its
+    /// tail, as it stands (`check::parts`). Metres, from the ground under its middle: x to
+    /// its left, y up, z the way it faces.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hit: Vec<HitBox>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct HitBox {
+    /// `head`, `trunk`, `tail`, `leg` or `arm`.
+    pub part: String,
+    pub lo: [f32; 3],
+    pub hi: [f32; 3],
 }
 
 /// The skeleton as it rests: each bone by name with its own turn (the fingers a little

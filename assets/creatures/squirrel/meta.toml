@@ -99,3 +99,38 @@ leg3 = "tripo::1_Right_Limb_0>tripo::1_Right_Limb_1>tripo::1_Right_Limb_3"
 neck = "tripo::Head_1"
 root = "tripo::Root"
 tail = "tripo::Tail_1"
+
+[[hit]]
+part = "trunk"
+lo = [-0.028, 0.045, -0.073]
+hi = [0.028, 0.107, 0.058]
+
+[[hit]]
+part = "head"
+lo = [-0.026, 0.079, 0.059]
+hi = [0.025, 0.152, 0.113]
+
+[[hit]]
+part = "tail"
+lo = [-0.025, 0.101, -0.113]
+hi = [0.025, 0.204, -0.032]
+
+[[hit]]
+part = "leg"
+lo = [-0.001, 0.0, 0.028]
+hi = [0.032, 0.094, 0.077]
+
+[[hit]]
+part = "leg"
+lo = [-0.032, 0.0, 0.028]
+hi = [0.001, 0.091, 0.078]
+
+[[hit]]
+part = "leg"
+lo = [-0.001, 0.0, -0.047]
+hi = [0.034, 0.095, -0.006]
+
+[[hit]]
+part = "leg"
+lo = [-0.034, 0.0, -0.045]
+hi = [-0.004, 0.095, -0.007]

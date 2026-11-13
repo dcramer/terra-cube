@@ -157,9 +157,37 @@ impl TryFrom<String> for Habitat {
 }
 
 /// A kind of creature, as the simulation knows it: its size, its speeds and its temper.
+/// What of a body a blow lands on.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Part {
+    Head,
+    Trunk,
+    Tail,
+    Leg,
+    Arm,
+}
+
+impl Part {
+    /// How much of a blow that lands there is taken, of 1: half as much again to the head,
+    /// seven tenths to a limb, half to a tail.
+    pub fn takes(self) -> f32 {
+        match self {
+            Part::Head => 1.5,
+            Part::Trunk => 1.0,
+            Part::Leg | Part::Arm => 0.7,
+            Part::Tail => 0.5,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Kind {
     pub id: String,
+    /// What a blow or an arrow can strike: a box for its head, its trunk, each limb and its
+    /// tail, as it stands (forge measures them from its skin: `[[hit]]` in `meta.toml`).
+    /// Metres from the ground under its middle: x to its left, y up, z the way it faces.
+    pub parts: Vec<(Part, Vec3, Vec3)>,
     pub height: f32,
     pub length: f32,
     pub width: f32,
@@ -195,6 +223,31 @@ pub struct Kind {
 }
 
 impl Kind {
+    /// What a blow along a line strikes: the first of its parts the line goes through, or
+    /// failing any the one whose middle the line passes nearest. `from` and `along` are in
+    /// its own frame, as its parts are (`Sim::own`). Its trunk, where it has no parts.
+    pub fn struck(&self, from: Vec3, along: Vec3) -> Part {
+        let along = along.normalize_or(Vec3::Z);
+        let through = |lo: Vec3, hi: Vec3| {
+            let (mut near, mut far) = (0.0f32, f32::MAX);
+            for axis in 0..3 {
+                let (o, d) = (from[axis], along[axis]);
+                if d.abs() < 1e-6 {
+                    if o < lo[axis] || o > hi[axis] {
+                        return None;
+                    }
+                } else {
+                    let (a, b) = ((lo[axis] - o) / d, (hi[axis] - o) / d);
+                    (near, far) = (near.max(a.min(b)), far.min(a.max(b)));
+                }
+            }
+            (near <= far).then_some(near)
+        };
+        let first = self.parts.iter().filter_map(|(part, lo, hi)| through(*lo, *hi).map(|t| (t, *part))).min_by(|a, b| a.0.total_cmp(&b.0));
+        let nearest = || self.parts.iter().map(|(part, lo, hi)| { let to = (*lo + *hi) / 2.0 - from; ((to - along * to.dot(along).max(0.0)).length(), *part) }).min_by(|a, b| a.0.total_cmp(&b.0));
+        first.or_else(nearest).map_or(Part::Trunk, |p| p.1)
+    }
+
     /// What it wants of a place and an hour (`ecology`), whatever biome it is in.
     pub fn niche(&self) -> crate::ecology::Niche {
         crate::ecology::Niche { name: "", biomes: &[], water: self.water, cover: self.cover, hours: self.hours, cold: self.winter }
@@ -257,6 +310,14 @@ impl Kind {
             run_speed: f32,
             #[serde(default)]
             sprint_speed: f32,
+            #[serde(default)]
+            hit: Vec<HitBox>,
+        }
+        #[derive(Deserialize)]
+        struct HitBox {
+            part: Part,
+            lo: [f32; 3],
+            hi: [f32; 3],
         }
         let mut dirs: Vec<_> = std::fs::read_dir(creatures).into_iter().flatten().flatten().map(|e| e.path()).collect();
         dirs.sort();
@@ -287,6 +348,7 @@ impl Kind {
             let range = life.range.unwrap_or((60.0 + meta.height * 40.0) * if diet == Diet::Meat { 2.5 } else { 1.0 });
             kinds.push(Kind {
                 id,
+                parts: meta.hit.iter().map(|h| (h.part, Vec3::from(h.lo), Vec3::from(h.hi))).collect(),
                 height: meta.height,
                 length: meta.length,
                 width: meta.width,
@@ -397,6 +459,8 @@ pub struct Log {
     pub inside: u32,
     pub fell: u32,
     pub struck: u32,
+    /// What of it the last blow it took landed on.
+    pub struck_at: Option<Part>,
     pub fled: u32,
     /// Chases begun by what hunts, and times it set out for somewhere with a reason (to
     /// water, to fresh grazing, home to lie up, after prey).
@@ -441,6 +505,10 @@ pub struct Agent {
     pub power: f32,
     /// Whether it has its guard up: a blow from in front then takes a third of what it would.
     pub guard: bool,
+    /// The line a person who is aiming looks along: from where, and which way (the middle
+    /// of their picture, as the game has it). With none a blow is at the middle of whoever
+    /// it is for.
+    pub aim: Option<(Vec3, Vec3)>,
     /// Seconds since it was last hurt: left in peace, it mends.
     pub calm: f32,
     /// Whether it is being lived this tick: near enough to whoever is watching, and with
@@ -470,6 +538,8 @@ pub struct Hit {
     pub by: u32,
     pub harm: f32,
     pub push: Vec3,
+    /// What of them it landed on.
+    pub part: Part,
 }
 
 /// Seconds something lies where it fell before it is gone; seconds after that until another
@@ -721,7 +791,7 @@ impl Sim {
         let mind = Mind::new(Vec2::new(pos.x, pos.z), &mut self.rng);
         self.agents.insert(
             id,
-            Agent { carries: None, kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), guard: false, calm: 0.0, awake: true, born, hunger, thirst, pack: (k.temper == Temper::Person).then(crate::items::Pack::starting), stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
+            Agent { carries: None, aim: None, kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), guard: false, calm: 0.0, awake: true, born, hunger, thirst, pack: (k.temper == Temper::Person).then(crate::items::Pack::starting), stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
         );
         id
     }
@@ -754,7 +824,7 @@ impl Sim {
         self.when = crate::sky::later(self.when, DT);
         self.wake(world);
         // Minds see the world as it was at the start of the tick.
-        let seen: Vec<mind::Seen> = self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.awake).map(|(&id, a)| mind::Seen { id, pos: a.body.pos, vel: a.body.vel, temper: self.kinds[a.kind].temper, kind: a.kind, errand: a.mind.errand(), reach: a.body.half + a.body.long.length() }).collect();
+        let seen: Vec<mind::Seen> = self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.awake).map(|(&id, a)| mind::Seen { id, facing: a.facing, pos: a.body.pos, vel: a.body.vel, temper: self.kinds[a.kind].temper, kind: a.kind, errand: a.mind.errand(), reach: a.body.half + a.body.long.length() }).collect();
         let mut hits = Vec::new();
         let when = self.when;
         // What is awake grows hungry and thirsty by the second, at the day's rates (`day`).
@@ -824,7 +894,13 @@ impl Sim {
                 .min_by(|a, b| a.1.length().total_cmp(&b.1.length()));
             if let Some((s, to)) = struck {
                 let away = to.try_normalize().unwrap_or(ahead);
-                hits.push(Hit { on: s.id, by: id, harm: agent.power, push: Vec3::new(away.x * 4.0, 2.5, away.y * 4.0) });
+                // What of them it lands on. Aimed, whatever the line they look along goes
+                // through first, in the frame of the one struck (x to its left, z the way
+                // it faces). Not aimed, their trunk: a blow from in front does not find the
+                // head for being in the way, and every fight is as it was.
+                let own = |v: Vec3| Vec3::new(v.x * s.facing.cos() - v.z * s.facing.sin(), v.y, v.x * s.facing.sin() + v.z * s.facing.cos());
+                let part = agent.aim.map_or(Part::Trunk, |(eye, way)| self.kinds[s.kind].struck(own(eye - s.pos), own(way)));
+                hits.push(Hit { on: s.id, by: id, harm: agent.power * part.takes(), push: Vec3::new(away.x * 4.0, 2.5, away.y * 4.0), part });
             }
         }
         // What has come down (`loose`) strikes whoever was under it: by how fast it came and
@@ -836,7 +912,7 @@ impl Sim {
             let size = (fallen.cells as f32).cbrt() * cube_voxel::CELL;
             for (id, agent) in self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.body.pos.distance(fallen.at) < size * 0.9 + a.body.half + 0.4) {
                 let away = (agent.body.pos - fallen.at).with_y(0.0).normalize_or(Vec3::X);
-                hits.push(Hit { on: *id, by: 0, harm: (fallen.speed * size * 6.0).min(400.0), push: away * 3.0 + Vec3::Y * 1.5 });
+                hits.push(Hit { on: *id, by: 0, harm: (fallen.speed * size * 6.0).min(400.0), push: away * 3.0 + Vec3::Y * 1.5, part: Part::Trunk });
             }
             self.loose.heard.push(fallen);
         }
@@ -846,6 +922,7 @@ impl Sim {
             agent.doing = None;
             agent.body.vel += hit.push;
             agent.log.struck += 1;
+            agent.log.struck_at = Some(hit.part);
             agent.calm = 0.0;
             // Guarded, and the blow comes from in front: most of it is turned.
             let from_front = Vec2::new(agent.facing.sin(), agent.facing.cos()).dot(-Vec2::new(hit.push.x, hit.push.z).normalize_or_zero()) > 0.3;
@@ -1431,7 +1508,7 @@ mod tests {
     use cube_voxel::Block;
 
     fn kind(id: &str, temper: Temper, height: f32, speeds: [f32; 3]) -> Kind {
-        Kind { id: id.into(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None, winter: 1.0, diet: if matches!(temper, Temper::Hunter | Temper::Hostile) { Diet::Meat } else { Diet::Plants }, litter: 2.0, lifespan: 8.0, capacity: 8, range: 80.0, meal: 6.0, holds: None, share: 1.0, flies: false }
+        Kind { id: id.into(), parts: Vec::new(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None, winter: 1.0, diet: if matches!(temper, Temper::Hunter | Temper::Hostile) { Diet::Meat } else { Diet::Plants }, litter: 2.0, lifespan: 8.0, capacity: 8, range: 80.0, meal: 6.0, holds: None, share: 1.0, flies: false }
     }
 
     /// Rabbit, wolf, bear, goblin and a person, on a floor of stone 60 m square.
@@ -1682,6 +1759,46 @@ mod tests {
         let now = &other.agents[&them];
         assert_eq!((other.when, now.body.pos, now.health, &now.pack), (12.25, was.body.pos, 61.0, &was.pack));
         assert!(!other.load(them, "nonsense") && !other.load(them, "slot=99,Torch,1"));
+    }
+
+    #[test]
+    fn a_blow_lands_on_the_part_it_is_aimed_at_and_takes_more_from_the_head() {
+        // A beast facing +z: a trunk, a head out in front and up, four legs under it, a tail.
+        let mut beast = kind("beast", Temper::Timid, 1.0, [1.0, 2.0, 0.0]);
+        beast.parts = vec![
+            (Part::Trunk, Vec3::new(-0.2, 0.5, -0.5), Vec3::new(0.2, 0.9, 0.5)),
+            (Part::Head, Vec3::new(-0.15, 0.7, 0.5), Vec3::new(0.15, 1.1, 0.9)),
+            (Part::Leg, Vec3::new(-0.2, 0.0, 0.3), Vec3::new(-0.1, 0.5, 0.45)),
+            (Part::Tail, Vec3::new(-0.05, 0.6, -0.9), Vec3::new(0.05, 0.8, -0.5)),
+        ];
+        // From in front and level with its head, its head; from over it and down, its trunk;
+        // low from its left, its leg; from behind, its tail; wide of all of it, the nearest.
+        assert_eq!(beast.struck(Vec3::new(0.0, 0.9, 3.0), Vec3::NEG_Z), Part::Head);
+        assert_eq!(beast.struck(Vec3::new(0.0, 3.0, 0.0), Vec3::NEG_Y), Part::Trunk);
+        assert_eq!(beast.struck(Vec3::new(-2.0, 0.2, 0.4), Vec3::X), Part::Leg);
+        assert_eq!(beast.struck(Vec3::new(0.0, 0.7, -3.0), Vec3::Z), Part::Tail);
+        assert_eq!(beast.struck(Vec3::new(0.0, 1.4, 3.0), Vec3::NEG_Z), Part::Head, "over its head, it is its head that is nearest");
+        // In a world: a person a pace in front of it, facing it. Not aiming, the blow is at
+        // its trunk, though its head is in the way; aimed at its head, it takes half as
+        // much again.
+        let harm = |aim: Option<(Vec3, Vec3)>| {
+            let (world, mut sim) = stage();
+            sim.kinds.push(beast.clone());
+            let (it, who) = (sim.add(&world, sim.kinds.len() - 1, at(0.0, 0.0), 0.0, Driver::Stand), sim.add(&world, 4, at(0.0, 1.6), std::f32::consts::PI, Driver::Outside));
+            let ground = sim.agents[&it].body.pos;
+            sim.agents.get_mut(&who).unwrap().aim = aim.map(|(eye, way)| (ground + eye, way));
+            let full = sim.agents[&it].health;
+            sim.swing(who);
+            for _ in 0..TICKS {
+                sim.step(&world);
+            }
+            (full - sim.agents[&it].health, sim.agents[&it].log.struck_at)
+        };
+        let (plain, at) = harm(None);
+        assert_eq!(at, Some(Part::Trunk));
+        let (aimed, at) = harm(Some((Vec3::new(0.0, 0.9, 1.6), Vec3::NEG_Z)));
+        assert_eq!(at, Some(Part::Head));
+        assert!(plain > 0.0 && (aimed / plain - 1.5).abs() < 0.01, "{plain} at its trunk, {aimed} at its head");
     }
 
     #[test]

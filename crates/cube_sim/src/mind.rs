@@ -89,6 +89,8 @@ impl Mind {
 pub struct Seen {
     pub id: u32,
     pub pos: Vec3,
+    /// The way it faces, radians.
+    pub facing: f32,
     pub vel: Vec3,
     pub temper: Temper,
     /// From its middle to its furthest edge over the ground.
@@ -578,7 +580,7 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
                 if let Some(t) = target.filter(|t| gap_to(t) < strike_at + 0.6 && t.pos.y - agent.body.pos.y < kind.height + 0.8) {
                     let away = (flat(t.pos) - me).try_normalize().unwrap_or(Vec2::X);
                     let force = 3.0 + kind.height * 2.0;
-                    hit = Some(Hit { on: t.id, by: id, harm: kind.harm(), push: Vec3::new(away.x * force, 3.0, away.y * force) });
+                    hit = Some(Hit { on: t.id, by: id, harm: kind.harm(), push: Vec3::new(away.x * force, 3.0, away.y * force), part: crate::life::Part::Trunk });
                 }
             }
             if m.left <= 0.0 {

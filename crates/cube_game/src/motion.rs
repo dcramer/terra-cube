@@ -314,6 +314,15 @@ fn bodies(show: Res<ShowBodies>, live: Res<Live>, creatures: Query<(&Mover, &Tra
         let Some(kind) = live.kind(mover) else { continue };
         let (radius, reach) = kind.shape();
         let facing = Quat::from_rotation_y(at.rotation.to_euler(EulerRot::YXZ).0);
+        // (And what of it a blow lands on: a box to its head, its trunk, each limb, its tail.)
+        for (part, lo, hi) in &kind.parts {
+            let tint = match part {
+                cube_sim::life::Part::Head => Color::srgb(1.0, 0.3, 0.2),
+                cube_sim::life::Part::Trunk => Color::srgb(1.0, 0.85, 0.2),
+                _ => Color::srgb(0.4, 1.0, 0.4),
+            };
+            gizmos.cube(Transform { translation: at.translation + facing * ((*lo + *hi) / 2.0), rotation: facing, scale: *hi - *lo }, tint);
+        }
         let (ahead, side) = (facing * Vec3::Z * reach, facing * Vec3::X * radius);
         for up in [0.02, kind.height] {
             let middle = at.translation + Vec3::Y * up;
