@@ -1,23 +1,23 @@
 # Measured by `cargo forge finish`; do not edit.
 height = 0.15
-length = 0.18486986
-width = 0.12036744
-walk_speed = 0.2930095
-run_speed = 0.68487775
-sprint_speed = 1.4692779
+length = 0.1869248
+width = 0.120367415
+walk_speed = 0.39943567
+run_speed = 0.8622739
+sprint_speed = 1.5406806
 triangles = 7403
-joints = 18
+joints = 21
 
 [clips.attack]
-seconds = 0.8
+seconds = 1.3333334
 looping = false
-source = "made"
+source = "library"
 speed = 0.0
 
 [clips.die]
-seconds = 1.4
+seconds = 1.0333333
 looping = false
-source = "made"
+source = "library"
 speed = 0.0
 
 [clips.eat]
@@ -33,15 +33,15 @@ source = "made"
 speed = 0.0
 
 [clips.hurt]
-seconds = 0.5
+seconds = 0.6666667
 looping = false
-source = "made"
+source = "library"
 speed = 0.0
 
 [clips.idle]
 seconds = 4.0
 looping = true
-source = "made"
+source = "walker"
 speed = 0.0
 
 [clips.jump]
@@ -57,7 +57,7 @@ source = "made"
 speed = 0.0
 
 [clips.lie]
-seconds = 5.0
+seconds = 4.0
 looping = true
 source = "made"
 speed = 0.0
@@ -65,14 +65,14 @@ speed = 0.0
 [clips.run]
 seconds = 0.16666667
 looping = true
-source = "made"
-speed = 0.68487775
+source = "walker"
+speed = 0.8622739
 
 [clips.sprint]
-seconds = 0.13333334
+seconds = 0.16666667
 looping = true
-source = "made"
-speed = 1.4692779
+source = "walker"
+speed = 1.5406806
 
 [clips.swim]
 seconds = 1.6
@@ -83,16 +83,19 @@ speed = 0.0
 [clips.walk]
 seconds = 0.23333333
 looping = true
-source = "made"
-speed = 0.2930095
+source = "walker"
+speed = 0.39943567
 
 [bones]
-foot0 = "bone_9"
-foot1 = "tripo::0_Right_Limb_4"
-foot2 = "tripo::0_Left_Limb_1"
-foot3 = "tripo::1_Left_Limb_1"
-head = "tripo::Head_1"
-leg0 = "bone_6>bone_7>bone_9"
-leg1 = "tripo::0_Right_Limb_1>tripo::0_Right_Limb_2>tripo::0_Right_Limb_4"
-neck = "tripo::Head_0"
-root = "tripo::Root"
+foot0 = "fl_paw"
+foot1 = "fr_paw"
+foot2 = "hl_paw"
+foot3 = "hr_paw"
+head = "head"
+leg0 = "fl_upper>fl_fore>fl_paw"
+leg1 = "fr_upper>fr_fore>fr_paw"
+leg2 = "hl_thigh>hl_shank>hl_paw"
+leg3 = "hr_thigh>hr_shank>hr_paw"
+neck = "neck"
+root = "trunk"
+tail = "tail_1"

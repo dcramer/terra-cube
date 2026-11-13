@@ -112,7 +112,23 @@ impl Own {
         let (mut ahead, side) = if size.z >= size.x { (Vec3::Z, Vec3::X) } else { (Vec3::X, Vec3::Z) };
         let mid = (lo + hi) / 2.0;
         let high: Vec<Vec3> = all.iter().copied().filter(|p| p.y > lo.y + size.y * 0.8).collect();
-        if high.iter().map(|p| (*p - mid).dot(ahead)).sum::<f32>() < 0.0 {
+        // (Where the rig it came with has a bone it calls its head, that says which end:
+        // Tripo's `Head_n`, one of the two names of its that can be believed. By height a
+        // tortoise, whose shell stands higher than its head, was rigged back to front and
+        // walked tail first in the ground, 2026-11-13.)
+        let named = nodes.iter().position(|n| n["name"].as_str().is_some_and(|name| name.contains("Head"))).map(|mut at| {
+            let mut world = local(&nodes[at]);
+            while let Some(parent) = nodes.iter().position(|n| n["children"].as_array().is_some_and(|c| c.iter().any(|c| c.as_u64() == Some(at as u64)))) {
+                world = local(&nodes[parent]) * world;
+                at = parent;
+            }
+            world.w_axis.truncate()
+        });
+        let behind = match named.map(|head| (head - mid).dot(ahead)).filter(|d| d.abs() > size.max_element() * 0.05) {
+            Some(d) => d < 0.0,
+            None => high.iter().map(|p| (*p - mid).dot(ahead)).sum::<f32>() < 0.0,
+        };
+        if behind {
             ahead = -ahead;
         }
         let right = Vec3::Y.cross(ahead);
@@ -129,8 +145,18 @@ impl Own {
         let wide = mean(&|_| true, &|p| x(p).abs()).unwrap_or(size.dot(right.abs()) * 0.3) * 2.0;
         // Its trunk, between its legs: how low its belly is and how high its back.
         let between: Vec<Vec3> = all.iter().copied().filter(|p| z(*p) > hind + (fore - hind) * 0.3 && z(*p) < hind + (fore - hind) * 0.7).collect();
-        let (belly, back) = between.iter().fold((f32::MAX, f32::MIN), |(b, t), p| (b.min(p.y), t.max(p.y)));
-        if between.is_empty() || belly - lo.y < size.y * 0.15 {
+        let (mut belly, back) = between.iter().fold((f32::MAX, f32::MIN), |(b, t), p| (b.min(p.y), t.max(p.y)));
+        // (One that squats with its legs out beside it, a toad, a frog: between its fore
+        // feet and its hind there is leg at the ground on either side, and its belly is what
+        // is lowest along its middle. Asked only where the first finds none, so that nothing
+        // already rigged changes.)
+        if !between.is_empty() && belly - lo.y < size.y * 0.15 {
+            belly = between.iter().filter(|p| x(**p).abs() < wide * 0.2).map(|p| p.y).fold(f32::MAX, f32::min);
+            if std::env::var_os("FORGE_TRACE").is_some() {
+                println!("own: a squat body: its belly along its middle is {:.0}% of its height up", (belly - lo.y) / size.y * 100.0);
+            }
+        }
+        if between.is_empty() || belly - lo.y < size.y * 0.06 {
             bail!("no trunk found standing over its legs");
         }
         let metres = height / size.y;
