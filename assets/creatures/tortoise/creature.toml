@@ -4,7 +4,7 @@ plan = "quadruped"
 subject = "a tortoise with a high domed shell of olive plates and stumpy grey legs"
 height = 0.3
 without = ["sprint"]
-ease = 0.3
+ease = 0.45
 gait_gain = 0.45
 rests = "stands"
 
