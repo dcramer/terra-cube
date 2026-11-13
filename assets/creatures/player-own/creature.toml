@@ -1,0 +1,12 @@
+# A trial, not in the world: the player's model moved by the two-legged walker and nobody's
+# clips (`[plans.strode]`, `crates/forge/src/strider.rs`). `.work/player-own/rigged.glb` is
+# `.work/player/rigged.glb`. Set beside `player`.
+name = "Player (walked)"
+kind = "wildlife"
+plan = "strode"
+subject = "an ordinary man in his thirties"
+height = 1.75
+
+[life]
+temper = "person"
+groups = 0

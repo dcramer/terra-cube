@@ -14,6 +14,7 @@ mod glb;
 mod library;
 mod looks;
 mod own;
+mod strider;
 mod rig;
 mod shaped;
 mod spec;

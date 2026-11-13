@@ -114,6 +114,8 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
     let owned = if plan.rig == "own" { Some(crate::own::Own::rig(&mut glb, creature.height)?) } else { None };
     let skeleton = Skeleton::read(&glb)?;
     // (A model built here faces +z: it was built so.)
+    // And a person may be moved by the two-legged walker in place of anybody's clips (`strider`).
+    let strode = if creature.plan == "strode" { Some(crate::strider::Strider::new(&skeleton, creature.height)?) } else { None };
     let mut roles = match &owned {
         Some(own) => own.roles(&skeleton),
         None => Roles::read(&skeleton, if creature.built.is_some() { Facing::Told(Vec3::Z) } else { Facing::parse(&creature.facing)? }),
@@ -184,7 +186,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
             clip
         });
         let recorded = carried.as_ref().or(found.map(|i| &theirs[i]));
-        let mut clip = if let Some(own) = &owned { own.clip(name, &skeleton)? } else { match recorded {
+        let mut clip = if let Some(own) = &owned { own.clip(name, &skeleton)? } else if let Some(strode) = &strode { strode.clip(name, &skeleton)? } else { match recorded {
             Some(taken) => {
                 let source = taken.source;
                 let looping = !matches!(name.as_str(), "attack" | "hurt" | "die" | "jump" | "land");
