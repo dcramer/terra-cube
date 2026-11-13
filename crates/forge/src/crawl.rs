@@ -166,8 +166,12 @@ impl Crawler {
         let mid = legs + thick / 2.0;
         put(Vec3::new(0.0, mid + thick * 0.12, 0.0), Vec3::new(wide, thick * 0.76, l * 0.75), b.back, 0);
         put(Vec3::new(0.0, mid - thick * 0.3, l * 0.02), Vec3::new(wide * 0.85, thick * 0.4, l * 0.62), b.belly, 0);
-        for x in [-1.0, 1.0] {
-            put(Vec3::new(x * wide * 0.5, mid + thick * 0.1, -l * 0.05), Vec3::new(l * 0.05, thick * 0.6, l * 0.62), b.wing, 0);
+        // Its wings, folded: each a slab down its side from the shoulder, and a second folded
+        // up over that from its lower edge, which opens out to twice the reach (bones 9 to
+        // 12, after the legs: `wings`).
+        for (n, x) in [-1.0f32, 1.0].into_iter().enumerate() {
+            put(Vec3::new(x * wide * 0.5, mid + thick * 0.1, -l * 0.05), Vec3::new(l * 0.05, thick * 0.6, l * 0.62), b.wing, 9 + n * 2);
+            put(Vec3::new(x * (wide * 0.5 + l * 0.04), mid + thick * 0.08, -l * 0.09), Vec3::new(l * 0.03, thick * 0.56, l * 0.5), dark(b.wing, 0.8), 10 + n * 2);
         }
         // Neck and head, the beak ahead of it.
         let base = Vec3::new(0.0, mid + thick * 0.3, l * 0.3);
@@ -189,6 +193,12 @@ impl Crawler {
             places.extend([hip, knee, knee.with_y(0.0)]);
             parents.extend([Some(0), Some(bone), Some(bone + 1)]);
             names.extend([format!("leg_{s}0"), format!("leg_{s}0_knee"), format!("leg_{s}0_foot")]);
+        }
+        for (s, x) in [('l', -1.0f32), ('r', 1.0)] {
+            let bone = places.len();
+            places.extend([Vec3::new(x * wide * 0.5, mid + thick * 0.4, -l * 0.05), Vec3::new(x * (wide * 0.5 + l * 0.025), mid - thick * 0.2, -l * 0.05)]);
+            parents.extend([Some(0), Some(bone)]);
+            names.extend([format!("wing_{s}"), format!("wing_{s}_tip")]);
         }
         Ok((assemble(&boxes, &places, &parents, &names)?, Self { side: 1, reach: legs, long: l, high: mid, fowl: true, wide, over: 0.0 }))
     }
@@ -231,6 +241,17 @@ impl Crawler {
         pose
     }
 
+    /// A bird's wings: `open` from folded (0) to spread level (1), and `beat` how far above
+    /// level they are (radians; under it, less than nothing). The outer half follows a
+    /// little behind the inner, as a wing bends.
+    fn wings(&self, mut pose: Pose, open: f32, beat: f32, after: f32) -> Pose {
+        for (n, x) in [-1.0f32, 1.0].into_iter().enumerate() {
+            pose.rotations[9 + n * 2] = Quat::from_rotation_z(x * (PI / 2.0 * open + beat * open));
+            pose.rotations[10 + n * 2] = Quat::from_rotation_z(-x * PI * open + x * (after - beat) * 0.6 * open);
+        }
+        pose
+    }
+
     /// Which of the two sets a leg steps with: every other leg of a side, with the ones
     /// between on the other side.
     fn set(&self, n: usize) -> usize {
@@ -264,6 +285,15 @@ impl Crawler {
             }
             "idle" => (frames_of(4.0, &|t| self.pose(sk, Vec3::Y * self.long * 0.01 * (TAU * t).sin(), Quat::from_rotation_y(0.04 * (TAU * t).sin()), still)), true, None),
             // Gathered, and sprung: its legs pressed down, then drawn up under it.
+            // Up: its wings thrown open and brought down hard, its legs pushing off.
+            "jump" if self.fowl => (frames_of(0.3, &|t| self.wings(self.pose(sk, Vec3::ZERO, Quat::from_rotation_x(-0.25 * t), |_| (0.0, -0.2 + 0.7 * t)), ease((t / 0.4).min(1.0)), 0.9 * (TAU * t / 0.6).cos(), 0.9 * (TAU * (t - 0.05) / 0.6).cos())), false, None),
+            // On the wing: three beats a second, its legs drawn up, its body lifting on each.
+            "fall" if self.fowl => (frames_of(1.0, &|t| {
+                let (beat, after) = (0.75 * (TAU * 3.0 * t).sin(), 0.75 * (TAU * 3.0 * (t - 0.05)).sin());
+                self.wings(self.pose(sk, Vec3::Y * self.long * 0.05 * -beat, Quat::from_rotation_x(-0.12), |_| (-self.reach * 0.3, 0.55)), 1.0, beat, after)
+            }), true, None),
+            // Down: its wings held high as its feet take it, then folded.
+            "land" if self.fowl => (frames_of(0.37, &|t| self.wings(self.pose(sk, Vec3::NEG_Y * self.high * 0.08 * (1.0 - ease(t)), Quat::from_rotation_x(-0.2 * (1.0 - t)), |_| (0.0, 0.4 * (1.0 - ease(t)))), 1.0 - ease(t), 0.6, 0.6)), false, None),
             "jump" => (frames_of(0.3, &|t| self.pose(sk, Vec3::Y * self.high * if self.fowl { 0.0 } else { -0.35 * (1.0 - t) + 0.2 * t }, Quat::IDENTITY, |_| (0.0, -0.2 + 0.6 * t))), false, None),
             "fall" => (frames_of(0.9, &|t| self.pose(sk, Vec3::ZERO, Quat::from_rotation_x(0.05 * (TAU * t).sin()), |n| (0.0, 0.4 + 0.08 * (TAU * t + n as f32).sin()))), true, None),
             "land" => (frames_of(0.37, &|t| self.pose(sk, Vec3::NEG_Y * self.high * if self.fowl { 0.08 } else { 0.4 } * (1.0 - ease(t)), Quat::IDENTITY, |_| (0.0, 0.4 * (1.0 - ease(t))))), false, None),

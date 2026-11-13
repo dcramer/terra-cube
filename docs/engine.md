@@ -244,6 +244,8 @@ Built 2026-11-10. `cube_sim::life` and `mind`; `cargo world run` judges it.
 - **Random choices come from one seeded generator** in the `Sim`, and agents are visited in id order, so a seed replays exactly (tested).
 - **Judged by numbers** (`cargo world run`): no creature ends a tick inside the ground or falls out of the world, each kind walks into something for at most 8% of the time, is walled in for at most 10%, swims for at most 5%, and goes at least 3 m.
 
+**A bird flies from what frightens it** (`flies = true` in `[life]`, 2026-11-13; `Sim::step`, `Intent.lift`): fleeing, it climbs to 5 m over the ground and goes at 6.5 m/s at the least, faster than anything hunts on foot; nothing strikes what is more than its own height and 0.8 m over it. With nothing to flee it glides down at 1.8 m/s toward where it lives, and never onto water (the first crows flew out to sea, settled and swam). On the wing the mind steers straight: steering is for feet and reads the air under a bird as a drop. Its home is not moved by a flight, as a walker's is. No game code: aloft is the `fall` clip, which for a bird is flight. Not done: a bird whose home has the player standing on it goes out and back for as long as they stay; birds do not perch.
+
 ## Fighting, and what a person carries
 
 Built 2026-11-11, in the simulation (`cube_sim::life`, `items`) and tested there; the game shows it (`cube_game::hud`).

@@ -19,6 +19,8 @@ mark = [0.8, 0.45, 0.1]
 
 [life]
 temper = "hunter"
+# Goes up from what frightens it and glides down after (`Sim::step`).
+flies = true
 habitat = "forest"
 cover = "deep"
 hours = "night"

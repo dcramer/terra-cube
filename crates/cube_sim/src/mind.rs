@@ -535,8 +535,10 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
                 gait = if gap < 6.0 { Gait::Sprint } else { Gait::Run };
             }
             _ => {
-                // It got away: this is where it lives now.
-                m.home = me;
+                // It got away: this is where it lives now. (A bird goes back to where it rose from.)
+                if !kind.flies {
+                    m.home = me;
+                }
                 m.target = None;
                 m.state = State::Rest;
                 m.left = rng.between(2.0, 5.0);
@@ -545,7 +547,9 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
         State::Chase => match target {
             Some(t) if m.left > 0.0 && gap_to(t) < 30.0 => {
                 let gap = gap_to(t);
-                if gap < strike_at && m.tired == 0.0 {
+                // (What has gone up out of reach is not struck at: a bird on the wing.)
+                let reached = t.pos.y - agent.body.pos.y < kind.height + 0.8;
+                if gap < strike_at && m.tired == 0.0 && reached {
                     m.state = State::Strike;
                     m.left = 0.8;
                     m.hit_done = false;
@@ -571,7 +575,7 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
             // The blow lands part way through the swing, if what it was aimed at is still there.
             if m.left <= 0.45 && !m.hit_done {
                 m.hit_done = true;
-                if let Some(t) = target.filter(|t| gap_to(t) < strike_at + 0.6) {
+                if let Some(t) = target.filter(|t| gap_to(t) < strike_at + 0.6 && t.pos.y - agent.body.pos.y < kind.height + 0.8) {
                     let away = (flat(t.pos) - me).try_normalize().unwrap_or(Vec2::X);
                     let force = 3.0 + kind.height * 2.0;
                     hit = Some(Hit { on: t.id, by: id, harm: kind.harm(), push: Vec3::new(away.x * force, 3.0, away.y * force) });
@@ -604,7 +608,10 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
 
     let speed = kind.speed(gait);
     let nerve = if matches!(m.state, State::Flee | State::Chase) || agent.body.swimming { Nerve::hurried(kind.step()) } else { Nerve::easy(kind.step()) };
-    let (dir, jump) = heading.map_or((Vec2::ZERO, false), |want| steer(world, agent, speed, want, nerve, &mut m.veer));
+    // (On the wing it goes where it means to: steering is for feet, and reads the air under
+    // a bird as a drop it will not step off.)
+    let aloft = kind.flies && !agent.body.grounded && !agent.body.swimming;
+    let (dir, jump) = heading.map_or((Vec2::ZERO, false), |want| if aloft { (want, false) } else { steer(world, agent, speed, want, nerve, &mut m.veer) });
     if heading.is_some() && dir == Vec2::ZERO {
         // No way on from here. A roam is given up; a chase or a flight waits for one to open.
         agent.log.boxed += DT;

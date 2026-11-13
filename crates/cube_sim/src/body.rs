@@ -55,6 +55,9 @@ pub struct Intent {
     pub hold: bool,
     /// In water: swim down instead of floating.
     pub dive: bool,
+    /// On the wing: it climbs or sinks at this many metres a second and gravity is not felt
+    /// (a bird; `life` asks it of a kind that flies).
+    pub lift: Option<f32>,
 }
 
 /// How far up a body the water must come before it swims, and where it then floats: just
@@ -166,7 +169,7 @@ impl Body {
         let leaf = [0.25, 0.6].iter().any(|up| world.get(((self.pos + Vec3::Y * self.height * *up) / CELL).floor().as_ivec3()).foliage());
         let asked = dir * intent.speed * if self.swimming { tuning.swim } else if leaf { 0.5 } else { 1.0 };
         let flat = Vec2::new(self.vel.x, self.vel.z);
-        let accel = if !(self.grounded || self.swimming) {
+        let accel = if !(self.grounded || self.swimming || intent.lift.is_some()) {
             tuning.air_accel
         } else if asked.length() < flat.length() {
             tuning.ground_decel
@@ -185,6 +188,8 @@ impl Body {
             let float = ((surface - chest) * 6.0).clamp(-2.0, 2.0);
             let rise = if intent.dive { -1.8 } else { float + if intent.jump || intent.hold { 1.5 } else { 0.0 } };
             self.vel.y += (rise - self.vel.y).clamp(-20.0 * DT, 20.0 * DT);
+        } else if let Some(rate) = intent.lift {
+            self.vel.y += (rate - self.vel.y).clamp(-12.0 * DT, 12.0 * DT);
         } else {
             if intent.jump && self.since_ground <= tuning.coyote && self.vel.y <= 0.0 {
                 self.vel.y = tuning.jump_speed;
@@ -403,7 +408,7 @@ mod tests {
         }
     }
 
-    const EAST: Intent = Intent { dir: Vec2::new(1.0, 0.0), speed: 3.5, jump: false, hold: false, dive: false };
+    const EAST: Intent = Intent { dir: Vec2::new(1.0, 0.0), speed: 3.5, jump: false, hold: false, dive: false, lift: None };
 
     #[test]
     fn stands_and_walks_at_the_asked_speed() {
@@ -585,7 +590,7 @@ mod tests {
         for tick in 0..TICKS * 60 {
             // A wandering heading that turns over the minute, jumping now and then.
             let a = tick as f32 * 0.004;
-            let mut intent = Intent { dir: Vec2::new(a.cos(), (a * 1.7).sin()), speed: 5.0, jump: tick % 90 == 0, hold: tick % 180 < 90, dive: false };
+            let mut intent = Intent { dir: Vec2::new(a.cos(), (a * 1.7).sin()), speed: 5.0, jump: tick % 90 == 0, hold: tick % 180 < 90, dive: false, lift: None };
             // The world ends 32 m out: turn back before then.
             if Vec2::new(b.pos.x, b.pos.z).length() > 24.0 {
                 intent.dir = -Vec2::new(b.pos.x, b.pos.z).normalize();

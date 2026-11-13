@@ -350,14 +350,24 @@ fn far_off(cameras: Query<&GlobalTransform, With<Camera3d>>, mut movers: Query<(
 /// its own mind, from a few of its lengths off, a little above and to one side. Looking for
 /// wildlife by pointing a camera at where it is said to live found empty ground three times
 /// in four; this finds the animal. Says once which it found and how far from the place asked.
-fn watch(args: Res<crate::Args>, registry: Res<Registry>, wild: Query<(&Creature, &Transform), (With<Wild>, Without<Camera3d>)>, mut cameras: Query<&mut Transform, With<Camera3d>>, mut said: Local<bool>) {
+/// With `--play` too, the player is then put down beside it.
+fn watch(args: Res<crate::Args>, registry: Res<Registry>, wild: Query<(&Creature, &Transform), (With<Wild>, Without<Camera3d>)>, mut cameras: Query<&mut Transform, With<Camera3d>>, mut said: Local<bool>, mut live: ResMut<Live>, controlled: Query<&Mover, With<Controlled>>, time: Res<Time>, mut found: Local<Option<f32>>) {
     let Some(kind) = args.watch.as_deref() else { return };
     let from = Vec3::new(args.at.0, 0.0, args.at.1);
     let near = wild.iter().filter(|(c, _)| registry.0.get(c.def).is_some_and(|d| d.id == kind)).min_by(|a, b| a.1.translation.with_y(0.0).distance(from).total_cmp(&b.1.translation.with_y(0.0).distance(from)));
     let (Some((creature, at)), Some(mut camera)) = (near, cameras.iter_mut().next()) else { return };
     let size = registry.0[creature.def].meta.height.max(registry.0[creature.def].meta.length).max(0.3);
     let focus = at.translation + Vec3::Y * size * 0.4;
-    *camera = Transform::from_translation(focus + (at.rotation * Vec3::new(0.8, 0.0, 0.6)).normalize() * size * 4.0 + Vec3::Y * size * 0.9).looking_at(focus, Vec3::Y);
+    *camera = Transform::from_translation(focus + (at.rotation * Vec3::new(0.8, 0.0, 0.6)).normalize() * size * 4.0 + Vec3::Y * size * 1.6).looking_at(focus, Vec3::Y);
+    // With `--play` the player is put down six metres from it two seconds after it is found:
+    // what it does when a person is suddenly near (a bird goes up).
+    let since = *found.get_or_insert(time.elapsed_secs());
+    if *said && time.elapsed_secs() - since > 2.0 && since >= 0.0 && let Some(agent) = controlled.iter().next().and_then(|m| live.agent_mut(m)) {
+        *found = Some(-1.0);
+        agent.body.pos = at.translation + at.rotation * Vec3::new(-6.0, 0.5, 0.0);
+        (agent.before, agent.body.vel) = (agent.body.pos, Vec3::ZERO);
+        println!("watch {kind}: the player put down 6 m from it");
+    }
     if !*said {
         *said = true;
         println!("watch {kind}: found {:.0} m from the place asked, of {} of its kind awake and {} creatures in all", at.translation.with_y(0.0).distance(from), wild.iter().filter(|(c, _)| registry.0.get(c.def).is_some_and(|d| d.id == kind)).count(), wild.iter().count());

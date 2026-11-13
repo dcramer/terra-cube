@@ -19,6 +19,8 @@ mark = [0.07, 0.07, 0.07]
 
 [life]
 temper = "timid"
+# Goes up from what frightens it and glides down after (`Sim::step`).
+flies = true
 voice = "crow"
 habitat = "meadow"
 cover = "edge"

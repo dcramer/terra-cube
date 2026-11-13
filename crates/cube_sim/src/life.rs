@@ -98,6 +98,9 @@ pub struct Life {
     /// which a land carries one to every twenty or fifty of what it hunts.
     #[serde(default = "whole")]
     pub share: f32,
+    /// It takes to the air from what frightens it, and comes down when that is far (a bird).
+    #[serde(default)]
+    pub flies: bool,
 }
 
 /// What a creature eats.
@@ -187,6 +190,8 @@ pub struct Kind {
     /// What it is seen to carry (`held.toml`).
     pub holds: Option<String>,
     pub share: f32,
+    /// It takes to the air from what frightens it, and comes down when that is far (a bird).
+    pub flies: bool,
 }
 
 impl Kind {
@@ -271,7 +276,7 @@ impl Kind {
                 }
             };
             // With no [life], a player is a person and anything else just stands its ground.
-            let life = spec.life.unwrap_or(Life { temper: if spec.kind == "player" { Temper::Person } else { Temper::Wary }, habitat: None, group: 1, groups: 0, water: Default::default(), cover: Default::default(), hours: Default::default(), winter: 1.0, voice: None, diet: None, litter: None, lifespan: None, capacity: None, range: None, meal: None, holds: None, share: 1.0 });
+            let life = spec.life.unwrap_or(Life { temper: if spec.kind == "player" { Temper::Person } else { Temper::Wary }, habitat: None, group: 1, groups: 0, water: Default::default(), cover: Default::default(), hours: Default::default(), winter: 1.0, voice: None, diet: None, litter: None, lifespan: None, capacity: None, range: None, meal: None, holds: None, share: 1.0, flies: false });
             let diet = life.diet.unwrap_or(match life.temper {
                 Temper::Hunter | Temper::Hostile => Diet::Meat,
                 Temper::Person => Diet::All,
@@ -311,6 +316,7 @@ impl Kind {
                 meal: life.meal.unwrap_or(6.0),
                 holds: life.holds.clone(),
                 share: life.share,
+                flies: life.flies,
             });
         }
         kinds
@@ -476,6 +482,10 @@ pub const STARVES: f32 = 4.0;
 const WAKES: f32 = 5.0;
 /// How far from the watcher a creature is still lived, metres.
 pub const AWAKE: f32 = 110.0;
+/// How high over the ground a bird flies from what frightened it (metres).
+const FLIES: f32 = 5.0;
+/// And how fast at the least: faster than anything that hunts on foot (a wolf sprints at 5).
+const WING: f32 = 6.5;
 /// A blow lands this long into a swing, reaches this far past the body, and to this far
 /// either side of straight ahead (radians).
 pub const SWING: f32 = 0.35;
@@ -891,6 +901,26 @@ impl Sim {
             let mut intent = if agent.dead.is_some() { Intent::default() } else { agent.intent };
             intent.jump = agent.want_jump > 0.0 && agent.dead.is_none();
             intent.hold = agent.hold_jump;
+            // A bird goes up from what it flees, to a few metres over the ground, and faster
+            // than it runs; with nothing to flee it comes down at a glide, however it came to
+            // be in the air.
+            if self.kinds[agent.kind].flies && agent.driver == Driver::Mind && agent.dead.is_none() && !agent.body.swimming {
+                let fled = agent.mind.state == mind::State::Flee;
+                if fled || !agent.body.grounded {
+                    let from = agent.body.pos + Vec3::Y * 0.1;
+                    let over = world.raycast(from, Vec3::NEG_Y, FLIES * 2.0).unwrap_or(FLIES * 2.0);
+                    // (It does not come down on water: it flew out over the sea from the
+                    // player, settled on it and swam, 2026-11-13. It goes back to where it
+                    // lives, at its height, and comes down there.)
+                    let wet = !fled && [-0.05, 0.05].iter().any(|d| world.get(((from - Vec3::Y * (over + d)) / CELL).floor().as_ivec3()) == cube_voxel::Block::Water);
+                    intent.lift = Some(if fled || wet { ((FLIES - over) * 1.5).clamp(-1.5, 3.0) } else { -1.8 });
+                    intent.speed = if fled { (intent.speed * 1.6).max(WING) } else { WING * 0.7 };
+                    if !fled {
+                        let home = agent.mind.home - Vec2::new(agent.body.pos.x, agent.body.pos.z);
+                        intent.dir = if home.length() > 3.0 { home.normalize() } else { Vec2::new(agent.facing.sin(), agent.facing.cos()) * 0.3 };
+                    }
+                }
+            }
             let fall = agent.body.vel.y;
             let tuning = Tuning { step: self.kinds[agent.kind].step(), ..Tuning::default() };
             agent.body.step(world, intent, &tuning);
@@ -1334,7 +1364,7 @@ mod tests {
     use cube_voxel::Block;
 
     fn kind(id: &str, temper: Temper, height: f32, speeds: [f32; 3]) -> Kind {
-        Kind { id: id.into(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None, winter: 1.0, diet: if matches!(temper, Temper::Hunter | Temper::Hostile) { Diet::Meat } else { Diet::Plants }, litter: 2.0, lifespan: 8.0, capacity: 8, range: 80.0, meal: 6.0, holds: None, share: 1.0 }
+        Kind { id: id.into(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None, winter: 1.0, diet: if matches!(temper, Temper::Hunter | Temper::Hostile) { Diet::Meat } else { Diet::Plants }, litter: 2.0, lifespan: 8.0, capacity: 8, range: 80.0, meal: 6.0, holds: None, share: 1.0, flies: false }
     }
 
     /// Rabbit, wolf, bear, goblin and a person, on a floor of stone 60 m square.
@@ -1415,6 +1445,29 @@ mod tests {
         assert!(r.log.struck >= 1, "never caught: rabbit {} wolf {}", r.body.pos, w.body.pos);
         // Having caught it the wolf is spent, and lets it go.
         assert!(w.mind.tired > 0.0 && w.mind.state != State::Chase, "{:?}", w.mind);
+    }
+
+    #[test]
+    fn a_bird_goes_up_from_a_wolf_out_of_its_reach_and_comes_down_after() {
+        let (mut world, mut sim) = stage();
+        world.fill(Vec3::new(-200.0, 0.5, -30.0), Vec3::new(30.0, 1.0, 30.0), Block::Stone);
+        sim.kinds[0].flies = true;
+        let bird = sim.add(&world, 0, at(0.0, 0.0), 0.0, Driver::Mind);
+        let wolf = sim.add(&world, 1, at(7.0, 0.0), 0.0, Driver::Mind);
+        sim.agents.get_mut(&wolf).unwrap().hunger = 1.0;
+        let floor = sim.agents[&bird].body.pos.y;
+        let mut top: f32 = 0.0;
+        for _ in 0..12 * 60 {
+            sim.step(&world);
+            top = top.max(sim.agents[&bird].body.pos.y - floor);
+        }
+        let b = &sim.agents[&bird];
+        assert!((3.5..6.5).contains(&top), "it went {top} m up");
+        assert_eq!(b.log.struck, 0, "caught on the wing");
+        // The wolf gives up or is left behind, and the bird is on the ground again, unhurt.
+        run(&mut sim, &world, 30.0);
+        let b = &sim.agents[&bird];
+        assert!(b.body.grounded && b.dead.is_none() && b.log.struck == 0, "{:?} at {}", b.mind.state, b.body.pos);
     }
 
     #[test]

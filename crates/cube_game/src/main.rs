@@ -163,7 +163,8 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
                                         blades, --bits: as columns of bits, not slats; --blocky: as the world's cells
         … --wild --at 47,28 [--dist 12] [--pitch 0.3] [--yaw 1.0] [--view high]
         … --watch deer --at -32,-40      the living world with the camera kept on the nearest deer
-                                        living by its own mind (prints `watch` with how far off it is)
+                                        living by its own mind (prints `watch` with how far off it is);
+                                        with --play the player is put down 6 m from it after 2 s
                                         a scene somewhere else: metres east and south of the start
                                         (`cargo world who` says where creatures live), the camera
                                         that far off and that high; `--view high` is from the air
