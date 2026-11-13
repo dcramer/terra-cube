@@ -123,6 +123,8 @@ pub struct Piece {
     feel: Vec<Vec3>,
     /// Seconds it has been loose.
     pub age: f32,
+    /// Times a lump has rolled off what it came down on ([`Loose::step`]).
+    rolls: u8,
 }
 
 impl Piece {
@@ -760,7 +762,7 @@ impl Loose {
         self.begun.push((pivot, cells.len(), over.is_some()));
         // (A tree gone over is the thing whose trunk stood here.)
         let thing = over.and_then(|_| self.things.iter().find(|t| t.lies.is_none() && t.foot().is_some_and(|f| f.with_y(0.0).distance(pivot.with_y(0.0)) < 1.5)).map(|t| t.id));
-        self.pieces.push(Piece { id: self.next, cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, spin: Vec3::ZERO, brittle, thing, base: Quat::IDENTITY, settling: false, spare: (pivot, tall * 0.3), tall, feel, age: 0.0 });
+        self.pieces.push(Piece { id: self.next, cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, spin: Vec3::ZERO, brittle, thing, base: Quat::IDENTITY, settling: false, spare: (pivot, tall * 0.3), tall, feel, age: 0.0, rolls: 0 });
         changed
     }
 
@@ -829,6 +831,7 @@ impl Loose {
                 tall: 3.0 * CELL,
                 feel,
                 age: 0.0,
+                rolls: 0,
             });
         }
         piece
@@ -921,9 +924,27 @@ impl Loose {
             }
         }
         let mut settling = Vec::new();
+        let mut settling_rolls: Vec<Piece> = Vec::new();
         for (n, speed, struck) in down.into_iter().rev() {
             let piece = self.pieces.swap_remove(n);
             let mut piece = piece;
+            // A lump that has come down on a heap rolls off it: where the ground beside it is
+            // lower than where it lies by more than its own height, it goes that way and
+            // falls again, three times at the most. (Left where they met, the lumps of one
+            // broken stone stood on one another two metres high, 2026-11-13.) In a fixed
+            // order of sides, so the same fall heaps the same way.
+            if piece.thing.is_none() && piece.over.is_none() && !piece.settling && piece.cells.len() < 80 && piece.rolls < 3 {
+                let (middle, reach) = (piece.now(piece.pivot), piece.tall.max(2.0 * CELL));
+                let below = |at: Vec3| world.raycast(at, Vec3::NEG_Y, 12.0);
+                let sides = [Vec3::X, Vec3::NEG_X, Vec3::Z, Vec3::NEG_Z].map(|d| middle + d * reach);
+                let lower = sides.into_iter().filter(|s| !bears(world.bit((*s / BIT).floor().as_ivec3()))).filter_map(|s| below(s).map(|d| (d, s))).filter(|(d, _)| *d > reach * 1.5).max_by(|a, b| a.0.total_cmp(&b.0));
+                if let Some((_, side)) = lower {
+                    piece.shift += side - middle;
+                    (piece.vel, piece.spin, piece.rolls) = (Vec3::ZERO, piece.spin * 0.5, piece.rolls + 1);
+                    settling_rolls.push(piece);
+                    continue;
+                }
+            }
             // A tree's top has struck: it is heard, its outermost twigs snap off, and it
             // settles about where it struck (below, once every piece has been looked at).
             if let (Some(top), Some((way, ..))) = (struck, piece.over) {
@@ -963,6 +984,7 @@ impl Loose {
             self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put, lost, speed, settled: piece.settling });
         }
         self.pieces.extend(settling);
+        self.pieces.extend(settling_rolls);
         changed
     }
 }
