@@ -6,7 +6,7 @@
 
 use crate::motion::Live;
 use bevy::{asset::RenderAssetUsages, mesh::Indices, prelude::*, render::render_resource::PrimitiveTopology};
-use cube_sim::loose::{Part, Piece};
+use cube_sim::loose::Part;
 use cube_voxel::{Block, SPLIT};
 
 pub struct LoosePlugin;
@@ -21,7 +21,7 @@ impl Plugin for LoosePlugin {
 #[derive(Component)]
 struct Falling(u32, Vec3);
 
-fn fall(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<crate::world::Look>>, mut drawn: Query<(Entity, &Falling, &mut Transform)>, mut meshes: ResMut<Assets<Mesh>>) {
+fn fall(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<crate::world::Look>>, mut drawn: Query<(Entity, &Falling, &mut Transform)>, mut meshes: ResMut<Assets<Mesh>>, mut making: Local<std::collections::HashMap<u32, bevy::tasks::Task<cube_voxel::mesh::MeshData>>>) {
     let (Some(live), Some(look)) = (live, look) else { return };
     let pieces = &live.0.loose.pieces;
     for (entity, falling, mut at) in &mut drawn {
@@ -31,17 +31,38 @@ fn fall(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<crate:
             None => commands.entity(entity).despawn(),
         }
     }
+    // Each new piece's mesh is made on another thread (a tree is ten thousand cells, and made
+    // here it was a frame of 40 ms as it came loose) and drawn when it is ready, a frame or
+    // two on: the chunks it was cut from are still drawn as they were for as long.
+    making.retain(|id, _| pieces.iter().any(|p| p.id == *id));
     for piece in pieces.iter().filter(|p| !drawn.iter().any(|(_, f, _)| f.0 == p.id)) {
-        commands.spawn((Falling(piece.id, piece.pivot), Mesh3d(meshes.add(shape(piece))), MeshMaterial3d(look.solid.clone()), Transform::default()));
+        match making.get_mut(&piece.id).map(bevy::tasks::futures::check_ready) {
+            Some(Some(data)) => {
+                making.remove(&piece.id);
+                let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
+                    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
+                    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
+                    .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, data.colors)
+                    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs)
+                    .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, data.tangents)
+                    .with_inserted_indices(Indices::U32(data.indices));
+                commands.spawn((Falling(piece.id, piece.pivot), Mesh3d(meshes.add(mesh)), MeshMaterial3d(look.solid.clone()), Transform { translation: piece.pivot + piece.shift - piece.turn * piece.pivot, rotation: piece.turn, scale: Vec3::ONE }));
+            }
+            Some(None) => {}
+            None => {
+                let cells = piece.cells.clone();
+                making.insert(piece.id, bevy::tasks::AsyncComputeTaskPool::get().spawn(async move { shape(&cells) }));
+            }
+        }
     }
 }
 
 /// A piece drawn as the world draws its cells, where it stood: a world of its own holding
 /// only the piece, meshed by the world's own mesher, so that what falls is what stood and
 /// what will lie. (Drawn first as plain cubes of one colour, a birch went grey as it fell.)
-fn shape(piece: &Piece) -> Mesh {
+fn shape(cells: &std::collections::HashMap<IVec3, Part>) -> cube_voxel::mesh::MeshData {
     let mut alone = cube_voxel::World::default();
-    for (cell, part) in &piece.cells {
+    for (cell, part) in cells {
         match part {
             Part::Whole(block) => alone.set(*cell, *block),
             Part::Bits(bits) => {
@@ -64,13 +85,7 @@ fn shape(piece: &Piece) -> Mesh {
         all.tangents.extend(data.tangents);
         all.indices.extend(data.indices.into_iter().map(|i| i + from));
     }
-    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, all.positions)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, all.normals)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, all.colors)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, all.uvs)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, all.tangents)
-        .with_inserted_indices(Indices::U32(all.indices))
+    all
 }
 
 /// A chip thrown up: how it is going, and the seconds it has left.
