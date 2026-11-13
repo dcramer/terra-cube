@@ -145,25 +145,43 @@ impl Walker {
         let turn = Quat::from_rotation_y(yaw);
         let flat = Vec2::new(self.vel.x, self.vel.z);
         let speed = flat.length();
-        // A stride is longer the faster it goes, and is taken quicker.
-        let stride = (0.18 + speed * 0.3).min(b.tall * 1.25);
-        let takes = (stride / speed.max(0.6) * 0.55).clamp(0.11, 0.3);
+        // A stride is longer the faster it goes, and is taken quicker. Fast enough for its
+        // size it gallops: the fore feet together and then the hind, in long bounds, where at
+        // a trot they go in diagonal pairs. (It trotted at every speed at first, and at a run
+        // its legs went like a sewing machine under a level back: the developer, of the
+        // wolf, 2026-11-12: "the run looks dumb".)
+        let gallops = speed > 2.9 * b.tall;
+        let stride = if gallops { (0.45 + speed * 0.3).min(b.tall * 1.5) } else { (0.18 + speed * 0.3).min(b.tall * 1.25) };
+        let takes = if gallops { (stride / speed * 0.5).clamp(0.13, 0.24) } else { (stride / speed.max(0.6) * 0.55).clamp(0.11, 0.3) };
         // Where each foot belongs: under where its leg leaves the trunk, and ahead by half a
         // stride the way it is going, so it lands where the body will be.
+        // Lying, its feet do not belong under it: the fore legs go out ahead along the ground
+        // and the hind feet are drawn up ahead of the hips and a little out, beside the belly.
+        // (Left where they stood, each leg had to fold to nothing under a hip on the ground
+        // and its knee went wherever it could: through the body, on the wolf. The developer:
+        // "it's clipping itself ... its legs are wrong angles".)
+        let lies = rest > 0.5;
+        let bone = self.bone;
+        let mut n = 0;
         let homes = self.hip.map(|h| {
-            let p = at + turn * Vec3::new(h.x, 0.0, h.z) + Vec3::new(flat.x, 0.0, flat.y) * takes * 0.9;
+            let reach = bone[n].0 + bone[n].1;
+            n += 1;
+            // (Nearly at full stretch, so the knee lies low: drawn up to half its length a hind
+            // leg's knee stood over the wolf's back. And the hind well out, beside the belly.)
+            let out = if lies { Vec3::new(h.x.signum() * if h.z > 0.0 { 0.1 } else { 0.32 } * reach, 0.0, if h.z > 0.0 { 0.86 * reach } else { 0.8 * reach }) } else { Vec3::ZERO };
+            let p = at + turn * (Vec3::new(h.x, 0.0, h.z) + out) + Vec3::new(flat.x, 0.0, flat.y) * takes * 0.9;
             Vec3::new(p.x, ground(p.x, p.z), p.z)
         });
         // The feet go in diagonal pairs, as a trot: fore left with hind right. A foot steps
         // when it has been left further from where it belongs than the stride allows (or the
         // body has turned under it), and only while the other pair has its feet down.
         let far = |f: &Foot, home: Vec3| f.at.distance(home);
-        let lying = self.down > 0.5;
-        for pair in [[0, 3], [1, 2]] {
-            let other = if pair == [0, 3] { [1, 2] } else { [0, 3] };
-            let wants = pair.iter().any(|&i| self.feet[i].step.is_none() && far(&self.feet[i], homes[i]) > stride * 0.5 + if speed < 0.05 && turned.abs() < 1e-3 { 0.06 } else { 0.0 });
+        let pairs = if gallops { [[0, 1], [2, 3]] } else { [[0, 3], [1, 2]] };
+        for (n, pair) in pairs.into_iter().enumerate() {
+            let other = pairs[1 - n];
+            let wants = pair.iter().any(|&i| self.feet[i].step.is_none() && far(&self.feet[i], homes[i]) > stride * 0.5 + if speed < 0.05 && turned.abs() < 1e-3 && !lies { 0.06 } else { 0.0 });
             let free = other.iter().all(|&i| self.feet[i].step.is_none());
-            if wants && free && !lying {
+            if wants && free {
                 for &i in &pair {
                     if self.feet[i].step.is_none() && far(&self.feet[i], homes[i]) > 0.03 {
                         self.feet[i].step = Some((self.feet[i].at, homes[i], 0.0, takes));
@@ -178,7 +196,7 @@ impl Walker {
                 // (It lands where it now belongs, not where that was when it left.)
                 let (s, to) = (done.min(1.0), homes[i]);
                 let ease = s * s * (3.0 - 2.0 * s);
-                foot.at = from.lerp(to, ease) + Vec3::Y * (4.0 * s * (1.0 - s)) * b.tall * (0.12 + 0.1 * (speed / 4.0).min(1.0));
+                foot.at = from.lerp(to, ease) + Vec3::Y * (4.0 * s * (1.0 - s)) * b.tall * if gallops { 0.3 } else { 0.12 + 0.1 * (speed / 4.0).min(1.0) };
                 if *done >= 1.0 {
                     foot.at = to;
                     foot.step = None;
@@ -195,7 +213,9 @@ impl Walker {
         let (fore, hind, left, right) = (mid(0, 1), mid(2, 3), mid(0, 2), mid(1, 3));
         let floor = (fore.y + hind.y) / 2.0;
         let stands = b.tall * (1.0 - self.down) + (b.deep / 2.0 + 0.02) * self.down;
-        let bob = if speed > 0.1 { (self.steps.iter().sum::<u32>() as f32 * 1.7).sin() * 0.008 * b.tall } else { 0.0 };
+        // (In a bound the whole body rises with the feet that are off the ground.)
+        let aloft = self.feet.iter().filter(|f| f.step.is_some()).count() as f32 / 4.0;
+        let bob = if gallops { aloft * 0.14 * b.tall } else if speed > 0.1 { (self.steps.iter().sum::<u32>() as f32 * 1.7).sin() * 0.008 * b.tall } else { 0.0 };
         let pitch = -((fore.y - hind.y) / b.long).clamp(-0.6, 0.6).atan() * (1.0 - self.down * 0.5);
         let roll = ((right.y - left.y) / b.wide).clamp(-0.4, 0.4).atan() * 0.5;
         let want = (Vec3::new(at.x, floor + stands + bob, at.z), turn * Quat::from_rotation_x(pitch) * Quat::from_rotation_z(roll));
@@ -326,25 +346,28 @@ mod tests {
     }
 
     #[test]
-    fn it_lies_down_with_its_feet_where_they_stood_and_gets_up_again() {
+    fn it_lies_down_with_its_legs_out_and_folded_and_gets_up_again() {
         let mut w = Walker::new(Build::dog(), Vec3::ZERO, 0.0);
-        let stood: Vec<Vec3> = w.feet.iter().map(|f| f.at).collect();
-        for _ in 0..180 {
+        for _ in 0..240 {
             w.step(1.0 / 60.0, Vec3::ZERO, 0.0, 1.0, |_, _| 0.0);
         }
         let b = w.build;
         assert!(w.trunk.0.y < b.deep && w.trunk.0.y - b.deep / 2.0 > 0.0, "lying, its trunk is at {}", w.trunk.0.y);
-        assert!(w.feet.iter().zip(&stood).all(|(f, s)| f.at.distance(*s) < 1e-4), "its feet moved as it lay down");
-        // No knee under the ground, and every bone still its own length.
+        // Its fore feet are out ahead of its shoulders and its hind feet ahead of its hips;
+        // every foot is on the ground, no knee is under it, and every bone is its own length.
         let (upper, lower) = b.bones();
-        for [hip, knee, foot] in w.legs() {
-            assert!(knee.y > 0.0, "a knee went under the ground: {knee}");
+        for (i, [hip, knee, foot]) in w.legs().into_iter().enumerate() {
+            assert!(foot.z > hip.z + if i < 2 { 0.4 } else { 0.2 }, "leg {i}: its foot is at {foot} and its hip at {hip}");
+            assert!(foot.y.abs() < 1e-3 && knee.y > -1e-3, "leg {i}: foot {foot} knee {knee}");
             assert!((hip.distance(knee) - upper).abs() < 1e-3 && (knee.distance(foot) - lower).abs() < 1e-3);
+            // (And the leg is not folded to nothing: its foot is well away from its hip.)
+            assert!(hip.distance(foot) > 0.3 * (upper + lower), "leg {i} is folded up on itself: {} of {}", hip.distance(foot), upper + lower);
         }
-        for _ in 0..180 {
+        for _ in 0..240 {
             w.step(1.0 / 60.0, Vec3::ZERO, 0.0, 0.0, |_, _| 0.0);
         }
         assert!((w.trunk.0.y - b.tall).abs() < 0.03, "it did not get up: {}", w.trunk.0.y);
+        assert!(w.legs().iter().all(|[hip, _, foot]| (foot.z - hip.z).abs() < 0.12), "up again, its feet are not back under it");
     }
 
     #[test]

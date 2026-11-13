@@ -39,9 +39,22 @@ pub struct Meta {
     pub joints: usize,
     #[serde(default)]
     pub clips: std::collections::HashMap<String, ClipMeta>,
+    /// The body as it stands, for moving it by its feet (`limbs`): forge's `[walk]`.
+    #[serde(default)]
+    pub walk: Option<Walk>,
     /// Bones by role, as forge read them off the skeleton: `root`, `leg0`… (`feet`).
     #[serde(default)]
     pub bones: std::collections::HashMap<String, String>,
+}
+
+/// Each leg in the walker's order: its hip, knee and end by name, where the hip is, how long
+/// its two bones are, how high its end stands (metres, in the model's frame).
+#[derive(Deserialize, Clone, Debug, Default)]
+pub struct Walk {
+    pub legs: Vec<String>,
+    pub hips: Vec<[f32; 3]>,
+    pub bones: Vec<[f32; 2]>,
+    pub ankle: Vec<f32>,
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]
@@ -96,6 +109,9 @@ pub struct Creature {
     /// run and sprint were made for (m/s). Its clips are then mixed by its speed, in step
     /// with each other, whatever `clip` says (`drive`). Nothing for a clip played alone.
     pub pace: Option<[f32; 4]>,
+    /// It is being moved by its feet and no clip (`limbs`): whoever chooses its clip stands
+    /// it still for standing, going and lying, and leaves the rest to its legs.
+    pub walked: bool,
     /// Where in a stride it is, 0 to 1: every gait in the mix is at the same part of its own.
     phase: f32,
     playing: Option<usize>,
@@ -108,7 +124,7 @@ impl Creature {
         self.playing = None;
     }
     pub fn new(def: usize) -> Self {
-        Self { def, clip: 0, speed: 1.0, hold: None, blend: 0.2, clip_name: None, blow: false, pace: None, phase: 0.0, playing: None, struck: false }
+        Self { def, clip: 0, speed: 1.0, hold: None, blend: 0.2, clip_name: None, blow: false, pace: None, walked: false, phase: 0.0, playing: None, struck: false }
     }
 }
 

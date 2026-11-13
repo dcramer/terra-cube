@@ -103,3 +103,9 @@ leg3 = "bone_25>bone_26>bone_27"
 neck = "tripo::Head_0"
 root = "tripo::Root"
 tail = "tripo::1_Right_Limb_0"
+
+[walk]
+legs = ["tripo::Spine_4>tripo::0_Right_Limb_1>tripo::0_Right_Limb_4", "bone_9>tripo::0_Left_Limb_1>tripo::0_Left_Limb_4", "bone_25>bone_26>bone_27", "tripo::1_Left_Limb_0>tripo::1_Left_Limb_1>tripo::1_Left_Limb_3"]
+hips = [[-0.099682905, 0.62728816, 0.305307], [0.1043651, 0.62728107, 0.30530703], [-0.09968377, 0.59786403, -0.20963296], [0.10436421, 0.5978569, -0.20963287]]
+bones = [[0.337226, 0.30529806], [0.33770177, 0.3052978], [0.26122525, 0.21422848], [0.26110125, 0.32216138]]
+ankle = [0.010483877, 0.010429547, 0.19917902, 0.039928373]

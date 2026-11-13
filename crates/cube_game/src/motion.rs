@@ -271,6 +271,11 @@ fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, mut l
             creature.speed = rate.clamp(0.3, 2.5);
             creature.hold = None;
         }
+        // Moved by its feet (`limbs`), standing, going and lying are not clips: it is stood
+        // still as its idle begins and its legs and trunk do the rest.
+        if creature.walked && matches!(agent.act, Act::Idle | Act::Walk | Act::Run | Act::Sprint | Act::Lie) && let Some(idle) = find("idle") {
+            (creature.clip, creature.hold, creature.pace, creature.blow) = (idle, Some(0.0), None, false);
+        }
     }
 }
 

@@ -204,6 +204,22 @@ pub struct Meta {
     pub clips: BTreeMap<String, ClipMeta>,
     /// Bones by role, for attaching gear and for the game's own aiming later.
     pub bones: BTreeMap<String, String>,
+    /// What a body moved by its feet and no clip needs to know of it (`cube_anim`), where it
+    /// has four legs that fold.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walk: Option<Walk>,
+}
+
+/// A four-legged body as it stands, metres, in the model's own frame (it faces +z, its feet
+/// on y = 0): each leg in the walker's order (fore before hind, the one on -x first) as the
+/// names of its hip, knee and end; where the hip is; how long its two bones are; how high its
+/// end stands over the ground.
+#[derive(Deserialize, Serialize, Default)]
+pub struct Walk {
+    pub legs: Vec<String>,
+    pub hips: Vec<[f32; 3]>,
+    pub bones: Vec<[f32; 2]>,
+    pub ankle: Vec<f32>,
 }
 
 #[derive(Deserialize, Serialize, Default)]

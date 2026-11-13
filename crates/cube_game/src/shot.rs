@@ -347,7 +347,10 @@ fn scene(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terra
         commands.spawn((creature, creatures::spot(n, &terrain, args.at), Visibility::default()));
         stage.expected += 1;
     }
-    let (w, h) = if args.gif && args.big {
+    let (w, h) = if args.gif && args.big && args.limbs_as.is_some() {
+        // (To be shown: a real creature moved by its feet, followed close.)
+        (1280, 720)
+    } else if args.gif && args.big {
         // (A place, not a creature: big enough to see leaves move.)
         (720, 405)
     } else if args.gif {

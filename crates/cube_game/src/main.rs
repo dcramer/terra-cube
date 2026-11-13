@@ -85,6 +85,9 @@ pub struct Args {
     pub limbs: bool,
     /// And a real creature beside it, moved the same way: its own model, its clips left off.
     pub limbs_as: Option<String>,
+    /// The world's four-legged animals are moved by their feet for standing, going and lying,
+    /// not by clips. Off until the wolf on the ring is right (the developer, 2026-11-12).
+    pub by_feet: bool,
     /// How hard the wind blows, 0 to 1, in place of the weather's.
     pub wind: Option<f32>,
     /// What grows drawn as low-poly shapes, not as cubes (`flora`): for comparison.
@@ -168,6 +171,8 @@ twice the size, for a place and not a creature (`make wind` makes shots/wind.gif
 --limbs puts a four-legged body of boxes in a scene, moved by its skeleton and feet and no
 clips, going round the place looked at: standing, walking, running, lying down (`make limbs`).
 --limbs-as wolf does the same to a real creature's model, its clips left off, beside the boxes.
+--by-feet moves the world's four-legged animals by their feet for standing, going and lying
+(a trial: they play clips for those until the wolf on the ring is right).
 --bodies draws the shape each creature is bumped as (also a tick box in the panel).
 --trace prints the controlled body (position, speed, clip, camera) four times a second.
 In the window: Tab controls the picked creature, and lets go of it. Otherwise right-drag
@@ -246,6 +251,7 @@ fn parse_args() -> Args {
             "--speed" => args.speed = it.next().and_then(|v| v.parse().ok()).unwrap_or(1.0),
             "--torch" => args.torch = true,
             "--limbs" => args.limbs = true,
+            "--by-feet" => args.by_feet = true,
             "--limbs-as" => (args.limbs, args.limbs_as) = (true, it.next()),
             "--big" => args.big = true,
             "--wind" => args.wind = it.next().and_then(|v| v.parse().ok()),

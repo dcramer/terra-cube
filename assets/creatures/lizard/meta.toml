@@ -87,6 +87,10 @@ source = "made"
 speed = 0.4589946
 
 [bones]
+fold0 = "bone_11>bone_13>bone_14"
+fold1 = "tripo::Spine_0>bone_23>bone_24"
+fold2 = "bone_32>bone_33>bone_34"
+fold3 = "bone_42>bone_43>bone_44"
 foot0 = "bone_14"
 foot1 = "bone_24"
 foot2 = "bone_34"
@@ -98,3 +102,9 @@ leg2 = "bone_32>bone_33>bone_34"
 leg3 = "bone_42>bone_43>bone_44"
 neck = "tripo::Head_3"
 root = "tripo::Root"
+
+[walk]
+legs = ["bone_11>bone_13>bone_14", "tripo::Spine_0>bone_23>bone_24", "bone_32>bone_33>bone_34", "bone_42>bone_43>bone_44"]
+hips = [[-0.032639626, 0.16742808, 0.1019987], [0.029375583, 0.167428, 0.1019987], [-0.05548724, 0.15437217, -0.1232145], [0.055487324, 0.15437214, -0.123214476]]
+bones = [[0.1045487, 0.073638305], [0.1041403, 0.078130804], [0.09080613, 0.07500005], [0.09080619, 0.07500007]]
+ankle = [0.023813806, 0.02381374, 0.030341782, 0.030341659]
