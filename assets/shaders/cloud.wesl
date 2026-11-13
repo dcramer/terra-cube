@@ -36,7 +36,12 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     // (With the sun at the horizon or under it the light comes in from the side and from
     // below, and a cloud's foot has as much of it as its top.)
     let level = clamp(1.0 - sun.y / 0.15, 0.0, 1.0);
-    let within = WITHIN * mix(mix(UNDER, 0.8, level), 1.0, open);
+    // A low sun's light is thin and from one side: less of it gets about inside, and a
+    // cloud then has a lit side and a shaded one, not one colour all over. Under the land's
+    // edge it is all a cloud has, and it is let show.
+    let low = clamp(1.0 - sun.y / 0.25, 0.0, 1.0);
+    let under = clamp(-sun.y / 0.05, 0.0, 1.0);
+    let within = WITHIN * mix(1.0, 0.4, low) * (1.0 + 1.5 * under) * mix(mix(UNDER, 0.8, level), 1.0, open);
     // An edge is where the cloud's surface is square to the eye; the sun is behind when the
     // eye looks toward it. The lining is brightest close round the sun and faint elsewhere.
     let edge = pow(1.0 - abs(dot(pbr_input.N, pbr_input.V)), 2.0);

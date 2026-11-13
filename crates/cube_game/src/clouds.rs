@@ -90,8 +90,8 @@ impl MaterialExtension for Within {
     }
 }
 
-/// A cloud: where it stands in the field when the wind has not moved it, how big it is, and
-/// which shape.
+/// A cloud: where it stands in the field when the wind has not moved it, how big it is
+/// (under nought: one of the high thin kind, and that big), and which shape.
 #[derive(Component)]
 struct Cloud(Vec3, f32, usize);
 
@@ -111,14 +111,12 @@ fn puffs(state: &mut u32, long: f32) -> (Vec<Puff>, Vec3) {
     let tall = long * (0.28 + 0.16 * roll(state));
     let mut puffs = Vec::new();
     let body = 5 + (long / 55.0) as usize;
+    let bend = roll(state) * std::f32::consts::TAU;
     for _ in 0..body {
-        let (u, v) = loop {
-            let (u, v) = (roll(state) * 2.0 - 1.0, roll(state) * 2.0 - 1.0);
-            if u * u + v * v < 1.0 {
-                break (u, v);
-            }
-        };
-        let mid = 1.0 - (u * u + v * v);
+        // Along a bent band, not over a round patch: from under, a cloud is not a disc.
+        let u = roll(state) * 2.0 - 1.0;
+        let v = ((roll(state) * 2.0 - 1.0) * 0.6 + 0.4 * (u * 2.6 + bend).sin()).clamp(-1.0, 1.0);
+        let mid = (1.0 - (u * u + v * v)).max(0.0);
         let across = wide * (0.3 + 0.3 * mid + 0.12 * roll(state));
         let up = tall * (0.55 + 0.65 * mid) * (0.8 + 0.4 * roll(state));
         let at = Vec3::new(u * long * 0.34, up * (0.05 + 0.2 * roll(state)), v * wide * 0.34);
@@ -128,7 +126,8 @@ fn puffs(state: &mut u32, long: f32) -> (Vec<Puff>, Vec3) {
             let reach = across * (0.3 + 0.25 * roll(state));
             let turn = roll(state) * std::f32::consts::TAU;
             let on = at + Vec3::new(turn.cos() * across * 0.45, up * (0.55 + 0.35 * roll(state)), turn.sin() * across * 0.45);
-            puffs.push(Puff(on, Vec3::new(reach, reach * (0.8 + 0.5 * roll(state)), reach), 0.9));
+            // (Some stand well up: a tower.)
+            puffs.push(Puff(on, Vec3::new(reach, reach * (0.8 + 1.1 * roll(state) * roll(state)), reach), 0.9));
         }
     }
     // The rim: small low ones round the foot, where a cloud frays.
@@ -180,8 +179,8 @@ fn shape(puffs: &[Puff], reach: Vec3, cube: f32) -> Shape {
         // Nor is its edge the puffs' own round one: it is pushed in and out by the block
         // and by blocks of three.
         let grain = |to: f32, n: i32| hash((at.x / to).floor() as i32, (at.y / to).floor() as i32 + n, (at.z / to).floor() as i32) - 0.5;
-        let rough = 0.16 * grain(CUBE * 2.0, 0) + 0.2 * grain(CUBE * 6.0, 1000);
-        at.y > 0.0 && 0.45 * blocked(at, big, 0) + 0.3 * blocked(at, (big / 2.0).max(cube), 1) + 0.25 * mass(puffs, at) + rough > LEVEL
+        let rough = 0.1 * grain(cube, 500) + 0.16 * grain(CUBE * 2.0, 0) + 0.2 * grain(CUBE * 6.0, 1000);
+        at.y > 0.0 && 0.35 * blocked(at, big, 0) + 0.3 * blocked(at, (big / 2.0).max(cube), 1) + 0.35 * mass(puffs, at) + rough > LEVEL
     };
     // The cells, in a box that holds every puff with a block to spare.
     let cells = ((reach + Vec3::splat(big)) / cube).ceil();
@@ -215,7 +214,7 @@ fn shape(puffs: &[Puff], reach: Vec3, cube: f32) -> Shape {
                 )
                 .normalize_or_zero();
                 let block = (at / big).floor();
-                let own = 0.955 + 0.03 * hash(x, y, z) + 0.015 * hash(block.x as i32, block.y as i32 + 77, block.z as i32);
+                let own = 0.92 + 0.05 * hash(x, y, z) + 0.03 * hash(block.x as i32, block.y as i32 + 77, block.z as i32);
                 let white = own * (0.6 + 0.4 * (-over / 45.0f32).exp());
                 over += cube;
                 for (dx, dy, dz) in [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)] {
@@ -225,7 +224,11 @@ fn shape(puffs: &[Puff], reach: Vec3, cube: f32) -> Shape {
                     let face = Vec3::new(dx as f32, dy as f32, dz as f32);
                     // The face's two other ways, in an order that winds it to face outward.
                     let (a, b) = if dx != 0 { (Vec3::Y * dx as f32, Vec3::Z) } else if dy != 0 { (Vec3::Z * dy as f32, Vec3::X) } else { (Vec3::X * dz as f32, Vec3::Y) };
-                    let normal = (fall + face * 0.7).normalize_or(face);
+                    let normal = (fall + face * 0.9).normalize_or(face);
+                    // And each face a little its own shade, as the land's cubes are: the top
+                    // lightest, the sides less, the underside least, so a cube is a cube in
+                    // flat light too.
+                    let white = white * if dy > 0 { 1.0 } else if dy < 0 { 0.9 } else { 0.95 };
                     let first = positions.len() as u32;
                     for (u, v) in [(-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)] {
                         positions.push((at + (face * 0.5 + a * u + b * v) * cube).to_array());
@@ -298,15 +301,21 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
             // The thicker the patch, the bigger its cloud; the thinnest have none of their own.
             // And small ones stand anywhere, in half the places, so no part of the sky is bare.
             let thick = ((cover(x, z) - (1.0 - COVER)) / 0.4).clamp(0.0, 1.0);
-            for nth in 0..2 {
-                if (nth == 0 && thick <= 0.0) || (nth == 1 && roll(&mut state) > 0.5) {
+            // (Small ones in clumps of up to three, more of them where it is thick, strewn
+            // well beyond their own place: one to a place apiece was a sky of polka dots.)
+            let small = (roll(&mut state) < 0.3 + 0.4 * thick) as usize + (roll(&mut state) < 0.45 * thick) as usize + (roll(&mut state) < 0.15) as usize;
+            for nth in 0..1 + small {
+                if nth == 0 && thick <= 0.0 {
                     continue;
                 }
-                let size = if nth == 0 { thick * (0.35 + 0.65 * roll(&mut state)) } else { 0.3 * roll(&mut state) };
+                let size = if nth == 0 { thick * (0.35 + 0.65 * roll(&mut state)) } else { 0.3 * roll(&mut state) * roll(&mut state) };
                 let kind = ((size * KINDS as f32) as usize).min(KINDS - 1);
-                let at = Vec3::new((x as f32 + roll(&mut state)) * place, 0.0, (z as f32 + roll(&mut state)) * place) + START;
+                let strewn = if nth == 0 { 1.0 } else { 2.6 };
+                let at = Vec3::new((x as f32 + 0.5 + (roll(&mut state) - 0.5) * strewn) * place, 0.0, (z as f32 + 0.5 + (roll(&mut state) - 0.5) * strewn) * place) + START;
+                // One small one in seven is of a higher, thinner kind, twice as far up.
+                let high = nth > 0 && roll(&mut state) < 0.14;
                 // (The largest are wider than a place and lie into their neighbours': a bank.)
-                let scale = 0.8 + 0.4 * roll(&mut state);
+                let scale = (0.8 + 0.4 * roll(&mut state)) * if high { -1.0 } else { 1.0 };
                 let turned = Quat::from_rotation_y((roll(&mut state) * 4.0).floor() * std::f32::consts::FRAC_PI_2);
                 commands.spawn((Cloud(at, scale, kind), Mesh3d(kinds[kind].1.clone()), MeshMaterial3d(white.clone()), Transform::from_translation(Vec3::new(0.0, -5000.0, 0.0)).with_rotation(turned), NotShadowCaster, NotShadowReceiver));
             }
@@ -328,9 +337,12 @@ fn drift(time: Res<Time>, kinds: Res<Kinds>, cameras: Query<&GlobalTransform, Wi
         let far = (dx * dx + dz * dz).sqrt();
         let out = (far / (FIELD / 2.0)).min(1.0);
         let fade = 1.0 - ((out - 0.8) / 0.2).clamp(0.0, 1.0);
-        at.translation = Vec3::new(eye.x + dx, sea + FOOT - (FOOT - EDGE_FOOT) * out * out, eye.z + dz);
+        // (A size under nought marks one of the high thin kind.)
+        let (size, lift, thin) = if cloud.1 < 0.0 { (-cloud.1 * 1.5, 2.1, 0.4) } else { (cloud.1, 1.0, 1.0) };
+        at.translation = Vec3::new(eye.x + dx, sea + (FOOT - (FOOT - EDGE_FOOT) * out * out) * lift, eye.z + dz);
         // (Never quite nothing: a size of nought has no way back.)
-        at.scale = Vec3::splat((cloud.1 * fade * fade * (3.0 - 2.0 * fade)).max(1e-4));
+        let size = (size * fade * fade * (3.0 - 2.0 * fade)).max(1e-4);
+        at.scale = Vec3::new(size, size * thin, size);
         let want = if far < NEAR { &kinds.0[cloud.2].0 } else { &kinds.0[cloud.2].1 };
         if mesh.0 != *want {
             mesh.0 = want.clone();
@@ -344,11 +356,9 @@ fn drift(time: Res<Time>, kinds: Res<Kinds>, cameras: Query<&GlobalTransform, Wi
 fn lit(live: Option<Res<crate::motion::Live>>, kinds: Res<Kinds>, cameras: Query<&Exposure, With<Camera3d>>, mut materials: ResMut<Assets<Cloudy>>, mut was: Local<Vec3>) {
     let Some(exposure) = cameras.iter().next() else { return };
     let to_sun = cube_sim::sky::sun(live.map_or(cube_sim::sky::START, |l| l.0.when));
-    // What the air does to the sun on its way to a cloud, near enough: so much air in the
-    // way (once straight up, thirty-eight times at the horizon), which takes blue first. A
-    // cloud is high enough to have a last deep red for a little after the land has none.
-    let air = 1.0 / (to_sun.y.max(-0.01) + 0.026);
-    let through = Vec3::new((-0.06 * air).exp(), (-0.11 * air).exp(), (-0.22 * air).exp()) * ((to_sun.y + 0.09) / 0.08).clamp(0.0, 1.0);
+    // The sun's colour up there (`vault::through`). A cloud is high enough to have a last
+    // deep red for a little after the land has none.
+    let through = crate::vault::through(to_sun.y) * ((to_sun.y + 0.09) / 0.08).clamp(0.0, 1.0);
     let glow = through * (lux::RAW_SUNLIGHT / std::f32::consts::PI * exposure.exposure());
     if (glow - *was).abs().max_element() < 0.002 {
         return;
