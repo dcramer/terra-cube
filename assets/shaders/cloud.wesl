@@ -20,8 +20,8 @@ import bevy_pbr::render::{
 
 // How much of that light comes out of a cloud's every side, at its top and under its
 // thickest part; and how much more at an edge with the sun behind.
-const WITHIN: f32 = 0.4;
-const UNDER: f32 = 0.42;
+const WITHIN: f32 = 0.62;
+const UNDER: f32 = 0.16;
 const LINING: f32 = 0.55;
 
 @fragment

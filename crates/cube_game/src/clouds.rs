@@ -238,7 +238,7 @@ fn shape(puffs: &[Puff], reach: Vec3, cube: f32) -> Shape {
                         positions.push((at + (face * 0.5 + a * u + b * v) * cube).to_array());
                         normals.push(normal.to_array());
                         // Greyer is also bluer: what is deep in a cloud is lit by the sky more than the sun.
-                        colors.push([white * (0.93 + 0.07 * white), white * (0.96 + 0.04 * white), white, 1.0]);
+                        colors.push([white * (0.8 + 0.2 * white), white * (0.9 + 0.1 * white), white, 1.0]);
                     }
                     indices.extend([first, first + 1, first + 2, first, first + 2, first + 3]);
                 }
@@ -324,7 +324,11 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
                 let scale = (0.8 + 0.4 * roll(&mut state) + if nth == 0 { 0.5 * thick } else { 0.0 }) * if high { -1.0 } else { 1.0 };
                 // (The high kind all lie one way, drawn out along the wind.)
                 let turned = Quat::from_rotation_y(if high { -WIND.z.atan2(WIND.x) } else { (roll(&mut state) * 4.0).floor() * std::f32::consts::FRAC_PI_2 });
-                commands.spawn((Cloud(at, scale, kind), Mesh3d(kinds[kind].1.clone()), MeshMaterial3d(white.clone()), Transform::from_translation(Vec3::new(0.0, -5000.0, 0.0)).with_rotation(turned), NotShadowCaster, NotShadowReceiver));
+                // (And stand in a row of three or four along it, not one plank alone.)
+                for nth in 0..if high { 3 + (roll(&mut state) * 2.0) as usize } else { 1 } {
+                    let at = at + WIND * (nth as f32 * longs[kind] * 2.3) + Vec3::new(-WIND.z, 0.0, WIND.x) * (if nth == 0 { 0.0 } else { (roll(&mut state) - 0.5) * 160.0 });
+                    commands.spawn((Cloud(at, scale * if nth == 0 { 1.0 } else { 0.7 + 0.5 * roll(&mut state) }, kind), Mesh3d(kinds[kind].1.clone()), MeshMaterial3d(white.clone()), Transform::from_translation(Vec3::new(0.0, -5000.0, 0.0)).with_rotation(turned), NotShadowCaster, NotShadowReceiver));
+                }
             }
         }
     }
@@ -345,7 +349,7 @@ fn drift(time: Res<Time>, kinds: Res<Kinds>, cameras: Query<&GlobalTransform, Wi
         let out = (far / (FIELD / 2.0)).min(1.0);
         let fade = 1.0 - ((out - 0.8) / 0.2).clamp(0.0, 1.0);
         // (A size under nought marks one of the high thin kind.)
-        let (size, lift, long, thin) = if cloud.1 < 0.0 { (-cloud.1, 2.2, 2.4, 0.34) } else { (cloud.1, 1.0, 1.0, 1.0) };
+        let (size, lift, long, thin) = if cloud.1 < 0.0 { (-cloud.1, 2.2, 1.7, 0.3) } else { (cloud.1, 1.0, 1.0, 1.0) };
         at.translation = Vec3::new(eye.x + dx, sea + (FOOT - (FOOT - EDGE_FOOT) * out * out) * lift, eye.z + dz);
         // (Never quite nothing: a size of nought has no way back.)
         let size = (size * fade * fade * (3.0 - 2.0 * fade)).max(1e-4);
@@ -376,7 +380,7 @@ fn lit(live: Option<Res<crate::motion::Live>>, kinds: Res<Kinds>, cameras: Query
         material.extension.glow = glow.extend(0.0);
         // The sky's blue is on a cloud's shaded side while the sun is low and still up or
         // just under: by day the engine's own sky light is enough, and at night there is none.
-        let low = (1.0 - ((to_sun.y - 0.02) / 0.26).abs()).clamp(0.0, 1.0) * ((to_sun.y + 0.12) / 0.06).clamp(0.0, 1.0);
+        let low = (1.0 - ((to_sun.y - 0.02) / 0.4).abs()).clamp(0.0, 1.0) * ((to_sun.y + 0.12) / 0.06).clamp(0.0, 1.0);
         material.extension.shade = (Vec3::new(0.10, 0.15, 0.36) * (0.5 * low)).extend(0.0);
     }
 }
