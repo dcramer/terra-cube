@@ -565,7 +565,13 @@ impl Loose {
         world.ellipsoid(middle, Vec3::splat(radius), block, true);
         // (And the cells beside it, whose faces toward it are drawn or not by what it is.)
         let (lo, hi) = (((middle - radius) / CELL).floor().as_ivec3() - 1, ((middle + radius) / CELL).floor().as_ivec3() + 1);
-        (lo.y..=hi.y).flat_map(|y| (lo.z..=hi.z).flat_map(move |z| (lo.x..=hi.x).map(move |x| IVec3::new(x, y, z).div_euclid(IVec3::splat(cube_voxel::CHUNK))))).collect()
+        let mut changed: HashSet<IVec3> = (lo.y..=hi.y).flat_map(|y| (lo.z..=hi.z).flat_map(move |z| (lo.x..=hi.x).map(move |x| IVec3::new(x, y, z).div_euclid(IVec3::splat(cube_voxel::CHUNK))))).collect();
+        // (What is put where nothing holds it comes down like anything else cut loose: a
+        // stone let go in the air hung there until 2026-11-13.)
+        if block != Block::Dirt {
+            changed.extend(self.loosen(world, lo, hi, Vec3::X));
+        }
+        changed
     }
 
     /// Looks through what is solid in a box of cells for anything no longer held, and takes
@@ -1179,7 +1185,7 @@ mod tests {
     }
 
     #[test]
-    fn earth_let_go_falls_to_the_ground_and_heaps_and_stone_stays_where_it_is_put() {
+    fn earth_let_go_heaps_and_stone_stays_on_the_ground_and_falls_from_the_air() {
         let mut w = floor();
         let mut loose = Loose::default();
         // Twenty lumps let go at one place two metres up: a heap on the ground, low and
@@ -1190,9 +1196,15 @@ mod tests {
         let earth: Vec<IVec3> = (-12..12).flat_map(|x| (-12..12).flat_map(move |z| (0..16).map(move |y| IVec3::new(x, y, z)))).filter(|c| w.get(*c) != Block::Air).collect();
         let (top, wide) = (earth.iter().map(|c| c.y).max().unwrap(), earth.iter().map(|c| c.x.abs().max(c.z.abs())).max().unwrap());
         assert!(top <= 3 && wide >= 2, "a heap {top} cells high and {wide} out, of {} cells", earth.len());
-        // A stone put in the air stays there: that is building.
-        loose.put(&mut w, Vec3::new(4.1, 2.0, 0.1), 0.155, Block::Stone);
-        assert_ne!(w.get(IVec3::new(16, 8, 0)), Block::Air);
+        // A stone put on the ground stays as it was put, which is building; one let go in
+        // the air comes down, and from two metres it breaks.
+        loose.put(&mut w, Vec3::new(4.1, 0.1, 0.1), 0.155, Block::Stone);
+        assert!(loose.pieces.is_empty() && w.get(IVec3::new(16, 0, 0)) != Block::Air, "a stone on the ground did not stay");
+        loose.put(&mut w, Vec3::new(8.1, 2.0, 0.1), 0.5, Block::Stone);
+        assert_eq!(loose.pieces.len(), 1, "a stone let go in the air hangs there");
+        run(&mut loose, &mut w);
+        assert_eq!(w.get(IVec3::new(32, 8, 0)), Block::Air, "it is still in the air");
+        assert!(loose.landed.iter().any(|l| l.speed > 4.5), "it did not come down hard: {:?}", loose.landed.iter().map(|l| l.speed).collect::<Vec<_>>());
     }
 
     #[test]

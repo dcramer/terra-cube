@@ -486,9 +486,8 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
     }
     if std::mem::take(&mut controls.drop) {
         let middle = at.translation + at.rotation * Vec3::Z * 3.0 + Vec3::Y * 5.0;
-        terrain.0.fill(middle - Vec3::splat(0.75), middle + Vec3::splat(0.75), cube_voxel::Block::Stone);
-        let (lo, hi) = (((middle - Vec3::splat(1.0)) / cube_voxel::CELL).floor().as_ivec3(), ((middle + Vec3::splat(1.0)) / cube_voxel::CELL).floor().as_ivec3());
-        let changed = live.0.loose.loosen(&mut terrain.0, lo, hi, Vec3::X);
+        // (Put, as anything is: it is in the journal, and with nothing under it it falls.)
+        let changed = live.0.loose.put(&mut terrain.0, middle, 0.75, cube_voxel::Block::Stone);
         terrain.touched(&mut dirty, changed);
     }
     if !(dig || put || chop) {
