@@ -259,13 +259,13 @@ fn setup(mut commands: Commands, registry: Res<Registry>, mut meshes: ResMut<Ass
     }
     // The band's own glow, the stars too many and too faint to be seen one by one: soft round
     // patches along it, each brightest at its middle, lying over one another.
-    for _ in 0..170 {
+    for _ in 0..260 {
         let turn = roll(&mut state) * TAU;
         let to = (across * turn.cos() + along * turn.sin() + galaxy * ((roll(&mut state) + roll(&mut state) - 1.0) * 0.14)).normalize();
         if to.y < 0.06 {
             continue;
         }
-        let (wide, bright) = (DOME * (0.04 + 0.06 * roll(&mut state)), (0.003 + 0.005 * roll(&mut state)) * ((to.y - 0.02) / 0.3).clamp(0.2, 1.0));
+        let (wide, bright) = (DOME * (0.03 + 0.04 * roll(&mut state)), (0.005 + 0.008 * roll(&mut state)) * ((to.y - 0.02) / 0.3).clamp(0.2, 1.0));
         let (side, up) = (to.any_orthonormal_vector() * wide, to.cross(to.any_orthonormal_vector()) * wide);
         let middle = places.len() as u32;
         places.push((to * DOME * 1.01).to_array());

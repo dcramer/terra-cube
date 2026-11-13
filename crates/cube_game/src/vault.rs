@@ -114,14 +114,14 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     let mut laid = |mode: AlphaMode| materials.add(StandardMaterial { base_color: Color::BLACK, unlit: true, alpha_mode: mode, fog_enabled: false, cull_mode: None, ..default() });
     let lights = [laid(AlphaMode::Add), laid(AlphaMode::Blend), laid(AlphaMode::Add), laid(AlphaMode::Add)];
     let far = Transform::from_xyz(0.0, -50_000.0, 0.0);
-    // The night's floor: half as light again at the land's edge as overhead.
+    // The night's floor: twice as light at the land's edge as overhead.
     let floor = bowl(|up| {
-        let edge = 1.0 + 0.5 * (1.0 - up.max(0.0)).powi(3);
+        let edge = 1.0 + 1.1 * (1.0 - up.max(0.0)).powi(3);
         [edge, edge, edge, 1.0]
     });
-    // The blue: none of it at the land's edge, all of it from half way up.
+    // The blue: none of it at the land's edge, all of it from a third of the way up.
     let blue = bowl(|up| {
-        let t = ((up - 0.1) / 0.6).clamp(0.0, 1.0);
+        let t = ((up - 0.04) / 0.42).clamp(0.0, 1.0);
         [1.0, 1.0, 1.0, t * t * (3.0 - 2.0 * t)]
     });
     commands.spawn((Vault, Mesh3d(meshes.add(floor)), MeshMaterial3d(lights[0].clone()), far, NotShadowCaster));
@@ -174,7 +174,9 @@ fn turn(
     let blued = BLUED * low.sqrt() * (1.0 - dark);
     // The sun's glow is its own colour at that height, and goes out as it goes under.
     let tint = through(to_sun.y);
-    let sun = tint / tint.max_element() * (0.42 * ((to_sun.y + 0.04) / 0.08).clamp(0.0, 1.0));
+    // (Half white: laid on a sky already as red as a picture can be, its own colour alone
+    // changes nothing.)
+    let sun = (tint / tint.max_element() * 0.5 + 0.5) * (0.6 * ((to_sun.y + 0.04) / 0.08).clamp(0.0, 1.0));
     // The moon's ring by how full it is, in the night only.
     let moon = Vec3::new(0.55, 0.68, 1.0) * (0.2 * sky::moon_lit(when) * (1.0 - day) * ((to_moon.y + 0.02) / 0.06).clamp(0.0, 1.0));
     let now = [floor.extend(1.0), BLUE.extend(blued), sun.extend(1.0), moon.extend(1.0)];
