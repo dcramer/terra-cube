@@ -338,7 +338,8 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
             if std::env::var_os("FORGE_TRACE").is_some() {
                 eprintln!("lie {}: {text}", if good { "kept" } else { "not kept" });
             }
-            if good {
+            // (`FORGE_KEEP=1` keeps it though it fails, to be looked at: never for what is committed.)
+            if good || std::env::var_os("FORGE_KEEP").is_some() {
                 (clip.frames, clip.source) = (frames, "walker");
             }
         }
@@ -373,6 +374,16 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
             }
             if let Some(pace) = said.or(clip.speed) {
                 paces.insert(name.clone(), pace);
+            }
+        }
+        // However it rests, none of it is in the ground: it is raised by as far as the
+        // lowest of its skin is under the floor. (Six made rest poses were, by 4% to 16% of
+        // the creature's height, five of them marked as looked at: the check for it was
+        // written only after the developer saw the wolf's paws in the floor.)
+        if name == "lie" {
+            let under = crate::check::sunk(&glb, &skeleton, &clip.frames);
+            for (pose, under) in clip.frames.iter_mut().zip(under) {
+                pose.root_t += skeleton.base.inverse().transform_vector3(Vec3::Y * under);
             }
         }
         // Every gait begins at the same part of its stride: the moment one fore foot (a

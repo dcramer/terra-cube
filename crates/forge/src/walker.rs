@@ -104,6 +104,7 @@ struct Lying {
     lower_hind: f32,
     back: f32,
     tail: f32,
+    ground: f32,
 }
 
 fn lying() -> Lying {
@@ -165,8 +166,9 @@ pub fn measured(glb: &crate::glb::Glb, sk: &Skeleton, roles: &Roles, pose: &Pose
     let back = roles.spine.first().zip(roles.spine.last()).map_or(0.0, |(a, b)| slope(at(*a), at(*b)));
     let others: Vec<usize> = (0..sk.joints.len()).filter(|j| !roles.tail.contains(j)).collect();
     let tail = if roles.tail.is_empty() { 0.0 } else { crate::check::lowest(glb, sk, pose, &others, None).map_or(0.0, |y| (y - floor) / leg) };
-    let good = belly >= must.belly[0] && belly <= must.belly[1] && elbow <= must.elbow && hock <= must.hock && forearm <= must.forearm && lower <= must.lower_hind && paws && knees && back <= must.back && tail >= must.tail;
-    Some((format!("chest {:+.0}% and loins {:+.0}% of a leg over the ground · elbows {:.0}% up · hocks {:.0}% up · forearms {:.0}° from flat · lower hind legs {:.0}° · paws ahead {} · knees ahead of hips {} · back {:.0}° · tail {:+.0}%", chest * 100.0, loins * 100.0, elbow * 100.0, hock * 100.0, forearm, lower, if paws { "yes" } else { "NO" }, if knees { "yes" } else { "NO" }, back, tail * 100.0), good))
+    let ground = crate::check::lowest(glb, sk, pose, &[], None).map_or(0.0, |y| (y - floor) / leg);
+    let good = ground >= must.ground && belly >= must.belly[0] && belly <= must.belly[1] && elbow <= must.elbow && hock <= must.hock && forearm <= must.forearm && lower <= must.lower_hind && paws && knees && back <= must.back && tail >= must.tail;
+    Some((format!("chest {:+.0}% and loins {:+.0}% of a leg over the ground · elbows {:.0}% up · hocks {:.0}% up · forearms {:.0}° from flat · lower hind legs {:.0}° · paws ahead {} · knees ahead of hips {} · back {:.0}° · tail {:+.0}% · lowest skin {:+.0}%", chest * 100.0, loins * 100.0, elbow * 100.0, hock * 100.0, forearm, lower, if paws { "yes" } else { "NO" }, if knees { "yes" } else { "NO" }, back, tail * 100.0, ground * 100.0), good))
     .map(|(text, good): (String, bool)| (text.replacen("{chest}", "", 1), good))
 }
 
@@ -212,7 +214,8 @@ pub fn lie(glb: &crate::glb::Glb, sk: &Skeleton, roles: &Roles, stand: &Pose) ->
     let (chest, loins) = (under(true)?.min(fore_high - thick).max(0.0), under(false)?.min(hind_high - thick).max(0.0));
     let tip = ((chest - loins) / (fore_at - hind_at).abs().max(1e-4) * 0.5).clamp(-0.2, 0.2).atan();
     let lowest = (chest + loins) / 2.0;
-    let lain = |down: f32| {
+    let span = (fore_at - hind_at).abs().max(1e-4);
+    let lain = |down: f32, tip: f32, lift: &[f32]| {
     let mut pose = stand.clone();
     // (Tipped about its own middle, nose down where its chest has further to come, and let down.)
     let (root, middle) = (at(sk.root), (fore.iter().chain(&hind).map(|l| at(l.hip)).sum::<Vec3>()) / 4.0);
@@ -233,6 +236,17 @@ pub fn lie(glb: &crate::glb::Glb, sk: &Skeleton, roles: &Roles, stand: &Pose) ->
             clips::turn_now(sk, &mut pose, first, Quat::from_axis_angle(axis, 0.1));
         }
     }
+    // A paw stays flat on the ground as it was standing, whatever its leg does: where a
+    // leg's last joint is its paw's (near the ground), that joint is turned back to how it
+    // stood. Carried round with a leg laid flat, a paw that pointed ahead pointed down into
+    // the floor.
+    let turn_of = |m: &glam::Mat4| m.to_scale_rotation_translation().1;
+    let flat_paw = |pose: &mut Pose, end: usize| {
+        if at(end).y - floor < 0.15 * fore_high {
+            let now = turn_of(&sk.pose_world(pose)[end]);
+            clips::turn_now(sk, pose, end, turn_of(&stood[end]) * now.inverse());
+        }
+    };
     for l in &legs {
         let leg = &roles.legs[l.n];
         let out = roles.side * if leg.left { 1.0 } else { -1.0 };
@@ -243,10 +257,11 @@ pub fn lie(glb: &crate::glb::Glb, sk: &Skeleton, roles: &Roles, stand: &Pose) ->
             // the paw is put as far ahead of the elbow as the forearm is long.
             let sole = stood[l.end].inverse().transform_point3(ground(l.end));
             let (a, b) = (at(l.hip).distance(at(l.knee)), at(l.knee).distance(ground(l.end)));
-            let high = (hip.y - floor - thick).clamp(0.0, a * 0.98);
+            let high = (hip.y - floor - thick - lift[l.n]).clamp(0.0, a * 0.98);
             let back = (a * a - high * high).max(0.0).sqrt();
-            let paw = hip.with_y(floor) + ahead * (b - back) + out * thick;
+            let paw = hip.with_y(floor + lift[l.n]) + ahead * (b - back) + out * thick;
             clips::reach_point(sk, roles, &mut pose, leg, (l.hip, l.knee), (l.end, sole), paw);
+            flat_paw(&mut pose, l.end);
         } else {
             // Folded in a Z: the hock on the ground a little behind the hip and wide of the
             // belly, so the thigh goes ahead to the knee and the shank back to the hock; and
@@ -254,20 +269,56 @@ pub fn lie(glb: &crate::glb::Glb, sk: &Skeleton, roles: &Roles, stand: &Pose) ->
             let sole = stood[l.heel].inverse().transform_point3(ground(l.end));
             let lower = at(l.heel).distance(ground(l.end));
             let reach = at(l.hip).distance(at(l.knee)) + at(l.knee).distance(at(l.heel));
-            let hock = hip.with_y(floor + thick * 0.4) - ahead * 0.12 * reach + out * 2.0 * thick;
-            let paw = hock.with_y(floor) + ahead * lower;
+            let hock = hip.with_y(floor + thick * 0.4 + lift[l.n]) - ahead * 0.12 * reach + out * 2.0 * thick;
+            let paw = hock.with_y(floor + lift[l.n]) + ahead * lower;
             clips::reach_by(sk, roles, &mut pose, leg, (l.hip, l.knee), l.heel, hock);
             let now = sk.pose_world(&pose);
             let (heel, toe) = (now[l.heel].w_axis.truncate(), now[l.heel].transform_point3(sole));
             if let (Some(from), Some(to)) = ((toe - heel).try_normalize(), (paw - heel).try_normalize()) {
                 clips::turn_now(sk, &mut pose, l.heel, Quat::from_rotation_arc(from, to));
             }
+            if l.end != l.heel {
+                flat_paw(&mut pose, l.end);
+            }
         }
     }
     pose
     };
-    let down = lowest;
-    let pose = lain(down);
+    // Each leg is raised by however far its own skin is under the ground (a leg has a
+    // thickness: its elbow lies its own radius over the floor, not on it), and the body let
+    // down again by whatever its chest and loins are then both still over it; a few times
+    // round, since each moves the other. (The developer saw paws in the floor at a glance;
+    // `ground` in poses.toml measures it now.)
+    let mut down = lowest;
+    let mut lift = vec![0.0f32; 4];
+    let mut tip = tip;
+    let mut pose = lain(down, tip, &lift);
+    for _ in 0..10 {
+        let mut moved = false;
+        for l in &legs {
+            let others: Vec<usize> = (0..sk.joints.len()).filter(|j| !roles.legs[l.n].chain.contains(j)).collect();
+            if let Some(low) = crate::check::lowest(glb, sk, &pose, &others, None).filter(|low| *low < floor - 0.002 * fore_high) {
+                // (By no more than a limb is thick: further is not a leg lying on the ground.)
+                let more = (floor - low).min(0.2 * fore_high - lift[l.n]);
+                if more > 0.0 {
+                    lift[l.n] += more;
+                    moved = true;
+                }
+            }
+        }
+        let over = |front: bool| crate::check::lowest(glb, sk, &pose, &limbs(roles), Some((ahead, mid, front))).map_or(0.0, |y| y - floor);
+        let (chest, loins) = (over(true), over(false));
+        if chest.abs().max(loins.abs()) > 0.01 * fore_high {
+            // (Both ends onto the ground: down by what they have between them, tipped by their difference.)
+            down = (down + (chest + loins) / 2.0).max(0.0);
+            tip = (tip + ((chest - loins) / span).atan() * 0.5).clamp(-0.35, 0.35);
+            moved = true;
+        }
+        if !moved {
+            break;
+        }
+        pose = lain(down, tip, &lift);
+    }
     // (And not at all where a leg is left under the ground, or it has hardly come down:
     // on such a body this is not lying, and it keeps what it had.)
     let world = sk.pose_world(&pose);

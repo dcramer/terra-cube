@@ -27,6 +27,11 @@ lower_hind = 25.0
 back = 12.0
 # The tail's lowest skin over the ground: on it or over it, not through it.
 tail = -0.05
+# The lowest skin of the whole animal over the ground: nothing of it is in the floor.
+ground = -0.02
+# State 2026-11-12: the boar-beast passes every measure. The wolf and the bear do not (out of
+# the ground, their hocks stand 23% of a leg up, and the wolf's legs were drawn up into its
+# body: looked at with `FORGE_KEEP=1`), so they keep what they had; the wolf rests standing.
 learned = [
     "Standing on its paws with the body let down is a squat, not lying (three tries).",
     "Legs folded to nothing under the hips go through the body.",
@@ -34,5 +39,6 @@ learned = [
     "The body comes down until its belly is on the ground, by the skin of the trunk alone: by its legs' lengths a bear lay a hand deep in the floor, and by all its skin (legs and tail too) a wolf was held up off it.",
     "A leg is put down by the point of it that meets the ground: a rig may end at the hock.",
     "The chest and the loins are measured apart: by the lowest of the whole trunk the wolf's chest stood a hand over the ground with its loins on it, and every number passed. The eye caught it on the sheet; the measure was added.",
+    "Nothing of it may be under the ground, and that is measured over all its skin: the paws of a wolf that passed every other measure were in the floor, and the developer saw it at a glance. A paw that points ahead standing points down when its leg is laid flat.",
     "The tail is measured too: it went through the floor behind a wolf that passed everything else.",
 ]

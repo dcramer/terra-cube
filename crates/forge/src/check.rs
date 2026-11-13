@@ -218,6 +218,14 @@ pub fn check(done: &Finished, required: &[String], bars: &Bars, max_stretch: f32
                 notes.push(format!("slide {:.0}%", slide * 100.0));
             }
         }
+        // However it was made, nothing of a creature at rest is in the ground: the lowest
+        // of all its skin against the floor it stands on (the developer saw a wolf's paws in
+        // the floor at a glance, and no check knew).
+        if clip.name == "lie" {
+            let under = sunk(&done.glb, sk, &clip.frames[..1]).first().copied().unwrap_or(0.0) / roles.height.max(1e-4);
+            ok &= under <= 0.03;
+            notes.push(format!("in the ground {:.0}%", under * 100.0));
+        }
         if clip.name == "lie" && clip.source == "walker" && let Some((text, good)) = crate::walker::measured(&done.glb, sk, roles, &clip.frames[0]) {
             out.push(line(good, "pose lie", text, "assets/creatures/poses.toml".into()));
         }
