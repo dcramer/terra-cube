@@ -3,6 +3,11 @@
 //! (`built`): no Tripo, no credits. (Tripo's rig of a crab came back with no legs found and
 //! a clip that tore to nothing; the rest were never bought.)
 //!
+//! And what goes on none: a serpent (`form = "serpent"`), a head and a body of fourteen
+//! lengths, each a bone on from the last. It goes by a wave that runs down it from head to
+//! tail as fast as it goes forward, so each length follows where the one ahead of it went
+//! and none slides sideways over the ground.
+//!
 //! And what goes on two: a bird on the ground (`form = "fowl"`: a heron, a duck, a pheasant, an
 //! owl, a hawk at rest, a crow), the same way: a body, a head on a neck, a tail, folded wings,
 //! and two legs under it that swing fore and aft and bend at the knee to lift.
@@ -48,6 +53,9 @@ pub struct Crawler {
     /// body, from its middle; its beak's tip from there; and how far its hips are under
     /// its middle.
     beak: (Vec3, Vec3, f32),
+    /// A serpent's body: how many lengths it is in, each a bone on from the last, from
+    /// behind its head to its tail's end. None, for what has legs.
+    coils: usize,
 }
 
 /// Boxes, each held by one bone, and the bones: the model with its skeleton.
@@ -192,7 +200,7 @@ impl Crawler {
             }
             sting = Some(first);
         }
-        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side, reach, long: l, high: mid, fowl: false, sting, leaps: b.leaps, neck: 0.0, wide, beak: (Vec3::ZERO, Vec3::ZERO, 0.0) }))
+        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side, reach, long: l, high: mid, fowl: false, sting, leaps: b.leaps, neck: 0.0, wide, beak: (Vec3::ZERO, Vec3::ZERO, 0.0), coils: 0 }))
     }
 
     /// A bird on the ground: `length` its body, `span` how long its legs are, `chord` its
@@ -241,11 +249,97 @@ impl Crawler {
             parents.extend([Some(0), Some(bone)]);
             names.extend([format!("wing_{s}"), format!("wing_{s}_tip")]);
         }
-        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side: 1, reach: legs, long: l, high: mid, fowl: true, sting: None, leaps: false, neck: neck + l * 0.2, wide, beak: (base - Vec3::Y * mid, Vec3::new(0.0, neck + l * 0.05, l * 0.39), thick / 2.0) }))
+        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side: 1, reach: legs, long: l, high: mid, fowl: true, sting: None, leaps: false, neck: neck + l * 0.2, wide, beak: (base - Vec3::Y * mid, Vec3::new(0.0, neck + l * 0.05, l * 0.39), thick / 2.0), coils: 0 }))
     }
 
 
     /// Bones a leg: three, its foot one of them.
+    /// A serpent: a head with a tongue, and its body in lengths that taper to its tail,
+    /// banded in its two colours. Bone 0 is the first length behind its head, 1 its head,
+    /// 2 and on the rest of it in order.
+    pub fn serpent(b: &Built) -> Result<(Glb, Self)> {
+        let (l, n) = (b.length, 14usize);
+        let (thick, wide, seg, front) = (l * 0.045, l * 0.055, l * 0.9 / 14.0, l * 0.4);
+        let dark = |c: [f32; 3], k: f32| c.map(|v| v * k);
+        let mut boxes: Vec<(Vec3, Vec3, [f32; 3], usize)> = Vec::new();
+        let mut put = |middle: Vec3, size: Vec3, colour: [f32; 3], bone: usize| boxes.push((middle - size / 2.0, middle + size / 2.0, colour, bone));
+        put(Vec3::new(0.0, thick * 0.55, front + l * 0.05), Vec3::new(wide * 1.35, thick * 1.1, l * 0.1), b.mark, 1);
+        put(Vec3::new(0.0, thick * 0.4, front + l * 0.125), Vec3::new(wide * 0.15, thick * 0.1, l * 0.05), [0.6, 0.1, 0.1], 1);
+        let (mut places, mut parents, mut names) = (vec![Vec3::new(0.0, thick / 2.0, front), Vec3::new(0.0, thick / 2.0, front)], vec![None, Some(0)], vec!["body".to_string(), "head".to_string()]);
+        for i in 0..n {
+            let bone = if i == 0 { 0 } else { i + 1 };
+            // (Thickest a third of the way down it, thin at its neck and to nothing at its tail.)
+            let along = i as f32 / n as f32;
+            let girth = (0.75 + 0.5 * (PI * (along / 0.66).min(1.0)).sin()) * if along > 0.66 { 1.0 - (along - 0.66) / 0.4 } else { 1.0 };
+            let middle = Vec3::new(0.0, thick * girth / 2.0, front - (i as f32 + 0.5) * seg);
+            put(middle, Vec3::new(wide * girth, thick * girth, seg * 1.04), if i % 3 == 1 { dark(b.back, 0.6) } else { b.back }, bone);
+            put(middle - Vec3::Y * thick * girth * 0.4, Vec3::new(wide * girth * 0.7, thick * girth * 0.25, seg * 1.04), b.belly, bone);
+            if i > 0 {
+                places.push(Vec3::new(0.0, thick / 2.0, front - i as f32 * seg));
+                parents.push(Some(if i == 1 { 0 } else { i }));
+                names.push(format!("coil_{i}"));
+            }
+        }
+        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side: 0, reach: 0.0, long: l, high: thick / 2.0, fowl: false, sting: None, leaps: false, neck: 0.0, wide, beak: (Vec3::ZERO, Vec3::ZERO, 0.0), coils: n }))
+    }
+
+    /// A serpent lying along a wave: how far along the wave its head is (`phase`, radians),
+    /// how far the wave swings to either side, and how its head is turned on its neck.
+    /// Each length points the way the wave runs where it lies, so the body follows the
+    /// one line and the wave runs back down it as `phase` goes on.
+    fn coiled(&self, sk: &Skeleton, phase: f32, swing: f32, head: Quat) -> Pose {
+        let (seg, wave) = (self.long * 0.9 / self.coils as f32, TAU / (self.long * 0.7));
+        let way = |back: f32| (swing * wave * (phase - wave * back * seg).cos()).atan();
+        let mut pose = sk.rest();
+        pose.rotations[0] = Quat::from_rotation_y(way(0.0));
+        pose.root_t = sk.joints[0].rest_t + Vec3::X * swing * phase.sin();
+        pose.rotations[1] = Quat::from_rotation_y(way(-0.6) - way(0.0)) * head;
+        for i in 1..self.coils {
+            pose.rotations[i + 1] = Quat::from_rotation_y(way(i as f32) - way(i as f32 - 1.0));
+        }
+        pose
+    }
+
+    /// A serpent's clips.
+    fn slither(&self, name: &str, sk: &Skeleton) -> Result<Clip> {
+        let frames_of = |seconds: f32, f: &dyn Fn(f32) -> Pose| -> Vec<Pose> {
+            let n = (seconds * FPS).round() as usize;
+            (0..=n).map(|i| f(i as f32 / n as f32)).collect()
+        };
+        let ease = |t: f32| t * t * (3.0 - 2.0 * t);
+        let (l, lies) = (self.long, 0.9f32);
+        let (frames, looping, speed) = match name {
+            // The wave runs back down it as fast as it goes on: one wave's length a turn.
+            "walk" | "run" | "sprint" => {
+                let (pace, swing) = match name { "walk" => (l * 0.45, l * 0.07), "run" => (l * 1.1, l * 0.085), _ => (l * 1.6, l * 0.09) };
+                (frames_of(l * 0.7 / pace, &|t| self.coiled(sk, TAU * t, swing, Quat::IDENTITY)), true, Some(pace))
+            }
+            // Lying in its curves, its head up a little and turning to look about.
+            "idle" => (frames_of(4.0, &|t| self.coiled(sk, lies + 0.12 * (TAU * t).sin(), l * 0.075, Quat::from_rotation_x(-0.25) * Quat::from_rotation_y(0.3 * (TAU * t).sin()))), true, None),
+            // Drawn back with its head reared, and thrown forward and down.
+            "attack" => (frames_of(0.8, &|t| {
+                let (up, out) = ((PI * (t / 0.45).min(1.0)).sin() * if t < 0.45 { 1.0 } else { 0.0 }, ease(((t - 0.3) / 0.2).clamp(0.0, 1.0)) * (1.0 - ease(((t - 0.55) / 0.25).clamp(0.0, 1.0))));
+                let mut pose = self.coiled(sk, lies, l * (0.075 + 0.04 * up - 0.05 * out), Quat::from_rotation_x(-0.9 * up + 0.35 * out));
+                pose.root_t += Vec3::Z * l * (0.16 * out - 0.06 * up);
+                pose
+            }), false, None),
+            "hurt" => (frames_of(0.5, &|t| { let k = (PI * t).sin(); self.coiled(sk, lies + 0.8 * k, l * (0.075 + 0.05 * k), Quat::from_rotation_x(-0.5 * k)) }), false, None),
+            // Over onto its back, its curves falling slack and its head down.
+            "die" => (frames_of(1.4, &|t| {
+                let (over, slack) = (ease((t / 0.6).min(1.0)), ease(((t - 0.3) / 0.8).clamp(0.0, 1.0)));
+                let mut pose = self.coiled(sk, lies + 1.2 * over, l * (0.075 + 0.03 * (PI * over).sin() - 0.03 * slack), Quat::IDENTITY);
+                pose.rotations[0] *= Quat::from_rotation_z(PI * over);
+                pose
+            }), false, None),
+            // In the air it is nearly straight; landing, it gathers into its curves again.
+            "jump" => (frames_of(0.3, &|t| self.coiled(sk, lies, l * 0.075 * (1.0 - 0.6 * t), Quat::from_rotation_x(-0.3 * t))), false, None),
+            "fall" => (frames_of(0.9, &|t| self.coiled(sk, lies + 0.3 * (TAU * t).sin(), l * 0.03, Quat::IDENTITY)), true, None),
+            "land" => (frames_of(0.37, &|t| self.coiled(sk, lies, l * 0.075 * (0.4 + 0.6 * ease(t)), Quat::IDENTITY)), false, None),
+            _ => (frames_of(1.0, &|_| self.coiled(sk, lies, l * 0.075, Quat::IDENTITY)), true, None),
+        };
+        Ok(Clip { name: name.into(), looping, frames, source: "made", speed })
+    }
+
     fn per(&self) -> usize {
         3
     }
@@ -255,7 +349,8 @@ impl Crawler {
         let per = self.per();
         let legs = (0..self.side * 2).map(|n| Leg { chain: (0..per).map(|k| 3 + n * per + k).collect(), front: n % self.side < self.side.div_ceil(2), left: n >= self.side }).collect();
         let (lo, hi) = sk.joints.iter().fold((f32::MAX, f32::MIN), |(lo, hi), j| (lo.min(j.world.w_axis.y), hi.max(j.world.w_axis.y)));
-        Roles { forward: Vec3::Z, side: Vec3::X, legs, head: vec![1], tail: vec![2], spine: vec![0], others: Vec::new(), arms: Vec::new(), floor: 0.0, height: hi.max(lo), length: self.long, nose: None, sinks: 0.0, curls: false }
+        let tail = if self.coils > 0 { (2..=self.coils).collect() } else { vec![2] };
+        Roles { forward: Vec3::Z, side: Vec3::X, legs, head: vec![1], tail, spine: vec![0], others: Vec::new(), arms: Vec::new(), floor: 0.0, height: hi.max(lo), length: self.long, nose: None, sinks: 0.0, curls: false }
     }
 
     /// A pose: the body moved and turned so, and each leg swung fore or aft by so far along
@@ -301,6 +396,9 @@ impl Crawler {
 
     /// One of its clips.
     pub fn clip(&self, name: &str, sk: &Skeleton) -> Result<Clip> {
+        if self.coils > 0 {
+            return self.slither(name, sk);
+        }
         let still = |_: usize| (0.0, 0.0);
         let frames_of = |seconds: f32, f: &dyn Fn(f32) -> Pose| -> Vec<Pose> {
             let n = (seconds * FPS).round() as usize;

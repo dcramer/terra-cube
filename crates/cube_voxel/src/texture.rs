@@ -67,6 +67,11 @@ impl Grain {
 
     /// The grain of a block's top (and underside) or of its sides.
     pub fn of(block: Block, top: bool) -> Grain {
+        // (Wood that has been cut into or brought down is bark on every face of every cell:
+        // the cut end is a photograph of a round log on black, for the one top of a trunk
+        // that is drawn whole, and on the top of each cell of a felled birch it was a patch
+        // of black. The developer's picture, 2026-11-13.)
+        let top = top && !matches!(block, Block::Timber | Block::TimberBirch);
         match block.grown() {
             Block::Grass | Block::Turf => Grain::Grass,
             Block::Dirt => Grain::Soil,

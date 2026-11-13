@@ -544,6 +544,18 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
         let seen = terrain.0.raycast(camera.translation, along, HANDS + camera.translation.distance(feet)).map(|far| camera.translation + along * far).filter(|hit| hit.distance(feet + Vec3::Y) < HANDS);
         if let Some(block) = lay {
             let to = seen.filter(|_| !controls.far).map(|hit| hit - along * CELL * 0.5).filter(|to| to.with_y(0.0).distance(feet.with_y(0.0)) > 0.8).unwrap_or(ahead);
+            // Never on himself. A hunk lies on the square it is over, which may reach back
+            // half a metre from where it was aimed: put down, it came down into him ("it
+            // kind of can fall into you", the developer, 2026-11-13). Its square is moved
+            // on, the way he faces, until all of it is clear of where he stands.
+            let side = cube_sim::loose::HUNK as f32 * CELL;
+            let clear = |to: Vec3| {
+                let lo = Vec3::new((to.x / side).floor() * side, 0.0, (to.z / side).floor() * side);
+                let near = Vec3::new(feet.x.clamp(lo.x, lo.x + side), 0.0, feet.z.clamp(lo.z, lo.z + side));
+                near.distance(feet.with_y(0.0)) > 0.45
+            };
+            let on = (at.rotation * Vec3::Z).with_y(0.0).normalize_or(Vec3::Z);
+            let to = (0..8).map(|k| to + on * k as f32 * CELL).find(|to| clear(*to)).unwrap_or(to + on * side * 2.0);
             if let Some((corner, changed)) = live.0.loose.lay(&mut terrain.0, to, block) {
                 if std::env::var_os("LOOSE_TRACE").is_some() {
                     // (And what is under it there, for whoever asks whether it was put on another.)

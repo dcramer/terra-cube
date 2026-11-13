@@ -74,8 +74,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 pub fn BLOWS(thick: f32) -> u32 {
     ((thick * 2.0 / 0.15).ceil() as u32).clamp(2, 8)
 }
-/// How far either side of a blow a fallen tree's boughs and leaf are knocked off, metres.
-pub const LIMBS: f32 = 3.5;
 /// How long the logs are that a bare trunk breaks into, metres.
 pub const LOG: f32 = 2.0;
 
@@ -86,6 +84,9 @@ pub const LOG: f32 = 2.0;
 /// similar size ... you have to carry them in your hands, probably one at a time"; the
 /// size was left to us.
 pub const HUNK: i32 = 2;
+/// How much of a log's wood comes away as hunks, of 1: the rest is chips. (A tree gave 20 to
+/// 30 at all of it, and the developer, having felled one: "it changed into too many".)
+pub const YIELD: f32 = 0.5;
 /// How many blows of a pick a boulder takes before it breaks into hunks, by how far across
 /// it is at its widest (metres, its radius): three to five ("maybe that takes 3-5 chips
 /// depending on size of rock").
@@ -214,8 +215,6 @@ pub struct Thing {
     /// timber, and nothing more is kept of it: [`Loose::timber`].
     pub blows: u32,
     pub limbed: bool,
-    /// It has taken one blow at its boughs since it fell: the next takes all that is left.
-    pub lopped: bool,
 }
 
 impl Thing {
@@ -324,6 +323,10 @@ pub struct Loose {
     pub shed: Vec<(Vec3, Block)>,
     /// Every tree and boulder that has been cut into ([`Thing`]).
     pub things: Vec<Thing>,
+    /// Hunks that have come loose where they had just come to rest, by their corner, and
+    /// how many times running: one that does it four times is left where it is
+    /// ([`Loose::loosen`]).
+    restless: HashMap<IVec3, u8>,
     /// Every edit made, with how many steps had been taken when it was ([`replay`]).
     pub journal: Vec<(u64, Edit)>,
     steps: u64,
@@ -568,8 +571,15 @@ fn trace(what: std::fmt::Arguments) {
 
 /// Whether a hunk's cell may go where this is: into air, water, what grows low, and leaf,
 /// which gives way under it.
-fn room(there: Block) -> bool {
-    !there.solid() || there.foliage()
+fn room(world: &World, cell: IVec3) -> bool {
+    match world.get(cell) {
+        // (A cell part filled with leaf and nothing else is leaf: a hunk could neither go
+        // into one, which was taken, nor lie on one, which bears nothing, and was lifted
+        // over it and let fall into it for as long as anyone watched. The developer saw
+        // one "infinitely falling on itself", 2026-11-13.)
+        Block::Broken => world.bits_at(cell).is_some_and(|bits| bits.iter().all(|b| !b.solid() || b.foliage())),
+        there => !there.solid() || there.foliage(),
+    }
 }
 
 /// The cells of a hunk, from its lowest corner.
@@ -617,7 +627,7 @@ fn strew(world: &mut World, mut places: Vec<(f32, IVec3)>, many: usize, block: B
         if put == many {
             break;
         }
-        if hunk().all(|d| room(world.get(corner + d))) {
+        if hunk().all(|d| room(world, corner + d)) {
             for d in hunk() {
                 world.set(corner + d, block);
                 changed.insert((corner + d).div_euclid(IVec3::splat(cube_voxel::CHUNK)));
@@ -633,7 +643,7 @@ fn strew(world: &mut World, mut places: Vec<(f32, IVec3)>, many: usize, block: B
 fn set_down(world: &mut World, at: Vec3, block: Block, changed: &mut HashSet<IVec3>) -> Option<IVec3> {
     let cell = (at / CELL).floor().as_ivec3();
     let (x, z) = (cell.x.div_euclid(HUNK) * HUNK, cell.z.div_euclid(HUNK) * HUNK);
-    let corner = (0..=3 * HUNK).map(|up| IVec3::new(x, cell.y + up, z)).find(|c| hunk().all(|d| room(world.get(*c + d))))?;
+    let corner = (0..=3 * HUNK).map(|up| IVec3::new(x, cell.y + up, z)).find(|c| hunk().all(|d| room(world, *c + d)))?;
     strew(world, vec![(0.0, corner)], 1, block, changed);
     Some(corner)
 }
@@ -718,14 +728,14 @@ impl Loose {
                 continue;
             }
             self.next += 1;
-            self.things.push(Thing { id: self.next, limbs, clumps: forms[*n].clumps.iter().filter(|c| c.tree == *tree).copied().collect(), stone: None, cuts: Vec::new(), lies: None, blows: 0, limbed: false, lopped: false });
+            self.things.push(Thing { id: self.next, limbs, clumps: forms[*n].clumps.iter().filter(|c| c.tree == *tree).copied().collect(), stone: None, cuts: Vec::new(), lies: None, blows: 0, limbed: false });
         }
         for (n, stone) in &cut.stones {
             if self.things.iter().any(|t| t.stone.as_ref().map(|s| s.middle) == forms[*n].stones.get(*stone).map(|s| s.middle)) {
                 continue;
             }
             self.next += 1;
-            self.things.push(Thing { id: self.next, limbs: Vec::new(), clumps: Vec::new(), stone: forms[*n].stones.get(*stone).cloned(), cuts: Vec::new(), lies: None, blows: 0, limbed: false, lopped: false });
+            self.things.push(Thing { id: self.next, limbs: Vec::new(), clumps: Vec::new(), stone: forms[*n].stones.get(*stone).cloned(), cuts: Vec::new(), lies: None, blows: 0, limbed: false });
         }
     }
 
@@ -795,9 +805,8 @@ impl Loose {
     /// 1. Standing, the blow goes into one notch a metre up its trunk, on the side it came
     ///    from, and the tree stands until it has taken as many as its girth asks ([`BLOWS`]):
     ///    the last cuts it through, and it falls.
-    /// 2. Fallen, it is still a tree: a blow knocks off its boughs and leaf for some way
-    ///    either side ([`LIMBS`]), which are noted in `shed` for whoever shows them, and a
-    ///    second knocks off whatever the first left.
+    /// 2. Fallen, it is still a tree: a blow knocks off all its boughs and leaf, which are
+    ///    noted in `shed` for whoever shows them.
     /// 3. Bare, it is timber ([`Loose::timber`]): a blow breaks what it strikes through at
     ///    the nearest of the places it breaks, one to each [`LOG`] of its length.
     /// 4. And a blow at a log splits it into hunks ([`HUNK`]): pieces of wood all of one
@@ -916,9 +925,7 @@ impl Loose {
                 let (bl, bh) = ((from / CELL).floor().as_ivec3(), (to / CELL).floor().as_ivec3());
                 let (lo, hi);
                 {
-                    // Its boughs and leaf, for a way either side of the blow: whatever of
-                    // this tree is not its trunk or a heavy limb. And whether any is left.
-                    let mut left = 0usize;
+                    // Its boughs and leaf: whatever of this tree is not its trunk or a heavy limb.
                     for y in bl.y..=bh.y {
                         for z in bl.z..=bh.z {
                             for x in bl.x..=bh.x {
@@ -937,25 +944,20 @@ impl Loose {
                                 if !its {
                                     continue;
                                 }
-                                if thing.lopped || here.distance(at) < LIMBS {
-                                    clear(world, cell, &mut cut);
-                                    gone += b.wood() as u32;
-                                    if (x + y * 3 + z * 7).rem_euclid(9) == 0 {
-                                        self.shed.push((here, b));
-                                    }
-                                } else {
-                                    left += 1;
+                                clear(world, cell, &mut cut);
+                                gone += b.wood() as u32;
+                                if (x + y * 3 + z * 7).rem_euclid(9) == 0 {
+                                    self.shed.push((here, b));
                                 }
                             }
                         }
                     }
-                    // (Two blows at the most: "chop it maybe once or twice to get rid of
-                    // the bark kind of thing", the developer, 2026-11-13. By reach alone a
-                    // willow, whose crown is wider than any blow along its trunk reaches,
-                    // was never bare, whatever was done to it.)
-                    self.things[n].lopped = true;
-                    self.things[n].limbed = left == 0;
-                    trace(format_args!("chop: fallen, boughs and leaf knocked off, {left} cells of them left"));
+                    // (All of them at the one blow, wherever on it the blow lands: "the first
+                    // chop probably should cut away the branches", the developer, having
+                    // felled one, 2026-11-13. By how far a blow reached it took two, and
+                    // before that a willow was never bare.)
+                    self.things[n].limbed = true;
+                    trace(format_args!("chop: fallen, its boughs and leaf knocked off"));
                     (lo, hi) = (bl, bh);
                 }
                 // (What a blow leaves on nothing comes down in its turn: a bough's end, its trunk.)
@@ -1040,7 +1042,7 @@ impl Loose {
             // (To the nearest hunk, and none from a scrap of under half of one: with one
             // at the least from anything, a tree's twigs' ends made a fifth more wood than
             // it had.)
-            let many = (wood as f32 / (SPLIT * SPLIT * SPLIT * HUNK * HUNK * HUNK) as f32).round() as usize;
+            let many = (wood as f32 * YIELD / (SPLIT * SPLIT * SPLIT * HUNK * HUNK * HUNK) as f32).round() as usize;
             let put = strew(world, places, many, Block::Billet, &mut cut.changed);
             for k in 0..6 {
                 self.shed.push((a.lerp(b, (k as f32 + 0.5) / 6.0) + Vec3::Y * 0.3, Block::Timber));
@@ -1157,6 +1159,7 @@ impl Loose {
     pub fn lift(&mut self, world: &mut World, at: Vec3) -> Option<(Block, HashSet<IVec3>)> {
         let (corner, block) = hunk_at(world, (at / CELL).floor().as_ivec3())?;
         self.journal.push((self.steps, Edit::Lift { at }));
+        self.restless.clear();
         let mut changed = HashSet::new();
         for d in hunk() {
             world.set(corner + d, Block::Air);
@@ -1313,7 +1316,23 @@ impl Loose {
                         }
                         let mut apart: Vec<(Option<IVec3>, Vec<IVec3>)> = apart.into_iter().collect();
                         apart.sort_by_key(|(corner, _)| corner.map(|c| (c.y, c.z, c.x)));
-                        for (_, cells) in apart {
+                        for (corner, cells) in apart {
+                            // A hunk that comes loose again from where it has just come to
+                            // rest, four times running, is left there: it is on something,
+                            // whatever the rules above make of it, and let go it would fall
+                            // onto the same place for ever (the developer saw one do so,
+                            // 2026-11-13, and it has not been made to happen since:
+                            // `LOOSE_TRACE=1` says what was under it).
+                            if let Some(corner) = corner {
+                                let times = self.restless.entry(corner).or_insert(0);
+                                *times += 1;
+                                if *times > 4 {
+                                    if *times == 5 {
+                                        trace(format_args!("a hunk at {corner} would not settle, and is left there: under it {:?}", hunk().filter(|d| d.y == 0).map(|d| world.get(corner + d - IVec3::Y)).collect::<Vec<_>>()));
+                                    }
+                                    continue;
+                                }
+                            }
                             changed.extend(self.take(world, cells, push));
                         }
                     }
@@ -1647,7 +1666,13 @@ impl Loose {
                     let by = (piece.shift / CELL).round().as_ivec3();
                     // (Leaf is room: it is crushed under what comes down on it, and a hunk
                     // set down on top of it lay on nothing that bears and fell again.)
-                    if piece.cells.keys().all(|c| room(world.get(*c + by))) {
+                    if piece.cells.keys().all(|c| room(world, *c + by)) {
+                        // (And what leaf is there is crushed under it.)
+                        for c in piece.cells.keys() {
+                            if world.get(*c + by) == Block::Broken {
+                                world.set(*c + by, Block::Air);
+                            }
+                        }
                         break;
                     }
                     piece.shift.y += CELL;
@@ -2211,8 +2236,9 @@ mod tests {
         let stump = (-4..=4).flat_map(|x| (-4..=4).flat_map(move |z| (0..8).map(move |y| IVec3::new(x, y, z)))).filter(|c| w.get(*c).wood()).count();
         let (left, after) = (left - stump, after - stump);
         assert!(left * 10 < after, "{left} cells of wood left in logs, of {after}");
-        // (As much wood in hunks as there was in logs, to the nearest hunk a log.)
-        assert!(billets % 8 == 0 && billets * 10 > after * 6 && billets * 10 < after * 14, "{billets} cells of hunks from {after} of logs");
+        // (Half the wood that was in logs, `YIELD`, to the nearest hunk a log.)
+        let share = billets as f32 / (after as f32 * YIELD);
+        assert!(billets % 8 == 0 && (0.6..1.4).contains(&share), "{billets} cells of hunks from {after} of logs");
         // Every cell of them is a hunk that can be found, taken up, and put down elsewhere.
         let cells = |w: &World| -> Vec<IVec3> { (-60..60).flat_map(|x| (-40..40).flat_map(move |z| (0..24).map(move |y| IVec3::new(x, y, z)))).filter(|c| w.get(*c) == Block::Billet).collect() };
         let all = cells(&w);
@@ -2226,6 +2252,14 @@ mod tests {
         run(&mut loose, &mut w);
         let laid = hunk_at(&w, (Vec3::new(-5.1, 0.1, -5.1) / CELL).floor().as_ivec3());
         assert_eq!(laid.map(|l| l.0), Some(IVec3::new(-22, 0, -22)), "put down in the air, it came down onto the ground on its square");
+        // Over a cell part filled with loose leaf it comes to rest too, on the ground under it.
+        w.set_bit(IVec3::new(30, 2, 30) * SPLIT + IVec3::ONE, Block::Brush);
+        assert_eq!(w.get(IVec3::new(30, 2, 30)), Block::Broken);
+        assert!(loose.lay(&mut w, Vec3::new(7.6, 1.6, 7.6), Block::Billet).is_some());
+        let steps = (0..600).take_while(|_| { loose.step(&mut w, crate::DT); !loose.pieces.is_empty() }).count();
+        assert!(steps < 300, "a hunk over loose leaf was still falling after five seconds");
+        assert_eq!(hunk_at(&w, IVec3::new(30, 1, 30)).map(|l| l.0), Some(IVec3::new(30, 0, 30)));
+        let billets = billets + 8;
         // One put on it lies on it, and each is still its own hunk.
         assert!(loose.lay(&mut w, Vec3::new(-5.1, 0.1, -5.1), Block::Billet).is_some());
         run(&mut loose, &mut w);

@@ -842,7 +842,9 @@ fn hunks_command(args: &Args) -> ! {
     let left = bits(&timber(&world, &loose));
     let per = HUNK.pow(3) as usize;
     checks.bar("hunks of wood", (billets.len() / per) as f32, billets.len() >= per, "the tree came to hunks");
-    checks.bar("wood in hunks", (billets.len() * 125) as f32 / logs.max(1) as f32, (0.6..1.4).contains(&((billets.len() * 125) as f32 / logs.max(1) as f32)), "as much wood in hunks as lay in logs, of 1");
+    // (Of what a log gives, `YIELD`: the rest of it is chips.)
+    let gave = (billets.len() * 125) as f32 / (logs.max(1) as f32 * cube_sim::loose::YIELD);
+    checks.bar("wood in hunks", gave, (0.6..1.4).contains(&gave), "the share of its logs that hunks are to be, of 1");
     checks.bar("wood left in logs", left as f32 / (left + logs).max(1) as f32, left * 3 < logs, "under a quarter of the timber is left unsplit, of 1");
     // The boulder: a pick at its top until it breaks.
     // (Its stone to the bit, in cells' worth: its outside is broken cells, part stone.)
