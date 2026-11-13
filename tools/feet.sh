@@ -9,6 +9,9 @@
 # worked from (each foot's height in the clip, the ground under it, how far the body went down):
 # the player's lines are the ones with reach=0.30. A wide stance on a ledge reads as a large
 # stray here though the feet are on the ground: both feet hang over lower ground.
+# The planted figure is not the same run to run: feet are put down each drawn frame, and
+# which moments the six pictures catch moves with the frames' times. The player at -60,20
+# gave 4.8, 5.7, 5.9 and 13.3 cm in four runs (2026-11-13): judge a change over several.
 id=${1:-player}; at=${2:-30,-40}; yaw=${3:-0.5}
 run() { cargo sandbox --scene shots/feet.png --play --wild --as "$id" --at "$at" --script '0.5 fwd walk' --strip 6 --after 2 --every 2.5 --view third --yaw "$yaw" $1 $2 2>&1 | grep '^feet' | sed 's/.*spread=//; s/cm//'; }
 loose=$(run --loose-feet --clips-only)
