@@ -1024,6 +1024,8 @@ fn hurt(sk: &Skeleton, roles: &Roles) -> Clip {
 /// Falls and lies still: an animal onto its side, an upright figure onto its back. `make`
 /// settles the body on the floor afterwards.
 fn die(sk: &Skeleton, roles: &Roles, upright: bool, over: f32) -> Clip {
+    // (0.15 radians: at 0.2 a bullfrog's skin tore, 144% by the check, and at 0.3 a toad's.)
+    let splay: f32 = 0.15;
     Clip::made("die", false, 1.4, sk, |t, pose| {
         let fall = die_fall(t);
         let limp = ramp(t, 0.3, 0.9);
@@ -1033,7 +1035,10 @@ fn die(sk: &Skeleton, roles: &Roles, upright: bool, over: f32) -> Clip {
         curl(sk, pose, &roles.tail, |a| pitch(roles, a), 0.3 * limp);
         for leg in &roles.legs {
             let tuck = if upright { 0.0 } else { if leg.front { 0.25 } else { -0.25 } };
-            pose.rotations[leg.chain[0]] = sk.turned(leg.chain[0], pitch(roles, tuck * limp));
+            // (On its back, its legs fall outward a little, as far as a stiff skin lets
+            // them: straight up in the air they were as stiff as it had stood.)
+            let splay = if over > 2.0 { roll(roles, if leg.left { splay } else { -splay } * limp) } else { Quat::IDENTITY };
+            pose.rotations[leg.chain[0]] = sk.turned(leg.chain[0], splay * pitch(roles, tuck * limp));
         }
     })
 }

@@ -39,6 +39,10 @@ pub struct Crawler {
     /// The first of the five bones of a sting's tail, each bent 0.6 radians on from the
     /// last as it stands: what lets it straighten when the animal is dead.
     sting: Option<usize>,
+    /// Its hindmost legs are a leaper's, long and folded high (a grasshopper's).
+    leaps: bool,
+    /// A bird's neck and head, from where its neck leaves its body to its beak's root.
+    neck: f32,
     wide: f32,
 }
 
@@ -184,7 +188,7 @@ impl Crawler {
             }
             sting = Some(first);
         }
-        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side, reach, long: l, high: mid, fowl: false, sting, wide }))
+        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side, reach, long: l, high: mid, fowl: false, sting, leaps: b.leaps, neck: 0.0, wide }))
     }
 
     /// A bird on the ground: `length` its body, `span` how long its legs are, `chord` its
@@ -233,7 +237,7 @@ impl Crawler {
             parents.extend([Some(0), Some(bone)]);
             names.extend([format!("wing_{s}"), format!("wing_{s}_tip")]);
         }
-        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side: 1, reach: legs, long: l, high: mid, fowl: true, sting: None, wide }))
+        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side: 1, reach: legs, long: l, high: mid, fowl: true, sting: None, leaps: false, neck: neck + l * 0.2, wide }))
     }
 
 
@@ -345,17 +349,37 @@ impl Crawler {
                 let k = ease((t / 0.6).min(1.0));
                 // (A bird goes over onto its side, its legs drawn up.)
                 if self.fowl {
-                    return self.pose(sk, Vec3::Y * (self.wide / 2.0 - self.high) * k, Quat::from_rotation_z(PI / 2.0 * k), |_| (0.0, 0.7 * k));
+                    // (And goes slack once it is down: its neck lets its head to the ground,
+                    // the wing that is uppermost sags, its legs trail and its tail
+                    // drops. Stiff, it lay as it had stood, turned a quarter over.)
+                    let limp = ease(((t - 0.4) / 0.45).clamp(0.0, 1.0));
+                    let mut pose = self.pose(sk, Vec3::Y * (self.wide / 2.0 - self.high) * k, Quat::from_rotation_z(PI / 2.0 * k), |_| (0.0, 0.7 * k * (1.0 - limp) + 0.12 * limp));
+                    // (No further than the ground its body lies on: let right down, a heron's long
+                    // neck held its body up off the ground.)
+                    let droop = (self.wide * 0.3 / self.neck.max(1e-3)).min(0.7).asin();
+                    pose.rotations[1] = Quat::from_rotation_z(droop * limp) * Quat::from_rotation_x(0.4 * limp);
+                    pose.rotations[2] = Quat::from_rotation_z(0.3 * limp);
+                    // (The wing that is uppermost sags a little open, no more: let fall open
+                    // it stood straight up from the bird like a flag. It lies closed on it.)
+                    pose.rotations[11] = Quat::from_rotation_z(0.18 * limp);
+                    return pose;
                 }
                 // What is dead is limp (the developer, 2026-11-13: "dead things dont stay
                 // stiff"): its legs fold in over it at the knee, as a dead spider's do, and a
                 // sting's tail straightens and lies along the ground behind it. Stiff, a dead
                 // scorpion stood on its curled tail with its body in the air.
                 let limp = ease(((t - 0.35) / 0.5).clamp(0.0, 1.0));
-                let mut pose = self.pose(sk, Vec3::Y * (self.high * 0.5 * (PI * k).sin() - self.high * 0.35 * k), Quat::from_rotation_z(PI * k), |_| (0.0, -1.1 * k * (1.0 - 0.6 * limp)));
+                // How its legs come to rest (at the hip, at the knee): a scorpion's fallen flat
+                // beside it; a spider's drawn tight in over its belly and crossed, as a dead
+                // spider's are; a beetle's, a crab's and a grasshopper's folded in over it more
+                // loosely. (Four pairs tried on the spider and looked at, 2026-11-13.)
+                // (A grasshopper's fall flat too, and its long hind legs fold down over it:
+                // curled, or flat like the rest, they stood under it and held it up.)
+                let (hip, knee) = if self.sting.is_some() || self.leaps { (-0.44, 1.2) } else if self.side >= 4 { (-1.6, -1.2) } else { (-1.1, -1.5) };
+                let mut pose = self.pose(sk, Vec3::Y * (self.high * 0.5 * (PI * k).sin() - self.high * 0.35 * k), Quat::from_rotation_z(PI * k), |n| (0.0, -1.1 * k * (1.0 - limp) + if self.leaps && n % self.side == self.side - 1 { -1.4 } else { hip } * limp));
                 for n in 0..self.side * 2 {
                     let x = if n < self.side { -1.0 } else { 1.0 };
-                    pose.rotations[4 + n * 3] = Quat::from_rotation_z(x * 1.2 * limp);
+                    pose.rotations[4 + n * 3] = Quat::from_rotation_z(x * if self.leaps && n % self.side == self.side - 1 { 0.0 } else { knee } * limp);
                 }
                 if let Some(first) = self.sting {
                     for j in 1..5 {
