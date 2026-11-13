@@ -36,6 +36,10 @@ cargo world dig [--holes 120]                     HOLES (120) holes and stones c
 cargo world fell [--seed N]                       a tree near the start cut through: that it comes
                                                   loose whole, goes over, lies on the ground as cells,
                                                   leaves nothing in the air, and what each step costs
+cargo world replay [--seed N]                     the world as its seed and what was done to it: a tree
+                                                  felled and cut up, holes dug, earth put down; then the
+                                                  land made again from the seed and the same edits done
+                                                  to it: the two must be the same, cell for cell
 cargo world grade [FILE] [--seed N]                where the ground is easy, steep and cliff, a line
                                                   for each band of height; with FILE, a picture of
                                                   it from above (green easy, yellow steep, red cliff)
@@ -524,6 +528,92 @@ fn fell_command(args: &Args) -> ! {
     checks.finish()
 }
 
+/// The land round the start made from the seed, with the shapes of what grows on it.
+fn grown(args: &Args) -> (World, Land, cube_sim::plants::Form) {
+    let land = Land::new(args.seed, args.radius);
+    let mut world = World::default();
+    let r = cube_sim::terrain::REGION;
+    let ((), form) = cube_sim::plants::recorded(|| {
+        for rz in -2..2 {
+            for rx in -2..2 {
+                cube_sim::terrain::fill(&mut world, &land, (rx * r, rz * r), ((rx + 1) * r, (rz + 1) * r));
+            }
+        }
+    });
+    (world, land, form)
+}
+
+/// A world is its seed and what was done to it (`cube_sim::loose::replay`): edits are made
+/// to the land, the land is made again and the edits done again, and the two are compared.
+fn replay_command(args: &Args) -> ! {
+    use cube_sim::items::Stuff;
+    let (mut world, land, form) = grown(args);
+    let inside = (2 * cube_sim::terrain::REGION) as f32 * CELL - 12.0;
+    let Some(trunk) = form.limbs.iter().copied().filter(|l| l.roots > 0 && (0.18..0.4).contains(&l.ra) && (l.b.y - l.a.y) > 5.0 && l.a.x.abs() < inside && l.a.z.abs() < inside).min_by(|a, b| a.a.length().total_cmp(&b.a.length())) else { fail("no tree to fell near the start") };
+    let mut loose = cube_sim::loose::Loose::default();
+    let rest = |loose: &mut cube_sim::loose::Loose, world: &mut World| {
+        let mut n = 0;
+        while !loose.pieces.is_empty() && n < 60 * TICKS {
+            loose.step(world, cube_sim::DT);
+            n += 1;
+        }
+    };
+    // A tree felled; holes dug and earth put down, some while it falls; its trunk cut across.
+    let up = trunk.a + Vec3::Y * (cube_sim::plants::Limb::UNDER + 1.0);
+    'cutting: for row in [0, -1, 1, -2, 2] {
+        for step in -4..=4 {
+            loose.cut(&mut world, up + Vec3::new(step as f32 * 0.25, 0.0, row as f32 * 0.3), 0.42, Vec3::X, &[&form], Some(Stuff::Wood));
+            if !loose.pieces.is_empty() {
+                break 'cutting;
+            }
+        }
+    }
+    let ground = |x: f32, z: f32| Vec3::new(x, land.height((x / CELL).floor() as i32, (z / CELL).floor() as i32) as f32 * CELL, z);
+    for k in 0..12 {
+        for _ in 0..10 {
+            loose.step(&mut world, cube_sim::DT);
+        }
+        let at = ground(trunk.a.x - 6.0 + k as f32, trunk.a.z + 4.0);
+        if k % 3 == 2 {
+            loose.put(&mut world, at + Vec3::Y * 0.2, 0.3, Block::Dirt);
+        } else {
+            loose.cut(&mut world, at, 0.5, Vec3::X, &[&form], Some(Stuff::Earth));
+        }
+    }
+    rest(&mut loose, &mut world);
+    let lies = loose.things.iter().find_map(|t| t.lies).map(|(pivot, shift, _)| pivot + shift);
+    if let Some(at) = lies {
+        for k in 0..6 {
+            loose.cut(&mut world, at + Vec3::new(0.0, 0.3 - 0.1 * (k / 3) as f32, (k % 3) as f32 * 0.25 - 0.25), 0.3, Vec3::X, &[&form], Some(Stuff::Wood));
+        }
+    }
+    rest(&mut loose, &mut world);
+    // Made again from the seed, and the same done to it.
+    let started = std::time::Instant::now();
+    let (mut again, _, form) = grown(args);
+    let made = started.elapsed().as_secs_f32();
+    let started = std::time::Instant::now();
+    cube_sim::loose::replay(&mut again, &[&form], &loose.journal);
+    let replayed = started.elapsed().as_secs_f32() * 1000.0;
+    let (mut differ, mut changed) = (0usize, 0usize);
+    let (fresh, _, _) = grown(args);
+    for (place, chunk) in &world.chunks {
+        for i in 0..cube_voxel::CHUNK.pow(3) {
+            let l = IVec3::new(i % 32, i / 1024, i / 32 % 32);
+            let c = *place * cube_voxel::CHUNK + l;
+            differ += (chunk.get(l) != again.get(c) || world.bits_at(c).map(|b| b.to_vec()) != again.bits_at(c).map(|b| b.to_vec())) as usize;
+            changed += (chunk.get(l) != fresh.get(c) || world.bits_at(c).map(|b| b.to_vec()) != fresh.bits_at(c).map(|b| b.to_vec())) as usize;
+        }
+    }
+    let mut checks = Checks(Vec::new());
+    checks.bar("replay felled", lies.is_some() as u8 as f32, lies.is_some(), "a tree came down and lies");
+    checks.bar("replay differs", differ as f32, differ == 0, "0 cells differ from the world as it was played");
+    checks.bar("replay changed", changed as f32, changed > 1000, "the edits changed the world at all");
+    let bytes = loose.journal.len() * std::mem::size_of::<(u64, cube_sim::loose::Edit)>();
+    println!("replay: {} edits ({bytes} bytes) changed {changed} cells · made again from the seed ({made:.1} s) and the edits done again ({replayed:.0} ms): {differ} cells differ", loose.journal.len());
+    checks.finish()
+}
+
 fn dig_command(args: &Args) -> ! {
     let (mut world, land, mut sim) = living(args);
     let faces = |world: &World, chunk: IVec3| [false, true].map(|liquid| cube_voxel::mesh::mesh_chunk(world, chunk, liquid).indices.len() / 6).iter().sum::<usize>();
@@ -654,6 +744,7 @@ fn main() {
         "cost" => cost_command(&args),
         "trunks" => trunks_command(&args),
         "fell" => fell_command(&args),
+        "replay" => replay_command(&args),
         "grade" => grade_command(&args),
         "life" => life_command(&args),
         "drawn" => {

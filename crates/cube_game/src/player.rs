@@ -554,7 +554,7 @@ fn edit(mut controls: ResMut<Controls>, mut live: ResMut<Live>, mut forms: ResMu
         // Not on top of itself: a lump it stood inside would hold it fast. Into air only:
         // what is put down lies on what is there, not through it. And one fewer is carried.
         let middle = hit - along * LUMP * 0.3;
-        terrain.0.ellipsoid(middle, Vec3::splat(LUMP), block, true);
+        live.0.loose.put(&mut terrain.0, middle, LUMP, block);
         terrain.ball_touched(&mut dirty, middle, LUMP);
         live.0.placed(mover.id);
     }

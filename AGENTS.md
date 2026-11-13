@@ -51,6 +51,7 @@ cargo world survey                 # the land in numbers; `cargo world run`: its
 cargo world life                   # the ecology: how much of the island suits each kind of life, when it is about, where each animal settled
 cargo world years 24               # the island by the day for 24 years, nobody watching: each kind's numbers, whether it lasts and settles, who hunted what fell; change `[life]` or `Sim::day` against this, on more than one `--seed`
 cargo world fell                   # a tree near the start cut through with no window: it comes loose whole, goes over, lies as cells, nothing left in the air; what a bite and a landing cost (`cube_sim::loose`)
+cargo world replay                 # edits played on real land, the land made again from its seed, the edits done again: 0 cells may differ (`loose::replay`: a world is its seed and its journal)
 cargo world trunks                 # how far what stops a body at a tree is from the wood that is drawn (0 cm at the middle; it was 15)
 cargo world map shots/map.png      # one picture from above with where every creature went
 make window                        # the real window on an Xvfb, driven by real key presses (tools/xkeys), judged from the trace

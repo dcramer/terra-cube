@@ -45,6 +45,14 @@
 //! again from the shape, put where it lies, and the bites taken again. Nothing keeps or
 //! restores from it yet; it is what saving and dropping a region will use.
 //!
+//! **The world is its seed and what was done to it** ([`Edit`], [`Loose::journal`],
+//! [`replay`]): every cut and every thing put down is noted with the moment it was done (in
+//! steps of what was falling), a few numbers each. Done again in the same order to the land
+//! as the seed makes it, they give the same world, cell for cell: nothing here is random and
+//! a fall is the same fall. So a part of the world that has been changed need not be kept:
+//! it can be dropped and made again. (Not yet used so by the game, which keeps every
+//! changed region: `cargo world replay` proves it.)
+//!
 //! **Water runs into what is opened to it** ([`flow`]): from water beside a cut, sideways and
 //! down into air and up no higher than it stood, so a hole dug at a lake's edge fills to the lake's level and a
 //! trench leads it downhill. By the cell; a lake is not drained by it (the sea is the sea).
@@ -180,6 +188,34 @@ impl Thing {
     }
 }
 
+/// Something done to the world by hand: a cut, or a thing put down.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Edit {
+    Cut { middle: Vec3, radius: f32, push: Vec3, stuff: Option<Stuff> },
+    Put { middle: Vec3, radius: f32, block: Block },
+}
+
+/// Does a journal's edits to a world again, each at its moment, and lets what falls come to
+/// rest. `forms` are the shapes of what grows there, as the land was made.
+pub fn replay(world: &mut World, forms: &[&Form], journal: &[(u64, Edit)]) -> Loose {
+    let mut loose = Loose::default();
+    for (at, edit) in journal {
+        while loose.steps < *at {
+            loose.step(world, crate::DT);
+        }
+        match *edit {
+            Edit::Cut { middle, radius, push, stuff } => drop(loose.cut(world, middle, radius, push, forms, stuff)),
+            Edit::Put { middle, radius, block } => drop(loose.put(world, middle, radius, block)),
+        }
+    }
+    let mut guard = 0;
+    while !loose.pieces.is_empty() && guard < 60 * crate::TICKS {
+        loose.step(world, crate::DT);
+        guard += 1;
+    }
+    loose
+}
+
 /// Everything loose in a world, and what has landed since it was last asked for.
 #[derive(Default, Clone)]
 pub struct Loose {
@@ -195,6 +231,9 @@ pub struct Loose {
     pub begun: Vec<(Vec3, usize, bool)>,
     /// Every tree and boulder that has been cut into ([`Thing`]).
     pub things: Vec<Thing>,
+    /// Every edit made, with how many steps had been taken when it was ([`replay`]).
+    pub journal: Vec<(u64, Edit)>,
+    steps: u64,
     next: u32,
 }
 
@@ -338,7 +377,7 @@ fn from_line(p: Vec3, a: Vec3, b: Vec3) -> f32 {
 
 /// Makes wrought every tree and boulder of `forms` that a ball reaches: all of each tree, its
 /// every limb and its leaf, as `plants` grew it. Says which, and the chunks changed.
-fn work(world: &mut World, middle: Vec3, radius: f32, forms: &[&Form], stuff: Option<Stuff>) -> Cut {
+fn work(world: &mut World, middle: Vec3, radius: f32, forms: &[&Form], stuff: Option<Stuff>, known: &[Vec3]) -> Cut {
     let mut cut = Cut::default();
     let mut cells: HashSet<IVec3> = HashSet::new();
     let (trees, stones) = (stuff.is_none_or(|s| s == Stuff::Wood), stuff.is_none_or(|s| s == Stuff::Stone));
@@ -348,6 +387,7 @@ fn work(world: &mut World, middle: Vec3, radius: f32, forms: &[&Form], stuff: Op
         let mut trees: Vec<u32> = form.limbs.iter().filter(|l| trees && from_line(middle, l.a, l.b) < reach(l)).map(|l| l.tree).collect();
         trees.sort_unstable();
         trees.dedup();
+        trees.retain(|t| form.limbs.iter().find(|l| l.tree == *t).is_none_or(|l| !known.contains(&l.a)));
         for tree in trees {
             for limb in form.limbs.iter().filter(|l| l.tree == tree) {
                 limb.fill(CELL, |c| {
@@ -412,9 +452,13 @@ impl Loose {
     /// Only `stuff` is cut, where one is given (what a tool cuts: an axe takes the wood out
     /// of the ball and leaves the earth); with none, everything in the ball goes.
     pub fn cut(&mut self, world: &mut World, middle: Vec3, radius: f32, push: Vec3, forms: &[&Form], stuff: Option<Stuff>) -> Cut {
+        self.journal.push((self.steps, Edit::Cut { middle, radius, push, stuff }));
         let (lo, hi) = (((middle - radius) / CELL).floor().as_ivec3() - 1, ((middle + radius) / CELL).floor().as_ivec3() + 1);
         // (A tree is made wrought only by what cuts wood, a boulder by what cuts stone.)
-        let mut cut = work(world, middle, radius, forms, stuff);
+        // (A tree already cut into is cells, whether or not whoever keeps the shapes has
+        // dropped it from them yet.)
+        let known: Vec<Vec3> = self.things.iter().filter_map(|t| t.limbs.first().map(|l| l.a)).collect();
+        let mut cut = work(world, middle, radius, forms, stuff, &known);
         // Each thing made wrought is noted, and every bite out of a thing noted on it.
         for (n, tree) in &cut.trees {
             let limbs: Vec<crate::plants::Limb> = forms[*n].limbs.iter().filter(|l| l.tree == *tree).copied().collect();
@@ -458,6 +502,15 @@ impl Loose {
             eprintln!("loose: cut at {middle:.2?} r {radius:.2} of {stuff:?} · took {:?} · made wrought {} · {} loose · cells at the cut {} · over it {}", cut.taken, cut.worked, self.pieces.len(), around(middle.y), around(middle.y + radius + 0.3));
         }
         Cut { changed, ..cut }
+    }
+
+    /// Puts a ball of something down, into air only (what is put down lies on what is there,
+    /// not through it). Gives the chunks changed.
+    pub fn put(&mut self, world: &mut World, middle: Vec3, radius: f32, block: Block) -> HashSet<IVec3> {
+        self.journal.push((self.steps, Edit::Put { middle, radius, block }));
+        world.ellipsoid(middle, Vec3::splat(radius), block, true);
+        let (lo, hi) = (((middle - radius) / CELL).floor().as_ivec3(), ((middle + radius) / CELL).floor().as_ivec3());
+        (lo.y..=hi.y).flat_map(|y| (lo.z..=hi.z).flat_map(move |z| (lo.x..=hi.x).map(move |x| IVec3::new(x, y, z).div_euclid(IVec3::splat(cube_voxel::CHUNK))))).collect()
     }
 
     /// Looks through what is solid in a box of cells for anything no longer held, and takes
@@ -653,6 +706,7 @@ impl Loose {
     /// One moment of everything loose: each piece falls or goes further over, and what
     /// meets the world is put back into it. Gives the chunks that changed.
     pub fn step(&mut self, world: &mut World, dt: f32) -> HashSet<IVec3> {
+        self.steps += 1;
         let mut changed = HashSet::new();
         let mut down = Vec::new();
         for (n, piece) in self.pieces.iter_mut().enumerate() {
@@ -1039,6 +1093,51 @@ mod tests {
             }
             assert_eq!(!loose.pieces.is_empty(), falls, "after {bites} chops into a trunk a metre through");
         }
+    }
+
+    #[test]
+    fn the_same_edits_done_again_give_the_same_world() {
+        use crate::plants::{Clump, Limb};
+        let grown = || {
+            let mut w = floor();
+            let mut form = Form::default();
+            let limb = Limb { a: Vec3::new(0.0, 0.0, 0.0), b: Vec3::new(0.2, 6.0, 0.0), ra: 0.3, rb: 0.2, bark: Block::Wood, roots: 0, tree: 1 };
+            limb.fill(CELL, |c| w.set(c, Block::Wood));
+            form.limbs.push(limb);
+            w.ellipsoid(Vec3::new(0.2, 6.5, 0.0), Vec3::splat(1.5), Block::Leaves, true);
+            form.clumps.push(Clump { middle: Vec3::new(0.2, 6.5, 0.0), radii: Vec3::splat(1.5), leaf: Block::Leaves, tree: 1 });
+            (w, form)
+        };
+        // Played: a tree cut down, a hole dug while it is still falling, earth put down
+        // after, and the fallen trunk cut across.
+        let (mut w, form) = grown();
+        let mut loose = Loose::default();
+        for x in [-0.3, 0.0, 0.3] {
+            loose.cut(&mut w, Vec3::new(x, 1.0, 0.0), 0.36, Vec3::X, &[&form], Some(Stuff::Wood));
+        }
+        for _ in 0..40 {
+            loose.step(&mut w, crate::DT);
+        }
+        loose.cut(&mut w, Vec3::new(-3.0, -0.1, 2.0), 0.5, Vec3::X, &[&form], None);
+        run(&mut loose, &mut w);
+        loose.put(&mut w, Vec3::new(-3.0, 0.2, -2.0), 0.3, Block::Dirt);
+        loose.cut(&mut w, Vec3::new(3.0, 0.4, 0.0), 0.4, Vec3::X, &[&form], Some(Stuff::Wood));
+        run(&mut loose, &mut w);
+        // Done again to the land as it grew.
+        let (mut again, form) = grown();
+        replay(&mut again, &[&form], &loose.journal);
+        let (lo, hi) = (IVec3::splat(-48), IVec3::splat(48));
+        let mut differ = 0;
+        for y in lo.y..hi.y {
+            for z in lo.z..hi.z {
+                for x in lo.x..hi.x {
+                    let c = IVec3::new(x, y, z);
+                    differ += (w.get(c) != again.get(c) || w.bits_at(c).map(|b| b.to_vec()) != again.bits_at(c).map(|b| b.to_vec())) as usize;
+                }
+            }
+        }
+        assert!(loose.journal.len() == 6 && differ == 0, "{} edits; {differ} cells differ", loose.journal.len());
+        assert!(count(&w, Vec3::splat(-12.0), Vec3::splat(12.0), Block::Timber) > 50, "nothing was felled to compare");
     }
 
     #[test]

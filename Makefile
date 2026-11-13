@@ -76,6 +76,7 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 	@cargo world life | tail -1 | sed 's/^ok$$/ok life: every kind has somewhere to live/'
 	@cargo world trunks | tail -1 | sed 's/^ok$$/ok trunks: what stops a body at a tree is the wood that is drawn/'
 	@cargo world fell | tail -1 | sed 's/^ok$$/ok fell: a tree cut through comes down whole and lies where it fell, as cells/'
+	@cargo world replay | tail -1 | sed 's/^ok$$/ok replay: the land made again from its seed with the same edits done to it is the same world/'
 	@cargo world drawn | tail -1 | sed 's/^ok$$/ok drawn: a body rests on the ground as it is drawn/'
 	@python3 tools/audio/level.py | tail -1
 	@python3 tools/audio/loops.py | tail -1
