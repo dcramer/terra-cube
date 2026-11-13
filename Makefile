@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: forget dig shatter sky wind blow moves limbs person beside features legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: forget dig shatter build sky wind blow moves limbs person beside features legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -81,6 +81,7 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 	@tools/forget.sh
 	@tools/dig.sh
 	@tools/shatter.sh
+	@tools/build.sh
 	@cargo world drawn | tail -1 | sed 's/^ok$$/ok drawn: a body rests on the ground as it is drawn/'
 	@python3 tools/audio/level.py | tail -1
 	@python3 tools/audio/loops.py | tail -1
@@ -140,6 +141,9 @@ forget: ## no window: a tree felled and cut up in the real game, its regions dro
 
 dig: ## no window: the ground dug with the shovel and the earth put back in the real game, the region dropped and made again from seed and journal: no cell may differ
 	@tools/dig.sh
+
+build: ## no window: a tree chopped for timber in the real game and the timber put down piece on piece: each stays, and the region made again is the same
+	@tools/build.sh
 
 shatter: ## no window: a stone let go five metres up in the real game comes down, breaks into lumps that lie where they fall and is heard; the region made again is the same
 	@tools/shatter.sh
