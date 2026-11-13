@@ -25,6 +25,9 @@ pub const BONES: [&str; 19] = [
 const PARENTS: [Option<usize>; 19] = [None, Some(0), Some(1), Some(0), Some(3), Some(0), Some(5), Some(6), Some(0), Some(8), Some(9), Some(0), Some(11), Some(12), Some(13), Some(0), Some(15), Some(16), Some(17)];
 /// The clips that are the walker's own: the rest are made or carried as any four-legged animal's.
 pub const WALKED: [&str; 5] = ["idle", "walk", "run", "sprint", "lie"];
+/// How far over half its depth the trunk's middle lies as it lies down, in parts of how
+/// high its belly stands: fitted until `pose lie` (`poses.toml`) has the chest on the ground.
+const LAIN: f32 = 0.0;
 /// Each leg's bones, from where it leaves the trunk down.
 const LEGS: [&[usize]; 4] = [&[5, 6, 7], &[8, 9, 10], &[11, 12, 13, 14], &[15, 16, 17, 18]];
 
@@ -198,7 +201,7 @@ impl Own {
             let st = glam::Vec2::new((stand[b].x - stand[a].x) / 2.0, (stand[a].y + stand[b].y) / 2.0);
             (stand[a], stand[b]) = (glam::Vec2::new(-st.x, st.y), st);
         }
-        let shape = Shape { hips, bone, lower, stand, shank };
+        let shape = Shape { hips, bone, lower, stand, shank, lain: build.deep / 2.0 + LAIN * under };
         if std::env::var_os("FORGE_TRACE").is_some() {
             println!("own: legs read off the mesh: {} · {shape:.2?}", read.join(" · "));
         }

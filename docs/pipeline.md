@@ -68,7 +68,9 @@ Then check, in this order:
 - `cargo sandbox --shot ID --view three --clips idle,walk,sprint,attack,die,eat,lie --cols 6`: look once. Use `three`, not `side`: from the side the far legs hide behind the near ones.
 - `die` must end on the ground, `eat` must lower the head. If either goes the wrong way, the side axis is wrong (`Own::roles`: side is up crossed with ahead; a leg on that side is the left).
 
-Known faults: skin pinches at elbows and tail root (bound by distance only; smoothing the weights over the mesh was tried and made stretch worse, see `own.rs`); its walk is a trot at walking speed (diagonal pairs), where a real walk sets down one foot at a time; `pose lie` fails two yes/no measures that the picture contradicts (not resolved which is right).
+Known faults: skin pinches at elbows and tail root (bound by distance only; smoothing the weights over the mesh was tried and made stretch worse, see `own.rs`); its walk is a trot at walking speed (diagonal pairs), where a real walk sets down one foot at a time.
+
+Lying is held to `assets/creatures/poses.toml` (`pose lie` in the check). On this skeleton the measure uses the known joints (second bone of a leg is the elbow or knee, a hind leg's third is the hock), and a joint counts as inside the body only if it is nearer the body's middle plane than when standing. Guessed as on a Tripo skeleton, the hock was taken for the knee and a correct pose was refused. How high the trunk lies is `LAIN` in `own.rs`.
 
 ### A person moved by the two-legged walker (`walked = [..]` in `creature.toml`; the player)
 

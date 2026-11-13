@@ -128,6 +128,13 @@ struct Folded {
 }
 
 fn folded(sk: &Skeleton, roles: &Roles) -> Vec<Folded> {
+    // On our own skeleton (`own.rs`) the joints are known: a leg's first bone is where it
+    // leaves the trunk, its second its elbow or knee, a hind leg's third its hock. (Guessed
+    // as on any other, by the joint nearest half way down, the wolf's hock was taken for its
+    // knee, and lying was refused for a knee behind its hip.)
+    if sk.joints.iter().any(|j| j.name == "hl_shank") {
+        return roles.legs.iter().enumerate().map(|(n, l)| Folded { n, hip: l.chain[0], knee: l.chain[1], heel: l.chain[2], end: l.foot() }).collect();
+    }
     roles.legs.iter().enumerate().map(|(n, l)| {
         let (hip, knee) = clips::folds_at(sk, l);
         let heel = l.chain.iter().position(|&j| j == knee).map_or(l.foot(), |i| l.chain[(i + 1).min(l.chain.len() - 1)]);
@@ -234,6 +241,13 @@ impl Measures {
         let sole = |l: &Folded, by: usize| world[by].transform_point3(rest[by].inverse().transform_point3(sk.position(l.end).with_y(floor)));
         let worst = |front: bool, f: &dyn Fn(&Folded) -> f32| legs.iter().filter(|l| roles.legs[l.n].front == front).map(f).fold(f32::MIN, f32::max);
         let (fore, hind) = Shape::ends(legs, roles, &at);
+        // `FORGE_TRACE=1`: each leg joint's place and how far it is from the trunk's line.
+        if std::env::var_os("FORGE_TRACE").is_some() {
+            println!("lie: trunk radius {:.3} · leg {:.3} · floor {:.3} · line {:.2?} to {:.2?}", shape.trunk, leg, floor, hind, fore);
+            for l in legs {
+                println!("lie: leg {} {} · knee {:.2?} ({:.3} from the line) · heel {:.2?} ({:.3}) · end {:.2?} ({:.3})", l.n, if roles.legs[l.n].front { "fore" } else { "hind" }, at(l.knee), to_segment(at(l.knee), hind, fore), at(l.heel), to_segment(at(l.heel), hind, fore), at(l.end), to_segment(at(l.end), hind, fore));
+            }
+        }
         Self {
             chest: trunk(true),
             loins: trunk(false),
@@ -250,7 +264,16 @@ impl Measures {
             tail: if roles.tail.is_empty() { 0.0 } else { over(low(&|i| roles.tail.contains(&shape.body.most[i]))) },
             ground: over(low(&|_| true)),
             body: over(low(&|i| !roles.tail.contains(&shape.body.most[i]))),
-            inside: legs.iter().flat_map(|l| [l.knee, l.heel, l.end]).map(|j| (0.8 * shape.trunk - to_segment(at(j), hind, fore)).max(0.0) / leg).fold(0.0, f32::max),
+            // (On our own skeleton, `own.rs`, the joints are where the animal's are, and an
+            // elbow lies against the chest: nearer the trunk's line than this allows, and
+            // rightly. There a joint is in the body if it has come nearer the body's middle
+            // plane than it stands.)
+            inside: if sk.joints.iter().any(|j| j.name == "hl_shank") {
+                let aside = |p: Vec3| (p - hind).dot(roles.side).abs();
+                legs.iter().flat_map(|l| [l.knee, l.heel, l.end]).map(|j| (0.8 * aside(rest[j].w_axis.truncate() - rest[legs[0].hip].w_axis.truncate() + at(legs[0].hip)) - aside(at(j))).max(0.0) / leg).fold(0.0, f32::max)
+            } else {
+                legs.iter().flat_map(|l| [l.knee, l.heel, l.end]).map(|j| (0.8 * shape.trunk - to_segment(at(j), hind, fore)).max(0.0) / leg).fold(0.0, f32::max)
+            },
         }
     }
 

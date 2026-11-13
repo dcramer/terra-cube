@@ -155,6 +155,8 @@ pub struct Walker {
     /// the build's, or a real model's own ([`Walker::shaped`]).
     stand: [Vec2; 4],
     shank: f32,
+    /// How high the trunk's middle is as it lies.
+    lain: f32,
 }
 
 /// A body's legs as they are made, where they are not the build's: where each leaves the
@@ -169,6 +171,9 @@ pub struct Shape {
     pub lower: [f32; 4],
     pub stand: [Vec2; 4],
     pub shank: f32,
+    /// How high the trunk's middle is as it lies on its chest: a real body's chest is deeper
+    /// than its belly, and its middle lies lower than half its depth.
+    pub lain: f32,
 }
 
 impl Walker {
@@ -176,7 +181,7 @@ impl Walker {
         let turn = Quat::from_rotation_y(yaw);
         let feet = build.hips().map(|h| Foot { at: at + turn * h, step: None });
         let trunk = (at + Vec3::Y * build.tall, turn);
-        Self { build, at, yaw, vel: Vec3::ZERO, feet, down: 0.0, trunk, tail: at - turn * Vec3::Z * (build.long / 2.0 + build.tail) + Vec3::Y * build.tall, steps: [0; 4], hip: build.hips().map(|h| h + Vec3::Y * build.deep * if h.z > 0.0 { -0.15 } else { 0.1 }), bone: [build.fore(), build.fore(), build.hind(), build.hind()], pole: [Vec3::NEG_Z, Vec3::NEG_Z, Vec3::Z, Vec3::Z], tucks: true, meta: [0.0, 0.0, build.hock(), build.hock()], lie: Lie::sphinx(&build), stand: [Vec2::ZERO; 4], shank: 0.24 }
+        Self { build, at, yaw, vel: Vec3::ZERO, feet, down: 0.0, trunk, tail: at - turn * Vec3::Z * (build.long / 2.0 + build.tail) + Vec3::Y * build.tall, steps: [0; 4], hip: build.hips().map(|h| h + Vec3::Y * build.deep * if h.z > 0.0 { -0.15 } else { 0.1 }), bone: [build.fore(), build.fore(), build.hind(), build.hind()], pole: [Vec3::NEG_Z, Vec3::NEG_Z, Vec3::Z, Vec3::Z], tucks: true, meta: [0.0, 0.0, build.hock(), build.hock()], lie: Lie::sphinx(&build), stand: [Vec2::ZERO; 4], shank: 0.24, lain: build.deep / 2.0 + 0.02 }
     }
 
     /// A walker with a real body's own legs: everything the box creature does (its gaits,
@@ -184,7 +189,7 @@ impl Walker {
     /// the body was made.
     pub fn shaped(build: Build, shape: Shape, at: Vec3, yaw: f32) -> Self {
         let mut w = Self::new(build, at, yaw);
-        (w.hip, w.bone, w.meta, w.stand, w.shank) = (shape.hips, shape.bone, shape.lower, shape.stand, shape.shank);
+        (w.hip, w.bone, w.meta, w.stand, w.shank, w.lain) = (shape.hips, shape.bone, shape.lower, shape.stand, shape.shank, shape.lain);
         // (Lying, the forearm lies out ahead of the elbow and the hind foot beside the belly: by its own bones.)
         w.lie = Lie { fore: Vec2::new(build.leg * 0.8, shape.bone[0].1 * 0.7), hind: Vec2::new(build.leg * 0.9, shape.bone[2].0 * 0.5 - shape.bone[2].1 * 0.9 + shape.lower[2]), hind_bend: 0.2, ..w.lie };
         // (The hind foot is put where its own bones fold to it: the knee ahead of the hip by
@@ -324,7 +329,7 @@ impl Walker {
         let mid = |a: usize, c: usize| (self.feet[a].at + self.feet[c].at) / 2.0;
         let (fore, hind, left, right) = (mid(0, 1), mid(2, 3), mid(0, 2), mid(1, 3));
         let floor = (fore.y + hind.y) / 2.0;
-        let stands = b.tall * (1.0 - self.down) + if self.tucks { b.deep / 2.0 + 0.02 } else { b.tall * 0.5 } * self.down;
+        let stands = b.tall * (1.0 - self.down) + if self.tucks { self.lain } else { b.tall * 0.5 } * self.down;
         // (In a bound the whole body rises with the feet that are off the ground.)
         let aloft = self.feet.iter().filter(|f| f.step.is_some()).count() as f32 / 4.0;
         let bob = if gallops { aloft * 0.14 * b.tall } else if speed > 0.1 { (self.steps.iter().sum::<u32>() as f32 * 1.7).sin() * 0.008 * b.tall } else { 0.0 };
