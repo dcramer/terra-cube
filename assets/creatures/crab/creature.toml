@@ -23,5 +23,4 @@ habitat = "shore"
 water = "edge"
 cover = "open"
 group = 2
-# 0 until the crawler plan works.
-groups = 0
+groups = 2

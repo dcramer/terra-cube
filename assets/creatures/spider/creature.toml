@@ -22,6 +22,9 @@ habitat = "forest"
 cover = "deep"
 hours = "night"
 group = 2
-# Built and animated, not yet placed (2026-11-13): with it in the world the goblins died out
-# within sixteen years (`cargo world years 24`), and it dwindled itself. To be balanced in.
-groups = 0
+# Few and far between, as a hunter is (`share`), and each lair's ground its own (`range`): at
+# the common share the goblins died out within sixteen years (`cargo world years 24`).
+share = 0.1
+range = 260.0
+capacity = 4
+groups = 1
