@@ -294,6 +294,20 @@ impl Eased<'_> {
         }
     }
 
+    /// [`Eased::under`] for a broken cell that may stand well over the ground (a trunk's
+    /// wood, written to the bit for three metres up): as the cell at the foot of its column
+    /// is drawn, so that what stands on the ground stands on it all the way up. Asked at its
+    /// own height, a cell with air under it (the upper side of a leaning trunk) was moved by
+    /// where the ground lay far below, and two cells of a birch's trunk were drawn nowhere
+    /// near it: a break a hand wide through the tree, seen along the row (2026-11-13).
+    fn stood(&mut self, c: IVec3) -> f32 {
+        let near = self.near;
+        match (1..=CHUNK).map(|down| c - IVec3::Y * down).find(|p| near.get(*p).ground()) {
+            Some(ground) => self.under(ground + IVec3::Y),
+            None => 0.0,
+        }
+    }
+
     /// Which way the eased ground faces at a corner.
     fn normal(&mut self, c: IVec3) -> Vec3 {
         let (x, z) = (self.lift(c + IVec3::X) - self.lift(c - IVec3::X), self.lift(c + IVec3::Z) - self.lift(c - IVec3::Z));
@@ -591,7 +605,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                 }
                 let cell = origin + local;
                 if block == Block::Broken {
-                    let (from, lift) = (m.positions.len(), if smooth { ((heights.at(cell.x, cell.z) + heights.at(cell.x + 1, cell.z) + heights.at(cell.x, cell.z + 1) + heights.at(cell.x + 1, cell.z + 1)) / 4.0 - cell.y as f32).clamp(-2.0, 2.0) * CELL * block.sprig() as i32 as f32 } else { eased.under(local) * CELL });
+                    let (from, lift) = (m.positions.len(), if smooth { ((heights.at(cell.x, cell.z) + heights.at(cell.x + 1, cell.z) + heights.at(cell.x, cell.z + 1) + heights.at(cell.x + 1, cell.z + 1)) / 4.0 - cell.y as f32).clamp(-2.0, 2.0) * CELL * block.sprig() as i32 as f32 } else { eased.stood(local) * CELL });
                     bits(world, cell, &mut m);
                     m.positions[from..].iter_mut().for_each(|p| p[1] += lift);
                     continue;
@@ -1200,4 +1214,41 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
         }
     }
     m
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_leaning_trunk_of_broken_cells_is_drawn_where_it_is_at_every_level() {
+        // A hillside in steps, and on it a trunk written to the bit that leans out over
+        // lower ground: its upper cells have air under them in their own columns.
+        let mut w = World::default();
+        for x in 0..24 {
+            for z in 0..24 {
+                for y in 0..(3 + (23 - x) / 2) {
+                    w.set(IVec3::new(x, y, z), Block::Dirt);
+                }
+            }
+        }
+        let column = |y: i32| IVec3::new(6 + (y - 12) / 2, y, 12);
+        for y in 12..26 {
+            let cell = column(y);
+            for i in 0..SPLIT * SPLIT * SPLIT {
+                let l = IVec3::new(i % SPLIT, i / (SPLIT * SPLIT), i / SPLIT % SPLIT);
+                if l.x > 0 && l.z > 0 {
+                    w.set_bit(cell * SPLIT + l, Block::Timber);
+                }
+            }
+            assert_eq!(w.get(cell), Block::Broken);
+        }
+        let m = mesh_chunk(&w, IVec3::ZERO, false);
+        for y in 12..26 {
+            let cell = column(y);
+            let (lo, hi) = (cell.as_vec3() * CELL - 0.06, (cell + 1).as_vec3() * CELL + 0.06);
+            let faces = (0..m.positions.len() / 4).filter(|q| (0..4).all(|k| { let p = Vec3::from(m.positions[q * 4 + k]); p.cmpge(lo).all() && p.cmple(hi).all() })).count();
+            assert!(faces >= 40, "the cell at {cell} has {faces} faces drawn in it");
+        }
+    }
 }

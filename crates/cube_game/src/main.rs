@@ -192,6 +192,9 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
                                         a scene somewhere else: metres east and south of the start
                                         (`cargo world who` says where creatures live), the camera
                                         that far off and that high; `--view high` is from the air
+        … --play --view fell [--yaw R] [--dist 14]   on what is over the player's head, from that side
+                                        and distance: a tree he cuts seen coming down (in a wood
+                                        most sides have a trunk in the way: try a few)
         … --view sky [--yaw 1.57] [--pitch 0.16]
                                         from over the trees looking out and a little up, wide: the
                                         sky over the land's edge (yaw 0 north, 1.57 west, 3.14 south;
