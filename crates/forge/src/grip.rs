@@ -9,8 +9,21 @@ use crate::spec::Grip;
 use glam::{Mat3, Quat, Vec3};
 use std::collections::BTreeMap;
 
+/// The skeleton as it rests, for the game's two-legged walker: every bone's own turn, the
+/// fingers a little curled as a hand at ease has them.
+pub fn rests(sk: &Skeleton) -> crate::spec::Stride {
+    let eased = bent(sk, 1.0, [0.4, 0.5, 0.35], [0.1, 0.2, 0.2]);
+    let curled: BTreeMap<&str, [f32; 4]> = eased.values().flat_map(|g| g.bones.iter().map(String::as_str).zip(g.turns.iter().copied())).collect();
+    crate::spec::Stride { bones: sk.joints.iter().map(|j| j.name.clone()).collect(), rests: sk.joints.iter().map(|j| curled.get(j.name.as_str()).copied().unwrap_or(j.rest_r.to_array())).collect(), seat: sk.joints[sk.root].rest_t.to_array() }
+}
+
 /// `unit`: metres to a unit of the file.
 pub fn grips(sk: &Skeleton, unit: f32) -> BTreeMap<String, Grip> {
+    bent(sk, unit, [1.15, 1.45, 0.8], [0.35, 0.55, 0.5])
+}
+
+/// Each hand with its fingers bent so much at each joint, and its thumb.
+fn bent(sk: &Skeleton, unit: f32, fingers: [f32; 3], thumb_bends: [f32; 3]) -> BTreeMap<String, Grip> {
     let bone = |n: &str| sk.joints.iter().position(|j| j.name.rsplit(':').next() == Some(n));
     let at = |j: usize| sk.joints[j].world.w_axis.truncate();
     let turned = |j: usize| sk.joints[j].world.to_scale_rotation_translation().1;
@@ -40,11 +53,11 @@ pub fn grips(sk: &Skeleton, unit: f32) -> BTreeMap<String, Grip> {
             }
         };
         for finger in ["Index", "Middle", "Ring", "Pinky"] {
-            close(finger, along.cross(palm).normalize_or(Vec3::Z), [1.15, 1.45, 0.8]);
+            close(finger, along.cross(palm).normalize_or(Vec3::Z), fingers);
         }
         if let (Some(a), Some(b)) = (bone(&name("Thumb1")), bone(&name("Thumb2"))) {
             let thumb = (at(b) - at(a)).normalize_or(across);
-            close("Thumb", thumb.cross(palm - across * 0.6).normalize_or(along), [0.35, 0.55, 0.5]);
+            close("Thumb", thumb.cross(palm - across * 0.6).normalize_or(along), thumb_bends);
         }
         out.insert(side.to_owned(), Grip { at: sk.joints[hand].world.inverse().transform_point3(middle_of).to_array(), turn: (turned(hand).inverse() * frame).normalize().to_array(), bones, turns });
     }

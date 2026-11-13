@@ -355,8 +355,10 @@ fn stride(mut commands: Commands, args: Res<crate::Args>, time: Res<Time>, loadi
         let want = paced(trial.2);
         trial.3 += (want - trial.3).clamp(-6.0 * dt, 4.0 * dt);
         trial.1 += trial.3 / ring * dt;
-        let (at, turn) = (place(trial.1), trial.1 + std::f32::consts::FRAC_PI_2);
-        trial.0.step(dt, at, turn, ground);
+        // (And leaps: once standing, once at a walk, once at a run. Up at 5 m/s, as the game's own.)
+        let hop = [0.4f32, 3.0, 7.0].iter().map(|from| (trial.2 % 16.0) - from).filter(|t| *t > 0.0).map(|t| 5.0 * t - 7.0 * t * t).fold(0.0, f32::max);
+        let (at, turn) = (place(trial.1) + Vec3::Y * hop, trial.1 + std::f32::consts::FRAC_PI_2);
+        trial.0.step(dt, at, turn, hop > 0.0, ground);
     }
     if args.big && args.gif && let Some(mut camera) = cameras.iter_mut().next() {
         let middle = trial.0.stance().pelvis.0;

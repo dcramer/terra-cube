@@ -506,6 +506,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         clips: out.iter().map(|c| (c.name.clone(), ClipMeta { seconds: c.seconds(), looping: c.looping, source: c.source.into(), speed: paces.get(&c.name).copied().unwrap_or(0.0) * scale })).collect(),
         bones,
         walk: stands,
+        stride: (strode.is_some() && plan.rig == "humanoid").then(|| crate::grip::rests(&skeleton)),
         grip: if plan.rig == "humanoid" { crate::grip::grips(&skeleton, scale) } else { Default::default() },
     };
     Ok(Finished { glb, skeleton, roles, clips: out, meta, scale })

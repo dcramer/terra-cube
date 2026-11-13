@@ -110,7 +110,7 @@ pub fn ground_at(terrain: &Terrain, x: f32, z: f32, near: f32) -> Option<f32> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn plant(
+pub(crate) fn plant(
     time: Res<Time>,
     args: Res<crate::Args>,
     live: Option<Res<Live>>,

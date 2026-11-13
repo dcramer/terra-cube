@@ -57,13 +57,16 @@ pieces = [
     { size = [0.16, 0.20, 0.015], at = [0.0, 0.72, 0.0], colour = [0.45, 0.46, 0.48] },
 ]
 
-# In the left hand, held out before him: the stave upright, bent back at its ends, and strung.
+# In the left hand, carried low at his side on an arm that swings, slanted forward; raised and
+# stood upright only to shoot. (Held out before him at arm's length the whole time, walking
+# too, it was a man carrying a signpost.)
 [Bow]
 turn = [0.0, 0.0, 0.0]
 shift = [0.0, 0.0, 0.0]
 aim = [0.0, 1.0, 0.0]
 left = true
-arm = [[-0.2, -0.55, 0.8], [-0.05, 0.05, 1.0]]
+droop = -0.8
+low = [-0.1, 0.5, 0.86]
 # The bow arm straight out; the string hand reaches to it and comes back to the cheek.
 blow = [[[-0.1, -0.1, 1.0], [-0.05, 0.0, 1.0]], [[-0.1, -0.1, 1.0], [-0.05, 0.0, 1.0]]]
 draw = [[[0.1, -0.2, 0.9], [-0.4, 0.2, 0.9]], [[0.75, 0.0, -0.6], [-0.7, 0.1, 0.7]]]

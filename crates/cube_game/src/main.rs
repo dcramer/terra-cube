@@ -24,6 +24,7 @@ mod loading;
 mod motion;
 mod player;
 mod shot;
+mod stride;
 mod ui;
 mod world;
 
@@ -83,6 +84,8 @@ pub struct Args {
     pub torch: bool,
     /// A trial body of boxes, moved by its skeleton and its feet and no clips (`limbs`).
     pub limbs: bool,
+    /// A person is moved by clips alone, as before the two-legged walker (`stride`): to set the two side by side.
+    pub clips_only: bool,
     /// The trial body is a person's, on two legs (`cube_anim::biped`).
     pub person: bool,
     /// And a real creature beside it, moved the same way: its own model, its clips left off.
@@ -172,6 +175,7 @@ stone on it, to the 5 cm bit, before the first frame: for looking at what broken
 twice the size, for a place and not a creature (`make wind` makes shots/wind.gif so).
 --limbs puts a four-legged body of boxes in a scene, moved by its skeleton and feet and no
 clips, going round the place looked at: standing, walking, running, lying down (`make limbs`).
+--clips-only moves a person by its clips alone, the two-legged walker off (`stride`).
 --limbs-person puts a person of boxes there instead: standing, walking, running, stopping.
 --limbs-as wolf does the same to a real creature's model, its clips left off, beside the boxes.
 --by-feet moves the world's four-legged animals by their feet for standing, going and lying
@@ -254,6 +258,7 @@ fn parse_args() -> Args {
             "--speed" => args.speed = it.next().and_then(|v| v.parse().ok()).unwrap_or(1.0),
             "--torch" => args.torch = true,
             "--limbs" => args.limbs = true,
+            "--clips-only" => args.clips_only = true,
             "--limbs-person" => (args.limbs, args.person) = (true, true),
             "--by-feet" => args.by_feet = true,
             "--limbs-as" => (args.limbs, args.limbs_as) = (true, it.next()),
@@ -347,7 +352,7 @@ fn main() {
     .set(TaskPoolPlugin { task_pool_options: TaskPoolOptions { async_compute: bevy::app::TaskPoolThreadAssignmentPolicy { min_threads: 2, max_threads: usize::MAX, percent: 0.6, on_thread_spawn: None, on_thread_destroy: None }, ..default() } }))
     .insert_resource(args)
     .init_resource::<loading::Loading>()
-    .add_plugins((creatures::CreaturesPlugin, held::HeldPlugin, feet::FeetPlugin, limbs::LimbsPlugin));
+    .add_plugins((creatures::CreaturesPlugin, held::HeldPlugin, feet::FeetPlugin, limbs::LimbsPlugin, stride::StridePlugin));
     if shot {
         // With no window the loop would idle at sixty a second, and every `pace` would read
         // 17 ms whatever the frame cost: run flat out, so the number is the work.

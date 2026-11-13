@@ -139,7 +139,7 @@ impl Strider {
         let dt = 1.0 / (FPS * 4.0);
         if pace == 0.0 {
             for _ in 0..(2.0 / dt) as usize {
-                walker.step(dt, Vec3::ZERO, 0.0, |_, _| 0.0);
+                walker.step(dt, Vec3::ZERO, 0.0, false, |_, _| 0.0);
             }
             return Ok(Clip { name: name.into(), looping: true, frames: vec![self.pose(sk, &walker, 0.0); (FPS * 4.0) as usize + 1], source: "walker", speed: None });
         }
@@ -149,7 +149,7 @@ impl Strider {
             speed += (pace - speed).min(4.0 * dt);
             gone += speed * dt;
             let before = walker.phase;
-            walker.step(dt, Vec3::Z * gone, 0.0, |_, _| 0.0);
+            walker.step(dt, Vec3::Z * gone, 0.0, false, |_, _| 0.0);
             let wrapped = walker.phase < before;
             if began.is_none() && wrapped && tick as f32 * dt > 5.0 {
                 began = Some(tick);

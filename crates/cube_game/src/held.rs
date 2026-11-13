@@ -18,7 +18,7 @@ pub struct HeldPlugin;
 impl Plugin for HeldPlugin {
     fn build(&self, app: &mut App) {
         let things: BTreeMap<String, Thing> = toml::from_str(FILE).unwrap_or_else(|e| panic!("assets/world/held.toml: {e}"));
-        app.insert_resource(Things(things)).add_systems(Update, (hold, loose)).add_systems(PostUpdate, carry.after(bevy::app::AnimationSystems).before(bevy::transform::TransformSystems::Propagate));
+        app.insert_resource(Things(things)).add_systems(Update, (hold, loose)).add_systems(PostUpdate, carry.after(bevy::app::AnimationSystems).after(crate::stride::pose).before(bevy::transform::TransformSystems::Propagate));
     }
 }
 
@@ -47,6 +47,9 @@ struct Thing {
     /// hanging: this is the most it may rise (its direction's y: -1 straight down, 0 level).
     /// For what is carried low at the side, where `arm` would hold the whole arm still.
     droop: Option<f32>,
+    /// Which way it points while it is carried so, where that is not `aim` (a bow is carried
+    /// slanted at the side and stood upright to shoot).
+    low: Option<[f32; 3]>,
     /// How much of the clip's own swing of that arm is kept under the carry, 0 (none: the arm
     /// is held as `arm` says) to 1. With any, a blow that is the clip's own is left to the clip.
     #[serde(default)]
@@ -226,12 +229,16 @@ fn carry(things: Res<Things>, live: Option<Res<Live>>, held: Query<(Entity, &Hel
             let mut turned = above * elbow;
             let way = turned * along;
             if way.y > droop {
-                let level = Vec3::new(way.x, 0.0, way.z).try_normalize().unwrap_or(body.rotation * Vec3::Z);
-                turned = turned.slerp(Quat::from_rotation_arc(way, level * (1.0 - droop * droop).max(0.0).sqrt() + Vec3::Y * droop) * turned, keep);
+                // Straightened toward the line of the upper arm until it hangs low enough, and
+                // never past that line: an elbow does not bend backwards. (Brought straight
+                // down whatever the upper arm was doing, it did, each time the arm swung forward.)
+                let straight = Quat::from_rotation_arc(way, (above * along).normalize());
+                let much = (1..=10).map(|n| n as f32 / 10.0).find(|t| (Quat::IDENTITY.slerp(straight, *t) * way).y <= droop).unwrap_or(1.0);
+                turned = Quat::IDENTITY.slerp(straight, much * keep) * turned;
             }
             let axis = turned * along;
             let level = |v: Vec3| (v - axis * v.dot(axis)).try_normalize();
-            if let (Some(aim), Some(from)) = (thing.aim, level(turned * wrist.0 * seated * Vec3::Y))
+            if let (Some(aim), Some(from)) = (thing.low.or(thing.aim), level(turned * wrist.0 * seated * Vec3::Y))
                 && let Some(to) = level(body.rotation * Vec3::from_array(aim))
             {
                 turned = Quat::from_axis_angle(axis, from.cross(to).dot(axis).atan2(from.dot(to)) * keep) * turned;

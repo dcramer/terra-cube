@@ -14,7 +14,7 @@ An experiment: a voxel sandbox game with heavy simulation, better looking than M
 |---|---|
 | `crates/cube_voxel` | Voxel data (cells, and the bits a cell breaks into) and chunk meshing. No engine types, so the simulation can use it headless. |
 | `crates/cube_sim` | The simulation, at a fixed 60 ticks a second, no engine types: how big everything is (`scale`: the one place sizes live), the world from a seed (`terrain`), where and when each kind of life lives (`ecology`), bodies moving through voxels (`body`), what grows on it (`plants`), every creature and its mind (`life`, `mind`). |
-| `crates/cube_anim` | A body moved by its own skeleton and feet, no clips: two-bone inverse kinematics, feet that plant and step, a trunk carried by them. Plain arithmetic with tests; a trial on boxes (`make limbs`) before any real model. |
+| `crates/cube_anim` | A body moved by its own skeleton and feet, no clips: two-bone inverse kinematics, feet that plant and step, a trunk carried by them; on four legs (`Walker`) and on two (`biped`, which moves the player as the game runs: `cube_game::stride`). Plain arithmetic with tests; a trial on boxes (`make limbs`, `make person`) before any real model. |
 | `crates/cube_game` | The Bevy app: draws what the simulation holds, takes the player's keys. Sky, light, wind and what drifts in the air (`world`, `air`). Also the sandbox panel, contact sheets, scene pictures. |
 | `crates/world` | `cargo world`: the land and its creatures judged headless (`survey`, `run`, `life`, `map`, `grade`, `who`, `dig`). |
 | `crates/forge` | The creature pipeline CLI. Each file's header says what it holds; `main.rs` has the map. |

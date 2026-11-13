@@ -42,12 +42,23 @@ pub struct Meta {
     /// The body as it stands, for moving it by its feet (`limbs`): forge's `[walk]`.
     #[serde(default)]
     pub walk: Option<Walk>,
+    /// A person the two-legged walker moves (`stride`): forge's `[stride]`.
+    #[serde(default)]
+    pub stride: Option<Stride>,
     /// How each hand (`Left`, `Right`) holds a handle: forge's `[grip]` (`held`).
     #[serde(default)]
     pub grip: std::collections::HashMap<String, Grip>,
     /// Bones by role, as forge read them off the skeleton: `root`, `leg0`… (`feet`).
     #[serde(default)]
     pub bones: std::collections::HashMap<String, String>,
+}
+
+/// The skeleton as it rests: each bone by name with its own turn, and where the hips' bone sits.
+#[derive(Deserialize, Clone, Debug, Default)]
+pub struct Stride {
+    pub bones: Vec<String>,
+    pub rests: Vec<[f32; 4]>,
+    pub seat: [f32; 3],
 }
 
 /// A hand closed round a handle: the handle's middle and turn in the hand bone's frame, and

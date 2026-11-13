@@ -212,9 +212,22 @@ pub struct Meta {
     /// has four legs that fold.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub walk: Option<Walk>,
+    /// For a person the game moves by the two-legged walker (`cube_game::stride`): the
+    /// skeleton as it rests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stride: Option<Stride>,
     /// How each hand (`Left`, `Right`) holds a handle, where it has hands (`grip.rs`).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub grip: BTreeMap<String, Grip>,
+}
+
+/// The skeleton as it rests: each bone by name with its own turn (the fingers a little
+/// curled, as a hand at ease has them), and where the hips' bone sits in what it hangs from.
+#[derive(Deserialize, Serialize, Default)]
+pub struct Stride {
+    pub bones: Vec<String>,
+    pub rests: Vec<[f32; 4]>,
+    pub seat: [f32; 3],
 }
 
 /// A hand closed round a handle: where the handle's middle is and how it is turned, in the
