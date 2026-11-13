@@ -100,6 +100,10 @@ pub struct Biped {
     dip: f32,
     dipping: f32,
     aloft: bool,
+    /// It is striking a blow (set by whoever moves it): it steps into it, one foot ahead and
+    /// the other back, and sinks a little. How far into that stance it is, 0 to 1.
+    pub strikes: bool,
+    lunge: f32,
     /// Seconds it has been alive: what breathes and shifts as it stands goes by this.
     time: f32,
     /// Steps taken, by foot.
@@ -118,7 +122,7 @@ impl Biped {
             let p = at + turn * Vec3::X * side * frame.hips / 2.0;
             Foot { at: p, yaw, pitch: 0.0, down: true, from: p, clear: 0.0 }
         });
-        Self { frame, at, yaw, vel: Vec3::ZERO, phase: 0.0, feet, runs: 0.0, goes: 0.0, lean: 0.0, high: frame.stands(), shuffle: None, air: 0.0, rises: 0.0, dip: 0.0, dipping: 0.0, aloft: false, time: 0.0, steps: [0; 2] }
+        Self { frame, at, yaw, vel: Vec3::ZERO, phase: 0.0, feet, runs: 0.0, goes: 0.0, lean: 0.0, high: frame.stands(), shuffle: None, air: 0.0, rises: 0.0, dip: 0.0, dipping: 0.0, aloft: false, strikes: false, lunge: 0.0, time: 0.0, steps: [0; 2] }
     }
 
     /// Whether each foot is on the ground.
@@ -192,8 +196,10 @@ impl Biped {
         let rate = (0.6 + 0.24 * speed / size) / size;
         let duty = 0.62 - 0.27 * r;
         let turn = Quat::from_rotation_y(yaw);
+        self.lunge += (self.strikes as u8 as f32 - self.lunge) * ease(14.0);
+        let stance = if self.strikes { 1.0 } else { 0.0 };
         let home = |i: usize| {
-            let p = at + turn * Vec3::X * (i as f32 * 2.0 - 1.0) * f.hips / 2.0;
+            let p = at + turn * (Vec3::X * (i as f32 * 2.0 - 1.0) * f.hips / 2.0 * (1.0 + 0.5 * stance) + Vec3::Z * if i == 1 { 0.3 } else { -0.16 } * leg * stance);
             Vec3::new(p.x, ground(p.x, p.z), p.z)
         };
         let going = speed > 0.15;
@@ -302,7 +308,7 @@ impl Biped {
         // must reach, and the hips come down for it below.)
         let floor = at.y;
         let bound = -(2.0 * TAU * (self.phase - duty / 2.0)).cos() * 0.035 * leg * r;
-        let want = floor + f.stands() - 0.05 * leg * r + bound - self.dip;
+        let want = floor + f.stands() - 0.05 * leg * r + bound - self.dip - 0.07 * leg * self.lunge * (1.0 - self.goes);
         self.high += (want - self.high) * ease(18.0);
         let stance = self.stance();
         let over = (0..2)

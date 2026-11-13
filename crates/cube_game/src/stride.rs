@@ -131,6 +131,7 @@ pub(crate) fn pose(time: Res<Time>, live: Option<Res<Live>>, terrain: Option<Res
                 fitted.walker = Biped::new(fitted.walker.frame, top.translation, yaw);
             }
             let near = top.translation.y;
+            fitted.walker.strikes = agent.swing.is_some() || agent.doing.is_some_and(|d| d.0 == Act::Attack);
             fitted.walker.step(dt, top.translation, yaw, strode.off > 0.07, |x, z| crate::feet::ground_at(&terrain, x, z, near).filter(|g| (g - near).abs() < 0.6).unwrap_or(near));
         }
         let s = fitted.walker.stance();
