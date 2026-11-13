@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: wind blow moves limbs person beside features legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: sky wind blow moves limbs person beside features legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -144,6 +144,9 @@ legs: ## no window: the player walked up and down a hillside and stood on a ledg
 feet: ## no window: the player and a deer walked over a hillside with feet as the clip has them and then put on the ground: how far the standing foot strays each way (tools/feet.sh ID X,Z YAW for another)
 	@tools/feet.sh player -60,20 2.0
 	@tools/feet.sh deer 30,-40 0.5
+
+sky: ## no window: shots/sky.png, the sky and the light at sixteen fixed hours and places (dawn to full night, the torch, a wood), one sheet; look after any change to sky, sun, moon, cloud, exposure or a light (tools/sky.sh dusk for one)
+	@tools/sky.sh
 
 held: ## no window: shots/held.png, the sword and the torch in the player's hand, standing, walking and striking
 	@tools/held.sh

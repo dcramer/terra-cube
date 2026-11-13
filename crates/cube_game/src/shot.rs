@@ -382,6 +382,15 @@ fn scene(mut commands: Commands, args: Res<Args>, registry: Res<Registry>, terra
     // close in: its phase, to be seen.
     let when = cube_sim::sky::at(args.day.unwrap_or(3), args.hour.unwrap_or(15.0));
     let (from, focus, lens) = if args.view == "moon" { (focus + Vec3::Y * 40.0, focus + Vec3::Y * 40.0 + cube_sim::sky::moon(when) * 100.0, 0.12) } else { (from, focus, std::f32::consts::FRAC_PI_4) };
+    // `--view sky`: from over the trees too, looking out toward `--yaw` (0 north, 1.57 west)
+    // and a little up (`--pitch`, radians above level), wide: the land's edge low in the
+    // picture and the sky over it, to judge the sky and the light by (`make sky`).
+    let (from, focus, lens) = if args.view == "sky" {
+        let out = Quat::from_euler(EulerRot::YXZ, args.yaw, args.pitch.unwrap_or(0.16), 0.0) * Vec3::NEG_Z;
+        (focus + Vec3::Y * 40.0, focus + Vec3::Y * 40.0 + out * 100.0, 1.05)
+    } else {
+        (from, focus, lens)
+    };
     commands.spawn((
         Camera3d::default(),
         Projection::Perspective(PerspectiveProjection { fov: lens, far: 4000.0, ..default() }),

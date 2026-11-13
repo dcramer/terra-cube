@@ -61,6 +61,7 @@ make swim                          # the player put in deep water in the real ga
 make fight                         # the player fights a goblin in the real game, judged from the trace: hit, kill, sounds
 make grown                         # shots/grown/*.png: every kind of tree and rock alone, whole and close; `make floors`: the ground of a trail, forest, meadow and shore in one sheet
 make wind                          # a wood half a second apart in still air and a hard wind: leaves must move in one, not the other (`--wind 0.8` on any `cargo sandbox` sets it)
+make sky                           # shots/sky.png: the sky and the light at sixteen fixed hours (dawn, noon, sunset, dusk, moonrise, night, the torch, a wood), one sheet; look at it after any change to sky, sun, moon, cloud, exposure or a light source (`--view sky` looks out over the trees)
 make slice                         # shots/slice/*.png: six fixed views (meadow at noon, dawn and night, forest, shore, from the air); look at all six after any change to the world's look
 cargo world grade shots/grade.png  # where the ground is easy, steep and cliff, by height and in a picture
 cargo sandbox --spawn all          # the interactive sandbox (needs a real screen)

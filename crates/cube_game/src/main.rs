@@ -160,6 +160,10 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
                                         a scene somewhere else: metres east and south of the start
                                         (`cargo world who` says where creatures live), the camera
                                         that far off and that high; `--view high` is from the air
+        … --view sky [--yaw 1.57] [--pitch 0.16]
+                                        from over the trees looking out and a little up, wide: the
+                                        sky over the land's edge (yaw 0 north, 1.57 west, 3.14 south;
+                                        pitch in radians above level, 1.4 nearly overhead): `make sky`
 --dig X,Z,ACROSS and --build X,Z,ACROSS cut a round hole in the ground there, or raise a round
 stone on it, to the 5 cm bit, before the first frame: for looking at what broken cells cost.
 --seed N makes another island. cargo world (survey, run, map, who) judges one with no window.
