@@ -655,7 +655,7 @@ fn torch(
         *place = thrown;
         light.intensity = CORE * waver;
     } else {
-        commands.spawn((Core, SpotLight { color: Color::srgb(1.0, 0.78, 0.5), intensity: CORE, range: 9.0, radius: 0.05, inner_angle: 0.2, outer_angle: 0.62, shadow_maps_enabled: false, ..default() }, thrown));
+        commands.spawn((Core, SpotLight { color: Color::srgb(1.0, 0.58, 0.26), intensity: CORE, range: 9.0, radius: 0.05, inner_angle: 0.2, outer_angle: 0.62, shadow_maps_enabled: false, ..default() }, thrown));
     }
     // What comes back off the ground toward the eye: from between him and the camera.
     let eye = cameras.iter().next().map_or(bearer.translation, |c| c.translation());
@@ -684,10 +684,11 @@ const TORCH: f32 = 2600.0;
 /// pool, and every blade of grass threw a shadow many times its own length. From overhead
 /// the ground and the bearer are lit alike, as a camera that could see both would have it.
 const LIFT: f32 = 1.3;
-/// The hot middle of the pool, lumens: paler than the rest and in a cone, so the pool goes
-/// from pale yellow where the torch is held out to deep amber at its edge. One light alone
-/// was one hue from his feet to the dark.
-const CORE: f32 = 3400.0;
+/// The hot middle of the pool, lumens: in a cone, so the pool goes from pale and bright
+/// where the torch is held out to deep amber at its edge. One light alone was one hue from
+/// his feet to the dark. (It is nearly the fire's own colour and pale by being bright: made
+/// of a yellower light it was khaki on grass.)
+const CORE: f32 = 5200.0;
 /// The part of it that throws no shadow, lumens: what a fire's light does by coming off
 /// everything it falls on. Without it a shadow from the torch was a black hole in the
 /// ground. (It is also seen faintly through a trunk or a wall.)
