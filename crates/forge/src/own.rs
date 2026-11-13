@@ -25,9 +25,6 @@ pub const BONES: [&str; 19] = [
 const PARENTS: [Option<usize>; 19] = [None, Some(0), Some(1), Some(0), Some(3), Some(0), Some(5), Some(6), Some(0), Some(8), Some(9), Some(0), Some(11), Some(12), Some(13), Some(0), Some(15), Some(16), Some(17)];
 /// The clips that are the walker's own: the rest are made or carried as any four-legged animal's.
 pub const WALKED: [&str; 5] = ["idle", "walk", "run", "sprint", "lie"];
-/// How far over half its depth the trunk's middle lies as it lies down, in parts of how
-/// high its belly stands: fitted until `pose lie` (`poses.toml`) has the chest on the ground.
-const LAIN: f32 = 0.0;
 /// Each leg's bones, from where it leaves the trunk down.
 const LEGS: [&[usize]; 4] = [&[5, 6, 7], &[8, 9, 10], &[11, 12, 13, 14], &[15, 16, 17, 18]];
 
@@ -147,13 +144,37 @@ impl Own {
         // and the model stood crouched on them: its own joints were somewhere else.)
         let walk = |p: Vec3| Vec3::new((p - origin).dot(right), p.y - lo.y, (p - origin).dot(ahead)) * metres;
         let under = m(belly - lo.y);
+        // (Read off the skin's faces, not its points alone: a leg drawn as a few long faces
+        // has points only at its ends, and a bear's legs were not found for want of them.)
+        let mut sampled = all.clone();
+        for (p, pts) in primitives.iter().zip(&points) {
+            let corners: Vec<usize> = match p["indices"].as_u64() {
+                Some(accessor) => glb.floats(accessor as usize)?.0.iter().map(|i| *i as usize).collect(),
+                None => (0..pts.len()).collect(),
+            };
+            for t in corners.chunks_exact(3) {
+                let (a, b, c) = (pts[t[0]], pts[t[1]], pts[t[2]]);
+                for i in 0..=4 {
+                    for j in 0..=4 - i {
+                        let (u, v) = (i as f32 / 4.0, j as f32 / 4.0);
+                        sampled.push(a * (1.0 - u - v) + b * u + c * v);
+                    }
+                }
+            }
+        }
         let centres = |n: usize| -> Vec<Vec3> {
             let (front, left) = (n < 2, n.is_multiple_of(2));
-            let own: Vec<Vec3> = all.iter().copied().filter(|p| (x(*p) < 0.0) == left && x(*p).abs() > wide * 0.1 && (z(*p) > split) == front && p.y < belly).map(walk).collect();
-            (0..14).filter_map(|k| {
-                let (from, to) = (under * k as f32 / 14.0, under * (k + 1) as f32 / 14.0);
+            // (Only what is over its own foot, within a quarter of the way to the other pair: a
+            // fox's brush hangs behind its hind legs and was read as part of them, its hock
+            // put half a body behind it.)
+            let over = if front { fore } else { hind };
+            let own: Vec<Vec3> = sampled.iter().copied().filter(|p| (x(*p) < 0.0) == left && x(*p).abs() > wide * 0.1 && (z(*p) - over).abs() < (fore - hind) * 0.28 && p.y < belly).map(walk).collect();
+            // (Ten slices, and three points make one: a bear's legs, drawn with few points,
+            // had too few in each of fourteen to be found at all.)
+            (0..10).filter_map(|k| {
+                let (from, to) = (under * k as f32 / 10.0, under * (k + 1) as f32 / 10.0);
                 let slice: Vec<Vec3> = own.iter().copied().filter(|p| p.y >= from && p.y < to).collect();
-                (slice.len() >= 6).then(|| (slice.iter().sum::<Vec3>() / slice.len() as f32).with_y((from + to) / 2.0))
+                (slice.len() >= 3).then(|| (slice.iter().sum::<Vec3>() / slice.len() as f32).with_y((from + to) / 2.0))
             }).collect()
         };
         let middle = Vec3::new(0.0, build.tall, 0.0);
@@ -162,12 +183,15 @@ impl Own {
         let mut read = Vec::new();
         for n in 0..4 {
             let line = centres(n);
+            if std::env::var_os("FORGE_TRACE").is_some() {
+                println!("own: leg {n}: {} of 10 slices found · belly {:.2} m up · feet {:.2} m apart · {:.2} m wide", line.len(), under, m(fore - hind), m(wide));
+            }
             // (Not found: a dog's, of its size.)
             let fallback = |hips: &mut [Vec3; 4], bone: &mut [(f32, f32); 4], lower: &mut [f32; 4]| {
                 (hips[n], bone[n]) = (dog[n][0] - middle, (dog[n][0].distance(dog[n][1]), dog[n][1].distance(dog[n][2])));
                 lower[n] = if n < 2 { 0.0 } else { dog[n][2].distance(dog[n][3]) };
             };
-            let (Some(first), Some(last)) = (line.first().filter(|_| line.len() >= 8), line.last()) else {
+            let (Some(first), Some(last)) = (line.first().filter(|_| line.len() >= 6), line.last()) else {
                 fallback(&mut hips, &mut bone, &mut lower);
                 continue;
             };
@@ -201,7 +225,7 @@ impl Own {
             let st = glam::Vec2::new((stand[b].x - stand[a].x) / 2.0, (stand[a].y + stand[b].y) / 2.0);
             (stand[a], stand[b]) = (glam::Vec2::new(-st.x, st.y), st);
         }
-        let shape = Shape { hips, bone, lower, stand, shank, lain: build.deep / 2.0 + LAIN * under };
+        let shape = Shape { hips, bone, lower, stand, shank, lain: build.deep / 2.0 };
         if std::env::var_os("FORGE_TRACE").is_some() {
             println!("own: legs read off the mesh: {} · {shape:.2?}", read.join(" · "));
         }
@@ -253,7 +277,20 @@ impl Own {
             let welded: Vec<usize> = pts.iter().map(|at| { let n = place.len(); *place.entry([(at.x / grain).round() as i32, (at.y / grain).round() as i32, (at.z / grain).round() as i32]).or_insert(n) }).collect();
             let mut hold = vec![[0.0f32; BONES.len()]; place.len()];
             for (at, w) in pts.iter().zip(&welded) {
-                for l in lines.iter().filter(|l| l.4 == 0.0 || x(*at) * l.4 > -wide * 0.05) {
+                // (A leg holds what is over its own foot and no more, and the tail what is
+                // behind the hind feet: a pony's tail hangs down its hind legs to the hocks,
+                // each held some of the other, and lying or dying tore both.)
+                let reach = (fore - hind) * 0.33;
+                // (And what hangs on the body's middle line behind the hind feet is tail, not
+                // leg: the legs stand either side of it.)
+                let between = z(*at) < hind && x(*at).abs() < wide * 0.2;
+                let mine = |bone: usize| match bone {
+                    3 | 4 => z(*at) < hind - reach * 0.3 || between,
+                    5..=10 => (z(*at) - fore).abs() < reach,
+                    11.. => (z(*at) - hind).abs() < reach && !between,
+                    _ => true,
+                };
+                for l in lines.iter().filter(|l| mine(l.0) && (l.4 == 0.0 || x(*at) * l.4 > -wide * 0.05)) {
                     hold[*w][l.0] = hold[*w][l.0].max(1.0 / ((to_segment(*at, l.1, l.2) - l.3).max(0.0) + soft).powi(4));
                 }
             }
@@ -347,11 +384,14 @@ impl Own {
         }
         // A tail that hangs as it stands would go into the ground as it lies: it is swung
         // out behind until its end is on the ground and not in it.
-        for _ in 0..45 {
+        // (Bent along its length, a little at its root and as much again half way: all at
+        // the root, a pony's long tail was a hinge and the skin there was pulled to three
+        // times its length.)
+        for turn in 0..90 {
             if sk.pose_world(&pose)[4].transform_point3(self.tip).y >= self.origin.y + self.thick {
                 break;
             }
-            clips::turn_now(sk, &mut pose, 3, Quat::from_axis_angle(self.right, 2f32.to_radians()));
+            clips::turn_now(sk, &mut pose, 3 + turn % 2, Quat::from_axis_angle(self.right, 1.5f32.to_radians()));
         }
         pose
     }
@@ -373,7 +413,29 @@ impl Own {
 
     /// One of its clips, made by the walker: standing, a stride of a gait at the speed its
     /// legs' length gives it, or lying down.
-    pub fn clip(&self, name: &str, sk: &Skeleton) -> Result<Clip> {
+    /// Lying down is fitted to this body: how high its trunk lies is tried
+    /// over a hand's breadth either way and the height kept that `judge` likes best (what
+    /// it gives: how far the pose is from lying as `poses.toml` has it, and whether it
+    /// passes). A chest is deeper than a belly by an amount no two animals share.
+    pub fn clip_judged(&self, name: &str, sk: &Skeleton, judge: &dyn Fn(&Pose) -> Option<(f32, bool)>) -> Result<Clip> {
+        if name == "lie" {
+            // (And how far its tail is lifted beyond where its bones clear the ground: a brush
+            // is thicker than the bones in it.)
+            let lain = |by: f32, lift: f32| {
+                let mut walker = Walker::shaped(self.build, Shape { lain: self.shape.lain + by, ..self.shape }, Vec3::ZERO, 0.0);
+                for _ in 0..(5.0 * FPS) as usize {
+                    walker.step(1.0 / FPS, Vec3::ZERO, 0.0, 1.0, |_, _| 0.0);
+                }
+                let mut pose = self.pose(sk, &walker, 0.0);
+                clips::turn_now(sk, &mut pose, 3, Quat::from_axis_angle(self.right, lift));
+                pose
+            };
+            let under = self.build.tall - self.build.deep / 2.0;
+            let tried: Vec<(f32, Pose, Option<(f32, bool)>)> = (-8..=6).flat_map(|k| [0.0f32, 0.15, 0.3, 0.5].map(|lift| (k, lift))).map(|(k, lift)| { let pose = lain(k as f32 * 0.02 * under, lift); let said = judge(&pose); (k as f32, pose, said) }).collect();
+            let best = tried.iter().filter(|t| t.2.is_some_and(|s| s.1)).chain(tried.iter()).min_by(|a, b| (!a.2.is_some_and(|s| s.1), a.2.map_or(a.0.abs(), |s| s.0)).partial_cmp(&(!b.2.is_some_and(|s| s.1), b.2.map_or(b.0.abs(), |s| s.0))).unwrap_or(std::cmp::Ordering::Equal));
+            let pose = best.map_or_else(|| lain(0.0, 0.0), |b| b.1.clone());
+            return Ok(Clip { name: name.into(), looping: true, frames: vec![pose; (FPS * 4.0) as usize + 1], source: "walker", speed: None });
+        }
         let mut walker = Walker::shaped(self.build, self.shape, Vec3::ZERO, 0.0);
         let legs = self.build.tall - self.build.deep / 2.0;
         let pace = (9.81 * legs).sqrt() * match name {

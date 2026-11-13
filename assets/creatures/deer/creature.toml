@@ -1,6 +1,6 @@
 name = "Deer"
 kind = "wildlife"
-plan = "quadruped"
+plan = "walked"
 subject = "a red deer stag with antlers"
 height = 1.9
 rests = "crouch"

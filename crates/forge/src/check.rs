@@ -163,6 +163,16 @@ fn stretch(s: &Skin, sk: &Skeleton, rest_len: &[f32], clip: &Clip) -> f32 {
         if ratios.is_empty() {
             continue;
         }
+        // `FORGE_TRACE=1`: of the hundredth of its edges stretched most, which bones hold them.
+        if std::env::var_os("FORGE_TRACE").is_some() {
+            let mut all: Vec<(f32, usize)> = s.edges.iter().zip(rest_len).filter(|(_, r)| **r > 1e-6).map(|(&(a, b), &r)| ((v[a].distance(v[b]) / r - 1.0).abs(), s.joints[a][0])).collect();
+            all.sort_by(|a, b| b.0.total_cmp(&a.0));
+            let mut by = std::collections::BTreeMap::new();
+            for (_, bone) in all.iter().take(all.len() / 100) {
+                *by.entry(sk.joints[*bone].name.clone()).or_insert(0) += 1;
+            }
+            println!("stretch {}: worst {:.0}% · held by {by:?}", clip.name, all.first().map_or(0.0, |a| a.0 * 100.0));
+        }
         let k = ((ratios.len() as f32 * 0.99) as usize).min(ratios.len() - 1);
         let (_, p99, _) = ratios.select_nth_unstable_by(k, |a, b| a.total_cmp(b));
         worst = worst.max(*p99);

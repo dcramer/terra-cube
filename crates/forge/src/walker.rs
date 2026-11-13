@@ -297,6 +297,13 @@ impl Measures {
 
 /// A lying pose held against what lying must be: each measure in a few words, and whether
 /// all of them hold.
+/// How far a pose is from lying, as one number (less is nearer), and whether it passes.
+pub fn judged(glb: &crate::glb::Glb, sk: &Skeleton, roles: &Roles, pose: &Pose) -> Option<(f32, bool)> {
+    let shape = Shape::of(glb, sk, roles)?;
+    let m = Measures::of(&shape, sk, roles, pose);
+    Some((m.short(), m.good(&lying())))
+}
+
 pub fn measured(glb: &crate::glb::Glb, sk: &Skeleton, roles: &Roles, pose: &Pose) -> Option<(String, bool)> {
     let shape = Shape::of(glb, sk, roles)?;
     let m = Measures::of(&shape, sk, roles, pose);

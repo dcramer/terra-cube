@@ -1,6 +1,6 @@
 name = "Bear"
 kind = "wildlife"
-plan = "quadruped"
+plan = "walked"
 subject = "a large brown bear"
 height = 1.3
 rests = "belly"

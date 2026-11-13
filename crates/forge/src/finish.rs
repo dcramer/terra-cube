@@ -186,7 +186,14 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
             clip
         });
         let recorded = carried.as_ref().or(found.map(|i| &theirs[i]));
-        let mut clip = if let Some(own) = owned.as_ref().filter(|_| crate::own::WALKED.contains(&name.as_str())) { own.clip(name, &skeleton)? } else if let Some(strode) = strode.as_ref().filter(|_| creature.walked.contains(name)) { strode.clip(name, &skeleton)? } else { match recorded {
+        let mut clip = if let Some(own) = owned.as_ref().filter(|_| crate::own::WALKED.contains(&name.as_str())) {
+            // (Judged as it will be drawn: raised out of the ground first, as every lying clip is.)
+            own.clip_judged(name, &skeleton, &|pose| {
+                let mut pose = pose.clone();
+                pose.root_t += skeleton.base.inverse().transform_vector3(Vec3::Y * crate::check::sunk(&glb, &skeleton, std::slice::from_ref(&pose))[0]);
+                crate::walker::judged(&glb, &skeleton, &roles, &pose)
+            })?
+        } else if let Some(strode) = strode.as_ref().filter(|_| creature.walked.contains(name)) { strode.clip(name, &skeleton)? } else { match recorded {
             Some(taken) => {
                 let source = taken.source;
                 let looping = !matches!(name.as_str(), "attack" | "hurt" | "die" | "jump" | "land");
@@ -241,6 +248,18 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
                 // other three feet in the air.)
                 let gait = matches!(name.as_str(), "idle" | "walk" | "run" | "sprint");
                 if source == "library" && name != "swim" && !gait {
+                    // On our own skeleton the whole neck is one bone and the head another, where
+                    // the animal the clip was drawn on has four: each is given half of what was
+                    // carried onto it. (All of it, a pony's neck folded flat under it as it died.)
+                    if owned.is_some() {
+                        let rest = skeleton.rest();
+                        for pose in &mut frames {
+                            // (And the tail, two bones for the animal's eight, a third.)
+                            for (&j, much) in roles.head.iter().map(|j| (j, 0.5)).chain(roles.tail.iter().map(|j| (j, 0.35))) {
+                                pose.rotations[j] = rest.rotations[j].slerp(pose.rotations[j], much);
+                            }
+                        }
+                    }
                     let under = crate::check::off_floor(&glb, &skeleton, &frames);
                     for (pose, under) in frames.iter_mut().zip(under) {
                         // (Raised out of the ground always; and what dies is let down onto it.)

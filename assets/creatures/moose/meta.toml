@@ -1,12 +1,12 @@
 # Measured by `cargo forge finish`; do not edit.
 height = 2.6
-length = 2.9548266
-width = 1.4772135
-walk_speed = 1.3291012
-run_speed = 2.9871438
-sprint_speed = 4.9619775
+length = 2.9405558
+width = 1.4783324
+walk_speed = 1.9455264
+run_speed = 4.1998663
+sprint_speed = 7.504173
 triangles = 9124
-joints = 23
+joints = 19
 
 [clips.attack]
 seconds = 1.3333334
@@ -39,9 +39,9 @@ source = "library"
 speed = 0.0
 
 [clips.idle]
-seconds = 3.3333333
+seconds = 4.0
 looping = true
-source = "library"
+source = "walker"
 speed = 0.0
 
 [clips.jump]
@@ -57,22 +57,22 @@ source = "made"
 speed = 0.0
 
 [clips.lie]
-seconds = 5.0
+seconds = 4.0
 looping = true
-source = "made"
+source = "walker"
 speed = 0.0
 
 [clips.run]
-seconds = 0.43333334
+seconds = 0.36666667
 looping = true
-source = "made"
-speed = 2.9871438
+source = "walker"
+speed = 4.1998663
 
 [clips.sprint]
-seconds = 0.53333336
+seconds = 0.23333333
 looping = true
-source = "library"
-speed = 4.9619775
+source = "walker"
+speed = 7.504173
 
 [clips.swim]
 seconds = 1.6
@@ -81,20 +81,21 @@ source = "made"
 speed = 0.0
 
 [clips.walk]
-seconds = 1.1666666
+seconds = 0.43333334
 looping = true
-source = "library"
-speed = 1.3291012
+source = "walker"
+speed = 1.9455264
 
 [bones]
-foot0 = "tripo::1_Left_Limb_3"
-foot1 = "bone_11"
-foot2 = "tripo::0_Left_Limb_2"
-foot3 = "tripo::0_Right_Limb_1"
-head = "tripo::Head_2"
-leg0 = "tripo::1_Left_Limb_1>tripo::1_Left_Limb_2>tripo::1_Left_Limb_3"
-leg1 = "bone_9>bone_10>bone_11"
-leg2 = "tripo::0_Left_Limb_0>tripo::0_Left_Limb_1>tripo::0_Left_Limb_2"
-neck = "tripo::Head_2"
-root = "tripo::Root"
-tail = "tripo::Spine_0"
+foot0 = "fl_paw"
+foot1 = "fr_paw"
+foot2 = "hl_paw"
+foot3 = "hr_paw"
+head = "head"
+leg0 = "fl_upper>fl_fore>fl_paw"
+leg1 = "fr_upper>fr_fore>fr_paw"
+leg2 = "hl_thigh>hl_shank>hl_paw"
+leg3 = "hr_thigh>hr_shank>hr_paw"
+neck = "neck"
+root = "trunk"
+tail = "tail_1"
