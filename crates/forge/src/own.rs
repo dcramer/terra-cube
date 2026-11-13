@@ -150,7 +150,9 @@ impl Own {
         // feet and its hind there is leg at the ground on either side, and its belly is what
         // is lowest along its middle. Asked only where the first finds none, so that nothing
         // already rigged changes.)
+        let mut squat = false;
         if !between.is_empty() && belly - lo.y < size.y * 0.15 {
+            squat = true;
             belly = between.iter().filter(|p| x(**p).abs() < wide * 0.2).map(|p| p.y).fold(f32::MAX, f32::min);
             if std::env::var_os("FORGE_TRACE").is_some() {
                 println!("own: a squat body: its belly along its middle is {:.0}% of its height up", (belly - lo.y) / size.y * 100.0);
@@ -321,10 +323,17 @@ impl Own {
                 // (And what hangs on the body's middle line behind the hind feet is tail, not
                 // leg: the legs stand either side of it.)
                 let between = z(*at) < hind && x(*at).abs() < wide * 0.2;
+                // (A squat body's hind legs lie folded along its sides and reach well behind
+                // where its hind feet stand, and its feet are long: what of them lay further
+                // back than a leg may hold was the trunk's, and tore from the leg at every
+                // hop, 137 to 260% on a toad. Found by asking the check where its torn edges
+                // were (`stretch NAME where`), after two guesses at it. So its hind legs
+                // hold whatever is behind them and off its middle line, and its tail only
+                // what is on that line.)
                 let mine = |bone: usize| match bone {
-                    3 | 4 | 19 | 20 => z(*at) < hind - reach * 0.3 || between,
+                    3 | 4 | 19 | 20 => (!squat && z(*at) < hind - reach * 0.3) || between,
                     5..=10 => (z(*at) - fore).abs() < reach,
-                    11..=18 => (z(*at) - hind).abs() < reach && !between,
+                    11..=18 => if squat { z(*at) < hind + reach && !between } else { (z(*at) - hind).abs() < reach && !between },
                     _ => true,
                 };
                 for l in lines.iter().filter(|l| mine(l.0) && (l.4 == 0.0 || x(*at) * l.4 > -wide * 0.05)) {

@@ -172,6 +172,21 @@ fn stretch(s: &Skin, sk: &Skeleton, rest_len: &[f32], clip: &Clip) -> f32 {
                 *by.entry(sk.joints[*bone].name.clone()).or_insert(0) += 1;
             }
             println!("stretch {}: worst {:.0}% · held by {by:?}", clip.name, all.first().map_or(0.0, |a| a.0 * 100.0));
+            // And where on it they are, as it rests: which pair of bones each lies between,
+            // and the box they fill (file units). The bones alone did not say: two guesses
+            // at where a toad tore were wrong before this was asked, 2026-11-13.
+            let rest = posed(s, sk, &sk.rest());
+            let mut torn: Vec<(f32, usize, usize)> = s.edges.iter().zip(rest_len).filter(|(_, r)| **r > 1e-6).map(|(&(a, b), &r)| ((v[a].distance(v[b]) / r - 1.0).abs(), a, b)).collect();
+            torn.sort_by(|a, b| b.0.total_cmp(&a.0));
+            let mut pairs: std::collections::BTreeMap<String, (usize, Vec3, Vec3)> = Default::default();
+            for (_, a, b) in torn.iter().take(torn.len() / 100) {
+                let (x, y) = (&sk.joints[s.joints[*a][0]].name, &sk.joints[s.joints[*b][0]].name);
+                let e = pairs.entry(if x <= y { format!("{x}+{y}") } else { format!("{y}+{x}") }).or_insert((0, Vec3::MAX, Vec3::MIN));
+                *e = (e.0 + 1, e.1.min(rest[*a]).min(rest[*b]), e.2.max(rest[*a]).max(rest[*b]));
+            }
+            let mut pairs: Vec<_> = pairs.into_iter().collect();
+            pairs.sort_by_key(|p| std::cmp::Reverse(p.1.0));
+            println!("stretch {} where: {}", clip.name, pairs.iter().take(5).map(|(k, (n, lo, hi))| format!("{k} ×{n} from {lo:.2} to {hi:.2}")).collect::<Vec<_>>().join(" · "));
         }
         let k = ((ratios.len() as f32 * 0.99) as usize).min(ratios.len() - 1);
         let (_, p99, _) = ratios.select_nth_unstable_by(k, |a, b| a.total_cmp(b));

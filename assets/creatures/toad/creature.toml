@@ -1,13 +1,13 @@
 name = "Bog toad"
 kind = "monster"
-plan = "quadruped"
+plan = "walked"
 subject = "a monstrous warty toad with a huge wide mouth, bulging orange eyes and a slimy olive hide"
 height = 0.9
 without = ["sprint"]
-ease = 0.35
 # (Its stride at three fifths of full: at three tenths, as it was, its legs hardly stirred:
 # `legs swing` in the check, 2026-11-13.)
 gait_gain = 0.2
+hops = true
 rests = "stands"
 
 [life]

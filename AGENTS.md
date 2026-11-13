@@ -76,7 +76,7 @@ cargo test --workspace             # must pass before a commit
 cargo clippy --workspace -- -D warnings
 ```
 
-`ANIM_TRACE=player` with any `--scene --play` prints what that creature's clip is doing (which, where in it, how fast); `FLORA_TRACE=1` with any `--scene` prints what each region's trees and rocks cost in faces, by level and part: add it up before guessing where a slow frame comes from. `SLOW_TRACE=1` with any `--scene --play` prints each frame over 20 ms with what was made in it, and each of our systems that took over 8 ms (`crate::Slow`); the pace line says when the slowest frame was.
+`ANIM_TRACE=player` with any `--scene --play` prints what that creature's clip is doing (which, where in it, how fast); `FORGE_TRACE=1` with `cargo forge finish ID` says of each clip where its skin stretches most (`stretch NAME where`); `FLORA_TRACE=1` with any `--scene` prints what each region's trees and rocks cost in faces, by level and part: add it up before guessing where a slow frame comes from. `SLOW_TRACE=1` with any `--scene --play` prints each frame over 20 ms with what was made in it, and each of our systems that took over 8 ms (`crate::Slow`); the pace line says when the slowest frame was.
 
 A machine with no screen needs `DISPLAY=:1` (an Xvfb) for `sheet` and `sandbox`; see [docs/development.md](docs/development.md).
 
