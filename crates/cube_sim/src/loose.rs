@@ -673,6 +673,10 @@ impl Loose {
                 let up = ((crate::plants::Limb::UNDER + 0.9) / (trunk.b.y - trunk.a.y).max(0.1)).min(0.8);
                 let (middle, thick) = (trunk.a.lerp(trunk.b, up), trunk.ra + (trunk.rb - trunk.ra) * up);
                 let needs = BLOWS(thick);
+                // (Through already, and on its way down: a blow at where it stood is at nothing.)
+                if thing.blows >= needs {
+                    return cut;
+                }
                 let blows = thing.blows + 1;
                 self.things[n].blows = blows;
                 let into = push.with_y(0.0).try_normalize().unwrap_or(Vec3::X);
@@ -706,7 +710,27 @@ impl Loose {
                     self.whole = true;
                     cut.changed.extend(self.loosen(world, c - IVec3::new(r, 1, r), c + IVec3::new(r, 2, r), push));
                     self.whole = false;
-                    if std::env::var_os("LOOSE_TRACE").is_some() { eprintln!("loose: felling cut at {middle:.1}, trunk {thick:.2} m thick there, blows {blows} of {needs}: {gone} cells cleared within {r} cells, {} pieces loose", self.pieces.len()); }
+// What of its leaf did not go with it is shed where it hung: a piece takes the
+                    // leaf near its wood, and a weeping tree's long strands were left hanging in
+                    // the air where it had stood (seen in the game, 2026-11-13).
+                    for clump in &thing.clumps {
+                        let (bl, bh) = (((clump.middle - clump.radii) / CELL).floor().as_ivec3(), ((clump.middle + clump.radii) / CELL).floor().as_ivec3());
+                        for y in bl.y..=bh.y {
+                            for z in bl.z..=bh.z {
+                                for x in bl.x..=bh.x {
+                                    let cell = IVec3::new(x, y, z);
+                                    let b = world.get(cell);
+                                    // (Its own: within the mass it grew as, not all of the box round it.)
+                                    if b.foliage() && !b.shaped() && (((cell.as_vec3() + 0.5) * CELL - clump.middle) / (clump.radii + CELL)).length_squared() < 1.0 {
+                                        clear(world, cell, &mut cut);
+                                        if (x + y * 3 + z * 7).rem_euclid(23) == 0 {
+                                            self.shed.push(((cell.as_vec3() + 0.5) * CELL, b));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             Some((pivot, shift, turn)) => {
@@ -896,7 +920,6 @@ impl Loose {
                             break;
                         }
                     }
-                    if self.whole && std::env::var_os("LOOSE_TRACE").is_some() && own.len() > 200 { let (l, h) = own.iter().fold((IVec3::MAX, IVec3::MIN), |(l, h), c| (l.min(*c), h.max(*c))); eprintln!("loose: a body of {} cells from {l} to {h}: held {held}, land {land}", own.len()); }
                     if !held {
                         changed.extend(self.take(world, own, push));
                     }
