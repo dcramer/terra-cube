@@ -418,6 +418,21 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         // lowest of its skin is under the floor. (Six made rest poses were, by 4% to 16% of
         // the creature's height, five of them marked as looked at: the check for it was
         // written only after the developer saw the wolf's paws in the floor.)
+        // And what has died rests on the ground, however its death was made: not under it
+        // and not over it. (A frog, a toad and a tortoise made to roll onto their backs ended
+        // a hand's breadth up in the air.) By how far the last of it is off, eased in over
+        // the clip, so nothing jumps.
+        if name == "die" && clip.source == "made" && crawler.is_none() {
+            let off = crate::check::off_floor(&glb, &skeleton, &clip.frames[clip.frames.len() - 1..])[0];
+            if std::env::var_os("FORGE_TRACE").is_some() {
+                println!("die: the last of it is {off:.3} off the floor (file units; under it if over nothing), height {:.3}", roles.height);
+            }
+            let n = clip.frames.len() as f32;
+            for (i, pose) in clip.frames.iter_mut().enumerate() {
+                let k = (i as f32 / (n * 0.6)).min(1.0);
+                pose.root_t += skeleton.base.inverse().transform_vector3(Vec3::Y * off * k * k);
+            }
+        }
         if name == "lie" {
             let under = crate::check::sunk(&glb, &skeleton, &clip.frames);
             for (pose, under) in clip.frames.iter_mut().zip(under) {

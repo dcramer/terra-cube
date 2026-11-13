@@ -213,6 +213,14 @@ pub fn check(done: &Finished, required: &[String], bars: &Bars, max_stretch: f32
     for clip in &done.clips {
         let mut notes = Vec::new();
         let mut ok = true;
+        // Every number of it is a number: a turn or a place that is not (a leg solved past
+        // its reach) draws nothing at all, and passes every bar below, since nothing compares
+        // with it. (The hedgehog walked unseen, and was passed, until it was looked at.)
+        let broken = clip.frames.iter().filter(|f| !f.root_t.is_finite() || f.rotations.iter().any(|r| !r.is_finite())).count();
+        if broken > 0 {
+            ok = false;
+            notes.push(format!("{broken} of {} frames are not numbers", clip.frames.len()));
+        }
         let st = stretch(&s, sk, &rest_len, clip);
         ok &= st <= max_stretch;
         notes.push(format!("stretch {:.0}%", st * 100.0));

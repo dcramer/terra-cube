@@ -786,7 +786,14 @@ fn gait(sk: &Skeleton, roles: &Roles, g: &Gait, base: &Pose, upright: bool, metr
                 let tip = tip_of(l);
                 let rest = sk.position(tip);
                 let ground = if tip == l.foot() { floor.max(rest.y.min(floor + 0.02 * leg)) } else { rest.y };
+                // (A leg that cannot be solved, a hedgehog's stub of two joints at one place, is
+                // left as it stands: solved, it came back as not a number and the whole
+                // animal was drawn nowhere.)
+                let was = pose.rotations.clone();
                 reach(sk, roles, pose, l, tip, Vec3::new(rest.x, ground, rest.z) + roles.forward * along * stride + Vec3::Y * up);
+                if pose.rotations.iter().any(|r| !r.is_finite()) {
+                    pose.rotations = was;
+                }
                 if tip != l.foot() {
                     // The foot as flat as it rests, toes and all, so it sits on the ground.
                     let now = sk.pose_world(pose)[tip].to_scale_rotation_translation().1;
