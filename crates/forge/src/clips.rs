@@ -792,7 +792,11 @@ fn gait(sk: &Skeleton, roles: &Roles, g: &Gait, base: &Pose, upright: bool, metr
                 let was = pose.rotations.clone();
                 reach(sk, roles, pose, l, tip, Vec3::new(rest.x, ground, rest.z) + roles.forward * along * stride + Vec3::Y * up);
                 if pose.rotations.iter().any(|r| !r.is_finite()) {
+                    // (And swung whole from where it leaves the body, fore and aft with its
+                    // step: left as it stood, the hedgehog slid along on four still legs.)
                     pose.rotations = was;
+                    let long = (sk.position(l.chain[0]).y - floor).max(0.05 * leg);
+                    turn_now(sk, pose, l.chain[0], pitch(roles, -(along * stride / long).clamp(-0.7, 0.7)));
                 }
                 if tip != l.foot() {
                     // The foot as flat as it rests, toes and all, so it sits on the ground.
