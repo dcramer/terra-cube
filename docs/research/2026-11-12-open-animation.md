@@ -47,3 +47,15 @@ ours to write, with the clips we have: blend walk into run by speed, play a star
 lean into a turn. The library has more to take (Quaternius's second library adds starts,
 stops, turns and combat). A model that writes motion is worth a trial for one-off actions
 the library lacks, not for gaits.
+
+## Resting clips for animals: none found free (2026-11-12)
+
+Looked for a lying, sleeping, sitting or curled clip to carry onto the animals whose legs
+will not fold (fox, lynx, deer, rabbit, hedgehog). All twelve animals of Quaternius's
+Animated Animal Pack (CC0, https://poly.pizza/bundle/Animated-Animal-Pack-ILAPXeUYiS) were
+downloaded and their clips listed: every one has Attack (or Attack_Headbutt and Attack_Kick),
+Death, Eating, Gallop, Gallop_Jump, Idle, Idle_2, Idle_Headlow, two hit reactions, a jump
+and Walk. None lies, sleeps or sits. What search found with such clips is sold (a fox with
+Sit and Sleep, a forest kit with Sleep, about $10 to $15 each on CGTrader) or wants its
+author named (CC-BY). Of use from the pack and not yet taken: the hoofed animals' headbutt
+and kick, for a deer, goat or pony that strikes.
