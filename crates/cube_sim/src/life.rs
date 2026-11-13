@@ -1104,11 +1104,15 @@ pub struct Tally {
     pub winter: u32,
     /// Groups that outgrew their ground and sent half their number to find more.
     pub moved: u32,
+    /// Grazers that left ground nearly bare for a better piece beside it.
+    pub followed: u32,
     /// What there is to graze over the ground that is grazed, of 1: on the whole, and on
     /// the barest piece.
     pub forage: (f32, f32),
     /// Each kill: the kind that hunted, the kind taken.
     pub taken: Vec<(usize, usize)>,
+    /// By kind: born, died of age, starved, died of the winter.
+    pub ends: BTreeMap<usize, [u32; 4]>,
 }
 
 impl Sim {
@@ -1153,6 +1157,7 @@ impl Sim {
             let (age, span) = ((self.when - agent.born) / year, self.kinds[agent.kind].lifespan);
             let dies = if age > span { 0.25 } else if age > span * 0.8 { 0.012 } else { 0.0 };
             if self.rng.unit() < dies {
+                tally.ends.entry(agent.kind).or_default()[1] += 1;
                 self.agents.remove(&id);
                 tally.old += 1;
             }
@@ -1206,6 +1211,7 @@ impl Sim {
                 self.agents.get_mut(&id).unwrap().hunger = if big { full / kind.group.max(1) as f32 } else { full };
                 tally.hunted += 1;
             } else if hunger >= STARVES && kind.diet == Diet::Meat {
+                tally.ends.entry(own).or_default()[2] += 1;
                 self.agents.remove(&id);
                 tally.starved += 1;
             }
@@ -1257,15 +1263,49 @@ impl Sim {
             if matches!(kind.diet, Diet::Meat | Diet::None) {
                 continue;
             }
+            // What grazes follows the grass: on ground nearly bare it goes to the best piece
+            // beside it that is its kind of ground, and all that share a home find the same
+            // one. (It stayed and starved: a moose eats three deer's worth, bared its own
+            // piece, and as many starved as were born on every island tried, 2026-11-13.)
+            if let Some(land) = land
+                && self.forage_at(agent.mind.home) < LEAN + 0.1
+            {
+                let (home, here) = (agent.mind.home, self.forage_at(agent.mind.home));
+                let better = (0..8)
+                    .map(|n| home + Vec2::from_angle(n as f32 * std::f32::consts::FRAC_PI_4) * PASTURE)
+                    .filter(|to| {
+                        let (x, z) = ((to.x / CELL).floor() as i32, (to.y / CELL).floor() as i32);
+                        land.biome(x, z) == kind.habitat && land.slope(x, z) <= 1
+                    })
+                    .map(|to| (self.forage_at(to), to))
+                    .filter(|(left, _)| *left > here + 0.2)
+                    .max_by(|a, b| a.0.total_cmp(&b.0));
+                if let Some((_, to)) = better {
+                    let ground = land.height((to.x / CELL).floor() as i32, (to.y / CELL).floor() as i32) as f32 * CELL;
+                    let a = self.agents.get_mut(&id).unwrap();
+                    (a.mind.home, a.mind.goal) = (to, to);
+                    // (One that is being lived walks there; one that is not is there.)
+                    if !a.awake {
+                        a.body.pos = Vec3::new(to.x, ground, to.y);
+                        a.before = a.body.pos;
+                    }
+                    tally.followed += 1;
+                }
+            }
+            let Some(agent) = self.agents.get(&id) else { continue };
+            let kind = &self.kinds[agent.kind];
             let crowd = near(&self.agents, agent.kind, agent.mind.home, kind.range) as f32 / kind.capacity as f32;
             // (Crowded by its own kind, or on ground grazed lean by anything.)
             let lean = (LEAN - self.forage_at(agent.mind.home)).max(0.0) * 0.4;
             let (hungry, cold) = ((((crowd - 1.0) * 0.03).max(0.0) + lean).clamp(0.0, 0.25), if winter { 0.004 } else { 0.0 });
             let roll = self.rng.unit();
+            let own = agent.kind;
             if roll < hungry {
+                tally.ends.entry(own).or_default()[2] += 1;
                 self.agents.remove(&id);
                 tally.starved += 1;
             } else if roll < hungry + cold {
+                tally.ends.entry(own).or_default()[3] += 1;
                 self.agents.remove(&id);
                 tally.winter += 1;
             }
@@ -1302,6 +1342,7 @@ impl Sim {
                 let born = self.agents.get_mut(&id).unwrap();
                 (born.mind.home, born.born, born.awake) = (home, when, awake);
                 tally.born += 1;
+                tally.ends.entry(*kind).or_default()[0] += 1;
             }
         }
 

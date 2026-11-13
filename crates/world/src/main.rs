@@ -878,17 +878,21 @@ fn main() {
             for _ in 0..years {
                 for _ in 0..cube_sim::sky::YEAR as usize {
                     let t = sim.day(&world, Some(&land));
-                    (all.born, all.old, all.hunted, all.starved, all.winter, all.moved) = (all.born + t.born, all.old + t.old, all.hunted + t.hunted, all.starved + t.starved, all.winter + t.winter, all.moved + t.moved);
+                    (all.born, all.old, all.hunted, all.starved, all.winter, all.moved, all.followed) = (all.born + t.born, all.old + t.old, all.hunted + t.hunted, all.starved + t.starved, all.winter + t.winter, all.moved + t.moved, all.followed + t.followed);
                     grazing = (grazing.0 + t.forage.0, grazing.1.min(t.forage.1), grazing.2 + 1.0);
                     for pair in t.taken {
                         *kills.entry(pair).or_default() += 1;
+                    }
+                    for (kind, n) in t.ends {
+                        let e = all.ends.entry(kind).or_default();
+                        *e = [e[0] + n[0], e[1] + n[1], e[2] + n[2], e[3] + n[3]];
                     }
                     sim.when += 1.0;
                 }
                 rows.push(count(&sim));
             }
             let total = |row: &[usize]| row.iter().sum::<usize>();
-            println!("years {years} seed={}: {} creatures at the start, {} at the end · born {} · died of age {}, hunted {}, starved {}, of winter {} · groups that moved {}", args.seed, total(&rows[0]), total(&rows[years]), all.born, all.old, all.hunted, all.starved, all.winter, all.moved);
+            println!("years {years} seed={}: {} creatures at the start, {} at the end · born {} · died of age {}, hunted {}, starved {}, of winter {} · groups that moved {} · grazers that followed the grass {}", args.seed, total(&rows[0]), total(&rows[years]), all.born, all.old, all.hunted, all.starved, all.winter, all.moved, all.followed);
             println!("  grazing: {:.0}% left on the ground that is grazed, on the whole; {:.0}% on the barest piece at its barest", grazing.0 / grazing.2.max(1.0) * 100.0, grazing.1 * 100.0);
             let mut checks = Checks(Vec::new());
             for (k, kind) in sim.kinds.iter().enumerate() {
@@ -901,7 +905,8 @@ fn main() {
                 if rows[years][k] * 2 < rows[0][k] {
                     let mut by: Vec<(u32, &str)> = kills.iter().filter(|((_, prey), _)| *prey == k).map(|((hunter, _), n)| (*n, sim.kinds[*hunter].id.as_str())).collect();
                     by.sort_by_key(|b| std::cmp::Reverse(b.0));
-                    println!("    taken by: {}", by.iter().map(|(n, id)| format!("{id} {n}")).collect::<Vec<_>>().join(", "));
+                    let e = all.ends.get(&k).copied().unwrap_or_default();
+                    println!("    born {} · died of age {}, starved {}, of winter {} · taken by: {}", e[0], e[1], e[2], e[3], by.iter().map(|(n, id)| format!("{id} {n}")).collect::<Vec<_>>().join(", "));
                 }
                 // A kind that began as more than a handful is still there, and none has overrun the island.
                 checks.bar(&format!("{} lasts", kind.id), rows[years][k] as f32, rows[0][k] < 6 || rows[years][k] >= 2, "a kind that began with six or more still has two");

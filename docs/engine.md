@@ -308,6 +308,8 @@ Built 2026-11-11. One system decides what life a place has (`cube_sim::ecology`)
 - **Winter thins what is about** (`Niche::cold`, an animal's `winter` in `[life]`): in the depth of it there are no butterflies, dragonflies, fireflies or swallows, fewer songbirds, and the bear, hedgehog, frog, toad, tortoise and lizard mostly lie up. By early spring all are back.
 - **Not done:** nothing eats or drinks, so a deer keeps near water only because it was put there; no seasons or weather; the ogre has no home on this island (it wants level snow, and there is almost none since the mountain moved north).
 
+**What grazes follows the grass** (`Sim::day`, 2026-11-13): a plant-eater whose piece of grazing is nearly bare (under 0.4 of 1) moves its home to the best of the eight pieces beside it that is its kind of ground and has 0.2 more; all that share a home find the same piece, so a herd stays one. Before, it stayed and starved: a moose eats three deer's worth, bared its own piece, and on five seeds as many starved as were born (28 fell to 0 to 10 in 24 years; now 40 to 60). `cargo world years` prints births and each cause of death for any kind that has halved, and how many followed the grass. Known: on seed 2 wolves begin late and are still rising to their usual fifty at year 24, which fails `wolf settles`.
+
 ## A big world
 
 Built 2026-11-11: the island is a kilometre across (`terrain::RADIUS`), and only the part round the player is held in cells.
