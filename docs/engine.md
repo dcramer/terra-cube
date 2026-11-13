@@ -53,7 +53,9 @@ The role model is Teardown: everything can be cut, and what a cut leaves standin
 - **What comes down strikes whoever is under it** (`Sim::step`): harm by its speed and size, a tree a killing blow and a clod a bruise.
 - **A thing is cut by the tool that is for it** (`Item::cuts`, `items::Stuff`; the developer, 2026-11-12: destruction is earned, a tree chopped and ground dug, not anything erased anywhere): a shovel takes earth out of its ball, an axe wood, a pick stone, and each leaves the rest (`loose::carve`). What is cut away is carried: timber, stone, earth, one for a cell's worth (`Sim::took`).
 - **A tree's fall is staged** (the same day: what is cut down should behave in a specific way, so it looks interesting): it goes the way it leans more than the way it was pushed; it hangs a moment on its stump and then goes faster and faster; as its crown strikes (its top over 8 m/s) what stood out from the trunk breaks off in lumps thrown a little way, and the trunk lands whole along the line it fell.
-- **Not yet**: no sound of any of it and nothing thrown up where it lands; what is cut is cut at once, not at the blow of a swing; what is carried cannot be put down as itself (a click still builds a lump of stone); water does not flow into holes.
+- **A cut lands with the blow** (`Sim::use_held`, `player::drive`): a tool is swung as anything is, one blow at a time, and what it cuts is cut `SWING` (0.35 s) later.
+- **It is heard and seen** (`cube_game::loose::told`): the simulation notes each cut, each thing come loose and each landing (`Loose::cuts`, `begun`, `heard`); the game plays an axe, a spade or a pick, a tree's crack, a crash or a clatter (at most one clatter in an eighth of a second: a crown that breaks is ninety limbs landing at once), and throws up chips of what was cut. The sounds are made with ffmpeg (`tools/audio/make.sh`) until recordings are found.
+- **Not yet**: what is carried cannot be put down as itself (a click still builds a lump of stone); water does not flow into holes; the falling piece is meshed on the frame's thread; a boulder shattering has not been looked at in the game.
 
 ### What grows is drawn as shapes
 

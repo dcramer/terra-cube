@@ -39,6 +39,9 @@ pub struct Controls {
     /// What a dig cuts and how big a bite it takes (the tool in hand's: `Item::cuts`);
     /// nothing, and it is a plain spadeful of anything (a script's `dig`).
     pub tool: Option<(cube_sim::items::Stuff, f32)>,
+    /// A blow with a tool that is on its way: the seconds until it lands and cuts, and what
+    /// it cuts and how big a bite.
+    pub blow: Option<(f32, cube_sim::items::Stuff, f32)>,
     pub put: bool,
     /// (A script's, for trying what a cut does: a bite out of the nearest tree's trunk, a
     /// metre up, each one further across it than the last.)
@@ -286,7 +289,7 @@ fn trace(time: Res<Time>, args: Res<Args>, live: Res<Live>, controlled: Query<(&
 }
 
 /// Hands the controls to the controlled creature's body, turned to the way the camera faces.
-fn drive(mut controls: ResMut<Controls>, args: Res<Args>, terrain: Option<Res<Terrain>>, mut live: ResMut<Live>, cameras: Query<&Orbit>, mut controlled: Query<(&Controlled, &Mover, &mut Visibility)>) {
+fn drive(mut controls: ResMut<Controls>, time: Res<Time>, args: Res<Args>, terrain: Option<Res<Terrain>>, mut live: ResMut<Live>, cameras: Query<&Orbit>, mut controlled: Query<(&Controlled, &Mover, &mut Visibility)>) {
     // A scripted route runs the way `--yaw` says, whatever the camera is doing.
     let yaw = if args.scene.is_some() { args.yaw } else { cameras.iter().next().map_or(0.0, |o| o.yaw) };
     // The camera looks along -Z turned by its yaw; right is +X turned the same.
@@ -311,10 +314,18 @@ fn drive(mut controls: ResMut<Controls>, args: Res<Args>, terrain: Option<Res<Te
             let at = me.0 + Vec3::new(me.1.sin(), 0.0, me.1.cos()) * 2.0;
             live.0.add(&terrain.0, kind, Vec3::new(at.x, terrain.ground(at.x, at.z), at.z), me.1 + std::f32::consts::PI, cube_sim::life::Driver::Mind);
         }
+        if let Some((left, stuff, across)) = controls.blow {
+            let left = left - time.delta_secs();
+            controls.blow = (left > 0.0).then_some((left, stuff, across));
+            if left <= 0.0 {
+                (controls.dig, controls.tool) = (true, Some((stuff, across)));
+            }
+        }
         if std::mem::take(&mut controls.use_held) {
             let used = live.0.use_held(mover.id);
+            // What a tool cuts is cut as its blow lands, not as the button goes down.
             if let cube_sim::items::Used::Cut(stuff, across) = used {
-                (controls.dig, controls.tool) = (true, Some((stuff, across)));
+                controls.blow = Some((cube_sim::life::SWING, stuff, across));
             }
             // A shot: an arrow is seen to fly the way the archer faces.
             if let Some(a) = live.agent(mover).filter(|a| used == cube_sim::items::Used::Swing && a.pack.as_ref().and_then(|p| p.held()) == Some(cube_sim::items::Item::Bow)) {

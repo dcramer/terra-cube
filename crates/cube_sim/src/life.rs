@@ -478,7 +478,7 @@ const WAKES: f32 = 5.0;
 pub const AWAKE: f32 = 110.0;
 /// A blow lands this long into a swing, reaches this far past the body, and to this far
 /// either side of straight ahead (radians).
-const SWING: f32 = 0.35;
+pub const SWING: f32 = 0.35;
 const REACH: f32 = 1.5;
 const ARC: f32 = 1.0;
 /// What a person does with bare hands.
@@ -614,7 +614,13 @@ impl Sim {
         let held = agent.pack.as_ref().and_then(|p| p.held());
         match held {
             Some(item) if item.cuts().is_some() => {
+                // A blow with it, as with anything swung: what it cuts is cut as the blow
+                // lands (the caller's to time: `SWING` after this). One blow at a time.
+                if agent.swing.is_some() || agent.doing.is_some() {
+                    return Used::Nothing;
+                }
                 let (stuff, across) = item.cuts().unwrap();
+                self.swing(id);
                 Used::Cut(stuff, across)
             }
             Some(item) if item.heals().is_some() => {
@@ -1464,6 +1470,8 @@ mod tests {
         };
         hand(&mut sim, Item::Shovel);
         assert_eq!(sim.use_held(person), Used::Cut(crate::items::Stuff::Earth, 0.8));
+        assert_eq!(sim.use_held(person), Used::Nothing, "one spadeful at a time");
+        (sim.agents.get_mut(&person).unwrap().swing, sim.agents.get_mut(&person).unwrap().doing) = (None, None);
         hand(&mut sim, Item::Berries);
         assert_eq!(sim.use_held(person), Used::Nothing);
         sim.agents.get_mut(&person).unwrap().health = 40.0;
