@@ -2513,12 +2513,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "cube_anim"
+version = "0.1.0"
+dependencies = [
+ "glam",
+]
+
+[[package]]
 name = "cube_game"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "bevy",
  "bevy_egui",
+ "cube_anim",
  "cube_sim",
  "cube_voxel",
  "image",
