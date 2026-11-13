@@ -132,6 +132,11 @@ pub struct Loose {
     /// The same, once the simulation has seen who was under each (`Sim::step`): for whoever
     /// makes the sound of it.
     pub heard: Vec<Landed>,
+    /// For whoever shows and sounds it, to take as they are noted: each cut (where, and how
+    /// much of earth, wood and stone it took), and each thing that came loose (where it
+    /// stood, how many cells, and whether it is going over like a tree).
+    pub cuts: Vec<(Vec3, [u32; 3])>,
+    pub begun: Vec<(Vec3, usize, bool)>,
     next: u32,
 }
 
@@ -279,6 +284,9 @@ impl Loose {
         // (A tree is made wrought only by what cuts wood, a boulder by what cuts stone.)
         let mut cut = work(world, middle, radius, forms, stuff);
         cut.taken = carve(world, middle, radius, stuff);
+        if cut.taken.iter().any(|t| *t > 0) {
+            self.cuts.push((middle, cut.taken));
+        }
         let mut changed = std::mem::take(&mut cut.changed);
         for z in lo.z..=hi.z {
             for x in lo.x..=hi.x {
@@ -414,6 +422,7 @@ impl Loose {
         // Stone and earth break; wood (and what is mostly wood) does not.
         let brittle = of.iter().filter(|c| match &cells[*c] { Part::Whole(b) => !b.wood(), Part::Bits(b) => !b.iter().any(|b| b.wood()) }).count() * 2 > of.len();
         self.next += 1;
+        self.begun.push((pivot, cells.len(), over.is_some()));
         self.pieces.push(Piece { id: self.next, cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, spin: Vec3::ZERO, brittle, tall, feel, age: 0.0 });
         changed
     }

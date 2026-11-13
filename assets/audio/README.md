@@ -218,3 +218,19 @@ Made here, not recorded (2026-11-11): a cricket's chirp, since no recording of s
 | cricket_2.ogg | 0.32 | The same at 4.35 kHz, a little slower | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
 | cricket_3.ogg | 0.32 | The same at 4.9 kHz, four pulses, a little faster | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
 | cricket_4.ogg | 0.32 | The same at 4.15 kHz, slower | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
+
+Made here, not recorded (2026-11-12), for cutting and falling, until recordings are found:
+
+| File | Seconds | What it is | Source | Original | Licence | Stated |
+|---|---|---|---|---|---|---|
+| chop_1.ogg | 0.28 | An axe in wood: a low knock with a crack of noise on it | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
+| chop_2.ogg | 0.28 | The same, lower | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
+| chop_3.ogg | 0.28 | The same, higher | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
+| dig_1.ogg | 0.34 | A spade in earth: a short scrape of low noise | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
+| dig_2.ogg | 0.34 | The same, brighter | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
+| pick_1.ogg | 0.40 | A pick on stone: a ring near 1.25 kHz and a clack | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
+| pick_2.ogg | 0.40 | The same, higher | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
+| crack_1.ogg | 1.10 | A tree beginning to go: cracks of noise, closer and closer together | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
+| crash_1.ogg | 1.80 | A great thing coming down: a thud at 58 Hz and a long low rattle | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
+| rubble_1.ogg | 0.90 | Rubble settling: clatter dying away | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
+| rubble_2.ogg | 0.90 | The same, quicker | made here: tools/audio/make.sh | none | ours (generated with ffmpeg) | n/a |
