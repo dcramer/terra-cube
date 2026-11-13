@@ -1,10 +1,8 @@
 name = "Monitor lizard"
 kind = "wildlife"
-plan = "quadruped"
+plan = "walked"
 subject = "a monitor lizard with a long whip tail and a forked blue tongue, sandy with dark bands"
 height = 0.3
-ease = 0.7
-gait_gain = 0.6
 rests = "stands"
 
 [life]

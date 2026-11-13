@@ -369,6 +369,10 @@ impl Crawler {
                 // sting's tail straightens and lies along the ground behind it. Stiff, a dead
                 // scorpion stood on its curled tail with its body in the air.
                 let limp = ease(((t - 0.35) / 0.5).clamp(0.0, 1.0));
+                // (A sting's tail lets go as the body goes over, not after: still curled when
+                // it was on its back, it held the scorpion up in the air for a moment. The
+                // developer, 2026-11-13: "one frame of scorpion still has it floating".)
+                let slack = ease((t / 0.42).clamp(0.0, 1.0));
                 // How its legs come to rest (at the hip, at the knee): a scorpion's fallen flat
                 // beside it; a spider's drawn tight in over its belly and crossed, as a dead
                 // spider's are; a beetle's, a crab's and a grasshopper's folded in over it more
@@ -383,7 +387,7 @@ impl Crawler {
                 }
                 if let Some(first) = self.sting {
                     for j in 1..5 {
-                        pose.rotations[first + j] = Quat::from_rotation_x(-0.6 * limp);
+                        pose.rotations[first + j] = Quat::from_rotation_x(-0.74 * slack);
                     }
                 }
                 pose
