@@ -209,6 +209,43 @@ fn has(world: &World, cell: IVec3, leaf: bool) -> bool {
     }
 }
 
+/// What part of a trunk's wood must be left across a cut for it to go on standing: half.
+/// (Chops are balls: three in a line through a trunk a metre across leave two fifths of it,
+/// in two strips, and it must not stand on those.)
+const HOLDS: f32 = 0.5;
+
+/// Wood cut most of the way through gives way: if fewer than [`HOLDS`] of the trunk's fibres
+/// run unbroken through the cut, what is left at the level with least wood goes too. (A hole chopped straight through a trunk left a sliver each side of
+/// it, and the tree stood on them with daylight through it; every chop after went through
+/// the hole.) Says how many bits went.
+fn snap(world: &mut World, middle: Vec3, radius: f32) -> u32 {
+    let reach = radius + 0.8;
+    let (lo, hi) = (((middle - Vec3::new(reach, radius, reach)) / BIT).floor().as_ivec3(), ((middle + Vec3::new(reach, radius, reach)) / BIT).floor().as_ivec3());
+    let level = |world: &World, y: i32| -> Vec<IVec3> { (lo.z..=hi.z).flat_map(|z| (lo.x..=hi.x).map(move |x| IVec3::new(x, y, z))).filter(|b| world.bit(*b).wood()).collect() };
+    // What holds is wood that runs unbroken from over the cut to under it: of the trunk's
+    // fibres just above the cut, those with wood at every level down through it. (Judged
+    // by the least wood at any one level, a tunnel chopped aslant through a trunk never
+    // felled it: no level had lost half, and nine fibres in ten were cut.)
+    let over = level(world, hi.y + 2);
+    let whole = over.len();
+    let unbroken = over.iter().filter(|b| (lo.y..=hi.y).all(|y| world.bit(b.with_y(y)).wood())).count();
+    let Some(thin) = (lo.y..=hi.y).map(|y| level(world, y)).min_by_key(|l| l.len()) else { return 0 };
+    if whole == 0 || thin.is_empty() || unbroken as f32 >= whole as f32 * HOLDS {
+        return 0;
+    }
+    // (All of the cell that level is in, a hand's breadth of wood: what is joined to what is
+    // told by the cell, and a slit one bit high through a cell parts nothing.)
+    let floor = thin[0].y.div_euclid(SPLIT) * SPLIT;
+    let mut gone = 0;
+    for y in floor..floor + SPLIT {
+        for bit in level(world, y) {
+            world.set_bit(bit, Block::Air);
+            gone += 1;
+        }
+    }
+    gone
+}
+
 /// How many cells water may run into from one cut: a pit or a length of trench, not a valley.
 const FLOWS: usize = 6_000;
 
@@ -396,6 +433,10 @@ impl Loose {
             thing.cuts.push((middle, radius, stuff));
         }
         cut.taken = carve(world, middle, radius, stuff);
+        // A trunk cut most of the way through snaps.
+        if cut.taken[Stuff::Wood as usize] > 0 {
+            cut.taken[Stuff::Wood as usize] += snap(world, middle, radius);
+        }
         if cut.taken.iter().any(|t| *t > 0) {
             self.cuts.push((middle, cut.taken));
         }
@@ -408,6 +449,11 @@ impl Loose {
         }
         changed.extend(self.loosen(world, lo, hi, push));
         changed.extend(flow(world, lo, hi));
+        // `LOOSE_TRACE=1`: each cut in a line (where, what it took, what is loose after it).
+        if std::env::var_os("LOOSE_TRACE").is_some() {
+            let around = |y: f32| { let c = ((middle.with_y(y)) / CELL).floor().as_ivec3(); (-3..=3).flat_map(|z| (-3..=3).map(move |x| c + IVec3::new(x, 0, z))).map(|c| format!("{:?}", world.get(c)).chars().next().unwrap_or('?')).collect::<String>() };
+            eprintln!("loose: cut at {middle:.2?} r {radius:.2} of {stuff:?} · took {:?} · made wrought {} · {} loose · cells at the cut {} · over it {}", cut.taken, cut.worked, self.pieces.len(), around(middle.y), around(middle.y + radius + 0.3));
+        }
         Cut { changed, ..cut }
     }
 
@@ -975,6 +1021,21 @@ mod tests {
         assert!(across(&w, first) == 0 && across(&w, second) == 0 && thirds.iter().all(|n| *n > 0), "not three lengths: wood at the cuts {} and {}, between them {thirds:?}", across(&w, first), across(&w, second));
         let left = count(&w, Vec3::new(0.8, 0.0, -1.0), Vec3::new(16.0, 1.25, 1.5), Block::Timber);
         assert!(taken > 200 && left < lying && left as f32 > lying as f32 * 0.6, "took {taken} bits; {left} of {lying} cells of it left");
+    }
+
+    #[test]
+    fn a_trunk_cut_most_of_the_way_through_snaps_and_one_only_notched_stands() {
+        for (bites, falls) in [(1, false), (3, true)] {
+            let mut w = floor();
+            // A trunk a metre through, and chops in one line into its middle: a hole through
+            // it, with wood left standing either side.
+            w.fill(Vec3::new(-0.5, 0.0, -0.5), Vec3::new(0.5, 6.0, 0.5), Block::Timber);
+            let mut loose = Loose::default();
+            for n in 0..bites {
+                loose.cut(&mut w, Vec3::new(-0.4 + n as f32 * 0.4, 1.0, 0.0), 0.36, Vec3::X, &[], Some(Stuff::Wood));
+            }
+            assert_eq!(!loose.pieces.is_empty(), falls, "after {bites} chops into a trunk a metre through");
+        }
     }
 
     #[test]
