@@ -794,6 +794,9 @@ impl Sim {
         // What has come down (`loose`) strikes whoever was under it: by how fast it came and
         // how big it was, a falling tree a killing blow and a clod a bruise.
         for fallen in std::mem::take(&mut self.loose.landed) {
+            if fallen.settled {
+                continue;
+            }
             let size = (fallen.cells as f32).cbrt() * cube_voxel::CELL;
             for (id, agent) in self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.body.pos.distance(fallen.at) < size * 0.9 + a.body.half + 0.4) {
                 let away = (agent.body.pos - fallen.at).with_y(0.0).normalize_or(Vec3::X);
@@ -1466,11 +1469,11 @@ mod tests {
         let beside = sim.add(&world, 4, at(9.0, 0.0), 0.0, Driver::Stand);
         let full = sim.agents[&under].health;
         // A tree's worth, down fast; and a clod.
-        sim.loose.landed.push(crate::loose::Landed { at: at(0.3, 0.0) + Vec3::Y, cells: 6000, put: 6000, speed: 20.0 });
+        sim.loose.landed.push(crate::loose::Landed { at: at(0.3, 0.0) + Vec3::Y, cells: 6000, put: 6000, speed: 20.0, settled: false });
         sim.step(&world);
         assert!(sim.agents[&under].dead.is_some(), "a tree came down on him and he has {} of {full}", sim.agents[&under].health);
         assert_eq!(sim.agents[&beside].health, full, "it struck someone nine metres off");
-        sim.loose.landed.push(crate::loose::Landed { at: at(9.0, 0.2) + Vec3::Y, cells: 8, put: 8, speed: 5.0 });
+        sim.loose.landed.push(crate::loose::Landed { at: at(9.0, 0.2) + Vec3::Y, cells: 8, put: 8, speed: 5.0, settled: false });
         sim.step(&world);
         let left = sim.agents[&beside].health;
         assert!(left < full && left > full * 0.5, "a clod took {} of {full}", full - left);

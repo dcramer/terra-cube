@@ -134,6 +134,9 @@ pub struct Landed {
     pub put: usize,
     /// Metres a second it was going.
     pub speed: f32,
+    /// A tree coming to rest after its top has already struck: that was the crash, and this
+    /// is not heard again nor a second blow.
+    pub settled: bool,
 }
 
 /// What a cut did: the chunks that changed; and whatever whole shapes it bit into, which are
@@ -731,7 +734,7 @@ impl Loose {
             // A tree's top has struck: it is heard, its outermost twigs snap off, and it
             // settles about where it struck (below, once every piece has been looked at).
             if let (Some(top), Some((way, ..))) = (struck, piece.over) {
-                self.landed.push(Landed { at: piece.now(top), cells: piece.cells.len(), put: 0, speed });
+                self.landed.push(Landed { at: piece.now(top), cells: piece.cells.len(), put: 0, speed, settled: false });
                 if speed > CRASHES {
                     let (foot, stem) = (piece.pivot, (piece.tall * 0.33).max(1.2));
                     piece = self.shatter(piece, speed, 0.04, |c| ((c.as_vec3() + 0.5) * CELL - foot).with_y(0.0).length() < stem);
@@ -743,7 +746,7 @@ impl Loose {
                 continue;
             }
             if piece.brittle && speed > SHATTERS && piece.cells.len() >= 8 {
-                self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put: 0, speed });
+                self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put: 0, speed, settled: false });
                 self.shatter(piece, speed, 1.0, |_| false);
                 continue;
             }
@@ -755,7 +758,7 @@ impl Loose {
             // And what of it has come down on nothing (a limb left sticking out over a
             // hollow, a part cut off from the rest by what it fell across) falls in its turn.
             changed.extend(self.loosen(world, lo - 1, hi + 1, Vec3::X));
-            self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put, speed });
+            self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put, speed, settled: piece.settling });
         }
         self.pieces.extend(settling);
         changed
