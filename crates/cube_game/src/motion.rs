@@ -90,6 +90,7 @@ fn populate(mut commands: Commands, args: Res<crate::Args>, registry: Res<Regist
 /// has come near) gets its model, one that sleeps or is gone loses it. The island holds
 /// thousands; a couple of hundred are ever on screen.
 fn mirror(mut commands: Commands, registry: Res<Registry>, mut live: ResMut<Live>, cameras: Query<&GlobalTransform, With<Camera3d>>, controlled: Query<&Mover, With<Controlled>>, wild: Query<(Entity, &Mover), With<Wild>>, mut stepped: Local<u64>) {
+    let _slow = crate::Slow::new("mirror");
     // Whoever is watching: the creature being played, or the camera.
     let watcher = controlled.iter().next().and_then(|m| live.agent(m)).map(|a| a.body.pos).or(cameras.iter().next().map(|c| c.translation()));
     // (Until the simulation has been told where the watcher is, and taken a step knowing it,
@@ -172,6 +173,7 @@ fn drivers(mut live: ResMut<Live>, movers: Query<(&Mover, &Transform, Has<Contro
 /// (Behind the loading screen the world is held still: no time passes, nothing moves or is
 /// hurt, but what is near the player is woken, so its model is there when the screen lifts.)
 pub(crate) fn tick(terrain: Option<ResMut<Terrain>>, loading: Res<crate::loading::Loading>, mut live: ResMut<Live>, mut dirty: ResMut<crate::world::Dirty>, mut grazed: Local<u32>) {
+    let _slow = crate::Slow::new("tick");
     if let Some(mut terrain) = terrain {
         if loading.up {
             live.0.wake(&terrain.0)
@@ -203,6 +205,7 @@ pub(crate) fn tick(terrain: Option<ResMut<Terrain>>, loading: Res<crate::loading
 /// Draws each body between ticks, tips the model into its turns, and plays the clip that
 /// fits what it is doing, at the rate that keeps its feet from sliding.
 fn show(time: Res<Time>, fixed: Res<Time<Fixed>>, registry: Res<Registry>, mut live: ResMut<Live>, mut movers: Query<(&mut Mover, &mut Creature, &mut Transform)>) {
+    let _slow = crate::Slow::new("show");
     let dt = time.delta_secs();
     let between = fixed.overstep_fraction();
     let Sim { agents, kinds, when, .. } = &mut live.0;
@@ -328,6 +331,7 @@ const SEEN: f32 = 120.0;
 /// Creatures far from the camera are neither drawn nor animated. With every one of 280 posed
 /// and skinned each frame wherever it was, creatures were a quarter of the frame.
 fn far_off(cameras: Query<&GlobalTransform, With<Camera3d>>, mut movers: Query<(&Transform, &mut Visibility, Option<&crate::creatures::Rig>, Has<crate::player::Controlled>), With<Mover>>, mut players: Query<&mut AnimationPlayer>) {
+    let _slow = crate::Slow::new("far_off");
     let Some(eye) = cameras.iter().next().map(|c| c.translation()) else { return };
     for (at, mut seen, rig, controlled) in &mut movers {
         // The controlled creature's own showing is the player's to set (first person hides it).

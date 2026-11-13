@@ -201,6 +201,7 @@ fn attach_scenes(
     mut graphs: ResMut<Assets<AnimationGraph>>,
     waiting: Query<(Entity, &Creature), Without<SceneAttached>>,
 ) {
+    let _slow = crate::Slow::new("attach_scenes");
     for (entity, creature) in &waiting {
         let def = &mut registry.0[creature.def];
         if !assets.is_loaded_with_dependencies(&def.gltf) {
@@ -231,6 +232,7 @@ fn bind_players(
     parents: Query<&ChildOf>,
     creatures: Query<&Creature>,
 ) {
+    let _slow = crate::Slow::new("bind_players");
     for player in &players {
         let mut at = player;
         loop {
@@ -252,6 +254,7 @@ fn bind_players(
 /// alone. So a blow can be struck running: until 2026-11-12 the blow landed and nothing was
 /// seen of it, since the legs' clip was the only one played.
 fn legs(mut registry: ResMut<Registry>, mut graphs: ResMut<Assets<AnimationGraph>>, creatures: Query<(Entity, &Creature), With<Rig>>, children: Query<&Children>, bones: Query<(&Name, &bevy::animation::AnimationTargetId)>) {
+    let _slow = crate::Slow::new("legs");
     for (entity, creature) in &creatures {
         let def = &mut registry.0[creature.def];
         if def.over.is_some() {
@@ -284,6 +287,7 @@ fn legs(mut registry: ResMut<Registry>, mut graphs: ResMut<Assets<AnimationGraph
 /// The weights are kept here, not by Bevy's `AnimationTransitions`, which knows only one
 /// clip coming in and the ones going out.
 fn drive(time: Res<Time>, registry: Res<Registry>, mut creatures: Query<(Entity, &mut Creature, &Rig, Has<crate::player::Controlled>)>, mut players: Query<&mut AnimationPlayer>) {
+    let _slow = crate::Slow::new("drive");
     let dt = time.delta_secs();
     for (entity, mut creature, rig, controlled) in &mut creatures {
         let Ok(mut player) = players.get_mut(rig.0) else { continue };

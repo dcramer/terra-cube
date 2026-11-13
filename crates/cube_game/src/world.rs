@@ -272,6 +272,7 @@ fn ripples() -> Image {
 
 /// The ripples run downwind.
 fn ripple(time: Res<Time>, args: Res<crate::Args>, live: Option<Res<crate::motion::Live>>, waters: Option<Res<Waters>>, mut materials: ResMut<Assets<StandardMaterial>>) {
+    let _slow = crate::Slow::new("ripple");
     let Some(waters) = waters else { return };
     // A low sun glances off every ripple at once and the lake breaks into white speckle:
     // the water is made duller as the sun drops, as haze over real water does.
@@ -383,6 +384,7 @@ fn sky(
     mut mists: Query<&mut FogVolume>,
     torches: Query<(), With<crate::player::Torch>>,
 ) {
+    let _slow = crate::Slow::new("sky");
     let hour = live.map_or(cube_sim::sky::START, |l| l.0.when);
     let (to_sun, day) = (cube_sim::sky::sun(hour), cube_sim::sky::daylight(hour));
     if let Ok((mut at, mut light, mut disk)) = sun.single_mut() {
@@ -714,6 +716,7 @@ const UPLOAD: usize = 60_000;
 /// loses its meshes and is made again. So what is meshed and held is what can be seen, and
 /// the world can be bigger than that.
 fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, mut meshes: ResMut<Assets<Mesh>>, mut drawn: ResMut<Drawn>, mut dirty: ResMut<Dirty>, regions: Res<Regions>, mut cost: ResMut<Cost>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
+    let _slow = crate::Slow::new("stream");
     let (Some(terrain), Some(look), Some(eye)) = (terrain, look, cameras.iter().next().map(|t| t.translation())) else { return };
     let began = std::time::Instant::now();
     let changed = !dirty.0.is_empty();
@@ -865,6 +868,7 @@ fn seasons(args: Res<crate::Args>, live: Option<Res<crate::motion::Live>>, look:
 /// across (or ten) for the price of the ground underfoot.
 #[allow(clippy::too_many_arguments)]
 fn regions(args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrain: Option<ResMut<Terrain>>, live: Option<Res<crate::motion::Live>>, mut grown: ResMut<crate::flora::Grown>, mut forms: ResMut<crate::flora::Forms>, mut regions: ResMut<Regions>, mut dirty: ResMut<Dirty>, mut cost: ResMut<Cost>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
+    let _slow = crate::Slow::new("regions");
     let (Some(mut terrain), Some(eye)) = (terrain, cameras.iter().next().map(|t| t.translation())) else { return };
     let began = std::time::Instant::now();
     let size = terrain::REGION as f32 * CELL;

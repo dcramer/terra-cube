@@ -259,6 +259,8 @@ fn gather(shot: On<bevy::render::view::screenshot::ScreenshotCaptured>, args: Re
     // meanwhile. `make pace` holds these to bars.
     if let (Some((took, at_load)), Some(cost)) = (stage.load, cost) {
         let mut ran = stage.ran.clone();
+        // (When the slowest frame was, seconds into the run: against what was happening then.)
+        let slowest = ran.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).map_or(0.0, |(n, _)| ran[..n].iter().sum::<f32>());
         ran.sort_by(f32::total_cmp);
         let at = |part: f32| ran.get(((ran.len() as f32 * part) as usize).min(ran.len().saturating_sub(1))).copied().unwrap_or(0.0) * 1000.0;
         println!("load {took:.1}s · {}", at_load.since(&world::Cost::default()));
@@ -283,7 +285,7 @@ fn gather(shot: On<bevy::render::view::screenshot::ScreenshotCaptured>, args: Re
             let near = stage.under.iter().filter(|u| **u > -0.06).count();
             println!("legs under-ground worst={:.1}cm frames={:.0}% touching={:.0}% clear={:.1}cm", worst.max(0.0) * 100.0, frames as f32 * 100.0 / stage.under.len() as f32, near as f32 * 100.0 / stage.under.len() as f32, -worst * 100.0);
         }
-        println!("frames n={} p50={:.1}ms p99={:.1}ms worst={:.0}ms over33={} in {:.0}s · {}", ran.len(), at(0.5), at(0.99), at(1.0), ran.iter().filter(|f| **f > 1.0 / 30.0).count(), ran.iter().sum::<f32>(), cost.since(&at_load));
+        println!("frames n={} p50={:.1}ms p99={:.1}ms worst={:.0}ms at {slowest:.1}s over33={} in {:.0}s · {}", ran.len(), at(0.5), at(0.99), at(1.0), ran.iter().filter(|f| **f > 1.0 / 30.0).count(), ran.iter().sum::<f32>(), cost.since(&at_load));
     }
     if let Some(dir) = std::path::Path::new(&stage.path).parent() {
         let _ = std::fs::create_dir_all(dir);

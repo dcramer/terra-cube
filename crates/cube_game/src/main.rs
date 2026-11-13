@@ -33,6 +33,27 @@ mod world;
 
 use bevy::prelude::*;
 
+/// `SLOW_TRACE=1`: a system that took more than 8 ms says so as it ends (`let _slow =
+/// Slow::new("name")` at its head). With `shot`'s `slow` lines, which say how long the frame
+/// was and what was made in it, this says whose the time was: three guesses at a 54 ms frame
+/// (the day's turn, a region taken in, a first jump) were wrong before this was asked.
+pub struct Slow(&'static str, std::time::Instant);
+
+impl Slow {
+    pub fn new(name: &'static str) -> Self {
+        Self(name, std::time::Instant::now())
+    }
+}
+
+impl Drop for Slow {
+    fn drop(&mut self) {
+        let took = self.1.elapsed().as_secs_f32() * 1000.0;
+        if took > 8.0 && std::env::var_os("SLOW_TRACE").is_some() {
+            println!("slow system {} {took:.0}ms", self.0);
+        }
+    }
+}
+
 /// What the command line asked for.
 #[derive(Resource, Default, Clone)]
 pub struct Args {

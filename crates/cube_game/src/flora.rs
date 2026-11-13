@@ -342,6 +342,7 @@ fn ball_of(times: u32) -> Vec<[Vec3; 3]> {
 
 /// Keeps the meshes in step with the regions that are made.
 fn grow(mut commands: Commands, args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrain: Option<Res<Terrain>>, look: Option<Res<Look>>, forms: Res<Forms>, mut grown: ResMut<Grown>, mut meshes: ResMut<Assets<Mesh>>, mut cost: ResMut<crate::world::Cost>, cameras: Query<&GlobalTransform, With<Camera3d>>) {
+    let _slow = crate::Slow::new("grow");
     let (Some(terrain), Some(look)) = (terrain, look) else { return };
     let began = std::time::Instant::now();
     grown.0.retain(|region, (entity, _)| {
