@@ -271,6 +271,9 @@ impl Replay {
 #[derive(Default, Clone)]
 pub struct Loose {
     pub pieces: Vec<Piece>,
+    /// For the length of one felling cut: no body is too large to be looked through to its
+    /// end ([`HELD`]). A tree is known to be a tree.
+    whole: bool,
     pub landed: Vec<Landed>,
     /// The same, once the simulation has seen who was under each (`Sim::step`): for whoever
     /// makes the sound of it.
@@ -636,7 +639,11 @@ impl Loose {
             let p = t.lies.map_or(at, |(pivot, shift, turn)| pivot + turn.inverse() * (at - pivot - shift));
             t.limbs.iter().map(|l| from_line(p, l.a, l.b) - l.ra.max(l.rb)).fold(f32::MAX, f32::min)
         };
-        let near = |things: &[Thing]| things.iter().enumerate().filter(|(_, t)| !t.limbs.is_empty()).map(|(n, t)| (reached(t), n)).filter(|(d, _)| *d < 0.7).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, n)| n);
+        // (Not a stump or a log lying where it grew, which an axe does nothing to: one
+        // beside a great tree was nearer the blow than the tree's own trunk, took every
+        // blow, and the tree stood. Something with three metres of height to it.)
+        let tree = |t: &Thing| t.lies.is_some() || t.limbs.iter().map(|l| l.a.y.max(l.b.y)).fold(f32::MIN, f32::max) - t.limbs.iter().map(|l| l.a.y.min(l.b.y)).fold(f32::MAX, f32::min) >= 3.0;
+        let near = |things: &[Thing]| things.iter().enumerate().filter(|(_, t)| !t.limbs.is_empty() && tree(t)).map(|(n, t)| (reached(t), n)).filter(|(d, _)| *d < 0.7).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, n)| n);
         let mut cut = Cut::default();
         let mut which = near(&self.things);
         if which.is_none() {
@@ -692,7 +699,14 @@ impl Loose {
                             }
                         }
                     }
+                    // (A great tree is more cells than a body may be and still be looked
+                    // through, and was taken for the land: cut clean through, it stood in
+                    // the air. The developer saw one, 2026-11-13; of 35 trees tried then, the
+                    // great ones did not come loose. Here it is known to be a tree.)
+                    self.whole = true;
                     cut.changed.extend(self.loosen(world, c - IVec3::new(r, 1, r), c + IVec3::new(r, 2, r), push));
+                    self.whole = false;
+                    if std::env::var_os("LOOSE_TRACE").is_some() { eprintln!("loose: felling cut at {middle:.1}, trunk {thick:.2} m thick there, blows {blows} of {needs}: {gone} cells cleared within {r} cells, {} pieces loose", self.pieces.len()); }
                 }
             }
             Some((pivot, shift, turn)) => {
@@ -877,11 +891,12 @@ impl Loose {
                             own.push(next);
                             queue.push_back(next);
                         }
-                        if own.len() > HELD {
+                        if own.len() > HELD && !self.whole {
                             held = true;
                             break;
                         }
                     }
+                    if self.whole && std::env::var_os("LOOSE_TRACE").is_some() && own.len() > 200 { let (l, h) = own.iter().fold((IVec3::MAX, IVec3::MIN), |(l, h), c| (l.min(*c), h.max(*c))); eprintln!("loose: a body of {} cells from {l} to {h}: held {held}, land {land}", own.len()); }
                     if !held {
                         changed.extend(self.take(world, own, push));
                     }

@@ -506,7 +506,8 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
     // along it as it lies (`Loose::chop` says what each does: limbs it, then breaks it).
     let mut aimed = None;
     if chop {
-        let near = |l: &&cube_sim::plants::Limb| l.roots > 0 && l.a.with_y(0.0).distance(at.translation.with_y(0.0)) < 14.0;
+        // (A tree, not a stump: something over three metres of trunk.)
+        let near = |l: &&cube_sim::plants::Limb| l.roots > 0 && l.b.y - l.a.y > 3.0 && l.a.with_y(0.0).distance(at.translation.with_y(0.0)) < 14.0;
         // (What was being chopped has come down: the count begins again on what is next.)
         if chopping.is_some() && live.0.loose.things.iter().any(|t| t.lies.is_some()) && !*felled {
             (*chopping, *felled) = (None, true);

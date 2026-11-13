@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: forget dig shatter build sky wind blow moves limbs person beside features legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: forget dig shatter build fells sky wind blow moves limbs person beside features legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -76,6 +76,7 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 	@cargo world life | tail -1 | sed 's/^ok$$/ok life: every kind has somewhere to live/'
 	@cargo world trunks | tail -1 | sed 's/^ok$$/ok trunks: what stops a body at a tree is the wood that is drawn/'
 	@for seed in 6 1 11; do cargo world fell --seed $$seed | grep -E '^FAIL' | sed "s/^/seed $$seed: /"; done; cargo world fell | tail -1 | sed 's/^ok$$/ok fell: a tree cut through comes down whole and lies where it fell, as cells/'
+	@tools/fells.sh 30
 	@for seed in 1 7; do cargo world quarry --seed $$seed | grep -E '^FAIL' | sed "s/^/seed $$seed: /"; done; cargo world quarry | tail -1 | sed 's/^ok$$/ok quarry: a boulder dug out from under comes down, breaks if it comes down hard, and its stone lies where it fell/'
 	@cargo world replay | tail -1 | sed 's/^ok$$/ok replay: the land made again from its seed with the same edits done to it is the same world/'
 	@tools/forget.sh
@@ -144,6 +145,9 @@ dig: ## no window: the ground dug with the shovel and the earth put back in the 
 
 build: ## no window: a tree chopped for timber in the real game and the timber put down piece on piece: each stays, and the region made again is the same
 	@tools/build.sh
+
+fells: ## no window: the tree nearest each of 25 places felled with an axe: each stands to its last blow, comes loose, goes over and lies on the ground
+	@tools/fells.sh
 
 shatter: ## no window: a stone let go five metres up in the real game comes down, breaks into lumps that lie where they fall and is heard; the region made again is the same
 	@tools/shatter.sh

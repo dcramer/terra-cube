@@ -623,7 +623,7 @@ fn fell_command(args: &Args) -> ! {
     // (`cargo world fell X,Z`: the tree nearest a place, whatever its girth: the one the game's
     // player would be chopping there.)
     let place = args.file.as_deref().and_then(|f| f.split_once(',')).and_then(|(x, z)| Some(Vec3::new(x.parse().ok()?, 0.0, z.parse().ok()?)));
-    let chosen = place.and_then(|at| form.limbs.iter().copied().filter(|l| l.roots > 0).min_by(|a, b| a.a.with_y(0.0).distance(at).total_cmp(&b.a.with_y(0.0).distance(at))));
+    let chosen = place.and_then(|at| form.limbs.iter().copied().filter(|l| l.roots > 0 && l.b.y - l.a.y > 3.0 && l.a.x.abs() < inside - 16.0 && l.a.z.abs() < inside - 16.0).min_by(|a, b| a.a.with_y(0.0).distance(at).total_cmp(&b.a.with_y(0.0).distance(at))));
     let Some(trunk) = chosen.or_else(|| form.limbs.iter().copied().filter(|l| l.roots > 0 && (0.18..0.4).contains(&l.ra) && (l.b.y - l.a.y) > 5.0 && l.a.x.abs() < inside && l.a.z.abs() < inside).min_by(|a, b| a.a.length().total_cmp(&b.a.length()))) else { fail("no tree to fell near the start") };
     // (All of it, not its first length of trunk: that is 6 m of a tree that stands 15.)
     let tall = form.limbs.iter().filter(|l| l.tree == trunk.tree).map(|l| l.b.y).fold(trunk.b.y, f32::max) - trunk.a.y;
@@ -639,7 +639,8 @@ fn fell_command(args: &Args) -> ! {
     let (mut bites, mut worked) = (0, 0);
     // With an axe, as a person does: blows at its trunk until it is through (`Loose::chop`).
     // It must stand until the last of the blows its girth asks.
-    let needs = cube_sim::loose::BLOWS(trunk.ra + (trunk.rb - trunk.ra) * 0.25);
+    // (As thick as it is where it is cut: `Loose::chop` cuts 1.4 m up it.)
+    let needs = cube_sim::loose::BLOWS(trunk.ra + (trunk.rb - trunk.ra) * (1.4 / (trunk.b.y - trunk.a.y).max(0.1)).min(0.8));
     let mut early = 0;
     for blow in 1..=12 {
         let cut = loose.chop(&mut world, up - Vec3::X * (trunk.ra + 0.2), Vec3::X, &[&form]);
@@ -655,8 +656,9 @@ fn fell_command(args: &Args) -> ! {
     }
     checks.bar("fell blows", bites as f32, early == 0 && bites as u32 <= needs, "it stands until the last of the blows its girth asks, and no longer");
     let cutting = started.elapsed().as_secs_f32() * 1000.0 / bites as f32;
-    checks.bar("fell pieces", loose.pieces.len() as f32, loose.pieces.len() == 1, "one piece comes loose");
-    let cells = loose.pieces.first().map_or(0, |p| p.cells.len());
+    // (The tree, and with a great one a bough or two that were its own only by touching.)
+    checks.bar("fell pieces", loose.pieces.len() as f32, (1..=3).contains(&loose.pieces.len()), "it comes loose, in three pieces at the most");
+    let cells = loose.pieces.iter().map(|p| p.cells.len()).max().unwrap_or(0);
     checks.bar("fell piece cells", cells as f32, cells > 200, "the tree, not a chip of it");
     let started = std::time::Instant::now();
     let (mut ticks, mut worst) = (0u32, 0.0f32);
@@ -939,7 +941,8 @@ fn main() {
             "--seed" => args.seed = number("--seed") as u32,
             "--radius" => args.radius = number("--radius") as i32,
             "--seconds" | "--holes" => args.seconds = number(&a),
-            other if !other.starts_with('-') && args.file.is_none() => args.file = Some(other.into()),
+            // (A place may begin with a minus: `-45,-45`.)
+            other if (!other.starts_with('-') || other.contains(',')) && args.file.is_none() => args.file = Some(other.into()),
             other => fail(&format!("unknown argument {other}\n{HELP}")),
         }
     }
