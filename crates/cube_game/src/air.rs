@@ -93,7 +93,7 @@ const STARS: usize = 2600;
 /// How far off the stars and moon are drawn, metres: beyond the furthest cloud (`clouds`),
 /// which must pass in front of them. (Nothing is cut off for being far: the camera's far
 /// plane only says what is worth drawing, and these always are.)
-const DOME: f32 = 12_000.0;
+pub(crate) const DOME: f32 = 12_000.0;
 /// The line the Milky Way's band is square to: it crosses the sky from the north-east to the
 /// south-west, a little off overhead.
 const GALAXY: Vec3 = Vec3::new(0.62, 0.32, -0.72);
@@ -234,7 +234,8 @@ fn setup(mut commands: Commands, registry: Res<Registry>, mut meshes: ResMut<Ass
             let (turn, up) = (roll(&mut state) * TAU, roll(&mut state));
             Vec3::new(turn.cos() * (1.0 - up * up).sqrt(), up, turn.sin() * (1.0 - up * up).sqrt())
         };
-        let bright = if banded { 0.1 + 0.45 * roll(&mut state).powi(4) } else { 0.14 + 0.86 * roll(&mut state).powi(6) };
+        // (Fainter toward the land's edge, where there is most air to see them through.)
+        let bright = if banded { 0.1 + 0.45 * roll(&mut state).powi(4) } else { 0.14 + 0.86 * roll(&mut state).powi(6) } * ((to.y - 0.02) / 0.3).clamp(0.2, 1.0);
         // Most are white, some blue, a few amber.
         let tone = match (roll(&mut state) * 10.0) as u32 {
             0..=5 => [1.0, 1.0, 1.0],
@@ -246,7 +247,7 @@ fn setup(mut commands: Commands, registry: Res<Registry>, mut meshes: ResMut<Ass
         if to.y < 0.02 {
             continue;
         }
-        let half = DOME * (0.0007 + 0.0012 * bright.sqrt());
+        let half = DOME * (0.0005 + 0.0015 * bright);
         let (side, up) = (spin * to.any_orthonormal_vector() * half, spin * to.cross(to.any_orthonormal_vector()) * half);
         let first = places.len() as u32;
         for corner in [-side - up, side - up, side + up, -side + up] {
@@ -255,6 +256,28 @@ fn setup(mut commands: Commands, registry: Res<Registry>, mut meshes: ResMut<Ass
             tones.push([tone[0] * bright, tone[1] * bright, tone[2] * bright, 1.0]);
         }
         corners.extend([first, first + 1, first + 2, first, first + 2, first + 3]);
+    }
+    // The band's own glow, the stars too many and too faint to be seen one by one: soft round
+    // patches along it, each brightest at its middle, lying over one another.
+    for _ in 0..170 {
+        let turn = roll(&mut state) * TAU;
+        let to = (across * turn.cos() + along * turn.sin() + galaxy * ((roll(&mut state) + roll(&mut state) - 1.0) * 0.14)).normalize();
+        if to.y < 0.06 {
+            continue;
+        }
+        let (wide, bright) = (DOME * (0.04 + 0.06 * roll(&mut state)), (0.003 + 0.005 * roll(&mut state)) * ((to.y - 0.02) / 0.3).clamp(0.2, 1.0));
+        let (side, up) = (to.any_orthonormal_vector() * wide, to.cross(to.any_orthonormal_vector()) * wide);
+        let middle = places.len() as u32;
+        places.push((to * DOME * 1.01).to_array());
+        facing.push((-to).to_array());
+        tones.push([0.8 * bright, 0.88 * bright, bright, 1.0]);
+        for step in 0..12 {
+            let round = step as f32 / 12.0 * TAU;
+            places.push((to * DOME * 1.01 + side * round.cos() + up * round.sin()).to_array());
+            facing.push((-to).to_array());
+            tones.push([0.0, 0.0, 0.0, 1.0]);
+            corners.extend([middle, middle + 1 + step, middle + 1 + (step + 1) % 12]);
+        }
     }
     let dome = Mesh::new(bevy::render::render_resource::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::RENDER_WORLD)
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, places)
@@ -535,12 +558,14 @@ fn heavens(live: Option<Res<crate::motion::Live>>, heavens: Option<Res<Heavens>>
         // Its bright half to the sun.
         at.look_to(-to_sun, Vec3::Y);
     }
-    if (night + out - *was).abs() < 0.01 {
+    // A full moon's sky has fewer stars in it.
+    let stars = 1.7 * out * (1.0 - 0.5 * cube_sim::sky::moonlight(hour));
+    if (night + stars - *was).abs() < 0.01 {
         return;
     }
-    *was = night + out;
+    *was = night + stars;
     if let Some(mut material) = materials.get_mut(&heavens.0) {
-        material.base_color = Color::linear_rgb(out, out, out);
+        material.base_color = Color::linear_rgb(stars, stars, stars);
     }
     if let Some(mut material) = materials.get_mut(&heavens.1) {
         material.base_color = Color::linear_rgb(1.6 * night, 1.6 * night, 1.6 * night);

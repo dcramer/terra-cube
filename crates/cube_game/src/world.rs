@@ -368,11 +368,11 @@ fn by_height(table: &[(f32, f32)], sun_up: f32) -> f32 {
 /// a photographer would, and for the sky as much as the land: with the sun on the horizon
 /// the sky round it is far brighter than anything it lights, and an exposure set for the
 /// land alone leaves a sunset white.
-const EXPOSURE: [(f32, f32); 7] = [(-0.24, NIGHT_EV), (-0.16, 4.0), (-0.105, 7.0), (-0.03, 10.4), (0.05, 12.0), (0.35, 13.4), (0.85, 14.4)];
+const EXPOSURE: [(f32, f32); 8] = [(-0.24, NIGHT_EV), (-0.16, 4.0), (-0.105, 7.0), (-0.03, 10.4), (0.05, 11.8), (0.2, 12.5), (0.35, 13.4), (0.85, 14.4)];
 /// How much the sky lights the land, against what the air alone would give: more while the
 /// sun is low or just under, so that the land is not a silhouette at the hours the sky is
 /// at its best.
-const SKYLIGHT: [(f32, f32); 5] = [(-0.26, 1.0), (-0.16, 3.5), (-0.105, 3.0), (0.05, 2.5), (0.3, 1.0)];
+const SKYLIGHT: [(f32, f32); 6] = [(-0.26, 1.0), (-0.16, 3.5), (-0.105, 3.0), (0.05, 3.0), (0.2, 1.8), (0.4, 1.0)];
 
 /// The sky follows the hour: the sun goes round and under, the moon comes up opposite it, the
 /// camera opens as the light goes, and the haze takes the colour of the hour.
@@ -380,7 +380,7 @@ fn sky(
     live: Option<Res<crate::motion::Live>>,
     time: Res<Time>,
     mut ambient: ResMut<GlobalAmbientLight>,
-    mut sun: Query<(&mut Transform, &mut DirectionalLight), (With<Sun>, Without<Moon>)>,
+    mut sun: Query<(&mut Transform, &mut DirectionalLight, &mut SunDisk), (With<Sun>, Without<Moon>)>,
     mut moon: Query<(&mut Transform, &mut DirectionalLight), (With<Moon>, Without<Sun>)>,
     terrain: Option<Res<Terrain>>,
     mut cameras: Query<(&mut Exposure, &mut DistanceFog, &mut ColorGrading, &mut AtmosphereEnvironmentMapLight, &GlobalTransform)>,
@@ -389,7 +389,12 @@ fn sky(
 ) {
     let hour = live.map_or(cube_sim::sky::START, |l| l.0.when);
     let (to_sun, day) = (cube_sim::sky::sun(hour), cube_sim::sky::daylight(hour));
-    if let Ok((mut at, mut light)) = sun.single_mut() {
+    if let Ok((mut at, mut light, mut disk)) = sun.single_mut() {
+        // The disc itself is drawn as bright as the sun is, which any exposure leaves white:
+        // true at noon, and at the land's edge a white dot where a red sun should be. It is
+        // dimmed there, a great deal, until what is left is its colour.
+        let high = (to_sun.y / 0.4).clamp(0.0, 1.0);
+        disk.intensity = 10f32.powf(-4.6 * (1.0 - high * high * (3.0 - 2.0 * high)));
         // Where it stands and how big it is are where the cloud shadows lie and how big they
         // are: they drift downwind.
         let drift = Vec3::new(0.8, 0.0, 0.6) * (time.elapsed_secs() * CLOUD_DRIFT);
@@ -451,7 +456,10 @@ fn sky(
         let deep = 1.0 + 0.7 * ((-0.1 - to_sun.y) / 0.1).clamp(0.0, 1.0);
         grade.global.temperature = -0.07 * blue * deep;
         grade.global.tint = 0.05 * blue * deep;
-        fog.color = Color::srgba((0.62 + 0.25 * low) * lit, (0.74 - 0.08 * low) * lit, (0.88 - 0.3 * low) * lit, 1.0);
+        // At night the far land goes into the night sky's own colour at its edge (`vault`),
+        // not into a grey that is neither sky nor land.
+        let night = Vec3::new(0.008, 0.016, 0.044) * (1.0 - day);
+        fog.color = Color::srgba((0.62 + 0.25 * low) * lit + night.x, (0.74 - 0.08 * low) * lit + night.y, (0.88 - 0.3 * low) * lit + night.z, 1.0);
         fog.directional_light_color = Color::srgba(1.0 * lit, (0.86 - 0.25 * low) * lit, (0.62 - 0.35 * low) * lit, 0.6 * ((to_sun.y + 0.02) / 0.08).clamp(0.0, 1.0));
         // Under the water: green-blue murk a few metres deep, dimmer the further down.
         let eye = eye.translation();
