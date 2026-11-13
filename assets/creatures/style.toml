@@ -138,7 +138,13 @@ clips = ["idle", "walk", "run", "sprint"]
 pose = "standing still on all four legs in a neutral pose, seen from the side and slightly in front, all four legs straight and clearly separated, tail away from the legs, mouth closed"
 rig = "own"
 max_stretch = 1.2
-clips = ["idle", "walk", "run", "sprint", "lie"]
+clips = ["idle", "walk", "run", "sprint", "jump", "fall", "land", "swim", "attack", "hurt", "die", "eat", "lie"]
+# Standing, its gaits and lying down are the walker's. The rest come as any four-legged
+# animal's do, onto our bones by their roles: a blow, a flinch and a death a person drew.
+[plans.walked.library]
+attack = "Attack"
+hurt = "Idle_HitReact_Left"
+die = "Death"
 
 # Four-legged animals and monsters. Every clip is made (clips.rs).
 [plans.quadruped]

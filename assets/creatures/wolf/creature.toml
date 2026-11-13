@@ -1,9 +1,11 @@
 name = "Wolf"
 kind = "wildlife"
-plan = "quadruped"
+# On our own skeleton, the box walker's, fitted inside its mesh and skinned by forge
+# (`[plans.walked]`, `crates/forge/src/own.rs`): Tripo made the mesh and nothing else of it.
+plan = "walked"
 subject = "a grey wolf"
 height = 0.85
-rests = "stands"
+rests = "belly"
 
 [life]
 temper = "hunter"

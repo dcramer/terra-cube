@@ -1,17 +1,59 @@
 # Measured by `cargo forge finish`; do not edit.
 height = 0.85
-length = 1.1965274
-width = 0.33007517
-walk_speed = 0.8155832
-run_speed = 1.7217869
-sprint_speed = 3.0810924
+length = 1.1965284
+width = 0.33016998
+walk_speed = 1.1418166
+run_speed = 2.4648738
+sprint_speed = 4.4041495
 triangles = 9362
 joints = 19
+
+[clips.attack]
+seconds = 1.3333334
+looping = false
+source = "library"
+speed = 0.0
+
+[clips.die]
+seconds = 1.0333333
+looping = false
+source = "library"
+speed = 0.0
+
+[clips.eat]
+seconds = 4.0
+looping = true
+source = "made"
+speed = 0.0
+
+[clips.fall]
+seconds = 0.9
+looping = true
+source = "made"
+speed = 0.0
+
+[clips.hurt]
+seconds = 0.6666667
+looping = false
+source = "library"
+speed = 0.0
 
 [clips.idle]
 seconds = 4.0
 looping = true
 source = "walker"
+speed = 0.0
+
+[clips.jump]
+seconds = 0.3
+looping = false
+source = "made"
+speed = 0.0
+
+[clips.land]
+seconds = 0.36666667
+looping = false
+source = "made"
 speed = 0.0
 
 [clips.lie]
@@ -21,28 +63,34 @@ source = "walker"
 speed = 0.0
 
 [clips.run]
-seconds = 0.33333334
-looping = true
-source = "walker"
-speed = 1.7217869
-
-[clips.sprint]
 seconds = 0.23333333
 looping = true
 source = "walker"
-speed = 3.0810924
+speed = 2.4648738
 
-[clips.walk]
-seconds = 0.6
+[clips.sprint]
+seconds = 0.2
 looping = true
 source = "walker"
-speed = 0.8155832
+speed = 4.4041495
+
+[clips.swim]
+seconds = 1.6
+looping = true
+source = "made"
+speed = 0.0
+
+[clips.walk]
+seconds = 0.5
+looping = true
+source = "walker"
+speed = 1.1418166
 
 [bones]
 fold0 = "fl_upper>fl_fore>fl_paw"
 fold1 = "fr_upper>fr_fore>fr_paw"
-fold2 = "hl_thigh>hl_shank>hl_paw"
-fold3 = "hr_thigh>hr_shank>hr_paw"
+fold2 = "hl_thigh>hl_lower>hl_paw"
+fold3 = "hr_thigh>hr_lower>hr_paw"
 foot0 = "fl_paw"
 foot1 = "fr_paw"
 foot2 = "hl_paw"
@@ -57,9 +105,9 @@ root = "trunk"
 tail = "tail_1"
 
 [walk]
-legs = ["fl_upper>fl_fore>fl_paw", "fr_upper>fr_fore>fr_paw", "hl_thigh>hl_shank>hl_paw", "hr_thigh>hr_shank>hr_paw"]
-hips = [[-0.09575286, 0.42217135, 0.26933575], [0.09575287, 0.42217135, 0.26933575], [-0.09575286, 0.5070509, -0.26933572], [0.09575287, 0.5070509, -0.26933572]]
-knees = [[-0.100478984, 0.31986752, 0.2378282], [0.100479, 0.31986752, 0.2378282], [-0.10781264, 0.34770358, -0.20019536], [0.10781264, 0.34770358, -0.20019536]]
-bones = [[0.10715006, 0.3214503], [0.10715006, 0.3214503], [0.17411889, 0.35471624], [0.17411889, 0.35471624]]
+legs = ["fl_upper>fl_fore>fl_paw", "fr_upper>fr_fore>fr_paw", "hl_thigh>hl_lower>hl_paw", "hr_thigh>hr_lower>hr_paw"]
+hips = [[-0.08583587, 0.4352972, 0.24020442], [0.08583587, 0.4352972, 0.24020442], [-0.120289534, 0.4367322, -0.32877433], [0.12028954, 0.4367322, -0.32877433]]
+knees = [[-0.09287186, 0.33494213, 0.20716795], [0.09287187, 0.33494213, 0.20716795], [-0.105297066, 0.18113248, -0.32195717], [0.105297066, 0.18113248, -0.32195717]]
+bones = [[0.10588697, 0.34094122], [0.10588697, 0.34094122], [0.2561298, 0.18823329], [0.2561298, 0.18823329]]
 ankle = [0.0, 0.0, 0.0, 0.0]
-sole = [[0.0, -0.000000029802322, 0.0], [0.0, -0.00000002980233, 0.0], [0.0, -0.000000029802315, 0.0], [0.0, -0.000000029802315, 0.0]]
+sole = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]

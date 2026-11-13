@@ -12,7 +12,7 @@ use crate::clips::{self, Clip, FPS};
 use crate::glb::Glb;
 use crate::rig::{Leg, Pose, Roles, Skeleton};
 use anyhow::{Context, Result, bail};
-use cube_anim::{Build, Walker};
+use cube_anim::{Build, Shape, Walker};
 use glam::{Mat3, Mat4, Quat, Vec3};
 use serde_json::json;
 
@@ -23,6 +23,8 @@ pub const BONES: [&str; 19] = [
     "trunk", "neck", "head", "tail_1", "tail_2", "fl_upper", "fl_fore", "fl_paw", "fr_upper", "fr_fore", "fr_paw", "hl_thigh", "hl_shank", "hl_lower", "hl_paw", "hr_thigh", "hr_shank", "hr_lower", "hr_paw",
 ];
 const PARENTS: [Option<usize>; 19] = [None, Some(0), Some(1), Some(0), Some(3), Some(0), Some(5), Some(6), Some(0), Some(8), Some(9), Some(0), Some(11), Some(12), Some(13), Some(0), Some(15), Some(16), Some(17)];
+/// The clips that are the walker's own: the rest are made or carried as any four-legged animal's.
+pub const WALKED: [&str; 5] = ["idle", "walk", "run", "sprint", "lie"];
 /// Each leg's bones, from where it leaves the trunk down.
 const LEGS: [&[usize]; 4] = [&[5, 6, 7], &[8, 9, 10], &[11, 12, 13, 14], &[15, 16, 17, 18]];
 
@@ -30,6 +32,8 @@ const LEGS: [&[usize]; 4] = [&[5, 6, 7], &[8, 9, 10], &[11, 12, 13, 14], &[15, 1
 /// its right, y up, z ahead, from the ground under its middle) lies in the file's.
 pub struct Own {
     build: Build,
+    /// Its legs as the mesh has them.
+    shape: Shape,
     /// Metres to a unit of the file.
     metres: f32,
     origin: Vec3,
@@ -130,10 +134,78 @@ impl Own {
         let (front, rear) = (all.iter().map(|p| z(*p)).fold(f32::MIN, f32::max), all.iter().map(|p| z(*p)).fold(f32::MAX, f32::min));
         let deep = m(back - belly);
         let build = Build { long: m(fore - hind), wide: m(wide), tall: m((back + belly) / 2.0 - lo.y), deep, leg: m(belly - lo.y) * 0.13, neck: m(front - fore) * 0.6, head: m(front - fore) * 0.5, tail: m(hind - rear) };
-        let mut own = Self { build, metres, origin: mid.with_y(lo.y) + ahead * (fore + hind) / 2.0, right, ahead, tip: Vec3::ZERO, thick: 0.0 };
+        let origin = mid.with_y(lo.y) + ahead * (fore + hind) / 2.0;
+        // Its legs, read off the mesh: each leg's skin cut into slices from the ground to
+        // the belly, and the middle of each slice. Its paw is the lowest; a fore leg's elbow
+        // is where it meets the chest; a hind leg's hock is where the leg is furthest back
+        // below its middle and its knee where it is furthest ahead above that. Where a leg
+        // leaves the trunk is inside the body and cannot be seen: it is put over the elbow
+        // or knee as an animal's is. (Until this the joints were a dog's of the same size,
+        // and the model stood crouched on them: its own joints were somewhere else.)
+        let walk = |p: Vec3| Vec3::new((p - origin).dot(right), p.y - lo.y, (p - origin).dot(ahead)) * metres;
+        let under = m(belly - lo.y);
+        let centres = |n: usize| -> Vec<Vec3> {
+            let (front, left) = (n < 2, n.is_multiple_of(2));
+            let own: Vec<Vec3> = all.iter().copied().filter(|p| (x(*p) < 0.0) == left && x(*p).abs() > wide * 0.1 && (z(*p) > split) == front && p.y < belly).map(walk).collect();
+            (0..14).filter_map(|k| {
+                let (from, to) = (under * k as f32 / 14.0, under * (k + 1) as f32 / 14.0);
+                let slice: Vec<Vec3> = own.iter().copied().filter(|p| p.y >= from && p.y < to).collect();
+                (slice.len() >= 6).then(|| (slice.iter().sum::<Vec3>() / slice.len() as f32).with_y((from + to) / 2.0))
+            }).collect()
+        };
+        let middle = Vec3::new(0.0, build.tall, 0.0);
+        let dog = Walker::new(build, Vec3::ZERO, 0.0).limbs();
+        let (mut hips, mut bone, mut lower, mut stand, mut shank) = ([Vec3::ZERO; 4], [(0.0, 0.0); 4], [0.0; 4], [glam::Vec2::ZERO; 4], 0.24f32);
+        let mut read = Vec::new();
+        for n in 0..4 {
+            let line = centres(n);
+            // (Not found: a dog's, of its size.)
+            let fallback = |hips: &mut [Vec3; 4], bone: &mut [(f32, f32); 4], lower: &mut [f32; 4]| {
+                (hips[n], bone[n]) = (dog[n][0] - middle, (dog[n][0].distance(dog[n][1]), dog[n][1].distance(dog[n][2])));
+                lower[n] = if n < 2 { 0.0 } else { dog[n][2].distance(dog[n][3]) };
+            };
+            let (Some(first), Some(last)) = (line.first().filter(|_| line.len() >= 8), line.last()) else {
+                fallback(&mut hips, &mut bone, &mut lower);
+                continue;
+            };
+            let (paw, top) = (first.with_y(0.0), last.with_y(under));
+            if n < 2 {
+                let shoulder = top + Vec3::new(0.0, under * 0.3, under * 0.1);
+                (hips[n], bone[n], stand[n]) = (shoulder - middle, (shoulder.distance(top), top.distance(paw)), glam::Vec2::new(paw.x - shoulder.x, paw.z - shoulder.z));
+                read.push(format!("elbow {:.2}", top.z));
+            } else {
+                let low: Vec<&Vec3> = line.iter().filter(|p| p.y > under * 0.2 && p.y < under * 0.55).collect();
+                let Some(hock) = low.iter().copied().copied().reduce(|a, b| if b.z < a.z { b } else { a }).filter(|h| paw.z - h.z > under * 0.02) else {
+                    fallback(&mut hips, &mut bone, &mut lower);
+                    continue;
+                };
+                let knee = line.iter().copied().filter(|p| p.y > hock.y + under * 0.2).reduce(|a, b| if b.z > a.z { b } else { a }).unwrap_or(top);
+                let hip = knee + Vec3::new(0.0, under * 0.34, -under * 0.26);
+                (hips[n], bone[n], lower[n], stand[n]) = (hip - middle, (hip.distance(knee), knee.distance(hock)), hock.distance(paw), glam::Vec2::new(paw.x - hip.x, paw.z - hip.z));
+                shank = ((paw.z - hock.z) / hock.y.max(1e-3)).clamp(0.0, 0.8);
+                read.push(format!("knee {:.2},{:.2} hock {:.2},{:.2}", knee.z, knee.y, hock.z, hock.y));
+            }
+        }
+        // (The two of a pair are one leg seen twice: made alike, so it goes straight.)
+        for pair in [[0, 1], [2, 3]] {
+            let (a, b) = (pair[0], pair[1]);
+            let both = |p: Vec3, q: Vec3| Vec3::new((q.x - p.x) / 2.0, (p.y + q.y) / 2.0, (p.z + q.z) / 2.0);
+            let h = both(hips[a], hips[b]);
+            (hips[a], hips[b]) = (h.with_x(-h.x.abs()), h.with_x(h.x.abs()));
+            bone[a] = ((bone[a].0 + bone[b].0) / 2.0, (bone[a].1 + bone[b].1) / 2.0);
+            (bone[b], lower[a]) = (bone[a], (lower[a] + lower[b]) / 2.0);
+            lower[b] = lower[a];
+            let st = glam::Vec2::new((stand[b].x - stand[a].x) / 2.0, (stand[a].y + stand[b].y) / 2.0);
+            (stand[a], stand[b]) = (glam::Vec2::new(-st.x, st.y), st);
+        }
+        let shape = Shape { hips, bone, lower, stand, shank };
+        if std::env::var_os("FORGE_TRACE").is_some() {
+            println!("own: legs read off the mesh: {} · {shape:.2?}", read.join(" · "));
+        }
+        let mut own = Self { build, shape, metres, origin, right, ahead, tip: Vec3::ZERO, thick: 0.0 };
 
         // Where each bone is as it stands: the walker's own joints, stood.
-        let stood = Walker::new(build, Vec3::ZERO, 0.0);
+        let stood = Walker::shaped(build, shape, Vec3::ZERO, 0.0);
         let limbs = stood.limbs();
         let top = Vec3::new(0.0, build.tall + build.deep * 0.2, 0.0);
         let part = |of: &dyn Fn(f32) -> bool, or: Vec3| {
@@ -210,8 +282,11 @@ impl Own {
         let along: Vec<f32> = sk.joints.iter().map(|j| j.world.w_axis.truncate().dot(self.ahead)).collect();
         Roles {
             forward: self.ahead,
-            side: -self.right,
-            legs: LEGS.iter().enumerate().map(|(n, bones)| Leg { chain: bones.to_vec(), front: n < 2, left: n % 2 == 0 }).collect(),
+            // (As `Roles::read` has them: its side is up crossed with ahead, and a leg on that
+            // side is its left. Given the other way round, what is made by roles went the
+            // wrong way: a head raised to eat, a death rolled against its own legs.)
+            side: self.right,
+            legs: LEGS.iter().enumerate().map(|(n, bones)| Leg { chain: bones.to_vec(), front: n < 2, left: n % 2 == 1 }).collect(),
             head: vec![1, 2],
             tail: vec![3, 4],
             spine: vec![0],
@@ -263,12 +338,13 @@ impl Own {
     /// One of its clips, made by the walker: standing, a stride of a gait at the speed its
     /// legs' length gives it, or lying down.
     pub fn clip(&self, name: &str, sk: &Skeleton) -> Result<Clip> {
-        let mut walker = Walker::new(self.build, Vec3::ZERO, 0.0);
+        let mut walker = Walker::shaped(self.build, self.shape, Vec3::ZERO, 0.0);
         let legs = self.build.tall - self.build.deep / 2.0;
         let pace = (9.81 * legs).sqrt() * match name {
-            "walk" => 0.45,
-            "run" => 0.95,
-            "sprint" => 1.7,
+            // (The speeds the wolf has gone at in the world since its gaits were first walked.)
+            "walk" => 0.63,
+            "run" => 1.36,
+            "sprint" => 2.43,
             _ => 0.0,
         };
         let dt = 1.0 / (FPS * 4.0);

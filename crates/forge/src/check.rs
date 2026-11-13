@@ -69,10 +69,18 @@ pub fn nose(glb: &Glb, sk: &Skeleton, roles: &crate::rig::Roles) -> Option<(usiz
 /// where it does not): what a carried clip is raised by, since a thick body laid down where a
 /// thin one lay goes into the ground by the difference.
 pub fn sunk(glb: &Glb, sk: &Skeleton, frames: &[Pose]) -> Vec<f32> {
+    off_floor(glb, sk, frames).into_iter().map(|under| under.max(0.0)).collect()
+}
+
+/// How far the lowest of its skin is from the floor it stands on at rest, at each pose: under
+/// it (over nothing) or held up off it (under nothing). What has fallen is on the ground:
+/// a death carried onto a body whose middle is higher than the one it was drawn on lay on
+/// its side in the air.
+pub fn off_floor(glb: &Glb, sk: &Skeleton, frames: &[Pose]) -> Vec<f32> {
     let Ok(s) = skin(glb) else { return vec![0.0; frames.len()] };
     let lowest = |pose: &Pose| posed(&s, sk, pose).iter().map(|p| p.y).fold(f32::MAX, f32::min);
     let floor = lowest(&sk.rest());
-    frames.iter().map(|pose| (floor - lowest(pose)).max(0.0)).collect()
+    frames.iter().map(|pose| floor - lowest(pose)).collect()
 }
 
 fn posed(s: &Skin, sk: &Skeleton, pose: &Pose) -> Vec<Vec3> {
