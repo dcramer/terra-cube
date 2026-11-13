@@ -472,7 +472,9 @@ fn mark(mut commands: Commands, controls: Res<Controls>, menus: Res<Menus>, cont
 /// metres. Both are cut to the bit: a hole is a rounded bowl, not a missing cell.
 const REACH: f32 = 8.0;
 const HOLE: f32 = 0.4;
-const LUMP: f32 = 0.18;
+/// (A lump is one cell's worth, as one carried is: at 0.18 m it was a cell and a half, and
+/// earth dug and put back came to more than was dug.)
+const LUMP: f32 = 0.155;
 
 /// Digs or builds where the controlled creature looks: along the camera's line, from its eyes.
 #[allow(clippy::too_many_arguments)]
@@ -584,6 +586,9 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
         // what is put down lies on what is there, not through it. And one fewer is carried.
         let middle = hit - along * LUMP * 0.3;
         live.0.loose.put(&mut terrain.0, middle, LUMP, block);
+        if std::env::var_os("LOOSE_TRACE").is_some() {
+            println!("loose: put {block:?} at {middle:.2?}");
+        }
         terrain.ball_touched(&mut dirty, middle, LUMP);
         live.0.placed(mover.id);
     }
