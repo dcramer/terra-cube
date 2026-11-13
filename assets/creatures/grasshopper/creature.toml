@@ -2,7 +2,18 @@ name = "Grasshopper"
 kind = "wildlife"
 plan = "crawler"
 subject = "a bright green grasshopper with long folded hind legs and yellow stripes"
-height = 0.1
+height = 0.05
+
+# Made by forge of boxes, with its own legs and gait (`crawl`): no Tripo, no credits.
+[built]
+form = "crawler"
+length = 0.12
+span = 0.16
+tail = 0.7
+back = [0.2, 0.42, 0.08]
+belly = [0.5, 0.5, 0.14]
+wing = [0.16, 0.32, 0.07]
+mark = [0.24, 0.46, 0.1]
 
 [life]
 temper = "timid"

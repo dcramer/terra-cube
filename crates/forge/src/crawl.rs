@@ -1,0 +1,192 @@
+//! What goes on six or eight legs, made here of boxes with a skeleton and motion of its own:
+//! a beetle, a spider, a scorpion, a crab. `[built] form = "crawler"` in its `creature.toml`
+//! (`built`): no Tripo, no credits. (Tripo's rig of a crab came back with no legs found and
+//! a clip that tore to nothing; the rest were never bought.)
+//!
+//! - **Model**: a body, a head (in the mark's colour, with jaws) and an abdomen behind, and
+//!   each leg two boxes: one out sideways from the body at knee height, one down from its
+//!   end to the ground. Legs are spread evenly along the body, the fore ones reaching a
+//!   little ahead and the hind ones behind.
+//! - **Skeleton**: body (the root), head, abdomen, and two bones a leg (where it leaves the
+//!   body; its knee). Every box is held whole by one bone, so nothing stretches.
+//! - **Motion**: each leg swings about the upright where it leaves the body and lifts about
+//!   the body's length. Walking, the legs go in two sets, every other leg of a side with
+//!   the ones between on the other side, as an insect's do: a set on the ground goes back
+//!   at the body's own speed (so no foot slides), the other lifts and comes forward.
+
+use crate::built::Built;
+use crate::clips::{Clip, FPS};
+use crate::glb::Glb;
+use crate::rig::{Leg, Pose, Roles, Skeleton};
+use anyhow::{Context, Result};
+use glam::{Mat4, Quat, Vec3};
+use serde_json::json;
+use std::f32::consts::{PI, TAU};
+
+/// A crawler made here: how many legs a side, how far a foot stands out from where its leg
+/// leaves the body, and its length (metres; the file is in metres).
+pub struct Crawler {
+    side: usize,
+    reach: f32,
+    long: f32,
+    high: f32,
+}
+
+/// Whether a model is one of these.
+pub fn made(glb: &Glb) -> bool {
+    glb.array("nodes").iter().any(|n| n["name"] == "leg_l0_knee")
+}
+
+impl Crawler {
+    /// The model with its bones: boxes, each held by one bone.
+    pub fn model(b: &Built) -> Result<(Glb, Self)> {
+        let (l, side) = (b.length, (b.legs.max(4) / 2) as usize);
+        let (wide, thick, clear) = (l * 0.42, l * 0.26, l * 0.16);
+        let knee = clear + thick * 0.75;
+        let reach = (b.span / 2.0 - wide / 2.0).max(l * 0.2);
+        let leg = l * 0.07;
+        let dark = |c: [f32; 3], k: f32| c.map(|v| v * k);
+        // Each box with the bone that holds it; and where each bone is.
+        let mut boxes: Vec<(Vec3, Vec3, [f32; 3], usize)> = Vec::new();
+        let mut put = |middle: Vec3, size: Vec3, colour: [f32; 3], bone: usize| boxes.push((middle - size / 2.0, middle + size / 2.0, colour, bone));
+        let mid = clear + thick / 2.0;
+        put(Vec3::new(0.0, mid, 0.0), Vec3::new(wide, thick, l * 0.5), b.back, 0);
+        put(Vec3::new(0.0, clear + thick * 0.2, 0.0), Vec3::new(wide * 0.8, thick * 0.4, l * 0.44), b.belly, 0);
+        // Head, and jaws ahead of it.
+        put(Vec3::new(0.0, mid, l * 0.36), Vec3::new(wide * 0.6, thick * 0.7, l * 0.22), b.mark, 1);
+        for x in [-1.0, 1.0] {
+            put(Vec3::new(x * wide * 0.18, mid - thick * 0.1, l * 0.53), Vec3::new(l * 0.05, l * 0.04, l * 0.14), dark(b.mark, 0.7), 1);
+        }
+        // Abdomen, in two pieces, the hinder smaller.
+        let tail = l * b.tail;
+        put(Vec3::new(0.0, mid + thick * 0.08, -l * 0.25 - tail * 0.3), Vec3::new(wide * 1.05, thick * 1.1, tail * 0.6), dark(b.back, 0.85), 2);
+        put(Vec3::new(0.0, mid + thick * 0.05, -l * 0.25 - tail * 0.8), Vec3::new(wide * 0.75, thick * 0.8, tail * 0.4), dark(b.back, 0.7), 2);
+        let mut places = vec![Vec3::new(0.0, mid, 0.0), Vec3::new(0.0, mid, l * 0.25), Vec3::new(0.0, mid, -l * 0.25)];
+        let mut parents: Vec<Option<usize>> = vec![None, Some(0), Some(0)];
+        let mut names: Vec<String> = vec!["body".into(), "head".into(), "abdomen".into()];
+        for (s, x) in [(0usize, -1.0f32), (1, 1.0)] {
+            for k in 0..side {
+                // (Along the body from fore to hind, and splayed: the fore reach ahead.)
+                let t = if side > 1 { k as f32 / (side - 1) as f32 } else { 0.5 };
+                let (z, splay) = (l * (0.2 - 0.4 * t), l * (0.16 - 0.32 * t));
+                let hip = Vec3::new(x * wide / 2.0, knee, z);
+                let end = Vec3::new(x * (wide / 2.0 + reach), knee, z + splay);
+                let bone = places.len();
+                // The upper part, out to the knee (in three short boxes along its slant); the lower, down to the ground.
+                for i in 0..3 {
+                    let at = hip.lerp(end, (i as f32 + 0.5) / 3.0);
+                    put(at, Vec3::new(reach / 3.0 + leg * 0.3, leg, leg + (splay.abs() / 3.0)), b.wing, bone);
+                }
+                put(Vec3::new(end.x, knee / 2.0, end.z), Vec3::new(leg * 0.8, knee, leg * 0.8), dark(b.wing, 0.8), bone + 1);
+                let name = format!("leg_{}{k}", if s == 0 { 'l' } else { 'r' });
+                places.extend([hip, end]);
+                parents.extend([Some(0), Some(bone)]);
+                names.extend([name.clone(), format!("{name}_knee")]);
+            }
+        }
+        let plain: Vec<(Vec3, Vec3, [f32; 3])> = boxes.iter().map(|b| (b.0, b.1, b.2)).collect();
+        let mut glb = crate::built::mesh(&plain);
+        // (Twenty-four corners a box, all its bone's.)
+        let joints: Vec<u8> = boxes.iter().flat_map(|b| std::iter::repeat_n([b.3 as u8, 0, 0, 0], 24)).flatten().collect();
+        let weights: Vec<f32> = boxes.iter().flat_map(|_| std::iter::repeat_n([1.0f32, 0.0, 0.0, 0.0], 24)).flatten().collect();
+        let j = glb.add_raw(&joints, 5121, "VEC4", boxes.len() * 24);
+        let w = glb.add_floats(&weights, "VEC4", false);
+        glb.json["meshes"][0]["primitives"][0]["attributes"]["JOINTS_0"] = json!(j);
+        glb.json["meshes"][0]["primitives"][0]["attributes"]["WEIGHTS_0"] = json!(w);
+        let first = glb.array("nodes").len();
+        let list = glb.json["nodes"].as_array_mut().context("no nodes")?;
+        for (i, name) in names.iter().enumerate() {
+            let from = parents[i].map_or(Vec3::ZERO, |p| places[p]);
+            let children: Vec<usize> = (0..names.len()).filter(|c| parents[*c] == Some(i)).map(|c| first + c).collect();
+            let mut node = json!({ "name": name, "translation": (places[i] - from).to_array() });
+            if !children.is_empty() {
+                node["children"] = json!(children);
+            }
+            list.push(node);
+        }
+        list[0]["skin"] = json!(0);
+        glb.json["scenes"][0]["nodes"].as_array_mut().context("no scene")?.push(json!(first));
+        let binds: Vec<f32> = places.iter().flat_map(|at| Mat4::from_translation(-*at).to_cols_array()).collect();
+        let inverse = glb.add_floats(&binds, "MAT4", false);
+        glb.json["skins"] = json!([{ "joints": (first..first + names.len()).collect::<Vec<_>>(), "inverseBindMatrices": inverse, "skeleton": first }]);
+        Ok((glb, Self { side, reach, long: l, high: mid }))
+    }
+
+    /// Its roles, which are known: the bones are ours.
+    pub fn roles(&self, sk: &Skeleton) -> Roles {
+        let legs = (0..self.side * 2).map(|n| Leg { chain: vec![3 + n * 2, 4 + n * 2], front: n % self.side < self.side.div_ceil(2), left: n >= self.side }).collect();
+        let (lo, hi) = sk.joints.iter().fold((f32::MAX, f32::MIN), |(lo, hi), j| (lo.min(j.world.w_axis.y), hi.max(j.world.w_axis.y)));
+        Roles { forward: Vec3::Z, side: Vec3::X, legs, head: vec![1], tail: vec![2], spine: vec![0], others: Vec::new(), arms: Vec::new(), floor: 0.0, height: hi.max(lo), length: self.long, nose: None, sinks: 0.0, curls: false }
+    }
+
+    /// A pose: the body moved and turned so, and each leg swung fore or aft by so far along
+    /// the ground (metres) and lifted by so much (radians).
+    fn pose(&self, sk: &Skeleton, moved: Vec3, turned: Quat, legs: impl Fn(usize) -> (f32, f32)) -> Pose {
+        let mut pose = sk.rest();
+        pose.rotations[0] = turned;
+        pose.root_t = sk.joints[0].rest_t + moved;
+        for n in 0..self.side * 2 {
+            let (fore, lift) = legs(n);
+            // (The side it is on: its lift is a roll that way up.)
+            let x = if n < self.side { -1.0 } else { 1.0 };
+            let swing = (fore / self.reach).clamp(-0.9, 0.9).asin();
+            pose.rotations[3 + n * 2] = Quat::from_rotation_y(-x * swing) * Quat::from_rotation_z(x * lift);
+        }
+        pose
+    }
+
+    /// Which of the two sets a leg steps with: every other leg of a side, with the ones
+    /// between on the other side.
+    fn set(&self, n: usize) -> usize {
+        (n % self.side + n / self.side) % 2
+    }
+
+    /// One of its clips.
+    pub fn clip(&self, name: &str, sk: &Skeleton) -> Result<Clip> {
+        let still = |_: usize| (0.0, 0.0);
+        let frames_of = |seconds: f32, f: &dyn Fn(f32) -> Pose| -> Vec<Pose> {
+            let n = (seconds * FPS).round() as usize;
+            (0..=n).map(|i| f(i as f32 / n as f32)).collect()
+        };
+        let ease = |t: f32| t * t * (3.0 - 2.0 * t);
+        let (frames, looping, speed) = match name {
+            "walk" | "run" | "sprint" => {
+                // A stride as long as its legs let it be, taken quicker to go faster.
+                let pace = self.long * match name { "walk" => 2.5, "run" => 6.0, _ => 9.0 };
+                let stride = self.reach * 0.9;
+                let seconds = 2.0 * stride / pace;
+                let frames = frames_of(seconds, &|t| {
+                    self.pose(sk, Vec3::Y * self.long * 0.006 * (2.0 * TAU * t).sin(), Quat::from_rotation_z(0.012 * (TAU * t).sin()), |n| {
+                        let p = (t + self.set(n) as f32 * 0.5).fract();
+                        // Down for half its turn, going back as the body goes on; up for the other, coming forward.
+                        if p < 0.5 { (stride * (0.5 - 2.0 * p), 0.0) } else { (stride * (2.0 * ease((p - 0.5) * 2.0) - 1.0) * 0.5, 0.3 * (PI * (p - 0.5) * 2.0).sin()) }
+                    })
+                });
+                (frames, true, Some(pace))
+            }
+            "idle" => (frames_of(4.0, &|t| self.pose(sk, Vec3::Y * self.long * 0.01 * (TAU * t).sin(), Quat::from_rotation_y(0.04 * (TAU * t).sin()), still)), true, None),
+            // Gathered, and sprung: its legs pressed down, then drawn up under it.
+            "jump" => (frames_of(0.3, &|t| self.pose(sk, Vec3::Y * self.high * (-0.35 * (1.0 - t) + 0.2 * t), Quat::IDENTITY, |_| (0.0, -0.2 + 0.6 * t))), false, None),
+            "fall" => (frames_of(0.9, &|t| self.pose(sk, Vec3::ZERO, Quat::from_rotation_x(0.05 * (TAU * t).sin()), |n| (0.0, 0.4 + 0.08 * (TAU * t + n as f32).sin()))), true, None),
+            "land" => (frames_of(0.37, &|t| self.pose(sk, Vec3::NEG_Y * self.high * 0.4 * (1.0 - ease(t)), Quat::IDENTITY, |_| (0.0, 0.4 * (1.0 - ease(t))))), false, None),
+            // Reared on its hind legs, and struck forward and down.
+            "attack" => (frames_of(0.8, &|t| {
+                let (up, out) = ((PI * (t / 0.45).min(1.0)).sin() * if t < 0.45 { 1.0 } else { 0.0 }, ease(((t - 0.3) / 0.2).clamp(0.0, 1.0)) * (1.0 - ease(((t - 0.55) / 0.25).clamp(0.0, 1.0))));
+                self.pose(sk, Vec3::Z * self.long * 0.3 * out + Vec3::Y * self.high * 0.2 * up, Quat::from_rotation_x(-0.45 * up + 0.2 * out), |n| if n % self.side == 0 { (self.reach * 0.3 * out, 0.7 * up) } else { (0.0, 0.0) })
+            }), false, None),
+            "hurt" => (frames_of(0.5, &|t| {
+                let k = (PI * t).sin();
+                self.pose(sk, Vec3::NEG_Z * self.long * 0.15 * k, Quat::from_rotation_z(0.25 * k), |_| (0.0, 0.2 * k))
+            }), false, None),
+            // Over onto its back, its legs drawn in over it.
+            "die" => (frames_of(1.4, &|t| {
+                let k = ease((t / 0.6).min(1.0));
+                self.pose(sk, Vec3::Y * (self.high * 0.5 * (PI * k).sin() - self.high * 0.35 * k), Quat::from_rotation_z(PI * k), |_| (0.0, -1.1 * k))
+            }), false, None),
+            "swim" => (frames_of(1.2, &|t| self.pose(sk, Vec3::ZERO, Quat::IDENTITY, |n| (self.reach * 0.4 * (TAU * t + self.set(n) as f32 * PI).sin(), 0.25))), true, None),
+            "eat" => (frames_of(4.0, &|t| self.pose(sk, Vec3::NEG_Y * self.high * 0.12, Quat::from_rotation_x(0.2 + 0.05 * (TAU * 4.0 * t).sin()), still)), true, None),
+            _ => (frames_of(1.0, &|_| self.pose(sk, Vec3::ZERO, Quat::IDENTITY, still)), true, None),
+        };
+        Ok(Clip { name: name.into(), looping, frames, source: "made", speed })
+    }
+}

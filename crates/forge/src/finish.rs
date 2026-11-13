@@ -102,7 +102,14 @@ fn recorded_speed(sk: &Skeleton, roles: &Roles, clip: &Clip) -> Option<(f32, f32
 
 pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) -> Result<Finished> {
     // A model built here of boxes has no file to read; any other is Tripo's export.
+    let mut crawler = None;
     let mut glb = match &creature.built {
+        // (What crawls is made whole by `crawl`: its boxes, its bones and its motion.)
+        Some(built) if built.form == "crawler" => {
+            let (glb, made) = crate::crawl::Crawler::model(built)?;
+            crawler = Some(made);
+            glb
+        }
         Some(built) => crate::built::model(built)?,
         None => Glb::read(source)?,
     };
@@ -117,6 +124,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
     // And a person may be moved by the two-legged walker in place of anybody's clips (`strider`).
     let strode = if !creature.walked.is_empty() { Some(crate::strider::Strider::new(&skeleton, creature.height)?) } else { None };
     let mut roles = match &owned {
+        _ if crawler.is_some() => crawler.as_ref().unwrap().roles(&skeleton),
         Some(own) => own.roles(&skeleton),
         None => Roles::read(&skeleton, if creature.built.is_some() { Facing::Told(Vec3::Z) } else { Facing::parse(&creature.facing)? }),
     };
@@ -186,7 +194,7 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
             clip
         });
         let recorded = carried.as_ref().or(found.map(|i| &theirs[i]));
-        let mut clip = if let Some(own) = owned.as_ref().filter(|_| crate::own::WALKED.contains(&name.as_str())) {
+        let mut clip = if let Some(crawler) = &crawler { crawler.clip(name, &skeleton)? } else if let Some(own) = owned.as_ref().filter(|_| crate::own::WALKED.contains(&name.as_str())) {
             // (Judged as it will be drawn: raised out of the ground first, as every lying clip is.)
             own.clip_judged(name, &skeleton, &|pose| {
                 let mut pose = pose.clone();

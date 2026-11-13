@@ -97,6 +97,24 @@ Check after any change to the walker or the model:
 
 What is in a hand (`assets/world/held.toml`): `turn`, `shift` from the grip; `aim` which way it points; `droop` leaves the arm to the walker and only keeps the forearm low (sword, bow); `arm` holds the whole arm in a pose (torch, shovel).
 
+### What crawls is built here, of boxes (`[built] form = "crawler"`, 2026-11-13)
+
+For anything on six or eight legs (`crates/forge/src/crawl.rs`): beetle, grasshopper, crab, spider, scorpion. Free; no Tripo. In its `creature.toml`:
+
+```toml
+[built]
+form = "crawler"
+length = 0.22      # body, metres
+span = 0.34        # foot to foot across it
+tail = 0.55        # abdomen, of the body's length
+legs = 8           # default 6
+back = [..]  belly = [..]  wing = [..]  mark = [..]   # body, underside, legs, head
+```
+
+Then `cargo forge finish ID` and `cargo sandbox --shot ID --view three --clips idle,walk,attack,die --cols 6`. Forge makes the boxes, a skeleton (body, head, abdomen, two bones a leg), and every clip of the plan: legs step in two alternating sets, the set on the ground going back at the body's speed. Each box is held whole by one bone, so stretch is always 0%.
+
+Limits: one body shape for all of them (no pincers, no scorpion's tail, no long hind legs on the grasshopper). In the world: beetle, grasshopper. Built but not placed (`groups = 0`): spider and scorpion (with them in, goblins died out within sixteen years: `cargo world years 24`), crab (never was).
+
 ### The small life of air and water is built here, of boxes (2026-11-11)
 
 `[built]` in a `creature.toml` (`crates/forge/src/built.rs`): a form (`bird`, `insect`, `fish`), a length, a span and four colours, and `forge finish` makes the model itself, of boxes at its true size, then rigs it with the rig above and makes its clips. No Tripo, no credits, and it is the world's own style. Six are made: `songbird`, `swallow`, `soarer` (the hawk overhead), `flutterby`, `darter` (a dragonfly), `minnow`. Plans: `flyer` (`fly`, `glide`, `perch` with the wings folded), `flutterer` (`flutter`, `glide`), `swimmer` (`swim`: a wave down the body, the tail widest). All pass `forge check`; `cargo forge sheet soarer` shows the wingbeat.

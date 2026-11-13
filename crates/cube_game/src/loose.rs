@@ -106,8 +106,9 @@ struct Chip(Vec3, f32);
 /// What the simulation noted since last frame is heard and seen: each cut, each thing come
 /// loose, each landing.
 #[allow(clippy::too_many_arguments)]
-fn told(mut commands: Commands, live: Option<ResMut<Live>>, mut bank: ResMut<crate::audio::Bank>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, mut cube: Local<Option<Handle<Mesh>>>, mut paints: Local<std::collections::HashMap<[u8; 3], Handle<StandardMaterial>>>, mut n: Local<u32>, time: Res<Time>, mut clattered: Local<f32>) {
-    let Some(mut live) = live else { return };
+fn told(mut commands: Commands, live: Option<ResMut<Live>>, bank: Option<ResMut<crate::audio::Bank>>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, mut cube: Local<Option<Handle<Mesh>>>, mut paints: Local<std::collections::HashMap<[u8; 3], Handle<StandardMaterial>>>, mut n: Local<u32>, time: Res<Time>, mut clattered: Local<f32>) {
+    // (No sound bank where nothing is heard: a sheet of a creature's clips.)
+    let (Some(mut live), Some(mut bank)) = (live, bank) else { return };
     let loose = &mut live.0.loose;
     let cube = cube.get_or_insert_with(|| meshes.add(Cuboid::new(1.0, 1.0, 1.0))).clone();
     // (Nothing here matters to the world: where a chip goes is only seen.)

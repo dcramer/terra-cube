@@ -8,6 +8,7 @@
 mod built;
 mod check;
 mod clips;
+mod crawl;
 mod cubes;
 mod finish;
 mod glb;

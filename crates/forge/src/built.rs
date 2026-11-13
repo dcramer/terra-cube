@@ -15,7 +15,9 @@ use serde_json::json;
 /// What `[built]` says. Lengths in metres; colours linear red, green, blue.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Built {
-    /// `bird`, `insect` (two pairs of wings) or `fish`.
+    /// `bird`, `insect` (two pairs of wings), `fish`, or `crawler` (on six or eight legs: its
+    /// `span` is foot to foot across it, its `tail` its abdomen, `wing` its legs' colour and
+    /// `mark` its head's; made by `crawl`, not here).
     pub form: String,
     /// Beak to the root of the tail (a fish: nose to the root of its tail fin).
     pub length: f32,
@@ -34,6 +36,16 @@ pub struct Built {
     pub wing: [f32; 3],
     /// The wingtips, a bird's beak, a butterfly's wing edge, a fish's fins.
     pub mark: [f32; 3],
+    /// A crawler's legs, all told (`crawl`): six, or a spider's eight.
+    #[serde(default = "six", skip_serializing_if = "is_six")]
+    pub legs: u8,
+}
+
+fn six() -> u8 {
+    6
+}
+fn is_six(n: &u8) -> bool {
+    *n == 6
 }
 
 fn half() -> f32 {
@@ -135,11 +147,16 @@ fn boxes(b: &Built) -> Result<Boxes> {
 
 /// The model as a GLB with no skeleton: one mesh, a colour at every corner.
 pub fn model(b: &Built) -> Result<Glb> {
-    let boxes = boxes(b)?;
+    Ok(mesh(&boxes(b)?.0))
+}
+
+/// Boxes (from, to, colour) as a GLB with no skeleton: one mesh, a colour at every corner,
+/// twenty-four corners a box in the order given.
+pub fn mesh(all: &[(Vec3, Vec3, [f32; 3])]) -> Glb {
     let (mut positions, mut normals, mut colours, mut indices) = (Vec::new(), Vec::new(), Vec::new(), Vec::<u8>::new());
     let (mut lo, mut hi) = (Vec3::MAX, Vec3::MIN);
     let mut count = 0u32;
-    for (from, to, colour) in &boxes.0 {
+    for (from, to, colour) in all {
         for axis in 0..3 {
             for sign in [-1.0f32, 1.0] {
                 let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
@@ -174,5 +191,5 @@ pub fn model(b: &Built) -> Result<Glb> {
     let index = glb.add_raw(&indices, 5125, "SCALAR", count as usize / 4 * 6);
     glb.json["materials"] = json!([{ "name": "built", "pbrMetallicRoughness": { "baseColorFactor": [1.0, 1.0, 1.0, 1.0], "metallicFactor": 0.0, "roughnessFactor": 0.85 } }]);
     glb.json["meshes"] = json!([{ "primitives": [{ "attributes": { "POSITION": position, "NORMAL": normal, "COLOR_0": colour }, "indices": index, "material": 0 }] }]);
-    Ok(glb)
+    glb
 }
