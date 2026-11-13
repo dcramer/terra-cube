@@ -170,7 +170,10 @@ impl Walker {
         // a trot they go in diagonal pairs. (It trotted at every speed at first, and at a run
         // its legs went like a sewing machine under a level back: the developer, of the
         // wolf, 2026-11-12: "the run looks dumb".)
-        let gallops = speed > 2.9 * b.tall;
+        // (By its legs' length, as a pendulum's swing goes: a badger gallops at a speed a
+        // wolf walks at. All of this is in metres and seconds.)
+        let legs = self.bone.iter().map(|b| b.0 + b.1).sum::<f32>() / 4.0;
+        let gallops = speed > 1.15 * (9.81 * legs).sqrt();
         // (No longer than its legs allow: a stride is taken from as far behind a hip as ahead of it.)
         let longest = self.bone.iter().map(|b| b.0 + b.1).fold(f32::MAX, f32::min) * 1.15;
         let stride = if gallops { (0.3 + speed * 0.3).min(longest) } else { (0.18 + speed * 0.3).min(longest) };

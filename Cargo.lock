@@ -2949,6 +2949,7 @@ name = "forge"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cube_anim",
  "glam",
  "image",
  "serde",

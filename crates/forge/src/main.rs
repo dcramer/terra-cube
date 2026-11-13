@@ -17,6 +17,7 @@ mod rig;
 mod shaped;
 mod spec;
 mod tripo;
+mod walker;
 
 use anyhow::{Context, Result, bail};
 use spec::{Creature, Lock, Meta, Style};

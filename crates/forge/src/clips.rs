@@ -19,7 +19,8 @@ pub struct Clip {
     pub name: String,
     pub looping: bool,
     pub frames: Vec<Pose>,
-    /// "tripo", "library" (a person's hand, carried over: `library.rs`) or "made".
+    /// "tripo", "library" (a person's hand, carried over: `library.rs`), "walker" (walked
+    /// by its feet and written down: `walker.rs`) or "made".
     pub source: &'static str,
     /// For a gait made with planted feet: the ground speed it was built for, file units a
     /// second. A gait without it is measured.
@@ -608,7 +609,7 @@ const STRIDE_SPRINT: Gait = Gait { name: "sprint", duty: 0.3, lands: [0.0, 0.5, 
 
 /// Sets a joint's local rotation so that it is turned by `delta`, a rotation in the file's
 /// space, from where the pose has it now.
-fn turn_now(sk: &Skeleton, pose: &mut Pose, joint: usize, delta: Quat) {
+pub(crate) fn turn_now(sk: &Skeleton, pose: &mut Pose, joint: usize, delta: Quat) {
     let world = sk.pose_world(pose);
     let parent = sk.joints[joint].parent.map_or(sk.base, |p| world[p]).to_scale_rotation_translation().1;
     pose.rotations[joint] = (parent.inverse() * delta * parent * pose.rotations[joint]).normalize();
@@ -652,7 +653,7 @@ fn stand_folded(sk: &Skeleton, roles: &Roles, pose: &mut Pose) {
     }
 }
 
-fn reach_by(sk: &Skeleton, roles: &Roles, pose: &mut Pose, leg: &crate::rig::Leg, (hip, knee): (usize, usize), tip: usize, target: Vec3) {
+pub(crate) fn reach_by(sk: &Skeleton, roles: &Roles, pose: &mut Pose, leg: &crate::rig::Leg, (hip, knee): (usize, usize), tip: usize, target: Vec3) {
     let at = |pose: &Pose, j: usize| sk.pose_world(pose)[j].w_axis.truncate();
     let (h, k, p) = (at(pose, hip), at(pose, knee), at(pose, tip));
     let (a, b) = (k.distance(h), p.distance(k));

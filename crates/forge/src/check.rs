@@ -109,6 +109,15 @@ pub fn extent(glb: &Glb, sk: &Skeleton, pose: &Pose, along: Vec3) -> Result<f32>
     Ok(hi - lo)
 }
 
+/// How far a run of poses pulls the skin, as the check of a clip will measure it: for
+/// whoever makes a clip to know before it is kept.
+pub fn tears(glb: &Glb, sk: &Skeleton, frames: &[Pose]) -> f32 {
+    let Ok(s) = skin(glb) else { return 0.0 };
+    let rest = posed(&s, sk, &sk.rest());
+    let rest_len: Vec<f32> = s.edges.iter().map(|&(a, b)| rest[a].distance(rest[b])).collect();
+    stretch(&s, sk, &rest_len, &Clip { name: String::new(), looping: true, frames: frames.to_vec(), source: "walker", speed: None })
+}
+
 /// The 99th-percentile edge stretch of a clip's worst sampled frame, against the rest pose.
 fn stretch(s: &Skin, sk: &Skeleton, rest_len: &[f32], clip: &Clip) -> f32 {
     let step = (clip.frames.len() / 8).max(1);

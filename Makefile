@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: wind blow limbs beside features legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: wind blow moves limbs beside features legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -122,6 +122,9 @@ fight: ## no window: the player fights a goblin in the real game; passes if he i
 
 sheet: need-id ## no window: shots/ID.png, every clip of one creature (ID=wolf)
 	cargo forge sheet $(ID)
+
+moves: need-id ## one creature's movement made and judged: forge fits the walker, bakes its gaits and checks them by number (a line), then one side sheet of walk, run and sprint (ID=wolf)
+	@tools/moves.sh $(ID)
 
 limbs: ## no window: shots/limbs.gif, a body of boxes moved by its skeleton and feet and no clips (cube_anim): standing, walking, running, lying down, getting up (ID=wolf: a real creature's model moved the same way beside it)
 	@cargo sandbox --scene shots/limbs.gif $(if $(ID),--limbs-as $(ID),--limbs) --gif 16 --dist 6.4 --pitch 0.55 --hour 13 2>&1 | grep -q '^gif' && echo "shots/limbs.gif"

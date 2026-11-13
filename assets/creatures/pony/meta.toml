@@ -63,15 +63,15 @@ source = "made"
 speed = 0.0
 
 [clips.run]
-seconds = 0.43333334
+seconds = 0.23333333
 looping = true
-source = "made"
+source = "walker"
 speed = 3.1266544
 
 [clips.sprint]
-seconds = 0.53333336
+seconds = 0.2
 looping = true
-source = "library"
+source = "walker"
 speed = 5.593238
 
 [clips.swim]
@@ -81,9 +81,9 @@ source = "made"
 speed = 0.0
 
 [clips.walk]
-seconds = 0.56666666
+seconds = 0.5
 looping = true
-source = "library"
+source = "walker"
 speed = 1.4320922
 
 [bones]

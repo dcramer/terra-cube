@@ -312,6 +312,20 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
                 clip.speed = Some(stance * (run * 1.5 / stance).clamp(0.6, 1.0));
             }
         }
+        // What goes on four legs has its gaits walked: the body moved by its feet at the
+        // speed the gait is for, and one stride of it kept (`walker.rs`). Whatever the clip
+        // was till now (made here, or carried from the wolf somebody drew) said how fast.
+        // (Not what hops; and not where it does not come out: the clip stays as it was.)
+        if plan.rig != "humanoid" && creature.plan == "quadruped" && !creature.hops && matches!(name.as_str(), "walk" | "run" | "sprint")
+            && let Some(speed) = clip.speed
+            && let Some(frames) = crate::walker::stride(&skeleton, &roles, out.iter().find(|c| c.name == "idle").map_or(&skeleton.rest(), |c| &c.frames[0]), speed, scale)
+            // (Kept only if it does not tear the skin: a toad's and a tortoise's legs go out
+            // sideways and do not fold under them, and walked so their skin was pulled to
+            // twice its length.)
+            && crate::check::tears(&glb, &skeleton, &frames) <= plan.max_stretch.unwrap_or(1.0) * 0.95
+        {
+            (clip.frames, clip.source) = (frames, "walker");
+        }
         // Its own speed over the ground: the library's, where the library says (its figure's, by this one's size).
         if matches!(name.as_str(), "walk" | "run" | "sprint") {
             // (By its size, and not in step with it: a figure twice as tall takes strides twice
