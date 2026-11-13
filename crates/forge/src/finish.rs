@@ -191,7 +191,10 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
             own.clip_judged(name, &skeleton, &|pose| {
                 let mut pose = pose.clone();
                 pose.root_t += skeleton.base.inverse().transform_vector3(Vec3::Y * crate::check::sunk(&glb, &skeleton, std::slice::from_ref(&pose))[0]);
-                crate::walker::judged(&glb, &skeleton, &roles, &pose)
+                // (And not torn: a pose that passes every measure of lying by pulling its skin
+                // apart is not one.)
+                let torn = crate::check::tears(&glb, &skeleton, std::slice::from_ref(&pose));
+                crate::walker::judged(&glb, &skeleton, &roles, &pose).map(|(short, good)| { let bar = plan.max_stretch.unwrap_or(1.2); (short + (torn - bar).max(0.0) * 4.0, good && torn <= bar) })
             })?
         } else if let Some(strode) = strode.as_ref().filter(|_| creature.walked.contains(name)) { strode.clip(name, &skeleton)? } else { match recorded {
             Some(taken) => {

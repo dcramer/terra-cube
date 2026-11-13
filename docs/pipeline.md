@@ -53,7 +53,7 @@ Tried end to end on the old crow's mesh with its skeleton taken off: rig, skin, 
 
 ### A four-legged animal on our own skeleton (`plan = "walked"`)
 
-On it: wolf, bear, fox, moose, boar-beast, goat, lynx, deer. Not yet, each tried 2026-11-12: pony (its long hair tail strains when it lies: `clip lie` stretch 238%), badger (`pose lie` chest 9% against 8%), beaver (flat tail, lying far off), squirrel (hind legs not found; back 14° lying). Never tried: frogs, tortoise, lizard, hedgehog (not built like a dog), rabbit (it hops; the walker has no hop).
+On it: wolf, bear, fox, moose, boar-beast, goat, lynx, deer. Not yet, each tried 2026-11-12: pony (its hair tail is joined to its hind legs in the mesh: swung clear to lie, the hair tears, 175%; left hanging, the chest is held 14% up), badger (`pose lie` chest 9% against 8%), beaver (flat tail, lying far off), squirrel (hind legs not found; back 14° lying). Never tried: frogs, tortoise, lizard, hedgehog (not built like a dog), rabbit (it hops; the walker has no hop).
 
 Tripo makes the mesh; forge makes the skeleton, the skin and the motion (`crates/forge/src/own.rs`). Use this plan for a new four-legged animal. To move an existing one to it: set `plan = "walked"` in its `creature.toml` and run `cargo forge finish ID`. No credits.
 
@@ -61,7 +61,7 @@ What `finish` does, in order:
 1. Takes off whatever skeleton the file has. Keeps the mesh.
 2. Measures the mesh: floor, feet, belly, back, which end is the head (the higher end).
 3. Finds each leg's joints: takes points across the mesh's faces (not its corners alone: a bear's legs have few) that are over that leg's foot (within 28% of the way to the other pair: a fox's tail hangs behind its hind legs), cuts them into 10 slices from floor to belly and takes each slice's middle. Paw: lowest slice. Elbow: where a fore leg meets the chest. Hock: the point furthest back in the lower half of a hind leg. Knee: the point furthest forward above the hock. Shoulder and hip are inside the body: placed above the elbow and knee by fixed ratios. `FORGE_TRACE=1` prints what was found; a leg not found gets a dog's proportions.
-4. Places 19 bones on those joints (trunk, neck, head, two tail, 3 per fore leg, 4 per hind leg) and binds each skin point to its nearest bones. A leg's bones hold only what is over that leg's foot and on its own side; what hangs on the body's middle line behind the hind feet is the tail's.
+4. Places 21 bones on those joints (trunk, neck, head, four tail, 3 per fore leg, 4 per hind leg) and binds each skin point to its nearest bones. A leg's bones hold only what is over that leg's foot and on its own side; what hangs on the body's middle line behind the hind feet is the tail's.
 5. Makes `idle`, `walk`, `run`, `sprint`, `lie` by running the four-legged walker (`cube_anim::Walker::shaped`) on those joints and recording every bone. Then, over each stride: the head is held level against the trunk's rocking and the tail swings side to side, its end after its root (`Own::lively`).
 6. Makes the other clips the way every animal's are made (`attack`, `hurt`, `die` carried from the hand-animated wolf; `jump`, `fall`, `land`, `swim`, `eat` by recipe).
 
@@ -72,7 +72,7 @@ Then check, in this order:
 
 Known faults: skin pinches at elbows and tail root (bound by distance only; smoothing the weights over the mesh was tried and made stretch worse, see `own.rs`); its walk is a trot at walking speed (diagonal pairs), where a real walk sets down one foot at a time.
 
-Lying is held to `assets/creatures/poses.toml` (`pose lie` in the check). On this skeleton the measure uses the known joints (second bone of a leg is the elbow or knee, a hind leg's third is the hock), and a joint counts as inside the body only if it is nearer the body's middle plane than when standing. Guessed as on a Tripo skeleton, the hock was taken for the knee and a correct pose was refused. How high the trunk lies and how far the tail is lifted clear are fitted per body: `Own::clip_judged` tries 60 combinations and keeps the one the measure likes best.
+Lying is held to `assets/creatures/poses.toml` (`pose lie` in the check). On this skeleton the measure uses the known joints (second bone of a leg is the elbow or knee, a hind leg's third is the hock), and a joint counts as inside the body only if it is nearer the body's middle plane than when standing. Guessed as on a Tripo skeleton, the hock was taken for the knee and a correct pose was refused. How high the trunk lies and how far the tail is lifted clear (or let back down to hang) are fitted per body: `Own::clip_judged` tries 90 combinations and keeps the one the measure likes best; a pose that tears the skin past the plan's `max_stretch` is not a pass.
 
 Every animal on this plan lies the same way (on its chest, forelegs ahead). `rests` in `creature.toml` is not used by it: a fox curled and a bedded deer are not built.
 

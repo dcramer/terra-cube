@@ -19,10 +19,14 @@ use serde_json::json;
 /// The bones, in the order the skin lists them: the trunk (the root), neck, head and two of
 /// tail; then each leg in the walker's order (fore left, fore right, hind left, hind right),
 /// a fore leg's three and a hind leg's four.
-pub const BONES: [&str; 19] = [
-    "trunk", "neck", "head", "tail_1", "tail_2", "fl_upper", "fl_fore", "fl_paw", "fr_upper", "fr_fore", "fr_paw", "hl_thigh", "hl_shank", "hl_lower", "hl_paw", "hr_thigh", "hr_shank", "hr_lower", "hr_paw",
+pub const BONES: [&str; 21] = [
+    "trunk", "neck", "head", "tail_1", "tail_2", "fl_upper", "fl_fore", "fl_paw", "fr_upper", "fr_fore", "fr_paw", "hl_thigh", "hl_shank", "hl_lower", "hl_paw", "hr_thigh", "hr_shank", "hr_lower", "hr_paw", "tail_3", "tail_4",
 ];
-const PARENTS: [Option<usize>; 19] = [None, Some(0), Some(1), Some(0), Some(3), Some(0), Some(5), Some(6), Some(0), Some(8), Some(9), Some(0), Some(11), Some(12), Some(13), Some(0), Some(15), Some(16), Some(17)];
+/// The tail, root to end: four bones (the last two added after the rest, 2026-11-12: on two,
+/// a pony's long tail swung clear of the ground was a hinge, and its hair was pulled to
+/// more than twice its length).
+const TAIL: [usize; 4] = [3, 4, 19, 20];
+const PARENTS: [Option<usize>; 21] = [None, Some(0), Some(1), Some(0), Some(3), Some(0), Some(5), Some(6), Some(0), Some(8), Some(9), Some(0), Some(11), Some(12), Some(13), Some(0), Some(15), Some(16), Some(17), Some(4), Some(19)];
 /// The clips that are the walker's own: the rest are made or carried as any four-legged animal's.
 pub const WALKED: [&str; 5] = ["idle", "walk", "run", "sprint", "lie"];
 /// Each leg's bones, from where it leaves the trunk down.
@@ -242,11 +246,13 @@ impl Own {
         let head = part(&|at| at > front - (front - fore) * 0.35, own.file(top + Vec3::Z * (build.long / 2.0 + build.neck)));
         let tip = part(&|at| at < rear + (hind - rear) * 0.2, own.file(top - Vec3::Z * (build.long / 2.0 + build.tail)));
         let tail = own.file(top - Vec3::Z * build.long / 2.0);
-        (own.tip, own.thick) = (tip + (tip - tail) * 0.25 - (tail + tip) / 2.0, build.leg / metres);
-        let mut places = vec![own.file(stood.trunk().0), own.file(top + Vec3::Z * build.long / 2.0), head, tail, (tail + tip) / 2.0];
+        let along = |t: f32| tail.lerp(tip, t);
+        (own.tip, own.thick) = (tip + (tip - tail) * 0.1 - along(0.75), build.leg / metres);
+        let mut places = vec![own.file(stood.trunk().0), own.file(top + Vec3::Z * build.long / 2.0), head, tail, along(0.25)];
         for limb in &limbs {
             places.extend(limb.iter().map(|p| own.file(*p)));
         }
+        places.extend([along(0.5), along(0.75)]);
         // What holds each point of the skin: each bone is a line with a thickness, and a point
         // is held most by what it is nearest. A leg's bones hold nothing on the other side.
         let leg = build.leg / metres;
@@ -254,8 +260,10 @@ impl Own {
             (0, own.file(Vec3::new(0.0, build.tall, -build.long / 2.0)), own.file(Vec3::new(0.0, build.tall, build.long / 2.0)), deep / metres * 0.45, 0.0),
             (1, places[1], head, deep / metres * 0.3, 0.0),
             (2, head, head + ahead * (front - z(head)).max(leg), deep / metres * 0.3, 0.0),
-            (3, tail, places[4], leg, 0.0),
-            (4, places[4], tip, leg, 0.0),
+            (3, tail, along(0.25), leg, 0.0),
+            (4, along(0.25), along(0.5), leg, 0.0),
+            (19, along(0.5), along(0.75), leg, 0.0),
+            (20, along(0.75), tip, leg, 0.0),
         ];
         for (n, bones) in LEGS.iter().enumerate() {
             let sided = if n % 2 == 0 { -1.0 } else { 1.0 };
@@ -285,9 +293,9 @@ impl Own {
                 // leg: the legs stand either side of it.)
                 let between = z(*at) < hind && x(*at).abs() < wide * 0.2;
                 let mine = |bone: usize| match bone {
-                    3 | 4 => z(*at) < hind - reach * 0.3 || between,
+                    3 | 4 | 19 | 20 => z(*at) < hind - reach * 0.3 || between,
                     5..=10 => (z(*at) - fore).abs() < reach,
-                    11.. => (z(*at) - hind).abs() < reach && !between,
+                    11..=18 => (z(*at) - hind).abs() < reach && !between,
                     _ => true,
                 };
                 for l in lines.iter().filter(|l| mine(l.0) && (l.4 == 0.0 || x(*at) * l.4 > -wide * 0.05)) {
@@ -346,7 +354,7 @@ impl Own {
             side: self.right,
             legs: LEGS.iter().enumerate().map(|(n, bones)| Leg { chain: bones.to_vec(), front: n < 2, left: n % 2 == 1 }).collect(),
             head: vec![1, 2],
-            tail: vec![3, 4],
+            tail: TAIL.to_vec(),
             spine: vec![0],
             others: Vec::new(),
             arms: Vec::new(),
@@ -387,11 +395,11 @@ impl Own {
         // (Bent along its length, a little at its root and as much again half way: all at
         // the root, a pony's long tail was a hinge and the skin there was pulled to three
         // times its length.)
-        for turn in 0..90 {
-            if sk.pose_world(&pose)[4].transform_point3(self.tip).y >= self.origin.y + self.thick {
+        for turn in 0..180 {
+            if sk.pose_world(&pose)[20].transform_point3(self.tip).y >= self.origin.y + self.thick {
                 break;
             }
-            clips::turn_now(sk, &mut pose, 3 + turn % 2, Quat::from_axis_angle(self.right, 1.5f32.to_radians()));
+            clips::turn_now(sk, &mut pose, TAIL[turn % 4], Quat::from_axis_angle(self.right, 1f32.to_radians()));
         }
         pose
     }
@@ -406,8 +414,9 @@ impl Own {
             let turn = i as f32 / n * std::f32::consts::TAU;
             let nose = (sk.pose_world(pose)[0].to_scale_rotation_translation().1 * (sk.joints[0].world.to_scale_rotation_translation().1.inverse() * self.ahead)).y.clamp(-1.0, 1.0).asin();
             clips::turn_now(sk, pose, 1, Quat::from_axis_angle(self.right, nose * 0.7 + 0.03 * much * (2.0 * turn).sin()));
-            clips::turn_now(sk, pose, 3, Quat::from_axis_angle(Vec3::Y, 0.2 * much * turn.sin()));
-            clips::turn_now(sk, pose, 4, Quat::from_axis_angle(Vec3::Y, 0.25 * much * (turn - 0.9).sin()));
+            for (k, bone) in TAIL.into_iter().enumerate() {
+                clips::turn_now(sk, pose, bone, Quat::from_axis_angle(Vec3::Y, 0.12 * much * (turn - 0.6 * k as f32).sin()));
+            }
         }
     }
 
@@ -427,11 +436,21 @@ impl Own {
                     walker.step(1.0 / FPS, Vec3::ZERO, 0.0, 1.0, |_, _| 0.0);
                 }
                 let mut pose = self.pose(sk, &walker, 0.0);
-                clips::turn_now(sk, &mut pose, 3, Quat::from_axis_angle(self.right, lift));
+                if lift < 0.0 {
+                    // (So much of the way back to how it hangs.)
+                    let rest = sk.rest();
+                    for bone in TAIL {
+                        pose.rotations[bone] = pose.rotations[bone].slerp(rest.rotations[bone], -lift);
+                    }
+                } else {
+                    clips::turn_now(sk, &mut pose, 3, Quat::from_axis_angle(self.right, lift));
+                }
                 pose
             };
             let under = self.build.tall - self.build.deep / 2.0;
-            let tried: Vec<(f32, Pose, Option<(f32, bool)>)> = (-8..=6).flat_map(|k| [0.0f32, 0.15, 0.3, 0.5].map(|lift| (k, lift))).map(|(k, lift)| { let pose = lain(k as f32 * 0.02 * under, lift); let said = judge(&pose); (k as f32, pose, said) }).collect();
+            // (Or let back down: a long tail of hair joined to the legs it hangs between tears if
+            // it is swung clear of them, and lies better left where it hangs.)
+            let tried: Vec<(f32, Pose, Option<(f32, bool)>)> = (-8..=6).flat_map(|k| [-1.0f32, -0.5, 0.0, 0.15, 0.3, 0.5].map(|lift| (k, lift))).map(|(k, lift)| { let pose = lain(k as f32 * 0.02 * under, lift); let said = judge(&pose); (k as f32, pose, said) }).collect();
             let best = tried.iter().filter(|t| t.2.is_some_and(|s| s.1)).chain(tried.iter()).min_by(|a, b| (!a.2.is_some_and(|s| s.1), a.2.map_or(a.0.abs(), |s| s.0)).partial_cmp(&(!b.2.is_some_and(|s| s.1), b.2.map_or(b.0.abs(), |s| s.0))).unwrap_or(std::cmp::Ordering::Equal));
             let pose = best.map_or_else(|| lain(0.0, 0.0), |b| b.1.clone());
             return Ok(Clip { name: name.into(), looping: true, frames: vec![pose; (FPS * 4.0) as usize + 1], source: "walker", speed: None });
