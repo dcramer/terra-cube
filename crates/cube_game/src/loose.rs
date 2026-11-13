@@ -17,18 +17,29 @@ impl Plugin for LoosePlugin {
     }
 }
 
-/// A piece being drawn: which, and what it turns about.
+/// A piece being drawn: which; and, once it has landed, the seconds it is still drawn (the
+/// chunks it went into are meshed on other threads, and for the frames that takes it was
+/// nowhere: a felled tree blinked as it came to rest).
 #[derive(Component)]
-struct Falling(u32, Vec3);
+struct Falling(u32, Option<f32>);
 
-fn fall(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<crate::world::Look>>, mut drawn: Query<(Entity, &Falling, &mut Transform)>, mut meshes: ResMut<Assets<Mesh>>, mut making: Local<std::collections::HashMap<u32, bevy::tasks::Task<cube_voxel::mesh::MeshData>>>) {
+fn fall(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<crate::world::Look>>, mut drawn: Query<(Entity, &mut Falling, &mut Transform)>, time: Res<Time>, mut meshes: ResMut<Assets<Mesh>>, mut making: Local<std::collections::HashMap<u32, bevy::tasks::Task<cube_voxel::mesh::MeshData>>>) {
     let (Some(live), Some(look)) = (live, look) else { return };
     let pieces = &live.0.loose.pieces;
-    for (entity, falling, mut at) in &mut drawn {
+    for (entity, mut falling, mut at) in &mut drawn {
         match pieces.iter().find(|p| p.id == falling.0) {
             // (A point of it that was at `p` is at pivot + shift + turn (p - pivot).)
-            Some(piece) => *at = Transform { translation: falling.1 + piece.shift - piece.turn * falling.1, rotation: piece.turn, scale: Vec3::ONE },
-            None => commands.entity(entity).despawn(),
+            // (About what it turns about now: that changes as a tree's top strikes and it
+            // settles about its top. Drawn about where it first stood, it was gone for the
+            // second it took to settle.)
+            Some(piece) => *at = Transform { translation: piece.pivot + piece.shift - piece.turn * piece.pivot, rotation: piece.turn, scale: Vec3::ONE },
+            None => {
+                let left = falling.1.unwrap_or(0.25) - time.delta_secs();
+                falling.1 = Some(left);
+                if left <= 0.0 {
+                    commands.entity(entity).despawn();
+                }
+            }
         }
     }
     // Each new piece's mesh is made on another thread (a tree is ten thousand cells, and made
@@ -46,7 +57,7 @@ fn fall(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<crate:
                     .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs)
                     .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, data.tangents)
                     .with_inserted_indices(Indices::U32(data.indices));
-                commands.spawn((Falling(piece.id, piece.pivot), Mesh3d(meshes.add(mesh)), MeshMaterial3d(look.solid.clone()), Transform { translation: piece.pivot + piece.shift - piece.turn * piece.pivot, rotation: piece.turn, scale: Vec3::ONE }));
+                commands.spawn((Falling(piece.id, None), Mesh3d(meshes.add(mesh)), MeshMaterial3d(look.solid.clone()), Transform { translation: piece.pivot + piece.shift - piece.turn * piece.pivot, rotation: piece.turn, scale: Vec3::ONE }));
             }
             Some(None) => {}
             None => {

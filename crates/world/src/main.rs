@@ -498,7 +498,10 @@ fn fell_command(args: &Args) -> ! {
     let falling = started.elapsed().as_secs_f32() * 1000.0;
     let took = ticks as f32 * cube_sim::DT;
     checks.bar("fell seconds", took, (0.8..12.0).contains(&took), "between 0.8 and 12 s to come down");
-    let down = loose.landed.first().copied();
+    // (The tree itself: the most of it that was put back at once. Its top striking is noted
+    // first, with nothing put, and its twigs after.)
+    let struck = loose.landed.iter().map(|l| l.speed).fold(0.0, f32::max);
+    let down = loose.landed.iter().copied().max_by_key(|l| l.put).map(|l| cube_sim::loose::Landed { speed: struck, ..l });
     let kept = down.map_or(0.0, |d| d.put as f32 / d.cells.max(1) as f32);
     checks.bar("fell kept", kept, kept > 0.8, "at least 0.8 of its cells are put back");
     // Lying: its middle is low, where a standing tree's is half its height up.

@@ -30,8 +30,12 @@
 //! a specific way, so it looks interesting): it goes the way it leans, more than the way it
 //! was pushed; it hangs a moment and then goes faster and faster; and it comes down whole,
 //! trunk and limbs, along the line it fell, to be cut into logs where it lies. Only the
-//! outermost twigs of its crown snap off as it strikes, and drop where they are. The same
-//! cut fells the same tree the same way: nothing is thrown about.
+//! outermost twigs of its crown snap off as it strikes, and drop where they are. Then it
+//! **settles**: its top is down and its butt is still up at the height of the stump, so it
+//! turns back about its top and slides a little way on, until its butt is on the ground
+//! beside the stump and it lies flat. (Stopped where its top first struck, it lay as a ramp
+//! from stump to tip, and a length cut out of its middle hung in the air.) The same cut
+//! fells the same tree the same way: nothing is thrown about.
 //!
 //! **What is cut is still a thing** ([`Thing`]; the developer, 2026-11-12: a tree is to be
 //! known as a tree still, since a world this size is made and dropped as it is walked and
@@ -99,6 +103,13 @@ pub struct Piece {
     brittle: bool,
     /// Which thing it is the fallen part of, if it is a tree gone over.
     thing: Option<u32>,
+    /// How it was turned when it began the turn it is making (nothing, going over; as its
+    /// top struck, settling), and whether it is settling. And the part of it that is not
+    /// tried against the world: what is within so far of a place in it (its foot on the
+    /// stump, going over; its top on the ground, settling).
+    base: Quat,
+    settling: bool,
+    spare: (Vec3, f32),
     /// How tall it is, metres, and the places of it that are tried against the world.
     tall: f32,
     feel: Vec<Vec3>,
@@ -531,7 +542,7 @@ impl Loose {
         self.begun.push((pivot, cells.len(), over.is_some()));
         // (A tree gone over is the thing whose trunk stood here.)
         let thing = over.and_then(|_| self.things.iter().find(|t| t.lies.is_none() && t.foot().is_some_and(|f| f.with_y(0.0).distance(pivot.with_y(0.0)) < 1.5)).map(|t| t.id));
-        self.pieces.push(Piece { id: self.next, cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, spin: Vec3::ZERO, brittle, thing, tall, feel, age: 0.0 });
+        self.pieces.push(Piece { id: self.next, cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, spin: Vec3::ZERO, brittle, thing, base: Quat::IDENTITY, settling: false, spare: (pivot, tall * 0.3), tall, feel, age: 0.0 });
         changed
     }
 
@@ -579,6 +590,9 @@ impl Loose {
                 spin: Vec3::new(odd(5), odd(6), odd(7)) * 5.0 * throw.min(1.0),
                 brittle: false,
                 thing: None,
+                base: Quat::IDENTITY,
+                settling: false,
+                spare: (middle, 0.0),
                 tall: 3.0 * CELL,
                 feel,
                 age: 0.0,
@@ -597,6 +611,24 @@ impl Loose {
             let before = (piece.shift, piece.turn);
             let speed;
             match &mut piece.over {
+                Some((way, tipped, rate)) if piece.settling => {
+                    // Its top is down: it turns back about it, its butt coming down off the
+                    // stump, and slides on a little the way it fell.
+                    // (First on, a good stride and more, and only then down: a trunk's foot
+                    // spreads into roots a metre out, and let down at once the butt came to
+                    // rest on them, still in the air.)
+                    if piece.age < 0.4 {
+                        piece.shift += *way * 3.5 * dt;
+                    } else {
+                        *rate -= 5.0 * dt;
+                        *tipped += *rate * dt;
+                    }
+                    piece.turn = Quat::from_axis_angle(Vec3::Y.cross(*way).normalize_or(Vec3::Z), *tipped) * piece.base;
+                    speed = rate.abs() * piece.tall * 0.5;
+                    if *tipped < -1.2 {
+                        piece.age = 99.0;
+                    }
+                }
                 Some((way, tipped, rate)) => {
                     // As a pole on its end goes over: faster the further it has gone.
                     *rate += 1.5 * FALL / piece.tall.max(1.0) * tipped.sin() * dt;
@@ -618,15 +650,17 @@ impl Loose {
             }
             // What of it is tried: all of it as it drops; as it goes over, what is well
             // above its foot (its foot stands on the stump it was cut from).
-            let foot = piece.pivot.y + piece.tall * 0.25;
             let going_over = piece.over.is_some();
             // (Stopped by the ground and by what has itself been cut or has fallen; not by
             // leaf, and not by a tree still standing whole: in a wood every tree's limbs are
             // in its neighbours', and stopped by those nothing cut ever came down. It goes
             // through them, and where it lies across a standing trunk it is not put.)
             let stops = |at: Vec3| bears(world.bit((at / BIT).floor().as_ivec3()));
-            let meets = |piece: &Piece| piece.feel.iter().filter(|p| !going_over || p.y > foot).any(|p| stops(piece.now(*p)));
+            let tried = |piece: &Piece, p: &Vec3| !going_over || p.distance(piece.spare.0) > piece.spare.1;
+            let meets = |piece: &Piece| piece.feel.iter().filter(|p| tried(piece, p)).any(|p| stops(piece.now(*p)));
             let met = meets(piece);
+            // (Where it struck, for a tree whose top has just come down: what it will settle about.)
+            let struck = (met && going_over && !piece.settling).then(|| piece.feel.iter().filter(|p| tried(piece, p)).find(|p| stops(piece.now(**p))).copied()).flatten();
             if met {
                 // Back to where it last was clear, as near to touching as six halvings find:
                 // put down where it met the world it would be a step's depth inside it, and
@@ -641,26 +675,31 @@ impl Loose {
                 (piece.shift, piece.turn) = (before.0.lerp(after.0, clear), before.1.slerp(after.1, clear));
             }
             if met || piece.age > 20.0 {
-                down.push((n, speed));
+                down.push((n, speed, struck));
             }
         }
-        for (n, speed) in down.into_iter().rev() {
+        let mut settling = Vec::new();
+        for (n, speed, struck) in down.into_iter().rev() {
             let piece = self.pieces.swap_remove(n);
             let mut piece = piece;
+            // A tree's top has struck: it is heard, its outermost twigs snap off, and it
+            // settles about where it struck (below, once every piece has been looked at).
+            if let (Some(top), Some((way, ..))) = (struck, piece.over) {
+                self.landed.push(Landed { at: piece.now(top), cells: piece.cells.len(), put: 0, speed });
+                if speed > CRASHES {
+                    let (foot, stem) = (piece.pivot, (piece.tall * 0.33).max(1.2));
+                    piece = self.shatter(piece, speed, 0.04, |c| ((c.as_vec3() + 0.5) * CELL - foot).with_y(0.0).length() < stem);
+                    piece.feel.retain(|p| piece.cells.contains_key(&(*p / CELL).floor().as_ivec3()));
+                }
+                (piece.shift, piece.pivot) = (piece.pivot + piece.shift + piece.turn * (top - piece.pivot) - top, top);
+                (piece.base, piece.over, piece.settling, piece.spare, piece.age) = (piece.turn, Some((way, 0.0, 0.0)), true, (top, piece.tall * 0.3), 0.0);
+                settling.push(piece);
+                continue;
+            }
             if piece.brittle && speed > SHATTERS && piece.cells.len() >= 8 {
                 self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put: 0, speed });
                 self.shatter(piece, speed, 1.0, |_| false);
                 continue;
-            }
-            // A tree gone over comes down as a tree: its trunk and its limbs land whole, to
-            // be cut into logs where they lie. Only the outermost of its crown (what stood
-            // further from its trunk than a third of its height) snaps off as it strikes,
-            // and that drops where it is: it is not thrown. (The developer, 2026-11-12: a
-            // felled tree must be predictable, not burst into pieces; a few small ones may
-            // fall from it. First every limb broke off and was flung, ninety lumps a tree.)
-            if piece.over.is_some() && speed > CRASHES {
-                let (foot, stem) = (piece.pivot, (piece.tall * 0.33).max(1.2));
-                piece = self.shatter(piece, speed, 0.04, |c| ((c.as_vec3() + 0.5) * CELL - foot).with_y(0.0).length() < stem);
             }
             let (put, touched, lo, hi) = land(world, &piece);
             changed.extend(touched);
@@ -672,6 +711,7 @@ impl Loose {
             changed.extend(self.loosen(world, lo - 1, hi + 1, Vec3::X));
             self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put, speed });
         }
+        self.pieces.extend(settling);
         changed
     }
 }
@@ -902,6 +942,39 @@ mod tests {
         let pit = count(&w, Vec3::new(2.5, -1.0, 0.0), Vec3::new(4.5, 0.0, 2.0), Block::Water);
         let over = count(&w, Vec3::new(-6.0, 0.0, -6.0), Vec3::new(6.0, 4.0, 6.0), Block::Water);
         assert!(pit == 256 && over == 0, "{pit} of 256 cells of the pit filled, {over} cells of water above where it stood");
+    }
+
+    #[test]
+    fn a_trunk_lying_on_the_ground_is_cut_into_lengths_that_stay_where_they_lie() {
+        let mut w = floor();
+        w.fill(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.5, 6.0, 0.5), Block::Timber);
+        let mut loose = Loose::default();
+        loose.cut(&mut w, Vec3::new(0.25, 0.75, 0.25), 0.45, Vec3::X, &[], Some(Stuff::Wood));
+        run(&mut loose, &mut w);
+        // Where it lies: flat on the ground (none of it more than its own thickness up), from
+        // one end to the other.
+        let across = |w: &World, x: f32| count(w, Vec3::new(x - 0.1, 0.0, -1.0), Vec3::new(x + 0.1, 1.25, 1.5), Block::Timber);
+        let along: Vec<f32> = (0..60).map(|i| 0.9 + i as f32 * 0.25).filter(|x| across(&w, *x) > 0).collect();
+        let (from, to) = (along[0], along[along.len() - 1]);
+        let (lying, up) = (count(&w, Vec3::new(0.8, 0.0, -1.0), Vec3::new(16.0, 0.75, 1.5), Block::Timber), count(&w, Vec3::new(0.8, 0.75, -1.0), Vec3::new(16.0, 8.0, 1.5), Block::Timber));
+        assert!(to - from > 3.5 && up == 0 && lying > 60, "it lies from {from:.1} to {to:.1} m, {lying} cells low and {up} higher than its own thickness");
+        // Two cuts across it with an axe, chop by chop, across it and down through it: three
+        // lengths, each left where it lay, the wood cut away carried off and none of the
+        // stone under it touched.
+        let (first, second) = (from + (to - from) * 0.35, from + (to - from) * 0.68);
+        let mut taken = 0;
+        for x in [first, second] {
+            for (y, z) in [(0.6, 0.0), (0.6, 0.25), (0.6, 0.5), (0.3, 0.0), (0.3, 0.25), (0.3, 0.5)] {
+                let cut = loose.cut(&mut w, Vec3::new(x, y, z), 0.28, Vec3::X, &[], Some(Stuff::Wood));
+                assert_eq!(cut.taken[Stuff::Stone as usize], 0, "an axe cut the ground under the log");
+                taken += cut.taken[Stuff::Wood as usize];
+            }
+        }
+        assert!(loose.pieces.is_empty(), "a length cut from a lying trunk came loose: {} pieces", loose.pieces.len());
+        let thirds = [(from + first) / 2.0, (first + second) / 2.0, (second + to) / 2.0].map(|x| across(&w, x));
+        assert!(across(&w, first) == 0 && across(&w, second) == 0 && thirds.iter().all(|n| *n > 0), "not three lengths: wood at the cuts {} and {}, between them {thirds:?}", across(&w, first), across(&w, second));
+        let left = count(&w, Vec3::new(0.8, 0.0, -1.0), Vec3::new(16.0, 1.25, 1.5), Block::Timber);
+        assert!(taken > 200 && left < lying && left as f32 > lying as f32 * 0.6, "took {taken} bits; {left} of {lying} cells of it left");
     }
 
     #[test]
