@@ -423,6 +423,20 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         // lowest of its skin is under the floor. (Six made rest poses were, by 4% to 16% of
         // the creature's height, five of them marked as looked at: the check for it was
         // written only after the developer saw the wolf's paws in the floor.)
+        // An animal whose skin will not take much bending (`ease` under 1: a toad, a tortoise)
+        // strikes with its whole body, which bends nothing: drawn back and thrown forward a
+        // third of its length. Its made attack at a third of its turns could not be told from
+        // standing (looked at 2026-11-13). (Feeding the same way, dipped, put its feet in the
+        // ground: its eating is still faint.)
+        if clip.source == "made" && creature.ease < 1.0 && owned.is_none() && crawler.is_none() && plan.rig != "humanoid" && name == "attack" {
+            let n = clip.frames.len().max(2) as f32 - 1.0;
+            let bump = |t: f32, from: f32, top: f32, to: f32| if t <= from || t >= to { 0.0 } else if t < top { (t - from) / (top - from) } else { (to - t) / (to - top) };
+            for (i, pose) in clip.frames.iter_mut().enumerate() {
+                let t = i as f32 / n;
+                let moved = roles.forward * roles.length * (0.3 * bump(t, 0.3, 0.5, 0.9) - 0.1 * bump(t, 0.0, 0.25, 0.4)) + Vec3::Y * roles.height * 0.12 * bump(t, 0.3, 0.45, 0.7);
+                pose.root_t += skeleton.base.inverse().transform_vector3(moved);
+            }
+        }
         // On our own skeleton, eating that tears the skin is eased back toward standing until
         // it does not: a boar has next to no neck, and its head cannot be brought as low as
         // a deer's without pulling its skin to twice its length.
