@@ -359,6 +359,16 @@ fn watch(args: Res<crate::Args>, registry: Res<Registry>, wild: Query<(&Creature
     let Some(kind) = args.watch.as_deref() else { return };
     let from = Vec3::new(args.at.0, 0.0, args.at.1);
     let near = wild.iter().filter(|(c, _)| registry.0.get(c.def).is_some_and(|d| d.id == kind)).min_by(|a, b| a.1.translation.with_y(0.0).distance(from).total_cmp(&b.1.translation.with_y(0.0).distance(from)));
+    // (None of its kind is being lived near the camera: then to where the nearest of them
+    // is, asleep or not, which wakes it. Asked for a wolf at four in the afternoon the
+    // camera sat on empty ground for ten seconds, and a fox the same.)
+    if near.is_none() && let Some(mut camera) = cameras.iter_mut().next() {
+        let Some(k) = live.0.kind(kind) else { return };
+        if let Some(a) = live.0.agents.values().filter(|a| a.kind == k && a.dead.is_none()).min_by(|a, b| a.body.pos.with_y(0.0).distance(from).total_cmp(&b.body.pos.with_y(0.0).distance(from))) {
+            *camera = Transform::from_translation(a.body.pos + Vec3::new(5.0, 3.0, 5.0)).looking_at(a.body.pos, Vec3::Y);
+        }
+        return;
+    }
     let (Some((creature, at)), Some(mut camera)) = (near, cameras.iter_mut().next()) else { return };
     let size = registry.0[creature.def].meta.height.max(registry.0[creature.def].meta.length).max(0.3);
     let focus = at.translation + Vec3::Y * size * 0.4;
