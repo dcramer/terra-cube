@@ -437,6 +437,23 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
                 pose.root_t += skeleton.base.inverse().transform_vector3(moved);
             }
         }
+        // And feeds the same way: its body let down a little and forward, bobbing, with its
+        // feet put back where they stand so that its legs bend under it. Kept only if its skin
+        // takes it. (Without its feet put back they went into the ground with it.)
+        if clip.source == "made" && creature.ease < 1.0 && owned.is_none() && crawler.is_none() && plan.rig != "humanoid" && name == "eat" {
+            let (n, whole) = (clip.frames.len().max(2) as f32 - 1.0, clip.frames.clone());
+            for (i, pose) in clip.frames.iter_mut().enumerate() {
+                let t = i as f32 / n;
+                let down = (t / 0.2).min((1.0 - t) / 0.2).clamp(0.0, 1.0);
+                let moved = (roles.forward * roles.length * 0.05 - Vec3::Y * roles.height * (0.09 + 0.03 * (t * std::f32::consts::TAU * 6.0).sin())) * down;
+                pose.root_t += skeleton.base.inverse().transform_vector3(moved);
+                clips::stand_folded(&skeleton, &roles, pose);
+            }
+            let bad = clip.frames.iter().any(|f| f.rotations.iter().any(|r| !r.is_finite())) || crate::check::tears(&glb, &skeleton, &clip.frames) > plan.max_stretch.unwrap_or(1.2) * 0.95;
+            if bad {
+                clip.frames = whole;
+            }
+        }
         // On our own skeleton, eating that tears the skin is eased back toward standing until
         // it does not: a boar has next to no neck, and its head cannot be brought as low as
         // a deer's without pulling its skin to twice its length.

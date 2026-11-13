@@ -643,7 +643,7 @@ pub(crate) fn folds_at(sk: &Skeleton, leg: &crate::rig::Leg) -> (usize, usize) {
 }
 
 /// Every foot back where it stands at rest, each leg folding where it folds ([`folds_at`]).
-fn stand_folded(sk: &Skeleton, roles: &Roles, pose: &mut Pose) {
+pub(crate) fn stand_folded(sk: &Skeleton, roles: &Roles, pose: &mut Pose) {
     for leg in &roles.legs {
         let was = pose.rotations.clone();
         reach_by(sk, roles, pose, leg, folds_at(sk, leg), leg.foot(), sk.position(leg.foot()));
