@@ -241,7 +241,16 @@ fn run_command(args: &Args) -> ! {
         checks.bar(&format!("{} boxed-in", kind.id), boxed, boxed <= 0.1, "at most 0.10 of the time");
         checks.bar(&format!("{} swimming", kind.id), swim, swim <= 0.05, "at most 0.05 of the time");
         if args.seconds >= 60.0 {
-            checks.bar(&format!("{} went", kind.id), moved, moved >= 3.0, "at least 3 m each");
+            // That it gets about: three metres, or for a small thing eight times its height (a
+            // frog that sits and waits goes two metres in five minutes and is not stuck). Not
+            // asked of a kind that lay up through most of the watch: one boar asleep out of
+            // its hours goes nowhere, and whether a thing cannot move is `stuck` and
+            // `boxed-in`, above.
+            // (At rest out of its hours, lying or on its feet where it is one that stands: `Log::lain`.)
+            let (lain, need) = (sum(&|l| l.acts[Act::Lie as usize].max(l.lain)) / total, (kind.height * 8.0).min(3.0));
+            if lain < 0.5 {
+                checks.bar(&format!("{} went", kind.id), moved, moved >= need, &format!("at least {need:.1} m each"));
+            }
         }
     }
     checks.finish()
