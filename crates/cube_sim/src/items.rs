@@ -15,10 +15,58 @@ pub enum Item {
     Bow,
     /// Worn while it is carried: it takes a quarter off every blow.
     Jerkin,
+    /// Cuts wood, and nothing else; and breaks stone, and nothing else. (With the shovel,
+    /// which digs earth: a thing is cut by the tool that is for it, [`Item::cuts`].)
+    Axe,
+    Pick,
+    /// What was cut, carried: timber, stone and earth.
+    Timber,
+    Stone,
+    Earth,
+}
+
+/// What the world is made of, as a tool sees it: each is cut by one tool.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Stuff {
+    Earth,
+    Wood,
+    Stone,
+}
+
+impl Stuff {
+    /// What a block is, if a tool cuts it at all: water, air and what grows low are not cut.
+    pub fn of(block: cube_voxel::Block) -> Option<Stuff> {
+        use cube_voxel::Block;
+        match block {
+            b if b.wood() || b.foliage() => Some(Stuff::Wood),
+            Block::Stone | Block::Slate | Block::Chalk | Block::Rock | Block::Shard => Some(Stuff::Stone),
+            Block::Grass | Block::Dirt | Block::Sand | Block::Snow | Block::Turf | Block::Gravel | Block::Moss | Block::Litter => Some(Stuff::Earth),
+            _ => None,
+        }
+    }
+    /// What cutting it gives.
+    pub fn yields(self) -> Item {
+        match self {
+            Stuff::Earth => Item::Earth,
+            Stuff::Wood => Item::Timber,
+            Stuff::Stone => Item::Stone,
+        }
+    }
 }
 
 impl Item {
-    pub const ALL: [Item; 7] = [Item::Torch, Item::Sword, Item::Shovel, Item::Berries, Item::Meat, Item::Bow, Item::Jerkin];
+    pub const ALL: [Item; 12] = [Item::Torch, Item::Sword, Item::Shovel, Item::Berries, Item::Meat, Item::Bow, Item::Jerkin, Item::Axe, Item::Pick, Item::Timber, Item::Stone, Item::Earth];
+
+    /// What it cuts, and how big a bite it takes of it, metres across: a spadeful of earth,
+    /// a chip of wood, a lump of stone. Nothing else cuts anything.
+    pub fn cuts(self) -> Option<(Stuff, f32)> {
+        match self {
+            Item::Shovel => Some((Stuff::Earth, 0.8)),
+            Item::Axe => Some((Stuff::Wood, 0.56)),
+            Item::Pick => Some((Stuff::Stone, 0.6)),
+            _ => None,
+        }
+    }
 
     pub fn name(self) -> &'static str {
         match self {
@@ -29,6 +77,11 @@ impl Item {
             Item::Meat => "Meat",
             Item::Bow => "Bow",
             Item::Jerkin => "Leather jerkin",
+            Item::Axe => "Axe",
+            Item::Pick => "Pick",
+            Item::Timber => "Timber",
+            Item::Stone => "Stone",
+            Item::Earth => "Earth",
         }
     }
 
@@ -41,6 +94,7 @@ impl Item {
         match self {
             Item::Berries => 20,
             Item::Meat => 10,
+            Item::Timber | Item::Stone | Item::Earth => 99,
             _ => 1,
         }
     }
@@ -49,10 +103,11 @@ impl Item {
     pub fn power(self) -> Option<f32> {
         match self {
             Item::Sword => Some(28.0),
-            Item::Shovel => Some(12.0),
+            Item::Shovel | Item::Pick => Some(12.0),
+            Item::Axe => Some(20.0),
             Item::Torch => Some(9.0),
             Item::Bow => Some(16.0),
-            Item::Berries | Item::Meat | Item::Jerkin => None,
+            Item::Berries | Item::Meat | Item::Jerkin | Item::Timber | Item::Stone | Item::Earth => None,
         }
     }
 
@@ -89,8 +144,9 @@ pub enum Used {
     Swing,
     /// One was eaten.
     Ate,
-    /// The ground in front is to be dug.
-    Dig,
+    /// What is in front is to be cut, if it is this stuff: a bite so far across (which is
+    /// the caller's to do: the world is not ours here).
+    Cut(Stuff, f32),
     Nothing,
 }
 
@@ -113,10 +169,11 @@ impl Default for Pack {
 }
 
 impl Pack {
-    /// What a person sets out with: a torch, a short sword, a shovel, a handful of berries and a bow.
+    /// What a person sets out with: a torch, a short sword, a shovel, a handful of berries, a
+    /// bow, an axe and a pick.
     pub fn starting() -> Self {
         let mut pack = Pack::default();
-        for (item, count) in [(Item::Sword, 1), (Item::Torch, 1), (Item::Shovel, 1), (Item::Berries, 6), (Item::Bow, 1)] {
+        for (item, count) in [(Item::Sword, 1), (Item::Torch, 1), (Item::Shovel, 1), (Item::Berries, 6), (Item::Bow, 1), (Item::Axe, 1), (Item::Pick, 1)] {
             pack.add(item, count);
         }
         pack

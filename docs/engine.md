@@ -51,7 +51,9 @@ The role model is Teardown: everything can be cut, and what a cut leaves standin
 - **The game only draws** (`cube_game::loose`): each piece meshed by the world's own mesher from a world holding only the piece, so it looks falling as it did standing and will lying, and moved as the simulation moves it. A script's `chop` bites the nearest trunk.
 - **Stone and earth that come down hard shatter** (`Loose::shatter`, over 4.5 m/s): into lumps some three cells across, thrown out and up and turning, each landing on its own as rubble. Wood does not. Nothing random: how a lump is thrown goes by where it was.
 - **What comes down strikes whoever is under it** (`Sim::step`): harm by its speed and size, a tree a killing blow and a clod a bruise.
-- **Not yet**: a cut is one free ball whatever is in hand (the developer, 2026-11-12: it is to be earned, a tree chopped and ground dug, each tool on its own stuff); a tree's fall is not yet staged (which way by the notch, limbs breaking as it lands, leaves thrown); what is dug goes nowhere; water does not flow into holes; no sound of any of it.
+- **A thing is cut by the tool that is for it** (`Item::cuts`, `items::Stuff`; the developer, 2026-11-12: destruction is earned, a tree chopped and ground dug, not anything erased anywhere): a shovel takes earth out of its ball, an axe wood, a pick stone, and each leaves the rest (`loose::carve`). What is cut away is carried: timber, stone, earth, one for a cell's worth (`Sim::took`).
+- **A tree's fall is staged** (the same day: what is cut down should behave in a specific way, so it looks interesting): it goes the way it leans more than the way it was pushed; it hangs a moment on its stump and then goes faster and faster; as its crown strikes (its top over 8 m/s) what stood out from the trunk breaks off in lumps thrown a little way, and the trunk lands whole along the line it fell.
+- **Not yet**: no sound of any of it and nothing thrown up where it lands; what is cut is cut at once, not at the blow of a swing; what is carried cannot be put down as itself (a click still builds a lump of stone); water does not flow into holes.
 
 ### What grows is drawn as shapes
 

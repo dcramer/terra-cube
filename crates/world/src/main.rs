@@ -463,7 +463,7 @@ fn fell_command(args: &Args) -> ! {
     let (mut bites, mut worked) = (0, 0);
     'cutting: for row in [0, -1, 1, -2, 2, -3, 3] {
         for step in -4..=4 {
-            let cut = loose.cut(&mut world, up + Vec3::new(step as f32 * 0.25, 0.0, row as f32 * 0.3), 0.42, Vec3::X, &[&form]);
+            let cut = loose.cut(&mut world, up + Vec3::new(step as f32 * 0.25, 0.0, row as f32 * 0.3), 0.42, Vec3::X, &[&form], Some(cube_sim::items::Stuff::Wood));
             worked += cut.worked;
             // (As the game does: what is cells now is no longer among the shapes.)
             form.limbs.retain(|l| !cut.trees.contains(&(0, l.tree)));

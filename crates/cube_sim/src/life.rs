@@ -594,14 +594,29 @@ impl Sim {
         true
     }
 
-    /// A person uses what is in their hand: a blade swings, berries are eaten, a shovel asks
-    /// for the ground to be dug (which is the caller's to do: the world is not ours here).
+    /// A person uses what is in their hand: a blade swings, berries are eaten, a shovel, an
+    /// axe or a pick asks for what it cuts to be cut (which is the caller's to do: the world
+    /// is not ours here).
+    ///
+    /// And what a cut took is theirs: [`Sim::took`].
+    pub fn took(&mut self, id: u32, taken: [u32; 3]) {
+        use crate::items::Stuff;
+        let Some(pack) = self.agents.get_mut(&id).and_then(|a| a.pack.as_mut()) else { return };
+        for (stuff, bits) in [Stuff::Earth, Stuff::Wood, Stuff::Stone].into_iter().zip(taken) {
+            // (One carried for each cell's worth cut, and one for the odd half.)
+            pack.add(stuff.yields(), (bits + 62) / 125);
+        }
+    }
+
     pub fn use_held(&mut self, id: u32) -> crate::items::Used {
-        use crate::items::{Item, Used};
+        use crate::items::Used;
         let Some(agent) = self.agents.get_mut(&id).filter(|a| a.dead.is_none()) else { return Used::Nothing };
         let held = agent.pack.as_ref().and_then(|p| p.held());
         match held {
-            Some(Item::Shovel) => Used::Dig,
+            Some(item) if item.cuts().is_some() => {
+                let (stuff, across) = item.cuts().unwrap();
+                Used::Cut(stuff, across)
+            }
             Some(item) if item.heals().is_some() => {
                 let full = self.kinds[agent.kind].health();
                 if agent.health >= full || agent.doing.is_some() {
@@ -1448,7 +1463,7 @@ mod tests {
             pack.hold(pack.slots.iter().position(|s| s.is_some_and(|s| s.0 == item)).unwrap());
         };
         hand(&mut sim, Item::Shovel);
-        assert_eq!(sim.use_held(person), Used::Dig);
+        assert_eq!(sim.use_held(person), Used::Cut(crate::items::Stuff::Earth, 0.8));
         hand(&mut sim, Item::Berries);
         assert_eq!(sim.use_held(person), Used::Nothing);
         sim.agents.get_mut(&person).unwrap().health = 40.0;

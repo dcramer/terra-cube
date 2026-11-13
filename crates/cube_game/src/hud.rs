@@ -50,6 +50,11 @@ fn tint(item: Item) -> egui::Color32 {
         Item::Meat => egui::Color32::from_rgb(200, 110, 100),
         Item::Bow => egui::Color32::from_rgb(120, 150, 90),
         Item::Jerkin => egui::Color32::from_rgb(110, 80, 60),
+        Item::Axe => egui::Color32::from_rgb(135, 125, 115),
+        Item::Pick => egui::Color32::from_rgb(105, 110, 125),
+        Item::Timber => egui::Color32::from_rgb(160, 120, 70),
+        Item::Stone => egui::Color32::from_rgb(125, 125, 130),
+        Item::Earth => egui::Color32::from_rgb(105, 80, 55),
     }
 }
 

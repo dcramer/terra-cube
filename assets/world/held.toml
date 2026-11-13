@@ -57,6 +57,30 @@ pieces = [
     { size = [0.16, 0.20, 0.015], at = [0.0, 0.72, 0.0], colour = [0.45, 0.46, 0.48] },
 ]
 
+# Carried as the sword is, low at his side on an arm that swings, its head forward.
+[Axe]
+turn = [0.0, 0.0, 0.0]
+shift = [0.0, 0.0, 0.0]
+droop = -0.82
+aim = [0.15, 0.3, 0.94]
+pieces = [
+    { size = [0.03, 0.62, 0.03], at = [0.0, 0.22, 0.0], colour = [0.42, 0.30, 0.18] },
+    { size = [0.16, 0.12, 0.025], at = [0.07, 0.46, 0.0], colour = [0.50, 0.51, 0.54] },
+    { size = [0.03, 0.14, 0.03], at = [0.155, 0.46, 0.0], colour = [0.72, 0.73, 0.76] },
+]
+
+[Pick]
+turn = [0.0, 0.0, 0.0]
+shift = [0.0, 0.0, 0.0]
+droop = -0.82
+aim = [0.15, 0.3, 0.94]
+pieces = [
+    { size = [0.03, 0.72, 0.03], at = [0.0, 0.26, 0.0], colour = [0.42, 0.30, 0.18] },
+    { size = [0.44, 0.045, 0.04], at = [0.0, 0.60, 0.0], colour = [0.42, 0.43, 0.47] },
+    { size = [0.06, 0.03, 0.03], at = [0.24, 0.585, 0.0], colour = [0.42, 0.43, 0.47] },
+    { size = [0.06, 0.03, 0.03], at = [-0.24, 0.585, 0.0], colour = [0.42, 0.43, 0.47] },
+]
+
 # In the left hand, carried low at his side on an arm that swings, slanted forward; raised and
 # stood upright only to shoot. (Held out before him at arm's length the whole time, walking
 # too, it was a man carrying a signpost.)
