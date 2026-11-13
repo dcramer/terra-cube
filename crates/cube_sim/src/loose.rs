@@ -599,7 +599,18 @@ impl Loose {
     pub fn put(&mut self, world: &mut World, middle: Vec3, radius: f32, block: Block) -> HashSet<IVec3> {
         self.journal.push((self.steps, Edit::Put { middle, radius, block }));
         let middle = if block == Block::Dirt { heaped(world, middle, radius) } else { middle };
-        world.ellipsoid(middle, Vec3::splat(radius), block, true);
+        // A piece of stone or timber in hand (a lump's size) is put down as the whole cell
+        // it is in: what is built is square and its faces meet, a wall and not a heap of
+        // balls (seven pieces put one on another were one brown lump, 2026-11-13). Earth
+        // is a lump, and anything larger is the ball asked for.
+        if block != Block::Dirt && radius < CELL {
+            let cell = (middle / CELL).floor().as_ivec3();
+            if !world.get(cell).solid() || world.get(cell) == Block::Broken {
+                world.set(cell, block);
+            }
+        } else {
+            world.ellipsoid(middle, Vec3::splat(radius), block, true);
+        }
         // (And the cells beside it, whose faces toward it are drawn or not by what it is.)
         let (lo, hi) = (((middle - radius) / CELL).floor().as_ivec3() - 1, ((middle + radius) / CELL).floor().as_ivec3() + 1);
         let mut changed: HashSet<IVec3> = (lo.y..=hi.y).flat_map(|y| (lo.z..=hi.z).flat_map(move |z| (lo.x..=hi.x).map(move |x| IVec3::new(x, y, z).div_euclid(IVec3::splat(cube_voxel::CHUNK))))).collect();

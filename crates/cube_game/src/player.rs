@@ -592,7 +592,8 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
     } else if let Some(block) = lump.filter(|_| far > 1.0) {
         // Not on top of itself: a lump it stood inside would hold it fast. Into air only:
         // what is put down lies on what is there, not through it. And one fewer is carried.
-        let middle = hit - along * LUMP * 0.3;
+        // (Stone and timber go in the cell on this side of what he looks at: half a cell back.)
+        let middle = hit - along * if block == cube_voxel::Block::Dirt { LUMP * 0.3 } else { cube_voxel::CELL * 0.5 };
         // (Earth comes to rest where it falls, not where it was let go: what changed is the simulation's to say.)
         let changed = live.0.loose.put(&mut terrain.0, middle, LUMP, block);
         if std::env::var_os("LOOSE_TRACE").is_some() {
