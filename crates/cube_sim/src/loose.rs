@@ -379,7 +379,17 @@ fn from_line(p: Vec3, a: Vec3, b: Vec3) -> f32 {
 /// every limb and its leaf, as `plants` grew it. Says which, and the chunks changed.
 fn work(world: &mut World, middle: Vec3, radius: f32, forms: &[&Form], stuff: Option<Stuff>, known: &[Vec3]) -> Cut {
     let mut cut = Cut::default();
-    let mut cells: HashSet<IVec3> = HashSet::new();
+    // (Each cell made wrought as it is come to, not gathered first: making the same cell
+    // wrought twice is nothing, and a great oak is a quarter of a million cells, which took
+    // 50 ms to gather into a set and then change.)
+    let turn = |world: &mut World, cut: &mut Cut, cell: IVec3| {
+        let was = world.get(cell);
+        if was == Block::Broken || was.shaped() {
+            world.map(cell, Block::wrought);
+            cut.worked += 1;
+            cut.changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
+        }
+    };
     let (trees, stones) = (stuff.is_none_or(|s| s == Stuff::Wood), stuff.is_none_or(|s| s == Stuff::Stone));
     for (n, form) in forms.iter().enumerate() {
         // (A rooted trunk swells to twice its thickness and more at its foot.)
@@ -390,9 +400,7 @@ fn work(world: &mut World, middle: Vec3, radius: f32, forms: &[&Form], stuff: Op
         trees.retain(|t| form.limbs.iter().find(|l| l.tree == *t).is_none_or(|l| !known.contains(&l.a)));
         for tree in trees {
             for limb in form.limbs.iter().filter(|l| l.tree == tree) {
-                limb.fill(CELL, |c| {
-                    cells.insert(c);
-                });
+                limb.fill(CELL, |c| turn(world, &mut cut, c));
             }
             for clump in form.clumps.iter().filter(|c| c.tree == tree) {
                 let (lo, hi) = (((clump.middle - clump.radii) / CELL).floor().as_ivec3(), ((clump.middle + clump.radii) / CELL).floor().as_ivec3());
@@ -401,7 +409,7 @@ fn work(world: &mut World, middle: Vec3, radius: f32, forms: &[&Form], stuff: Op
                         for x in lo.x..=hi.x {
                             let c = IVec3::new(x, y, z);
                             if world.get(c).foliage() {
-                                cells.insert(c);
+                                turn(world, &mut cut, c);
                             }
                         }
                     }
@@ -415,19 +423,11 @@ fn work(world: &mut World, middle: Vec3, radius: f32, forms: &[&Form], stuff: Op
             for y in lo.y..=hi.y {
                 for z in lo.z..=hi.z {
                     for x in lo.x..=hi.x {
-                        cells.insert(IVec3::new(x, y, z));
+                        turn(world, &mut cut, IVec3::new(x, y, z));
                     }
                 }
             }
             cut.stones.push((n, k));
-        }
-    }
-    for cell in &cells {
-        let was = world.get(*cell);
-        if was == Block::Broken || was.shaped() {
-            world.map(*cell, Block::wrought);
-            cut.worked += 1;
-            cut.changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
         }
     }
     cut
@@ -453,6 +453,7 @@ impl Loose {
     /// of the ball and leaves the earth); with none, everything in the ball goes.
     pub fn cut(&mut self, world: &mut World, middle: Vec3, radius: f32, push: Vec3, forms: &[&Form], stuff: Option<Stuff>) -> Cut {
         self.journal.push((self.steps, Edit::Cut { middle, radius, push, stuff }));
+        let began = std::time::Instant::now();
         let (lo, hi) = (((middle - radius) / CELL).floor().as_ivec3() - 1, ((middle + radius) / CELL).floor().as_ivec3() + 1);
         // (A tree is made wrought only by what cuts wood, a boulder by what cuts stone.)
         // (A tree already cut into is cells, whether or not whoever keeps the shapes has
@@ -499,8 +500,9 @@ impl Loose {
         // `LOOSE_TRACE=1`: each cut in a line (where, what it took, what is loose after it).
         if std::env::var_os("LOOSE_TRACE").is_some() {
             let around = |y: f32| { let c = ((middle.with_y(y)) / CELL).floor().as_ivec3(); (-3..=3).flat_map(|z| (-3..=3).map(move |x| c + IVec3::new(x, 0, z))).map(|c| format!("{:?}", world.get(c)).chars().next().unwrap_or('?')).collect::<String>() };
-            eprintln!("loose: cut at {middle:.2?} r {radius:.2} of {stuff:?} · took {:?} · made wrought {} · {} loose · cells at the cut {} · over it {}", cut.taken, cut.worked, self.pieces.len(), around(middle.y), around(middle.y + radius + 0.3));
+            eprintln!("loose: cut at {middle:.2?} r {radius:.2} of {stuff:?} · took {:?} · made wrought {} in {:.1} ms · {} loose · cells at the cut {} · over it {}", cut.taken, cut.worked, began.elapsed().as_secs_f32() * 1000.0, self.pieces.len(), around(middle.y), around(middle.y + radius + 0.3));
         }
+        let _ = began;
         Cut { changed, ..cut }
     }
 
