@@ -62,7 +62,7 @@ The role model is Teardown: everything can be cut, and what a cut leaves standin
 - **What is carried is put down as what it was** (`Item::places`, `Used::Place`, `Sim::placed`): earth, stone or timber in hand goes into the air where he looks, a lump for each one carried. The free lump of stone a click used to build is gone.
 - **Water runs into what is opened to it** (`loose::flow`, after every cut): from water beside the cut, sideways, down, and up no higher than it stood, to 6,000 cells. A hole dug at a lake's edge fills to the lake's level. By the cell; a lake is not drained by it.
 - **Stone that comes loose is rubble** (`Block::Shard`): the land's own stone is drawn eased into the ground round it and takes its colour, and a lump of it lying in a meadow was drawn half grass.
-- A script's `drop` lets a block of stone go five metres up, to see it (looked at 2026-11-12: it breaks, piles, and a second breaks on the pile).
+- A script's `chop` bites the nearest standing trunk, and once that is down, across the trunk where it lies (looked at 2026-11-13: a clean gap, both lengths left lying). A script's `drop` lets a block of stone go five metres up, to see it (looked at 2026-11-12: it breaks, piles, and a second breaks on the pile).
 - **A piece's mesh is made on another thread** (`cube_game::loose::fall`) and drawn a frame or two on: made on the frame's thread a tree coming loose was a frame of 40 to 56 ms; now the worst is about 30.
 - **Not yet**: a falling tree goes through standing ones; water is by the cell and does not run out of what it left.
 

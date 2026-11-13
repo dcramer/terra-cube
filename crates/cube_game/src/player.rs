@@ -473,7 +473,7 @@ const LUMP: f32 = 0.18;
 
 /// Digs or builds where the controlled creature looks: along the camera's line, from its eyes.
 #[allow(clippy::too_many_arguments)]
-fn edit(mut controls: ResMut<Controls>, mut live: ResMut<Live>, mut forms: ResMut<crate::flora::Forms>, mut grown: ResMut<crate::flora::Grown>, terrain: Option<ResMut<Terrain>>, mut dirty: ResMut<crate::world::Dirty>, controlled: Query<(&Mover, &Transform), With<Controlled>>, cameras: Query<&Transform, With<Orbit>>, mut chopping: Local<Option<(Vec3, u32)>>) {
+fn edit(mut controls: ResMut<Controls>, mut live: ResMut<Live>, mut forms: ResMut<crate::flora::Forms>, mut grown: ResMut<crate::flora::Grown>, terrain: Option<ResMut<Terrain>>, mut dirty: ResMut<crate::world::Dirty>, controlled: Query<(&Mover, &Transform), With<Controlled>>, cameras: Query<&Transform, With<Orbit>>, mut chopping: Local<Option<(Vec3, u32)>>, mut felled: Local<bool>) {
     let (mut dig, put, chop, mut tool, lump) = (std::mem::take(&mut controls.dig), std::mem::take(&mut controls.put), std::mem::take(&mut controls.chop), controls.tool.take(), controls.lump.take());
     let (Some(mut terrain), Ok((mover, at)), Some(camera)) = (terrain, controlled.single(), cameras.iter().next()) else { return };
     if std::mem::take(&mut controls.drop) {
@@ -490,8 +490,30 @@ fn edit(mut controls: ResMut<Controls>, mut live: ResMut<Live>, mut forms: ResMu
     let mut aimed = None;
     if chop {
         let near = |l: &&cube_sim::plants::Limb| l.roots > 0 && l.a.with_y(0.0).distance(at.translation.with_y(0.0)) < 14.0;
-        let foot = chopping.map(|c| c.0).or_else(|| forms.0.values().flat_map(|f| f.limbs.iter()).filter(near).min_by(|a, b| a.a.distance(at.translation).total_cmp(&b.a.distance(at.translation))).map(|l| l.a + Vec3::Y * (cube_sim::plants::Limb::UNDER + 1.0)));
-        let Some(foot) = foot else { return };
+        // (What was being chopped has come down: the count begins again on what is next.)
+        if chopping.is_some() && live.0.loose.things.iter().any(|t| t.lies.is_some()) && !*felled {
+            (*chopping, *felled) = (None, true);
+        }
+        let foot = chopping.filter(|_| !*felled).map(|c| c.0).or_else(|| forms.0.values().flat_map(|f| f.limbs.iter()).filter(near).min_by(|a, b| a.a.distance(at.translation).total_cmp(&b.a.distance(at.translation))).map(|l| l.a + Vec3::Y * (cube_sim::plants::Limb::UNDER + 1.0)));
+        // (Nothing standing: then across what lies felled nearest, two fifths of the way
+        // along it, to see a trunk cut into lengths.)
+        let lying = || {
+            live.0.loose.things.iter().filter_map(|t| {
+                let (pivot, shift, turn) = t.lies?;
+                let trunk = t.limbs.iter().find(|l| l.roots > 0).or(t.limbs.first())?;
+                let now = |p: Vec3| pivot + shift + turn * (p - pivot);
+                Some((now(trunk.a.lerp(trunk.b, 0.4)), (now(trunk.b) - now(trunk.a)).with_y(0.0).normalize_or(Vec3::X)))
+            }).min_by(|a, b| a.0.distance(at.translation).total_cmp(&b.0.distance(at.translation)))
+        };
+        if foot.is_none() && let Some((middle, along_it)) = lying() {
+            let bites = chopping.map_or(0, |c| c.1);
+            *chopping = Some((chopping.map_or(middle, |c| c.0), bites + 1));
+            let across = Vec3::Y.cross(along_it);
+            aimed = Some((middle + across * ((bites % 5) as f32 - 2.0) * 0.22 + Vec3::Y * (0.25 - (bites / 5 % 3) as f32 * 0.22) + across * 0.12, across));
+            (dig, tool) = (true, Some((cube_sim::items::Stuff::Wood, 0.7)));
+        }
+        let Some(foot) = foot.filter(|_| aimed.is_none()).or(aimed.map(|a| a.0)) else { return };
+        if aimed.is_none() {
         let bites = chopping.map_or(0, |c| c.1);
         *chopping = Some((foot, bites + 1));
         let away = (foot - at.translation).with_y(0.0).normalize_or(Vec3::X);
@@ -499,6 +521,7 @@ fn edit(mut controls: ResMut<Controls>, mut live: ResMut<Live>, mut forms: ResMu
         let (row, step) = ([0.0, -1.0, 1.0, -2.0, 2.0][(bites / 7 % 5) as usize], (bites % 7) as f32 - 3.0);
         aimed = Some((foot + away * step * 0.25 + across * row * 0.3, away));
         (dig, tool) = (true, Some((cube_sim::items::Stuff::Wood, 0.8)));
+        }
     }
     let Some(height) = live.kind(mover).map(|k| k.height) else { return };
     // Where the middle of the picture is: along the camera's own line, as far as he reaches
