@@ -84,3 +84,15 @@ leg0 = "mixamorig:LeftUpLeg>mixamorig:LeftLeg>mixamorig:LeftFoot"
 leg1 = "mixamorig:RightUpLeg>mixamorig:RightLeg>mixamorig:RightFoot"
 neck = "mixamorig:Neck"
 root = "mixamorig:Hips"
+
+[grip.Left]
+at = [-0.001053907, 0.0544374, -0.007320583]
+turn = [-0.71833473, -0.69543195, -0.015613308, -0.011221055]
+bones = ["mixamorig:LeftHandIndex1", "mixamorig:LeftHandIndex2", "mixamorig:LeftHandIndex3", "mixamorig:LeftHandMiddle1", "mixamorig:LeftHandMiddle2", "mixamorig:LeftHandMiddle3", "mixamorig:LeftHandRing1", "mixamorig:LeftHandRing2", "mixamorig:LeftHandRing3", "mixamorig:LeftHandPinky1", "mixamorig:LeftHandPinky2", "mixamorig:LeftHandPinky3", "mixamorig:LeftHandThumb1", "mixamorig:LeftHandThumb2", "mixamorig:LeftHandThumb3"]
+turns = [[-0.71030736, -0.002697413, -0.040009324, 0.70274854], [-0.813036, -0.042169124, -0.04016048, 0.5792939], [-0.38769066, -0.034557268, -0.012170649, 0.9210612], [-0.7050526, 0.034734454, 0.02192415, 0.70796454], [-0.89502203, 0.060177907, 0.021997089, 0.4413959], [-0.38805217, 0.017166106, 0.027698755, 0.92106116], [-0.7823297, 0.0401655, 0.03958371, 0.62030643], [-0.7589102, 0.09057527, 0.050033484, 0.64292145], [-0.38467953, 0.049375303, 0.035060916, 0.92106164], [-0.69842106, 0.08076919, 0.09886004, 0.70420957], [-0.8364586, 0.20096149, 0.09689515, 0.5005625], [-0.37000626, 0.09674094, 0.073373795, 0.92106074], [-0.32708573, 0.072664365, -0.2623571, 0.90493286], [-0.2930706, -0.03637209, 0.22072569, 0.92955196], [-0.20165905, 0.01605861, 0.14242373, 0.9689124]]
+
+[grip.Right]
+at = [-0.0070094466, 0.05744183, 0.0013333559]
+turn = [0.5747259, 0.55515224, 0.4333275, 0.41680127]
+bones = ["mixamorig:RightHandIndex1", "mixamorig:RightHandIndex2", "mixamorig:RightHandIndex3", "mixamorig:RightHandMiddle1", "mixamorig:RightHandMiddle2", "mixamorig:RightHandMiddle3", "mixamorig:RightHandRing1", "mixamorig:RightHandRing2", "mixamorig:RightHandRing3", "mixamorig:RightHandPinky1", "mixamorig:RightHandPinky2", "mixamorig:RightHandPinky3", "mixamorig:RightHandThumb1", "mixamorig:RightHandThumb2", "mixamorig:RightHandThumb3"]
+turns = [[0.32127544, -0.16209438, 0.54438454, 0.7577289], [0.6915746, -0.06583245, 0.4979622, 0.51906097], [0.35513553, 0.035823658, 0.15569985, 0.9210608], [0.4759353, -0.41285434, 0.4675944, 0.61999387], [0.86145246, -0.044272594, 0.15593559, 0.481273], [0.38301766, -0.001605168, 0.0703047, 0.9210604], [0.5331593, -0.4398279, 0.46637863, 0.55207217], [0.81743294, -0.11967951, 0.036174215, 0.5622915], [0.38632625, -0.04878055, -0.004318776, 0.9210613], [0.5816039, -0.63460165, 0.32307926, 0.39323977], [0.8163026, -0.121661335, -0.28331256, 0.4884493], [0.37475115, -0.08626038, -0.06136996, 0.92106164], [0.19953395, 0.291806, 0.31459266, 0.8809466], [-0.25939268, -0.1841093, 0.25230086, 0.9138729], [-0.1430644, 0.003669291, 0.20180884, 0.9689129]]

@@ -42,9 +42,22 @@ pub struct Meta {
     /// The body as it stands, for moving it by its feet (`limbs`): forge's `[walk]`.
     #[serde(default)]
     pub walk: Option<Walk>,
+    /// How each hand (`Left`, `Right`) holds a handle: forge's `[grip]` (`held`).
+    #[serde(default)]
+    pub grip: std::collections::HashMap<String, Grip>,
     /// Bones by role, as forge read them off the skeleton: `root`, `leg0`… (`feet`).
     #[serde(default)]
     pub bones: std::collections::HashMap<String, String>,
+}
+
+/// A hand closed round a handle: the handle's middle and turn in the hand bone's frame, and
+/// each finger bone's turn, by name.
+#[derive(Deserialize, Clone, Debug, Default)]
+pub struct Grip {
+    pub at: [f32; 3],
+    pub turn: [f32; 4],
+    pub bones: Vec<String>,
+    pub turns: Vec<[f32; 4]>,
 }
 
 /// Each leg in the walker's order: its hip, knee and end by name, where the hip is, how long

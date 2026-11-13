@@ -40,6 +40,13 @@ struct Thing {
     /// every clip hangs the arm): the way the upper arm and then the forearm point, in the
     /// body's own frame (y up, +z ahead). The clip still moves the rest.
     arm: Option<[[f32; 3]; 2]>,
+    /// Which way the thing points as it is carried, in the body's frame: the forearm is turned
+    /// about itself until it does, as nearly as that allows.
+    aim: Option<[f32; 3]>,
+    /// The arm is left to the clip, swinging as it swings, but for the forearm, which is kept
+    /// hanging: this is the most it may rise (its direction's y: -1 straight down, 0 level).
+    /// For what is carried low at the side, where `arm` would hold the whole arm still.
+    droop: Option<f32>,
     /// How much of the clip's own swing of that arm is kept under the carry, 0 (none: the arm
     /// is held as `arm` says) to 1. With any, a blow that is the clip's own is left to the clip.
     #[serde(default)]
@@ -71,6 +78,11 @@ struct Things(BTreeMap<String, Thing>);
 #[derive(Component)]
 struct Held(Entity, String, [Entity; 3], bool, [Entity; 3]);
 
+/// The hand's hold on it: where the handle lies in the hand and how it is turned (the hand
+/// bone's frame), and each finger bone with its turn closed round it (forge's `[grip]`).
+#[derive(Component, Default)]
+struct Grip(Vec3, Quat, Vec<(Entity, Quat)>);
+
 /// Something loosed, on its way: how fast, and the seconds it has left.
 #[derive(Component)]
 struct Loosed(Vec3, f32);
@@ -89,11 +101,10 @@ fn hold(
     names: Query<&Name>,
     globals: Query<&GlobalTransform>,
     held: Query<(Entity, &Held)>,
-    mut seats: Query<&mut Transform, With<Held>>,
+    mut seats: Query<(&mut Transform, &Grip), With<Held>>,
     firsts: Query<&crate::player::Controlled>,
     cameras: Query<Entity, With<Camera3d>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    (mut meshes, mut materials, registry, creatures): (ResMut<Assets<Mesh>>, ResMut<Assets<StandardMaterial>>, Res<crate::creatures::Registry>, Query<&crate::creatures::Creature>),
     mut cube: Local<Option<Handle<Mesh>>>,
     time: Res<Time>,
     mut blow: Local<f32>,
@@ -118,10 +129,10 @@ fn hold(
     // (on the frame a model arrives its bones are not yet placed, and a goblin's club made
     // then was made to the wrong size and never seen).
     for (entity, Held(owner, item, [.., hand], before_eye, _)) in &held {
-        let (Some(thing), Some(scale), Ok(mut seat)) = (things.0.get(item), globals.get(*hand).ok().map(|g| g.scale().x).filter(|s| *s > 1e-4), seats.get_mut(entity)) else { continue };
+        let (Some(thing), Some(scale), Ok((mut seat, grip))) = (things.0.get(item), globals.get(*hand).ok().map(|g| g.scale().x).filter(|s| *s > 1e-4), seats.get_mut(entity)) else { continue };
         if !*before_eye {
             let big = if thing.fits { movers.get(*owner).ok().and_then(|(_, m)| live.kind(m)).map_or(1.0, |k| k.height / 1.75) } else { 1.0 };
-            (seat.translation, seat.scale) = (Vec3::from_array(thing.shift) * big / scale, Vec3::splat(big / scale));
+            (seat.translation, seat.scale) = (grip.0 + grip.1 * Vec3::from_array(thing.shift) * big / scale, Vec3::splat(big / scale));
         } else if let Some(agent) = movers.get(*owner).ok().and_then(|(_, m)| live.agent(m)) {
             // Before the eye it goes with him: it rides up and down and a little across as he
             // walks, faster as he goes faster, and with a blow it is thrown forward and down
@@ -157,14 +168,18 @@ fn hold(
         // The bone is in the model's own units: the thing is sized in metres whatever they are.
         let turn = Quat::from_euler(EulerRot::XYZ, thing.turn[0].to_radians(), thing.turn[1].to_radians(), thing.turn[2].to_radians());
         let before_eye = first(owner);
+        // How this hand holds a handle, where its model says: the thing is seated in the palm
+        // and the fingers are closed round it. (Without it, it is seated on the hand's bone.)
+        let grip = creatures.get(owner).ok().and_then(|c| registry.0.get(c.def)).and_then(|d| d.meta.grip.get(side)).filter(|_| !before_eye);
+        let grip = grip.map_or_else(Grip::default, |g| Grip(Vec3::from_array(g.at), Quat::from_array(g.turn), g.bones.iter().zip(&g.turns).filter_map(|(n, q)| Some((bone(n)?, Quat::from_array(*q)))).collect()));
         // Sized to who carries it, where it says so: a troll's club is a troll's.
         let big = if thing.fits { movers.get(owner).ok().and_then(|(_, m)| live.kind(m)).map_or(1.0, |k| k.height / 1.75) } else { 1.0 };
         let (on, seat) = match cameras.iter().next().filter(|_| before_eye) {
             Some(camera) => (camera, Transform { translation: Vec3::new(0.3, -0.32, -0.6), rotation: Quat::from_euler(EulerRot::XYZ, if thing.arm.is_some() { -0.15 } else { -0.9 }, 0.0, -0.12), ..default() }),
-            None => (hand, Transform { translation: Vec3::from_array(thing.shift) * big / scale, rotation: turn, scale: Vec3::splat(big / scale) }),
+            None => (hand, Transform { translation: grip.0 + grip.1 * Vec3::from_array(thing.shift) * big / scale, rotation: grip.1 * turn, scale: Vec3::splat(big / scale) }),
         };
         let cube = cube.get_or_insert_with(|| meshes.add(Cuboid::new(1.0, 1.0, 1.0))).clone();
-        let root = commands.spawn((Held(owner, item, [upper, fore, hand], before_eye, other), ChildOf(on), seat, Visibility::default())).id();
+        let root = commands.spawn((Held(owner, item, [upper, fore, hand], before_eye, other), grip, ChildOf(on), seat, Visibility::default())).id();
         for piece in &thing.pieces {
             let colour = Color::srgb(piece.colour[0], piece.colour[1], piece.colour[2]);
             let material = materials.add(StandardMaterial { base_color: colour, emissive: colour.to_linear() * piece.glow, perceptual_roughness: 0.7, ..default() });
@@ -182,11 +197,17 @@ fn hold(
 /// until 2026-11-11 every blow was the clip's, an empty hand's, whatever was held). Each bone
 /// by the least turn that points it the way it should go, so the clip's own twist and the
 /// rest of the body are left as they were.
-fn carry(things: Res<Things>, live: Option<Res<Live>>, held: Query<&Held>, owners: Query<(&Transform, &Mover)>, parents: Query<&ChildOf>, globals: Query<&GlobalTransform>, mut bones: Query<&mut Transform, Without<Mover>>) {
+fn carry(things: Res<Things>, live: Option<Res<Live>>, held: Query<(Entity, &Held, &Grip)>, owners: Query<(&Transform, &Mover)>, parents: Query<&ChildOf>, globals: Query<&GlobalTransform>, mut bones: Query<&mut Transform, Without<Mover>>) {
     let Some(live) = live else { return };
     let mix = |a: [f32; 3], b: [f32; 3], t: f32| Vec3::from_array(a).lerp(Vec3::from_array(b), t).to_array();
     let ease = |t: f32| t.clamp(0.0, 1.0) * t.clamp(0.0, 1.0) * (3.0 - 2.0 * t.clamp(0.0, 1.0));
-    for Held(owner, item, arm, _, other) in &held {
+    for (seat, Held(owner, item, arm, _, other), grip) in &held {
+        // The hand is closed round it, whatever the clip has the fingers doing.
+        for (finger, closed) in &grip.2 {
+            if let Ok(mut pose) = bones.get_mut(*finger) {
+                pose.rotation = *closed;
+            }
+        }
         let (Some(thing), Ok((body, mover))) = (things.0.get(item), owners.get(*owner)) else { continue };
         // How far into a blow it is, seconds (a blow is a second long and lands at 0.35): how
         // much of the blow's pose is on (quickly on, off as it ends), and how far it has gone
@@ -194,6 +215,31 @@ fn carry(things: Res<Things>, live: Option<Res<Live>>, held: Query<&Held>, owner
         let into = live.agent(mover).and_then(|a| a.doing).filter(|d| d.0 == cube_sim::life::Act::Attack).map(|d| 1.0 - d.1);
         let (on, landed) = into.map_or((0.0, 0.0), |t| (ease(t / 0.12).min(ease((0.95 - t) / 0.3)), ease((t - 0.22) / 0.14)));
         let blow = |b: Option<[[[f32; 3]; 2]; 2]>| b.filter(|_| on > 0.0).map(|[back, hit]| [mix(back[0], hit[0], landed), mix(back[1], hit[1], landed)]);
+        // Carried low: the clip's own arm, with the forearm brought down where it has risen
+        // and turned about itself until the thing points as it is carried. A blow is the clip's.
+        if let (Some(droop), None, [upper, fore, hand]) = (thing.droop, thing.arm, *arm)
+            && let Some(shoulder) = parents.get(upper).ok().and_then(|p| globals.get(p.parent()).ok()).map(|g| g.rotation())
+            && let (Ok(over), Ok(elbow), Ok(wrist), Ok(seated)) = (bones.get(upper).map(|b| b.rotation), bones.get(fore).map(|b| b.rotation), bones.get(hand).map(|b| (b.rotation, b.translation)), bones.get(seat).map(|b| b.rotation))
+            && let Some(along) = wrist.1.try_normalize()
+        {
+            let (above, keep) = (shoulder * over, 1.0 - on);
+            let mut turned = above * elbow;
+            let way = turned * along;
+            if way.y > droop {
+                let level = Vec3::new(way.x, 0.0, way.z).try_normalize().unwrap_or(body.rotation * Vec3::Z);
+                turned = turned.slerp(Quat::from_rotation_arc(way, level * (1.0 - droop * droop).max(0.0).sqrt() + Vec3::Y * droop) * turned, keep);
+            }
+            let axis = turned * along;
+            let level = |v: Vec3| (v - axis * v.dot(axis)).try_normalize();
+            if let (Some(aim), Some(from)) = (thing.aim, level(turned * wrist.0 * seated * Vec3::Y))
+                && let Some(to) = level(body.rotation * Vec3::from_array(aim))
+            {
+                turned = Quat::from_axis_angle(axis, from.cross(to).dot(axis).atan2(from.dot(to)) * keep) * turned;
+            }
+            if let Ok(mut pose) = bones.get_mut(fore) {
+                pose.rotation = above.inverse() * turned;
+            }
+        }
         let holding = match (thing.arm, blow(thing.blow)) {
             (Some(rest), Some(b)) => Some(([mix(rest[0], b[0], on), mix(rest[1], b[1], on)], 1.0)),
             (Some(rest), None) => Some((rest, if thing.sway > 0.0 { (1.0 - thing.sway) * (1.0 - on) } else { 1.0 })),
@@ -203,6 +249,7 @@ fn carry(things: Res<Things>, live: Option<Res<Live>>, held: Query<&Held>, owner
         for ([upper, fore, hand], ways, much) in [(arm, holding), (other, blow(thing.draw).map(|b| (b, on)))].into_iter().filter_map(|(a, w)| w.map(|(ways, much)| (*a, ways, much))) {
             // The shoulder's turn in the world is last frame's: it moves little, and this frame's is not worked out yet.
             let Some(mut parent) = parents.get(upper).ok().and_then(|p| globals.get(p.parent()).ok()).map(|g| g.rotation()) else { continue };
+            let mut above = parent;
             for (bone, child, way) in [(upper, fore, ways[0]), (fore, hand, ways[1])] {
                 let Some(along) = bones.get(child).ok().and_then(|c| c.translation.try_normalize()) else { break };
                 let Ok(mut pose) = bones.get_mut(bone) else { break };
@@ -210,7 +257,18 @@ fn carry(things: Res<Things>, live: Option<Res<Live>>, held: Query<&Held>, owner
                 let want = (body.rotation * Vec3::from_array(way)).normalize();
                 let turned = now.slerp(Quat::from_rotation_arc(now * along, want) * now, much);
                 pose.rotation = parent.inverse() * turned;
-                parent = turned;
+                (above, parent) = (parent, turned);
+            }
+            // And the forearm turned about itself until the thing points the way it is
+            // carried: a bone pointed by the least turn keeps whatever roll the clip gave it,
+            // and the blade went wherever the wrist happened to be turned.
+            let (Some(aim), true, Ok(seated), Ok(wrist)) = (thing.aim, hand == arm[2], bones.get(seat).map(|s| s.rotation), bones.get(hand).map(|h| h.rotation)) else { continue };
+            let axis = (body.rotation * Vec3::from_array(ways[1])).normalize();
+            let flat = |v: Vec3| (v - axis * v.dot(axis)).try_normalize();
+            let (Some(from), Some(to)) = (flat(parent * wrist * seated * Vec3::Y), flat(body.rotation * Vec3::from_array(aim))) else { continue };
+            let roll = Quat::from_axis_angle(axis, from.cross(to).dot(axis).atan2(from.dot(to)) * much);
+            if let Ok(mut pose) = bones.get_mut(fore) {
+                pose.rotation = above.inverse() * roll * parent;
             }
         }
     }

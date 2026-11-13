@@ -1,7 +1,10 @@
 # What is seen in a hand (`cube_game::held`). A thing is boxes, as everything is: each a size
 # and a middle in metres and a colour, with the grip at the origin and the thing running
-# along +y away from it. `turn` (degrees about x, y, z) and `shift` (metres) seat the grip in
-# the right hand's bone; `light` is where a thing that lights gives its light from; `arm` is
+# along +y away from it. The grip is seated in the closed hand, the thing out past the thumb
+# and facing (+x) the way the knuckles do (forge reads each model's hands: `[grip]` in its
+# `meta.toml`); `turn` (degrees about x, y, z) and `shift` (metres) are from there; `aim` is
+# which way it points as it is carried, in the body's frame; `droop` leaves the arm to the clip
+# but keeps the forearm hanging (the most its direction's y may be); `light` is where a thing that lights gives its light from; `arm` is
 # how the arm carries it where a clip's hanging arm would not do: the way the upper arm and
 # the forearm point, in the body's frame (y up, +z ahead, +x his right); `sway` is how much of
 # the clip's own swing of that arm is kept under it (0 to 1). `blow` is a blow with
@@ -10,13 +13,14 @@
 # Judge a change with `make held` (the thing through idle, walk, run and a blow).
 
 ["Short sword"]
-# Across the palm, the blade out past the thumb: forward and a little up as he stands.
-turn = [0.0, 0.0, 90.0]
-shift = [0.0, 0.08, 0.03]
-# Carried low at his side, the forearm ahead and a little down, with a third of the arm's own
-# swing: on the arm as a run pumps it the blade went up past his face at every stride.
-arm = [[0.1, -0.97, -0.12], [0.08, -0.5, 0.86]]
-sway = 0.35
+turn = [0.0, 0.0, 0.0]
+shift = [0.0, 0.0, 0.0]
+# Carried low at his side on an arm that swings as it swings: only the forearm is kept from
+# rising (on the arm as a run pumps it the blade went up past his face at every stride; held
+# to a pose of its own, the whole arm was stiff and wrong). A blade stands across the forearm
+# that grips it: with the forearm hanging it is forward, a little up and a little out.
+droop = -0.82
+aim = [0.15, 0.3, 0.94]
 pieces = [
     { size = [0.03, 0.14, 0.03], at = [0.0, 0.0, 0.0], colour = [0.30, 0.20, 0.12] },
     { size = [0.04, 0.03, 0.04], at = [0.0, -0.085, 0.0], colour = [0.55, 0.50, 0.42] },
@@ -27,10 +31,13 @@ pieces = [
 
 [Torch]
 turn = [0.0, 0.0, 0.0]
-shift = [0.0, 0.08, 0.03]
+shift = [0.0, 0.0, 0.0]
+aim = [0.0, 1.0, 0.1]
 light = [0.0, 0.42, 0.0]
-# Held up before him: a torch at the end of a hanging arm lit his knees.
-arm = [[0.25, -0.85, 0.45], [0.05, 0.8, 0.6]]
+# Held out before him at his chest, upright in his fist: a torch at the end of a hanging arm
+# lit his knees. (The forearm is level: the torch stands across it, as anything gripped does.
+# Pointed up, as it was while the torch ran along the hand, his fist was before his face.)
+arm = [[0.2, -0.8, 0.55], [0.1, 0.15, 0.98]]
 pieces = [
     { size = [0.035, 0.42, 0.035], at = [0.0, 0.10, 0.0], colour = [0.34, 0.24, 0.14] },
     { size = [0.06, 0.08, 0.06], at = [0.0, 0.33, 0.0], colour = [0.16, 0.12, 0.09] },
@@ -43,7 +50,8 @@ pieces = [
 [Shovel]
 turn = [0.0, 0.0, 0.0]
 arm = [[0.15, -0.95, 0.2], [0.0, -0.1, 1.0]]
-shift = [0.0, 0.08, 0.03]
+shift = [0.0, 0.0, 0.0]
+aim = [0.0, 0.35, 0.95]
 pieces = [
     { size = [0.03, 0.85, 0.03], at = [0.0, 0.20, 0.0], colour = [0.42, 0.30, 0.18] },
     { size = [0.16, 0.20, 0.015], at = [0.0, 0.72, 0.0], colour = [0.45, 0.46, 0.48] },
@@ -51,8 +59,9 @@ pieces = [
 
 # In the left hand, held out before him: the stave upright, bent back at its ends, and strung.
 [Bow]
-turn = [0.0, 0.0, -90.0]
-shift = [0.0, 0.08, 0.03]
+turn = [0.0, 0.0, 0.0]
+shift = [0.0, 0.0, 0.0]
+aim = [0.0, 1.0, 0.0]
 left = true
 arm = [[-0.2, -0.55, 0.8], [-0.05, 0.05, 1.0]]
 # The bow arm straight out; the string hand reaches to it and comes back to the cheek.
@@ -74,8 +83,8 @@ pieces = [
 
 # What a raider carries (`holds = "Club"` in its `[life]`), as big as it is.
 [Club]
-turn = [0.0, 0.0, 90.0]
-shift = [0.0, 0.08, 0.03]
+turn = [0.0, 0.0, 0.0]
+shift = [0.0, 0.0, 0.0]
 fits = true
 pieces = [
     { size = [0.06, 0.34, 0.06], at = [0.0, 0.06, 0.0], colour = [0.40, 0.29, 0.18] },

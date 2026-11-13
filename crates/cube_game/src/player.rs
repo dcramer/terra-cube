@@ -381,6 +381,15 @@ fn follow(
                 orbit.distance = (orbit.distance * (1.0 - scroll.delta.y * 0.1)).clamp(1.2, 30.0);
             }
         }
+        if args.scene.is_some() && (args.view == "hand" || args.view == "lefthand") {
+            let side = if args.view == "hand" { 1.0 } else { -1.0 };
+            // Close on what the right hand holds (`lefthand`: the left), from that side and a little ahead: whether
+            // a handle is in a closed hand cannot be read from further off.
+            let focus = at.translation + Vec3::Y * def.meta.height * 0.56 + at.rotation * Vec3::new(0.2 * side, 0.0, 0.2) * def.meta.height / 1.75;
+            transform.translation = focus + Quat::from_rotation_y(args.yaw + 2.2 * side) * Vec3::Z * def.meta.height * 0.8 + Vec3::Y * def.meta.height * 0.05;
+            transform.look_at(focus, Vec3::Y);
+            continue;
+        }
         if args.scene.is_some() && (args.view == "side" || args.view == "three") {
             // For filmstrips: level, square on to the route, close enough to read the feet. `three`
             // is from ahead and to one side, for a moving picture: the face and the gait both show.

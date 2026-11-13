@@ -212,6 +212,20 @@ pub struct Meta {
     /// has four legs that fold.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub walk: Option<Walk>,
+    /// How each hand (`Left`, `Right`) holds a handle, where it has hands (`grip.rs`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub grip: BTreeMap<String, Grip>,
+}
+
+/// A hand closed round a handle: where the handle's middle is and how it is turned, in the
+/// hand bone's own frame (the thing runs along +y, out past the thumb, and faces +x, the
+/// way the knuckles do), and the turn of each finger bone, by name.
+#[derive(Deserialize, Serialize, Default)]
+pub struct Grip {
+    pub at: [f32; 3],
+    pub turn: [f32; 4],
+    pub bones: Vec<String>,
+    pub turns: Vec<[f32; 4]>,
 }
 
 /// A four-legged body as it stands, metres, in the model's own frame (it faces +z, its feet
