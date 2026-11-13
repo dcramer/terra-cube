@@ -407,7 +407,7 @@ fn lie(sk: &Skeleton, roles: &Roles) -> Clip {
             curl(sk, pose, &roles.tail, |a| yaw(-a), 1.6);
         }
         if folds {
-            stand(sk, roles, pose);
+            stand_folded(sk, roles, pose);
         }
     })
 }
@@ -618,7 +618,41 @@ fn turn_now(sk: &Skeleton, pose: &mut Pose, joint: usize, delta: Quat) {
 /// two-bone solve, with everything below the second joint carried rigid. Bends the way the
 /// leg already bends. Reaches as far as it can when the target is too far.
 pub(crate) fn reach(sk: &Skeleton, roles: &Roles, pose: &mut Pose, leg: &crate::rig::Leg, tip: usize, target: Vec3) {
-    let (hip, knee) = (leg.chain[0], leg.chain[1]);
+    reach_by(sk, roles, pose, leg, (leg.chain[0], leg.chain[1]), tip, target)
+}
+
+/// The two joints a leg folds at when its body comes down on it: where the leg proper begins
+/// (not a stub that joins it to the trunk: Tripo hangs some legs from a short bone of the
+/// spine) and the joint nearest half way along it from there to the foot. [`reach`] bends
+/// the first two bones of the chain, which on a fox, a deer, a lynx and a rabbit are the
+/// stub and the shoulder: lowered, their legs stayed straight and the animal stood.
+fn folds_at(sk: &Skeleton, leg: &crate::rig::Leg) -> (usize, usize) {
+    let at = |j: usize| sk.position(j);
+    let whole: f32 = leg.chain.windows(2).map(|w| at(w[0]).distance(at(w[1]))).sum();
+    let first = (0..leg.chain.len() - 2).find(|&i| at(leg.chain[i]).distance(at(leg.chain[i + 1])) > 0.12 * whole).unwrap_or(0);
+    let long: f32 = leg.chain[first..].windows(2).map(|w| at(w[0]).distance(at(w[1]))).sum();
+    let (mut along, mut best) = (0.0, (f32::MAX, first + 1));
+    for i in first + 1..leg.chain.len() - 1 {
+        along += at(leg.chain[i - 1]).distance(at(leg.chain[i]));
+        if (along - long / 2.0).abs() < best.0 {
+            best = ((along - long / 2.0).abs(), i);
+        }
+    }
+    (leg.chain[first], leg.chain[best.1])
+}
+
+/// Every foot back where it stands at rest, each leg folding where it folds ([`folds_at`]).
+fn stand_folded(sk: &Skeleton, roles: &Roles, pose: &mut Pose) {
+    for leg in &roles.legs {
+        let was = pose.rotations.clone();
+        reach_by(sk, roles, pose, leg, folds_at(sk, leg), leg.foot(), sk.position(leg.foot()));
+        if pose.rotations.iter().any(|r| !r.is_finite()) {
+            pose.rotations = was;
+        }
+    }
+}
+
+fn reach_by(sk: &Skeleton, roles: &Roles, pose: &mut Pose, leg: &crate::rig::Leg, (hip, knee): (usize, usize), tip: usize, target: Vec3) {
     let at = |pose: &Pose, j: usize| sk.pose_world(pose)[j].w_axis.truncate();
     let (h, k, p) = (at(pose, hip), at(pose, knee), at(pose, tip));
     let (a, b) = (k.distance(h), p.distance(k));

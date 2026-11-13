@@ -3,7 +3,7 @@ kind = "wildlife"
 plan = "quadruped"
 subject = "a red deer stag with antlers"
 height = 1.9
-rests = "stands"
+rests = "crouch"
 
 [life]
 temper = "timid"

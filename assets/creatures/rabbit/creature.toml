@@ -5,7 +5,7 @@ subject = "a small brown rabbit with long upright ears, standing on all four fee
 height = 0.3
 # A rabbit does not walk: it hops, slow or fast.
 hops = true
-rests = "stands"
+rests = "crouch"
 
 [life]
 temper = "timid"
