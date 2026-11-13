@@ -160,21 +160,6 @@ impl Terrain {
         }
     }
 
-    /// Marks what a ball reached to be drawn again, and a cell beyond (a neighbour's faces
-    /// change too); the region is kept.
-    pub fn ball_touched(&mut self, dirty: &mut Dirty, middle: Vec3, radius: f32) {
-        self.3.insert(region_of((middle / CELL).floor().as_ivec3()));
-        let reach = Vec3::splat(radius + CELL);
-        let (lo, hi) = (((middle - reach) / CELL).floor().as_ivec3().div_euclid(IVec3::splat(CHUNK)), ((middle + reach) / CELL).floor().as_ivec3().div_euclid(IVec3::splat(CHUNK)));
-        for y in lo.y..=hi.y {
-            for z in lo.z..=hi.z {
-                for x in lo.x..=hi.x {
-                    dirty.0.insert(IVec3::new(x, y, z));
-                }
-            }
-        }
-    }
-
     /// The ground's height at a point, metres: the land itself, not a tree over it.
     pub fn ground(&self, x: f32, z: f32) -> f32 {
         self.1.height((x / CELL).floor() as i32, (z / CELL).floor() as i32) as f32 * CELL
