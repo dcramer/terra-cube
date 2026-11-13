@@ -397,6 +397,17 @@ fn carve(world: &mut World, middle: Vec3, radius: f32, stuff: Option<Stuff>) -> 
 }
 
 /// How far a point is from the line between two others.
+/// How far a point is outside a limb's wood (inside it, less than nothing): from its line,
+/// less how thick it is there. (By its thickest anywhere, a great tree that tapers from a
+/// metre to a hand's breadth owned every cell within a metre of its top, a birch's trunk
+/// beside it among them: the birch's own top was no longer joined to its foot and came
+/// down by itself when the birch was first cut into, 2026-11-13.)
+fn outside(p: Vec3, limb: &(Vec3, Vec3, f32, f32)) -> f32 {
+    let (a, b, ra, rb) = *limb;
+    let along = ((p - a).dot(b - a) / (b - a).length_squared().max(1e-9)).clamp(0.0, 1.0);
+    p.distance(a + (b - a) * along) - (ra + (rb - ra) * along)
+}
+
 fn from_line(p: Vec3, a: Vec3, b: Vec3) -> f32 {
     let along = ((p - a).dot(b - a) / (b - a).length_squared().max(1e-9)).clamp(0.0, 1.0);
     p.distance(a + (b - a) * along)
@@ -426,8 +437,30 @@ fn work(world: &mut World, middle: Vec3, radius: f32, forms: &[&Form], stuff: Op
         trees.dedup();
         trees.retain(|t| form.limbs.iter().find(|l| l.tree == *t).is_none_or(|l| !known.contains(&l.a)));
         for tree in trees {
+            // (Low down a tree's wood is written to the bit, in the cubes it is drawn in
+            // near the eye (`plants::wood`), and those reach cells that its shape at the
+            // size of a cell does not: a root's flare, the edge of a leaning trunk. Left as
+            // they grew they were wood nobody draws and nothing rests on: a birch stood with
+            // a band of air in its trunk, and its top was held by nothing, 2026-11-13. So
+            // near its foot the cells beside each cell are looked at too.)
+            let low = form.limbs.iter().filter(|l| l.tree == tree && l.roots > 0).map(|l| l.a.y).fold(f32::MAX, f32::min) + 4.0;
             for limb in form.limbs.iter().filter(|l| l.tree == tree) {
-                limb.fill(CELL, |c| turn(world, &mut cut, c));
+                limb.fill(CELL, |c| {
+                    turn(world, &mut cut, c);
+                    if (c.y as f32) * CELL < low {
+                        // (Only what has this limb's own wood in it and is no further from
+                        // it than its foot swells: every broken cell beside it, a sapling's
+                        // and a bush's among them, was 13,000 cells more on one tree, and
+                        // the tree then came down on the sapling.)
+                        let swell = limb.ra.max(limb.rb) * if limb.roots > 0 { 2.6 } else { 1.0 } + CELL;
+                        for side in round() {
+                            let next = c + side;
+                            if world.get(next) == Block::Broken && from_line((next.as_vec3() + 0.5) * CELL, limb.a, limb.b) < swell && world.bits_at(next).is_some_and(|bits| bits.contains(&limb.bark)) {
+                                turn(world, &mut cut, next);
+                            }
+                        }
+                    }
+                });
             }
             for clump in form.clumps.iter().filter(|c| c.tree == tree) {
                 let (lo, hi) = (((clump.middle - clump.radii) / CELL).floor().as_ivec3(), ((clump.middle + clump.radii) / CELL).floor().as_ivec3());
@@ -587,12 +620,12 @@ impl Loose {
         // what is another's: a birch cut clean through hung by its twigs from the tree half
         // a metre off, which the same cut had made cells, and never fell (seed 1,
         // 2026-11-13). Only looked into where two such trees stand.
-        let trees: Vec<(u32, Vec<(Vec3, Vec3, f32)>)> = self.things.iter().filter(|t| t.lies.is_none() && !t.limbs.is_empty()).map(|t| (t.id, t.limbs.iter().map(|l| (l.a, l.b, l.ra.max(l.rb))).collect())).collect();
+        let trees: Vec<(u32, Vec<(Vec3, Vec3, f32, f32)>)> = self.things.iter().filter(|t| t.lies.is_none() && !t.limbs.is_empty()).map(|t| (t.id, t.limbs.iter().map(|l| (l.a, l.b, l.ra, l.rb)).collect())).collect();
         let mut whose: HashMap<IVec3, u32> = HashMap::new();
         let mut of = |cell: IVec3| -> u32 {
             *whose.entry(cell).or_insert_with(|| {
                 let p = (cell.as_vec3() + 0.5) * CELL;
-                trees.iter().filter_map(|(id, limbs)| limbs.iter().map(|(a, b, r)| from_line(p, *a, *b) - r).min_by(|x, y| x.total_cmp(y)).map(|d| (d, *id))).filter(|(d, _)| *d < 0.5).min_by(|x, y| x.0.total_cmp(&y.0)).map_or(0, |(_, id)| id)
+                trees.iter().filter_map(|(id, limbs)| limbs.iter().map(|l| outside(p, l)).min_by(|x, y| x.total_cmp(y)).map(|d| (d, *id))).filter(|(d, _)| *d < 0.5).min_by(|x, y| x.0.total_cmp(&y.0)).map_or(0, |(_, id)| id)
             })
         };
         let rivals = trees.len() > 1;
@@ -791,7 +824,7 @@ impl Loose {
         let mut changed = HashSet::new();
         let mut down = Vec::new();
         // (Every tree that has been cut into and still stands, for what falls to go through: below.)
-        let standing: Vec<(u32, Vec<(Vec3, Vec3, f32)>)> = if self.pieces.is_empty() { Vec::new() } else { self.things.iter().filter(|t| t.lies.is_none() && !t.limbs.is_empty()).map(|t| (t.id, t.limbs.iter().map(|l| (l.a, l.b, l.ra.max(l.rb))).collect())).collect() };
+        let standing: Vec<(u32, Vec<(Vec3, Vec3, f32, f32)>)> = if self.pieces.is_empty() { Vec::new() } else { self.things.iter().filter(|t| t.lies.is_none() && !t.limbs.is_empty()).map(|t| (t.id, t.limbs.iter().map(|l| (l.a, l.b, l.ra, l.rb)).collect())).collect() };
         for (n, piece) in self.pieces.iter_mut().enumerate() {
             piece.age += dt;
             let before = (piece.shift, piece.turn);
@@ -846,7 +879,7 @@ impl Loose {
             let mine = piece.thing;
             let stops = |at: Vec3| {
                 let b = world.bit((at / BIT).floor().as_ivec3());
-                bears(b) && !(b.wood() && standing.iter().any(|(id, limbs)| Some(*id) != mine && limbs.iter().any(|(a, b, r)| from_line(at, *a, *b) < r + 0.3)))
+                bears(b) && !(b.wood() && standing.iter().any(|(id, limbs)| Some(*id) != mine && limbs.iter().any(|l| outside(at, l) < 0.3)))
             };
             let tried = |piece: &Piece, p: &Vec3| !going_over || p.distance(piece.spare.0) > piece.spare.1;
             let meets = |piece: &Piece| piece.feel.iter().filter(|p| tried(piece, p)).any(|p| stops(piece.now(*p)));

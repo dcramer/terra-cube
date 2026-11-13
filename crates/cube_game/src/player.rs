@@ -422,6 +422,15 @@ fn follow(
             transform.look_at(focus, Vec3::Y);
             continue;
         }
+        if args.scene.is_some() && args.view == "fell" {
+            // On what is over his head, from `--dist` metres off (14) on the side `--yaw`
+            // says: to see a tree he cuts come down, all of it. (In a wood most sides have a
+            // trunk in the way: try a few.)
+            let focus = at.translation + Vec3::Y * 5.0;
+            transform.translation = focus + Quat::from_rotation_y(args.yaw) * Vec3::Z * args.dist.unwrap_or(14.0) + Vec3::Y * 2.0;
+            transform.look_at(focus, Vec3::Y);
+            continue;
+        }
         if args.scene.is_some() && (args.view == "side" || args.view == "three") {
             // For filmstrips: level, square on to the route, close enough to read the feet. `three`
             // is from ahead and to one side, for a moving picture: the face and the gait both show.

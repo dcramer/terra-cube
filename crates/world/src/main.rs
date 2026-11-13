@@ -34,6 +34,9 @@ cargo world dig [--holes 120]                     HOLES (120) holes and stones c
                                                   over the land: what broken cells cost, and whether
                                                   creatures still live among them
 cargo world fell [--seed N]                       a tree near the start cut through: that it comes
+                                                  (`fell X,Z`: the tree nearest a place)
+cargo world joined [--seed N]                     every tree near the start as the cells it is once cut
+                                                  into: whether all its wood is one body with its foot
                                                   loose whole, goes over, lies on the ground as cells,
                                                   leaves nothing in the air, and what each step costs
 cargo world replay [--seed N]                     the world as its seed and what was done to it: a tree
@@ -450,6 +453,72 @@ fn cost_command(args: &Args) -> ! {
     std::process::exit(0)
 }
 
+/// `cargo world joined`: every tree near the start as the cells it would be once cut into,
+/// and whether all its wood is one body with its foot (joined by faces, edges or corners,
+/// as what holds a thing up is told). One that is not drops a part of itself the moment an
+/// axe touches it: a birch was seen standing with a gap in its trunk and its top in the air.
+fn joined_command(args: &Args) -> ! {
+    let land = Land::new(args.seed, args.radius);
+    let mut world = World::default();
+    let r = cube_sim::terrain::REGION;
+    let ((), form) = cube_sim::plants::recorded(|| {
+        for rz in -2..2 {
+            for rx in -2..2 {
+                cube_sim::terrain::fill(&mut world, &land, (rx * r, rz * r), ((rx + 1) * r, (rz + 1) * r));
+            }
+        }
+    });
+    let inside = (2 * r) as f32 * CELL - 16.0;
+    let mut trees: std::collections::BTreeMap<u32, Vec<cube_sim::plants::Limb>> = Default::default();
+    for limb in &form.limbs {
+        trees.entry(limb.tree).or_default().push(*limb);
+    }
+    let (mut whole, mut broken, mut worst) = (0, 0, (0usize, Vec3::ZERO, 0usize));
+    let (mut leafed, mut lacking) = (0, 0);
+    for limbs in trees.values().filter(|l| l.iter().any(|l| l.roots > 0 && l.a.x.abs() < inside && l.a.z.abs() < inside)) {
+        let mut cells: std::collections::HashSet<IVec3> = Default::default();
+        // (As the world has them: a cell of its trunk that another tree's leaf was written
+        // over is leaf, and bears nothing.)
+        for limb in limbs {
+            limb.fill(CELL, |c| {
+                let b = world.get(c);
+                if b.foliage() {
+                    leafed += 1;
+                } else if b.wood() || b == Block::Broken {
+                    cells.insert(c);
+                } else if b == Block::Air {
+                    // (Its shape has a cell here and the world has none. Its roots in the
+                    // ground are the ground's.)
+                    lacking += 1;
+                }
+            });
+        }
+        let foot = limbs.iter().find(|l| l.roots > 0).unwrap();
+        let Some(start) = cells.iter().copied().min_by_key(|c| ((c.as_vec3() + 0.5) * CELL).distance_squared(foot.a + Vec3::Y * (cube_sim::plants::Limb::UNDER + 0.5)) as i64 * 1000 + c.y as i64) else { continue };
+        let (mut seen, mut queue) = (std::collections::HashSet::from([start]), std::collections::VecDeque::from([start]));
+        while let Some(c) = queue.pop_front() {
+            for d in (-1..=1).flat_map(|x| (-1..=1).flat_map(move |y| (-1..=1).map(move |z| IVec3::new(x, y, z)))) {
+                if cells.contains(&(c + d)) && seen.insert(c + d) {
+                    queue.push_back(c + d);
+                }
+            }
+        }
+        let apart = cells.len() - seen.len();
+        if apart == 0 {
+            whole += 1;
+        } else {
+            broken += 1;
+            if apart > worst.0 {
+                worst = (apart, foot.a, cells.len());
+            }
+        }
+    }
+    println!("joined: {} trees as cells · {whole} of one body · {broken} with wood not joined to their foot (the worst {} of its {} cells, standing at {:.1},{:.1}) · {leafed} cells of wood that are leaf in the world, {lacking} that are air there", whole + broken, worst.0, worst.2, worst.1.x, worst.1.z);
+    let mut checks = Checks(Vec::new());
+    checks.bar("joined apart", broken as f32, broken == 0, "no tree has wood that is not joined to its foot");
+    checks.finish()
+}
+
 /// A tree near the start is cut through at the foot, and what follows is judged: it comes
 /// loose as one piece, goes over, and lies on the ground as cells with nothing left in the air.
 fn fell_command(args: &Args) -> ! {
@@ -465,7 +534,11 @@ fn fell_command(args: &Args) -> ! {
     });
     // A grown tree well inside what was made: a trunk as thick as a person can cut through.
     let inside = (2 * r) as f32 * CELL - 12.0;
-    let Some(trunk) = form.limbs.iter().copied().filter(|l| l.roots > 0 && (0.18..0.4).contains(&l.ra) && (l.b.y - l.a.y) > 5.0 && l.a.x.abs() < inside && l.a.z.abs() < inside).min_by(|a, b| a.a.length().total_cmp(&b.a.length())) else { fail("no tree to fell near the start") };
+    // (`cargo world fell X,Z`: the tree nearest a place, whatever its girth: the one the game's
+    // player would be chopping there.)
+    let place = args.file.as_deref().and_then(|f| f.split_once(',')).and_then(|(x, z)| Some(Vec3::new(x.parse().ok()?, 0.0, z.parse().ok()?)));
+    let chosen = place.and_then(|at| form.limbs.iter().copied().filter(|l| l.roots > 0).min_by(|a, b| a.a.with_y(0.0).distance(at).total_cmp(&b.a.with_y(0.0).distance(at))));
+    let Some(trunk) = chosen.or_else(|| form.limbs.iter().copied().filter(|l| l.roots > 0 && (0.18..0.4).contains(&l.ra) && (l.b.y - l.a.y) > 5.0 && l.a.x.abs() < inside && l.a.z.abs() < inside).min_by(|a, b| a.a.length().total_cmp(&b.a.length()))) else { fail("no tree to fell near the start") };
     // (All of it, not its first length of trunk: that is 6 m of a tree that stands 15.)
     let tall = form.limbs.iter().filter(|l| l.tree == trunk.tree).map(|l| l.b.y).fold(trunk.b.y, f32::max) - trunk.a.y;
     let mut checks = Checks(Vec::new());
@@ -518,6 +591,11 @@ fn fell_command(args: &Args) -> ! {
     let ground = land.height((trunk.a.x / CELL) as i32, (trunk.a.z / CELL) as i32) as f32 * CELL;
     let high = down.map_or(99.0, |d| d.at.y - ground);
     checks.bar("fell lies", high, high < tall * 0.5, "its middle under half the height it stood");
+    // And over: how far from upright it has come to rest, which a height alone does not say
+    // (a tree put back standing where it stood has its middle under half its height too,
+    // and passed, 2026-11-13). Forty degrees: one felled up a steep bank rests at 45.
+    let over = loose.things.iter().filter_map(|t| t.lies).map(|(_, _, turn)| (turn * Vec3::Y).angle_between(Vec3::Y).to_degrees()).fold(0.0, f32::max);
+    checks.bar("fell over", over, over > 40.0, "it has gone over by more than 40 degrees");
     // And nothing of it is left in the air: looked through again, nothing more comes loose.
     let (lo, hi) = (((trunk.a - Vec3::splat(14.0)) / CELL).as_ivec3(), ((trunk.b + Vec3::splat(14.0)) / CELL).as_ivec3());
     loose.loosen(&mut world, lo.with_y((ground / CELL) as i32 - 2), hi, Vec3::X);
@@ -752,6 +830,7 @@ fn main() {
         "cost" => cost_command(&args),
         "trunks" => trunks_command(&args),
         "fell" => fell_command(&args),
+        "joined" => joined_command(&args),
         "replay" => replay_command(&args),
         "grade" => grade_command(&args),
         "life" => life_command(&args),

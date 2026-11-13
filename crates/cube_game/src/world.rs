@@ -931,6 +931,9 @@ fn regions(args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrai
         // to it is done again, below.)
         if terrain.3.contains(&r) {
             regions.stale.insert(r);
+            if std::env::var_os("LOOSE_TRACE").is_some() {
+                println!("regions: changed region {r:?} made again from the seed, its edits to be done again");
+            }
         }
         regions.made.insert(r);
         regions.waiting -= 1;
@@ -1068,6 +1071,9 @@ fn regions(args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrai
     // (Nothing is dropped while anything is falling there: a fall is finished first.)
     let gone: Vec<(i32, i32)> = regions.made.iter().copied().filter(|r| if terrain.3.contains(r) { !falling && !regions.stale.contains(r) && far(r) } else { away(*r) > DROP }).collect();
     for r in gone {
+        if terrain.3.contains(&r) && std::env::var_os("LOOSE_TRACE").is_some() {
+            println!("regions: changed region {r:?} dropped");
+        }
         redraw(&terrain.0, r, &mut dirty);
         terrain.0.chunks.retain(|c, _| (c.x.div_euclid(terrain::REGION / CHUNK), c.z.div_euclid(terrain::REGION / CHUNK)) != r);
         regions.made.remove(&r);
