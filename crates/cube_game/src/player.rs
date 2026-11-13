@@ -37,6 +37,9 @@ pub struct Controls {
     /// Dig a hole where it looks, or build a lump there: once, then cleared.
     pub dig: bool,
     pub put: bool,
+    /// (A script's, for trying what a cut does: a bite out of the nearest tree's trunk, a
+    /// metre up, each one further across it than the last.)
+    pub chop: bool,
     /// Something to do on the spot, once: a blow, a bite of grass, a flinch.
     pub act: Option<cube_sim::life::Act>,
     /// What is in hand is to be used, once: a blow, a bite, a spadeful.
@@ -244,6 +247,7 @@ fn script(time: Res<Time>, args: Res<Args>, stage: Option<Res<crate::shot::Stage
                 "eat" => controls.act = Some(cube_sim::life::Act::Eat),
                 "hurt" => controls.act = Some(cube_sim::life::Act::Hurt),
                 "dig" => controls.dig = true,
+                "chop" => controls.chop = true,
                 "put" => controls.put = true,
                 "surface" => controls.dive = false,
                 "hop" => clock.1 = now + 0.04,
@@ -443,25 +447,73 @@ const HOLE: f32 = 0.4;
 const LUMP: f32 = 0.18;
 
 /// Digs or builds where the controlled creature looks: along the camera's line, from its eyes.
-fn edit(mut controls: ResMut<Controls>, live: Res<Live>, terrain: Option<ResMut<Terrain>>, mut dirty: ResMut<crate::world::Dirty>, controlled: Query<(&Mover, &Transform), With<Controlled>>, cameras: Query<&Transform, With<Orbit>>) {
-    let (dig, put) = (std::mem::take(&mut controls.dig), std::mem::take(&mut controls.put));
+#[allow(clippy::too_many_arguments)]
+fn edit(mut controls: ResMut<Controls>, mut live: ResMut<Live>, mut forms: ResMut<crate::flora::Forms>, mut grown: ResMut<crate::flora::Grown>, terrain: Option<ResMut<Terrain>>, mut dirty: ResMut<crate::world::Dirty>, controlled: Query<(&Mover, &Transform), With<Controlled>>, cameras: Query<&Transform, With<Orbit>>, mut chopping: Local<Option<(Vec3, u32)>>) {
+    let (mut dig, put, chop) = (std::mem::take(&mut controls.dig), std::mem::take(&mut controls.put), std::mem::take(&mut controls.chop));
     let (Some(mut terrain), Ok((mover, at)), Some(camera)) = (terrain, controlled.single(), cameras.iter().next()) else { return };
-    if !(dig || put) {
+    if !(dig || put || chop) {
         return;
     }
-    let Some(kind) = live.kind(mover) else { return };
+    // A script's chop: at the nearest trunk the first time, and across it bite by bite.
+    let mut aimed = None;
+    if chop {
+        let near = |l: &&cube_sim::plants::Limb| l.roots > 0 && l.a.with_y(0.0).distance(at.translation.with_y(0.0)) < 14.0;
+        let foot = chopping.map(|c| c.0).or_else(|| forms.0.values().flat_map(|f| f.limbs.iter()).filter(near).min_by(|a, b| a.a.distance(at.translation).total_cmp(&b.a.distance(at.translation))).map(|l| l.a + Vec3::Y * (cube_sim::plants::Limb::UNDER + 1.0)));
+        let Some(foot) = foot else { return };
+        let bites = chopping.map_or(0, |c| c.1);
+        *chopping = Some((foot, bites + 1));
+        let away = (foot - at.translation).with_y(0.0).normalize_or(Vec3::X);
+        let across = Vec3::Y.cross(away);
+        let (row, step) = ([0.0, -1.0, 1.0, -2.0, 2.0][(bites / 7 % 5) as usize], (bites % 7) as f32 - 3.0);
+        aimed = Some((foot + away * step * 0.25 + across * row * 0.3, away));
+        dig = true;
+    }
+    let Some(height) = live.kind(mover).map(|k| k.height) else { return };
     // Where the middle of the picture is: along the camera's own line, as far as he reaches
     // from his eyes. (From his eyes along the camera's way, it was beside the mark whenever
     // the camera stood to one side of him.)
-    let (eyes, along) = (at.translation + Vec3::Y * kind.height * 0.92, *camera.forward());
-    let Some(far) = terrain.0.raycast(camera.translation, along, REACH + camera.translation.distance(eyes)) else { return };
-    let hit = camera.translation + along * far;
-    if hit.distance(eyes) > REACH {
+    let (eyes, mut along) = (at.translation + Vec3::Y * height * 0.92, *camera.forward());
+    let hit = match aimed {
+        Some((at, away)) => {
+            along = away;
+            at - away * HOLE * 0.3
+        }
+        None => {
+            let Some(far) = terrain.0.raycast(camera.translation, along, REACH + camera.translation.distance(eyes)) else { return };
+            camera.translation + along * far
+        }
+    };
+    if aimed.is_none() && hit.distance(eyes) > REACH {
         return;
     }
     let far = hit.distance(eyes);
     if dig {
-        terrain.ball(&mut dirty, hit + along * HOLE * 0.3, HOLE, cube_voxel::Block::Air);
+        // A cut (`cube_sim::loose`): a tree or a boulder it bites into is cells from then on
+        // and no longer among the shapes drawn; what it leaves standing on nothing falls.
+        let middle = hit + along * HOLE * 0.3;
+        let here = crate::world::region_of((middle / cube_voxel::CELL).floor().as_ivec3());
+        let near: Vec<(i32, i32)> = (-1..=1).flat_map(|z| (-1..=1).map(move |x| (here.0 + x, here.1 + z))).filter(|r| forms.0.contains_key(r)).collect();
+        let cut = {
+            let shapes: Vec<&cube_sim::plants::Form> = near.iter().map(|r| &*forms.0[r]).collect();
+            live.0.loose.cut(&mut terrain.0, middle, HOLE, along, &shapes)
+        };
+        for (n, region) in near.iter().enumerate() {
+            let (trees, mut stones): (Vec<u32>, Vec<usize>) = (cut.trees.iter().filter(|t| t.0 == n).map(|t| t.1).collect(), cut.stones.iter().filter(|s| s.0 == n).map(|s| s.1).collect());
+            if trees.is_empty() && stones.is_empty() {
+                continue;
+            }
+            let Some(form) = forms.0.get_mut(region).map(std::sync::Arc::make_mut) else { continue };
+            form.limbs.retain(|l| !trees.contains(&l.tree));
+            form.clumps.retain(|c| !trees.contains(&c.tree));
+            stones.sort_unstable_by(|a, b| b.cmp(a));
+            for stone in stones {
+                form.stones.remove(stone);
+            }
+            grown.again(*region);
+        }
+        // (What the ball itself reached is marked as any dug ball is.)
+        terrain.ball(&mut dirty, middle, HOLE, cube_voxel::Block::Air);
+        terrain.touched(&mut dirty, cut.changed);
     } else if far > 1.0 {
         // Not on top of itself: a lump it stood inside would hold it fast.
         terrain.ball(&mut dirty, hit - along * LUMP * 0.3, LUMP, cube_voxel::Block::Stone);

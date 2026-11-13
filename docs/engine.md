@@ -39,6 +39,18 @@ The rule this protects: **the simulation never needs a window.** A big sandbox w
 - **Deep water is harder to see through**: a water face's alpha grows with the water under it, so a ford shows its bed and the sea does not. The sea beyond the island is four plain sheets out past the fog.
 - **Not yet**: greedy meshing (measured elsewhere at 50 to 350 µs a chunk for plain meshing, so not urgent), meshing off the main thread, level of detail, chunk streaming, saving.
 
+### What is cut loose falls (`cube_sim::loose`, 2026-11-12)
+
+The role model is Teardown: everything can be cut, and what a cut leaves standing on nothing comes down. Ours is an open world made from a seed, not a level, so it is done on the world's own cells with no physics engine.
+
+- **A cut** (`Loose::cut`) digs a ball to the bit, then looks for what is no longer held: from each solid cell beside the cut through solid neighbours (faces, edges and corners: a thin limb climbs from cell to cell by their edges). More than `HELD` (30,000) cells, or `LAND` (4,000) cells of the land itself, and it is held. Fewer and closed: loose. Leaves bear nothing.
+- **A tree or boulder is a drawn shape until it is cut into** (above: `flora`). The first bite makes all of it *wrought*: its blocks become `Timber`, `Brush`, `Shard` (`Block::wrought`), which the mesher draws as the cells and bits they are, and its limbs and leaf leave the region's shapes (`Cut::trees`; `flora::Grown::again` remakes the mesh, the old one staying until then). Which limbs are one tree is what `plants` noted as it grew them (`Limb::tree`): trees in a wood touch, and by cells alone one cannot be told from the next (a search through touching wood took half the wood; through faces alone it left limbs behind).
+- **An untouched tree is scenery**: it bears nothing and stops nothing loose. Stopped by standing wood, nothing cut in a wood ever came down.
+- **A piece** is the loose cells taken out of the world and moved as one body: tall on a small foot it goes over about its foot the way it was pushed; anything else drops. When its wood or stone meets ground it is put back cell for cell where each now lies (every cell of the world it reaches is asked what of the piece is there, so no gaps however it is turned); what then rests on nothing falls in its turn; a crumb under four cells is gone.
+- **Cost** (`cargo world fell`): a bite 1.5 ms; a 10,000-cell tree down in 3 s, 97% of its cells put back, the dearest step (the landing) 6 to 10 ms.
+- **The game only draws** (`cube_game::loose`): each piece as cubes, moved as the simulation moves it. A script's `chop` bites the nearest trunk.
+- **Not yet**: the falling piece is drawn in plain colour, not the paint; nothing is hurt by what falls; stone does not shatter; what is dug goes nowhere; water does not flow into holes.
+
 ### What grows is drawn as shapes
 
 - **`plants` says what shape it grew** (`plants::recorded`, `Form`): as it sets the cells of a trunk, a limb or a mass of leaf, it notes the limb (from, to, how thick at each end, what bark) or the clump (middle, reach, what leaf). The game records this as it makes each region (`world::regions`), keeps the shapes whose middle lies in the region (`flora::Forms`), and makes one mesh a region from them (`flora::grow`): a seven-sided tapering tube a limb, and for a clump some tens to two hundred small cards over an ellipsoid, each a piece of the leaf picture with its gaps, lit as the mass and not as a card, free to the wind.
@@ -341,7 +353,7 @@ Built 2026-11-10. The rules are `cube_sim::body`; the game only feeds it keys an
 1. ~~Creature pipeline and sandbox~~ (this night).
 2. ~~Player control in the sandbox~~ (2026-11-10; see Moving through the world).
 3. ~~A world worth walking in~~ (2026-11-10): terrain from a seed, creatures living in it, `cargo world` to judge both.
-4. Digging and building, the rest: a first cut works (left and right click cut or raise a ball to the bit, the chunk is drawn again that frame). Still to do: tools and what they cut, what is dug going somewhere, bits of anything but stone, water flowing into holes, merging the faces of broken cells.
+4. Digging and building, the rest: a click cuts or raises a ball to the bit, and what a cut leaves on nothing falls ([What is cut loose falls](#what-is-cut-loose-falls-cube_simloose-2026-11-12)). Still to do: what falls shattering and hurting, tools and what they cut, what is dug going somewhere, water flowing into holes, merging the faces of broken cells.
 5. Combat: health, the player's attack, death. With it, **hit shapes**: a box for the head, the trunk and each limb, fitted by forge to each bone's share of the skin, written to `meta.toml` and drawn by `--bodies`. The one capsule stays for walking and bumping; these answer what a blow or an arrow struck.
 6. Shaped blocks (the Eco look), then textures or material colour by block.
 7. Needs for creatures (hunger, sleep, a day and night), so behaviour has reasons.

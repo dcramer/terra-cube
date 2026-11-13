@@ -514,6 +514,9 @@ pub struct Sim {
     /// keeps the world last took them: the simulation does not change the world, so it says
     /// what should go and the game takes it (`motion::tick`).
     pub eaten: Vec<glam::IVec3>,
+    /// What has been cut loose and is falling (`loose`): stepped by whoever keeps the world,
+    /// since it changes it.
+    pub loose: crate::loose::Loose,
 }
 
 /// The size of a piece of grazing, metres; what a grazer a metre tall eats of one in a day
@@ -540,7 +543,7 @@ fn turn_between(from: f32, to: f32) -> f32 {
 
 impl Sim {
     pub fn new(kinds: Vec<Kind>, seed: u64) -> Self {
-        Self { kinds, agents: BTreeMap::new(), tick: 0, focus: None, when: crate::sky::START, rng: Rng::new(seed), next: 1, trails: None, starved: 0, forage: BTreeMap::new(), nibbled: BTreeMap::new(), eaten: Vec::new() }
+        Self { kinds, agents: BTreeMap::new(), tick: 0, focus: None, when: crate::sky::START, rng: Rng::new(seed), next: 1, trails: None, starved: 0, forage: BTreeMap::new(), nibbled: BTreeMap::new(), eaten: Vec::new(), loose: Default::default() }
     }
 
     /// A person's state as text, a thing a line: when it is, where they are, their health,

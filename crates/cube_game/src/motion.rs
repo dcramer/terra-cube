@@ -160,13 +160,18 @@ fn drivers(mut live: ResMut<Live>, movers: Query<(&Mover, &Transform, Has<Contro
 
 /// (Behind the loading screen the world is held still: no time passes, nothing moves or is
 /// hurt, but what is near the player is woken, so its model is there when the screen lifts.)
-fn tick(terrain: Option<ResMut<Terrain>>, loading: Res<crate::loading::Loading>, mut live: ResMut<Live>, mut dirty: ResMut<crate::world::Dirty>, mut grazed: Local<u32>) {
+pub(crate) fn tick(terrain: Option<ResMut<Terrain>>, loading: Res<crate::loading::Loading>, mut live: ResMut<Live>, mut dirty: ResMut<crate::world::Dirty>, mut grazed: Local<u32>) {
     if let Some(mut terrain) = terrain {
         if loading.up {
             live.0.wake(&terrain.0)
         } else {
             let before = live.0.when.floor();
             live.0.step(&terrain.0);
+            // What has been cut loose falls, and what lands is the world's again (`cube_sim::loose`).
+            if !live.0.loose.pieces.is_empty() {
+                let changed = live.0.loose.step(&mut terrain.0, cube_sim::DT);
+                terrain.touched(&mut dirty, changed);
+            }
             // What was grazed is gone from the ground: the grass and flowers an animal ate.
             for cell in std::mem::take(&mut live.0.eaten) {
                 if terrain.0.get(cell).sprig() {

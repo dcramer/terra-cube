@@ -21,6 +21,7 @@ mod flora;
 mod hud;
 mod limbs;
 mod loading;
+mod loose;
 mod motion;
 mod player;
 mod shot;
@@ -342,7 +343,7 @@ fn main() {
     .set(TaskPoolPlugin { task_pool_options: TaskPoolOptions { async_compute: bevy::app::TaskPoolThreadAssignmentPolicy { min_threads: 2, max_threads: usize::MAX, percent: 0.6, on_thread_spawn: None, on_thread_destroy: None }, ..default() } }))
     .insert_resource(args)
     .init_resource::<loading::Loading>()
-    .add_plugins((creatures::CreaturesPlugin, held::HeldPlugin, feet::FeetPlugin, limbs::LimbsPlugin, stride::StridePlugin));
+    .add_plugins((creatures::CreaturesPlugin, held::HeldPlugin, feet::FeetPlugin, limbs::LimbsPlugin, stride::StridePlugin, loose::LoosePlugin));
     if shot {
         // With no window the loop would idle at sixty a second, and every `pace` would read
         // 17 ms whatever the frame cost: run flat out, so the number is the work.

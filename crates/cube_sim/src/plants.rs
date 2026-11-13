@@ -49,6 +49,10 @@ pub struct Limb {
     /// A trunk standing in the ground: how many roots it spreads into at its foot (none,
     /// for any other limb). Whoever draws it draws them as one piece with the trunk.
     pub roots: u8,
+    /// Which thing grown it is a limb of: one number to a tree, a bush, a log, counted from 1
+    /// within what was grown together ([`recorded`]). Its limbs and its leaf share it, so
+    /// whoever cuts into one knows what else is the same tree (`loose`).
+    pub tree: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -56,11 +60,15 @@ pub struct Clump {
     pub middle: Vec3,
     pub radii: Vec3,
     pub leaf: Block,
+    /// Which thing grown it is the leaf of (as [`Limb::tree`]).
+    pub tree: u32,
 }
 
 thread_local! {
     /// While something is being grown inside [`recorded`], its shapes are noted here.
     static NOTED: std::cell::RefCell<Option<Form>> = const { std::cell::RefCell::new(None) };
+    /// Which thing is being grown: counted up as each begins ([`begun`]).
+    static WHICH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
 
 thread_local! {
@@ -89,6 +97,7 @@ fn open(c: IVec3) -> bool {
 /// Runs `grow` and says, with what it gives back, the shape of everything it grew.
 pub fn recorded<R>(grow: impl FnOnce() -> R) -> (R, Form) {
     NOTED.with(|n| *n.borrow_mut() = Some(Form::default()));
+    WHICH.set(0);
     let out = grow();
     (out, NOTED.with(|n| n.borrow_mut().take()).unwrap_or_default())
 }
@@ -100,11 +109,17 @@ fn cell(p: Vec3) -> IVec3 {
 /// Wood from `a` to `b` (metres), `ra` thick at one end and `rb` at the other. It grows through
 /// air and foliage, not through the ground.
 fn limb(world: &mut World, a: Vec3, b: Vec3, ra: f32, rb: f32, bark: Block) {
-    grow(world, Limb { a, b, ra, rb, bark, roots: 0 });
+    grow(world, Limb { a, b, ra, rb, bark, roots: 0, tree: 0 });
+}
+
+/// Something new begins to grow: what is noted from here on is its own.
+fn begun() {
+    WHICH.set(WHICH.get() + 1);
 }
 
 /// Notes a limb for whoever draws shapes, and fills its cells.
-fn grow(world: &mut World, limb: Limb) {
+fn grow(world: &mut World, mut limb: Limb) {
+    limb.tree = WHICH.get();
     wood(world, &limb);
     NOTED.with(|n| {
         if let Some(form) = n.borrow_mut().as_mut() {
@@ -311,7 +326,7 @@ fn clump(world: &mut World, middle: Vec3, radii: Vec3, leaf: Block, floor: f32, 
             let low = (middle.y - radii.y).max(floor);
             let high = middle.y + radii.y;
             if high > low {
-                form.clumps.push(Clump { middle: middle.with_y((low + high) / 2.0), radii: radii.with_y((high - low) / 2.0), leaf });
+                form.clumps.push(Clump { middle: middle.with_y((low + high) / 2.0), radii: radii.with_y((high - low) / 2.0), leaf, tree: WHICH.get() });
             }
         }
     });
@@ -344,7 +359,7 @@ fn bole(world: &mut World, foot: Vec3, top: Vec3, base: f32, tip: f32, bark: Blo
     // The swell and the roots are the trunk's own shape (`Limb::fill`): it is told only how
     // many roots it has.
     let roots = 4 + rng.below(3);
-    grow(world, Limb { a: foot - Vec3::Y * Limb::UNDER, b: top, ra: base, rb: tip, bark, roots: roots as u8 });
+    grow(world, Limb { a: foot - Vec3::Y * Limb::UNDER, b: top, ra: base, rb: tip, bark, roots: roots as u8, tree: 0 });
 }
 
 /// How tall a tree of a kind and age stands, metres: what [`tree`] builds.
@@ -355,6 +370,7 @@ pub fn height(kind: Tree, age: f32) -> f32 {
 /// Grows a tree with its foot on the cell `foot`. `age` is 0 for one just grown, 1 for an
 /// old one. Says how tall it stands, metres.
 pub fn tree(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng) -> f32 {
+    begun();
     low(foot.y as f32 * CELL, || grown(world, foot, kind, age, rng))
 }
 
@@ -510,7 +526,7 @@ fn grown(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng) ->
                     // A strand, for whoever draws shapes: a thin hanging mass.
                     NOTED.with(|n| {
                         if let Some(form) = n.borrow_mut().as_mut() {
-                            form.clumps.push(Clump { middle: at - Vec3::Y * hang * 0.5, radii: Vec3::new(0.35, hang * 0.5, 0.35), leaf });
+                            form.clumps.push(Clump { middle: at - Vec3::Y * hang * 0.5, radii: Vec3::new(0.35, hang * 0.5, 0.35), leaf, tree: WHICH.get() });
                         }
                     });
                     let c = cell(at);
@@ -555,6 +571,7 @@ fn grown(world: &mut World, foot: IVec3, kind: Tree, age: f32, rng: &mut Rng) ->
 /// of `assets/world/flora.toml` by its name, `young`, `sapling`, `bush`, `log`, `stump`,
 /// `rock`. False if there is no such thing.
 pub fn specimen(world: &mut World, foot: IVec3, name: &str, rng: &mut Rng) -> bool {
+    begun();
     let kind = Tree::named(name);
     match (kind, name) {
         (Some(kind), _) => {
@@ -573,6 +590,7 @@ pub fn specimen(world: &mut World, foot: IVec3, name: &str, rng: &mut Rng) -> bo
 
 /// A young tree, its crown low: what stands at eye level in a wood.
 pub fn young(world: &mut World, foot: IVec3, needles: bool, rng: &mut Rng) {
+    begun();
     low(foot.y as f32 * CELL, || sprung(world, foot, needles, rng))
 }
 
@@ -606,6 +624,7 @@ fn sprung(world: &mut World, foot: IVec3, needles: bool, rng: &mut Rng) {
 
 /// A bush: two to four clumps low on the ground, knee-high to head-high.
 pub fn bush(world: &mut World, foot: IVec3, rng: &mut Rng) {
+    begun();
     let foot = (foot.as_vec3() + Vec3::new(0.5, 0.0, 0.5)) * CELL;
     let leaf = [Block::Leaves, Block::LeavesDeep][rng.below(2)];
     let big = rng.between(0.7, 1.7);
@@ -617,6 +636,7 @@ pub fn bush(world: &mut World, foot: IVec3, rng: &mut Rng) {
 
 /// A fallen trunk lying on the ground, and the stump it broke from when it is thick.
 pub fn log(world: &mut World, foot: IVec3, rng: &mut Rng) {
+    begun();
     low(foot.y as f32 * CELL, || lain(world, foot, rng))
 }
 
@@ -637,6 +657,7 @@ fn lain(world: &mut World, foot: IVec3, rng: &mut Rng) {
 
 /// What is left of a felled or fallen tree.
 pub fn stump(world: &mut World, foot: IVec3, rng: &mut Rng) {
+    begun();
     let foot = (foot.as_vec3() + Vec3::new(0.5, 0.0, 0.5)) * CELL;
     let thick = rng.between(0.3, 0.65);
     let tall = rng.between(0.35, 1.1);

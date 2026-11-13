@@ -209,7 +209,7 @@ fn footing(world: &World, x: i32, z: i32, level: i32, height: f32, nerve: Nerve)
     // Nothing climbs into a bush or a tree.
     if at > level && {
         let under = world.get(IVec3::new(x, at - 1, z));
-        under.foliage() || matches!(under, Block::Wood | Block::Birch)
+        under.foliage() || under.wood()
     } {
         return Footing::Wall;
     }
@@ -234,7 +234,7 @@ fn dry_ground(world: &World, at: Vec2, near: f32, height: f32) -> bool {
             y -= 1;
         }
     }
-    y > 0 && !matches!(get(y), Block::Wood | Block::Birch) && (get(y + 1) != Block::Water || height > 1.0)
+    y > 0 && !get(y).wood() && (get(y + 1) != Block::Water || height > 1.0)
 }
 
 /// How many metres of the straight line from a body to a point can be walked.

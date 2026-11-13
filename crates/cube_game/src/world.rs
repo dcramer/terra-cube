@@ -113,7 +113,7 @@ impl Regions {
     }
 }
 
-fn region_of(cell: IVec3) -> (i32, i32) {
+pub(crate) fn region_of(cell: IVec3) -> (i32, i32) {
     (cell.x.div_euclid(terrain::REGION), cell.z.div_euclid(terrain::REGION))
 }
 
@@ -134,6 +134,19 @@ impl Terrain {
     /// How well the spot at `x`, `z` suits a kind of life at this hour, 0 to 1 (`ecology`).
     pub fn fit(&self, niche: &cube_sim::ecology::Niche, x: f32, z: f32, hour: f32) -> f32 {
         niche.fit(&self.2.place(&self.1, x, z), hour)
+    }
+
+    /// Marks chunks that have changed to be drawn again, and those beside them (a face at a
+    /// chunk's edge is its neighbour's to hide or show); the regions they are in are kept.
+    pub fn touched(&mut self, dirty: &mut Dirty, chunks: impl IntoIterator<Item = IVec3>) {
+        for chunk in chunks {
+            self.3.insert(region_of(chunk * CHUNK));
+            dirty.0.insert(chunk);
+            for side in [IVec3::X, IVec3::Y, IVec3::Z] {
+                dirty.0.insert(chunk + side);
+                dirty.0.insert(chunk - side);
+            }
+        }
     }
 
     /// Digs (with air) or builds a ball in the world, to the bit, and marks what to redraw.
@@ -831,8 +844,9 @@ fn regions(args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrai
                 if !found {
                     eprintln!("no specimen `{name}`: oak birch pine willow snag young sapling bush log stump rock");
                 }
-                form.limbs.extend(grown.limbs);
-                form.clumps.extend(grown.clumps);
+                // (Its own thing among the region's: `plants` counts each growing from one.)
+                form.limbs.extend(grown.limbs.into_iter().map(|l| cube_sim::plants::Limb { tree: l.tree + 1_000_000, ..l }));
+                form.clumps.extend(grown.clumps.into_iter().map(|c| cube_sim::plants::Clump { tree: c.tree + 1_000_000, ..c }));
                 form.stones.extend(grown.stones);
             }
         }

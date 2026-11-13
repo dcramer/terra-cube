@@ -33,6 +33,9 @@ cargo world cost [--seed N]                       what making the world costs: a
 cargo world dig [--holes 120]                     HOLES (120) holes and stones cut to the 5 cm bit all
                                                   over the land: what broken cells cost, and whether
                                                   creatures still live among them
+cargo world fell [--seed N]                       a tree near the start cut through: that it comes
+                                                  loose whole, goes over, lies on the ground as cells,
+                                                  leaves nothing in the air, and what each step costs
 cargo world grade [FILE] [--seed N]                where the ground is easy, steep and cliff, a line
                                                   for each band of height; with FILE, a picture of
                                                   it from above (green easy, yellow steep, red cliff)
@@ -434,6 +437,81 @@ fn cost_command(args: &Args) -> ! {
     std::process::exit(0)
 }
 
+/// A tree near the start is cut through at the foot, and what follows is judged: it comes
+/// loose as one piece, goes over, and lies on the ground as cells with nothing left in the air.
+fn fell_command(args: &Args) -> ! {
+    let land = Land::new(args.seed, args.radius);
+    let mut world = World::default();
+    let r = cube_sim::terrain::REGION;
+    let ((), mut form) = cube_sim::plants::recorded(|| {
+        for rz in -2..2 {
+            for rx in -2..2 {
+                cube_sim::terrain::fill(&mut world, &land, (rx * r, rz * r), ((rx + 1) * r, (rz + 1) * r));
+            }
+        }
+    });
+    // A grown tree well inside what was made: a trunk as thick as a person can cut through.
+    let inside = (2 * r) as f32 * CELL - 12.0;
+    let Some(trunk) = form.limbs.iter().copied().filter(|l| l.roots > 0 && (0.18..0.4).contains(&l.ra) && (l.b.y - l.a.y) > 5.0 && l.a.x.abs() < inside && l.a.z.abs() < inside).min_by(|a, b| a.a.length().total_cmp(&b.a.length())) else { fail("no tree to fell near the start") };
+    let mut checks = Checks(Vec::new());
+    let mut loose = cube_sim::loose::Loose::default();
+    let solid = |world: &World, of: &dyn Fn(Block) -> bool| -> usize { world.chunks.values().map(|c| (0..cube_voxel::CHUNK.pow(3)).filter(|i| of(c.get(IVec3::new(i % 32, i / 1024, i / 32 % 32)))).count()).sum() };
+    let wood_before = solid(&world, &|b| b.wood());
+    // Through it a metre up, in bites, from one side to the other.
+    let up = trunk.a + Vec3::Y * (cube_sim::plants::Limb::UNDER + 1.0);
+    let started = std::time::Instant::now();
+    let (mut bites, mut worked) = (0, 0);
+    'cutting: for row in [0, -1, 1, -2, 2, -3, 3] {
+        for step in -4..=4 {
+            let cut = loose.cut(&mut world, up + Vec3::new(step as f32 * 0.25, 0.0, row as f32 * 0.3), 0.42, Vec3::X, &[&form]);
+            worked += cut.worked;
+            // (As the game does: what is cells now is no longer among the shapes.)
+            form.limbs.retain(|l| !cut.trees.contains(&(0, l.tree)));
+            form.clumps.retain(|c| !cut.trees.contains(&(0, c.tree)));
+            bites += 1;
+            if !loose.pieces.is_empty() {
+                break 'cutting;
+            }
+        }
+    }
+    let cutting = started.elapsed().as_secs_f32() * 1000.0 / bites as f32;
+    checks.bar("fell pieces", loose.pieces.len() as f32, loose.pieces.len() == 1, "one piece comes loose");
+    let cells = loose.pieces.first().map_or(0, |p| p.cells.len());
+    checks.bar("fell piece cells", cells as f32, cells > 200, "the tree, not a chip of it");
+    let started = std::time::Instant::now();
+    let (mut ticks, mut worst) = (0u32, 0.0f32);
+    while !loose.pieces.is_empty() && ticks < 30 * TICKS {
+        let began = std::time::Instant::now();
+        loose.step(&mut world, cube_sim::DT);
+        worst = worst.max(began.elapsed().as_secs_f32() * 1000.0);
+        ticks += 1;
+    }
+    let falling = started.elapsed().as_secs_f32() * 1000.0;
+    let took = ticks as f32 * cube_sim::DT;
+    checks.bar("fell seconds", took, (0.8..12.0).contains(&took), "between 0.8 and 12 s to come down");
+    let down = loose.landed.first().copied();
+    let kept = down.map_or(0.0, |d| d.put as f32 / d.cells.max(1) as f32);
+    checks.bar("fell kept", kept, kept > 0.8, "at least 0.8 of its cells are put back");
+    // Lying: its middle is low, where a standing tree's is half its height up.
+    let ground = land.height((trunk.a.x / CELL) as i32, (trunk.a.z / CELL) as i32) as f32 * CELL;
+    let high = down.map_or(99.0, |d| d.at.y - ground);
+    checks.bar("fell lies", high, high < (trunk.b.y - trunk.a.y) * 0.5, "its middle under half the height it stood");
+    // And nothing of it is left in the air: looked through again, nothing more comes loose.
+    let (lo, hi) = (((trunk.a - Vec3::splat(14.0)) / CELL).as_ivec3(), ((trunk.b + Vec3::splat(14.0)) / CELL).as_ivec3());
+    loose.loosen(&mut world, lo.with_y((ground / CELL) as i32 - 2), hi, Vec3::X);
+    checks.bar("fell hanging", loose.pieces.len() as f32, loose.pieces.is_empty(), "nothing left loose in the air");
+    let wood_after = solid(&world, &|b| b.wood());
+    println!(
+        "felled a tree {:.0} m tall, {:.0} cm through, {:.0} m from the start: {bites} bites ({cutting:.1} ms each, {worked} cells made wrought) · a piece of {cells} cells came down in {took:.1} s at {:.1} m/s ({falling:.0} ms in all, worst step {worst:.1} ms) · {:.0}% of it put back · wood cells {wood_before} to {wood_after}",
+        trunk.b.y - trunk.a.y,
+        trunk.ra * 200.0,
+        trunk.a.with_y(0.0).length(),
+        down.map_or(0.0, |d| d.speed),
+        kept * 100.0
+    );
+    checks.finish()
+}
+
 fn dig_command(args: &Args) -> ! {
     let (mut world, land, mut sim) = living(args);
     let faces = |world: &World, chunk: IVec3| [false, true].map(|liquid| cube_voxel::mesh::mesh_chunk(world, chunk, liquid).indices.len() / 6).iter().sum::<usize>();
@@ -563,6 +641,7 @@ fn main() {
         "dig" => dig_command(&args),
         "cost" => cost_command(&args),
         "trunks" => trunks_command(&args),
+        "fell" => fell_command(&args),
         "grade" => grade_command(&args),
         "life" => life_command(&args),
         "drawn" => {

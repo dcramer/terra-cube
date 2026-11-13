@@ -65,7 +65,7 @@ impl Grain {
 
     /// The grain of a block's top (and underside) or of its sides.
     pub fn of(block: Block, top: bool) -> Grain {
-        match block {
+        match block.grown() {
             Block::Grass | Block::Turf => Grain::Grass,
             Block::Dirt => Grain::Soil,
             Block::Stone | Block::Slate | Block::Chalk | Block::Broken | Block::Rock => if top { Grain::Rock } else { Grain::Strata },
@@ -79,6 +79,8 @@ impl Grain {
             Block::Litter => if top { Grain::Litter } else { Grain::Soil },
             Block::Moss => if top { Grain::Moss } else { Grain::Strata },
             Block::Air | Block::Water | Block::Tuft | Block::Flower | Block::Reed | Block::Fern | Block::Mushroom => Grain::Plain,
+            // (Never reached: `grown` has made each of these the block it was.)
+            Block::Timber | Block::TimberBirch | Block::Shard | Block::Brush | Block::BrushPale | Block::BrushDeep | Block::BrushNeedles => Grain::Plain,
         }
     }
 

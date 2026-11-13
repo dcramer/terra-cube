@@ -80,6 +80,16 @@ pub enum Block {
     /// A boulder's stone: solid like any other, but not the land (it is not eased into the
     /// ground), and drawn as the shape of the rock it is part of, not as cubes.
     Rock,
+    /// What grew or lay as one drawn shape and has since been cut into or brought down
+    /// ([`Block::wrought`]): the same stuff, drawn now as the cells it is, so a cut shows and
+    /// what falls lies where it fell. Wood and birch; a boulder's stone; the four leaves.
+    Timber,
+    TimberBirch,
+    Shard,
+    Brush,
+    BrushPale,
+    BrushDeep,
+    BrushNeedles,
 }
 
 impl Block {
@@ -92,7 +102,42 @@ impl Block {
     }
     /// Leaves or needles: what a crown is made of.
     pub fn foliage(self) -> bool {
-        matches!(self, Block::Leaves | Block::LeavesPale | Block::LeavesDeep | Block::Needles)
+        matches!(self, Block::Leaves | Block::LeavesPale | Block::LeavesDeep | Block::Needles | Block::Brush | Block::BrushPale | Block::BrushDeep | Block::BrushNeedles)
+    }
+    /// A tree's wood, standing or cut.
+    pub fn wood(self) -> bool {
+        matches!(self, Block::Wood | Block::Birch | Block::Timber | Block::TimberBirch)
+    }
+    /// Drawn by someone else as part of a whole shape (a tree, a boulder: `cube_game::flora`)
+    /// and not as cells: wood, a boulder's stone and leaf, as they grew.
+    pub fn shaped(self) -> bool {
+        matches!(self, Block::Wood | Block::Birch | Block::Rock | Block::Leaves | Block::LeavesPale | Block::LeavesDeep | Block::Needles)
+    }
+    /// The same stuff once it has been cut into or brought down: drawn as the cells it is.
+    pub fn wrought(self) -> Block {
+        match self {
+            Block::Wood => Block::Timber,
+            Block::Birch => Block::TimberBirch,
+            Block::Rock => Block::Shard,
+            Block::Leaves => Block::Brush,
+            Block::LeavesPale => Block::BrushPale,
+            Block::LeavesDeep => Block::BrushDeep,
+            Block::Needles => Block::BrushNeedles,
+            other => other,
+        }
+    }
+    /// What it was as it grew: a wrought block's colour and grain are that one's.
+    pub fn grown(self) -> Block {
+        match self {
+            Block::Timber => Block::Wood,
+            Block::TimberBirch => Block::Birch,
+            Block::Shard => Block::Rock,
+            Block::Brush => Block::Leaves,
+            Block::BrushPale => Block::LeavesPale,
+            Block::BrushDeep => Block::LeavesDeep,
+            Block::BrushNeedles => Block::Needles,
+            other => other,
+        }
     }
     /// Hides the faces of neighbours behind it. A broken cell may have gaps, so it does not.
     pub fn opaque(self) -> bool {
@@ -107,7 +152,7 @@ impl Block {
     }
 
     pub fn colors(self) -> ([f32; 3], [f32; 3]) {
-        match self {
+        match self.grown() {
             Block::Air | Block::Broken => ([0.0; 3], [0.0; 3]),
             Block::Grass => ([0.20, 0.31, 0.10], [0.15, 0.24, 0.08]),
             Block::Dirt => ([0.22, 0.155, 0.095], [0.21, 0.15, 0.09]),
@@ -133,6 +178,8 @@ impl Block {
             Block::Fern => ([0.12, 0.25, 0.09], [0.10, 0.21, 0.08]),
             Block::Mushroom => ([0.55, 0.14, 0.08], [0.70, 0.66, 0.56]),
             Block::Rock => ([0.30, 0.30, 0.31], [0.26, 0.26, 0.275]),
+            // (Never reached: `grown` has made each of these the block it was.)
+            Block::Timber | Block::TimberBirch | Block::Shard | Block::Brush | Block::BrushPale | Block::BrushDeep | Block::BrushNeedles => ([0.0; 3], [0.0; 3]),
         }
     }
 }
@@ -199,6 +246,18 @@ impl Chunk {
         if bits.iter().all(|&other| other == b) {
             self.bits.remove(&(at as u32));
             self.cells[at] = b;
+        }
+    }
+    /// Makes of every block in a cell (the cell, or each of its bits) what `f` says.
+    pub fn map(&mut self, p: IVec3, f: impl Fn(Block) -> Block) {
+        let at = Self::index(p);
+        match self.cells[at] {
+            Block::Broken => {
+                if let Some(bits) = self.bits.get_mut(&(at as u32)) {
+                    bits.iter_mut().for_each(|b| *b = f(*b));
+                }
+            }
+            whole => self.cells[at] = f(whole),
         }
     }
     /// Puts `other`'s cells wherever this chunk has air.
@@ -377,6 +436,15 @@ impl World {
         self.written(cell.x.div_euclid(CHUNK), cell.z.div_euclid(CHUNK));
         let (c, l) = Self::split(cell);
         std::sync::Arc::make_mut(self.chunks.entry(c).or_default()).set(l, b);
+    }
+
+    /// Makes of every block in a cell (the cell, or each of its bits) what `f` says: the same
+    /// shape of other stuff. (`f` gives a solid block for a solid one.)
+    pub fn map(&mut self, cell: IVec3, f: impl Fn(Block) -> Block) {
+        let (c, l) = Self::split(cell);
+        if let Some(chunk) = self.chunks.get_mut(&c) {
+            std::sync::Arc::make_mut(chunk).map(l, f);
+        }
     }
 
     fn bit_index(bit: IVec3) -> (IVec3, usize) {

@@ -32,9 +32,15 @@ pub struct Forms(pub HashMap<(i32, i32), std::sync::Arc<Form>>);
 
 /// The meshes made from them.
 #[derive(Resource, Default)]
-pub struct Grown(HashMap<(i32, i32), (Entity, u8)>, HashMap<(i32, i32), (u8, bevy::tasks::Task<Shape>)>);
+pub struct Grown(HashMap<(i32, i32), (Entity, u8)>, HashMap<(i32, i32), (u8, bevy::tasks::Task<Shape>)>, HashSet<(i32, i32)>);
 
 impl Grown {
+    /// A region's shapes have changed (a tree of it was cut into and is cells now): its mesh
+    /// is made again, and what it showed stays until that is ready.
+    pub fn again(&mut self, region: (i32, i32)) {
+        self.1.remove(&region);
+        self.2.insert(region);
+    }
     /// Whether a region's trees and rocks have their meshes.
     pub fn has(&self, region: (i32, i32)) -> bool {
         self.0.contains_key(&region)
@@ -363,7 +369,7 @@ fn grow(mut commands: Commands, args: Res<crate::Args>, loading: Res<crate::load
     };
     // Nearest first, each worked out on another thread (a region's trees are some tens of
     // thousands of points); what a region showed before stays until its new mesh is ready.
-    let mut wanted: Vec<((i32, i32), u8)> = forms.0.keys().map(|r| (*r, level(r))).filter(|(r, level)| grown.0.get(r).is_none_or(|(_, was)| was != level)).collect();
+    let mut wanted: Vec<((i32, i32), u8)> = forms.0.keys().map(|r| (*r, level(r))).filter(|(r, level)| grown.2.contains(r) || grown.0.get(r).is_none_or(|(_, was)| was != level)).collect();
     wanted.sort_by(|a, b| away(&a.0).total_cmp(&away(&b.0)));
     grown.1.retain(|r, (level, _)| wanted.iter().any(|w| w.0 == *r && w.1 == *level));
     // (The nearest first, and in play two a frame: each is a big mesh for the card to take.)
@@ -372,6 +378,7 @@ fn grow(mut commands: Commands, args: Res<crate::Args>, loading: Res<crate::load
     for region in ready.into_iter().take(if loading.up || args.scene.is_some() { 8 } else { 2 }) {
         let Some((level, shape)) = grown.1.get_mut(&region).and_then(|(level, task)| bevy::tasks::futures::check_ready(task).map(|s| (*level, s))) else { continue };
         grown.1.remove(&region);
+        grown.2.remove(&region);
         if let Some((old, _)) = grown.0.remove(&region) {
             commands.entity(old).despawn();
         }
