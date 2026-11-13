@@ -35,6 +35,8 @@ cargo world dig [--holes 120]                     HOLES (120) holes and stones c
                                                   creatures still live among them
 cargo world fell [--seed N]                       a tree near the start cut through: that it comes
                                                   (`fell X,Z`: the tree nearest a place)
+cargo world quarry [--seed N]                     a boulder near the start cut through with a pick: that
+                                                  it becomes cells, its top comes down and lies as stone
 cargo world joined [--seed N]                     every tree near the start as the cells it is once cut
                                                   into: whether all its wood is one body with its foot
                                                   loose whole, goes over, lies on the ground as cells,
@@ -453,6 +455,91 @@ fn cost_command(args: &Args) -> ! {
     std::process::exit(0)
 }
 
+/// `cargo world quarry`: a boulder near the start cut through at its middle with a pick's
+/// bites, and what follows judged: it becomes cells, stone is taken, what is over the cut
+/// comes loose and comes down, its stone goes back into the world, and nothing is left in
+/// the air.
+fn quarry_command(args: &Args) -> ! {
+    let land = Land::new(args.seed, args.radius);
+    let mut world = World::default();
+    let r = cube_sim::terrain::REGION;
+    let ((), mut form) = cube_sim::plants::recorded(|| {
+        for rz in -2..2 {
+            for rx in -2..2 {
+                cube_sim::terrain::fill(&mut world, &land, (rx * r, rz * r), ((rx + 1) * r, (rz + 1) * r));
+            }
+        }
+    });
+    let inside = (2 * r) as f32 * CELL - 12.0;
+    let Some(stone) = form.stones.iter().filter(|s| s.radii.min_element() > 0.7 && s.middle.x.abs() < inside && s.middle.z.abs() < inside).min_by(|a, b| a.middle.length().total_cmp(&b.middle.length())).cloned() else { fail("no boulder to quarry near the start") };
+    let mut checks = Checks(Vec::new());
+    let mut loose = cube_sim::loose::Loose::default();
+    let stuff = Some(cube_sim::items::Stuff::Stone);
+    let reach = stone.radii.x.max(stone.radii.z) + 0.5;
+    let (mut bites, mut worked, mut taken) = (0, 0, 0u32);
+    let n = (reach / 0.3).ceil() as i32;
+    // A row of the pick's bites across its top: it is cells from the first, and stone goes.
+    for step in -n..=n {
+        let at = stone.middle + Vec3::new(step as f32 * 0.3, stone.radii.y * 0.5, 0.0);
+        let cut = loose.cut(&mut world, at, 0.42, Vec3::X, &[&form], stuff);
+        if !cut.stones.is_empty() {
+            form.stones.retain(|s| s.middle != stone.middle);
+        }
+        (worked, taken, bites) = (worked + cut.worked, taken + cut.taken[cube_sim::items::Stuff::Stone as usize], bites + 1);
+    }
+    // (A boulder lies in the ground: cut through, its top rests on the bank beside it and
+    // goes nowhere, which is right. So the earth is dug from round and under it with the
+    // shovel, a level at a time, until it comes down. One that lies on rock does not, and
+    // is not held to how it falls.)
+    let earth = Some(cube_sim::items::Stuff::Earth);
+    // (Its stone, in bits, round where it lies: what there is before it comes down and after.)
+    let stone_bits = |world: &World| -> usize {
+        let (lo, hi) = (((stone.middle - stone.radii - 4.0) / cube_voxel::BIT).floor().as_ivec3(), ((stone.middle + stone.radii + 4.0) / cube_voxel::BIT).floor().as_ivec3());
+        (lo.y..=hi.y).flat_map(|y| (lo.z..=hi.z).flat_map(move |z| (lo.x..=hi.x).map(move |x| IVec3::new(x, y, z)))).filter(|b| matches!(world.bit(*b), Block::Shard | Block::Rock)).count()
+    };
+    let before = stone_bits(&world);
+    let wide = ((reach + 1.0) / 0.3).ceil() as i32;
+    'digging: for down in 1..=7 {
+        for row in -wide..=wide {
+            for step in -wide..=wide {
+                let at = stone.middle + Vec3::new(step as f32 * 0.3, 0.3 - down as f32 * 0.4, row as f32 * 0.3);
+                loose.cut(&mut world, at, 0.42, Vec3::X, &[&form], earth);
+                bites += 1;
+                if loose.pieces.iter().map(|p| p.cells.len()).sum::<usize>() > 20 {
+                    break 'digging;
+                }
+            }
+        }
+    }
+    checks.bar("quarry wrought", worked as f32, worked > 50, "the boulder became cells");
+    checks.bar("quarry taken", taken as f32, taken > 500, "stone was cut out of it (bits)");
+    let cells = loose.pieces.iter().map(|p| p.cells.len()).sum::<usize>();
+    if cells <= 20 {
+        println!("quarried a boulder {:.1} by {:.1} by {:.1} m, {:.0} m from the start: {bites} bites, {worked} cells made wrought, {taken} bits of stone taken · it lies on rock, and the shovel did not bring it down", stone.radii.x * 2.0, stone.radii.y * 2.0, stone.radii.z * 2.0, stone.middle.length());
+        checks.finish()
+    }
+    let mut ticks = 0;
+    while !loose.pieces.is_empty() && ticks < 20 * TICKS {
+        loose.step(&mut world, cube_sim::DT);
+        ticks += 1;
+    }
+    let took = ticks as f32 * cube_sim::DT;
+    checks.bar("quarry seconds", took, took < 10.0, "it has come to rest within ten seconds");
+    let (put, lost, fast) = (loose.landed.iter().map(|l| l.put).sum::<usize>(), loose.landed.iter().map(|l| l.lost).sum::<usize>(), loose.landed.iter().map(|l| l.speed).fold(0.0, f32::max));
+    // (By its stone, not by cells put: what comes loose has earth and grass on it, and
+    // broken on landing it is counted lump by lump. Seven tenths, where 74 to 100 are seen on
+    // seven seeds: it was a half to two thirds until what is too small for a lump and what finds its place taken were kept;
+    // what still goes is the thin broken outside of a lump that lands turned.)
+    let kept = stone_bits(&world) as f32 / before.max(1) as f32;
+    checks.bar("quarry stone kept", kept, kept > 0.7, "seven tenths of its stone is in the world again");
+    // And nothing of it is left on nothing.
+    let (lo, hi) = (((stone.middle - stone.radii - 3.0) / CELL).floor().as_ivec3(), ((stone.middle + stone.radii + 3.0) / CELL).floor().as_ivec3());
+    loose.loosen(&mut world, lo, hi, Vec3::X);
+    checks.bar("quarry hanging", loose.pieces.len() as f32, loose.pieces.is_empty(), "nothing is left in the air");
+    println!("quarried a boulder {:.1} by {:.1} by {:.1} m, {:.0} m from the start: {bites} bites, {worked} cells made wrought, {taken} bits of stone taken · {cells} cells came loose, down in {took:.1} s at {fast:.1} m/s at the most, {put} cells put back in {} landings, {:.0}% of its stone there after, {lost} whole cells of stone found no room", stone.radii.x * 2.0, stone.radii.y * 2.0, stone.radii.z * 2.0, stone.middle.length(), loose.landed.len(), kept * 100.0);
+    checks.finish()
+}
+
 /// `cargo world joined`: every tree near the start as the cells it would be once cut into,
 /// and whether all its wood is one body with its foot (joined by faces, edges or corners,
 /// as what holds a thing up is told). One that is not drops a part of itself the moment an
@@ -836,6 +923,7 @@ fn main() {
         "trunks" => trunks_command(&args),
         "fell" => fell_command(&args),
         "joined" => joined_command(&args),
+        "quarry" => quarry_command(&args),
         "replay" => replay_command(&args),
         "grade" => grade_command(&args),
         "life" => life_command(&args),

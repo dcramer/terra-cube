@@ -76,6 +76,7 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 	@cargo world life | tail -1 | sed 's/^ok$$/ok life: every kind has somewhere to live/'
 	@cargo world trunks | tail -1 | sed 's/^ok$$/ok trunks: what stops a body at a tree is the wood that is drawn/'
 	@for seed in 6 1 11; do cargo world fell --seed $$seed | grep -E '^FAIL' | sed "s/^/seed $$seed: /"; done; cargo world fell | tail -1 | sed 's/^ok$$/ok fell: a tree cut through comes down whole and lies where it fell, as cells/'
+	@for seed in 1 7; do cargo world quarry --seed $$seed | grep -E '^FAIL' | sed "s/^/seed $$seed: /"; done; cargo world quarry | tail -1 | sed 's/^ok$$/ok quarry: a boulder dug out from under comes down, breaks if it comes down hard, and its stone lies where it fell/'
 	@cargo world replay | tail -1 | sed 's/^ok$$/ok replay: the land made again from its seed with the same edits done to it is the same world/'
 	@tools/forget.sh
 	@tools/dig.sh

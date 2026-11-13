@@ -767,7 +767,8 @@ impl Loose {
     /// Breaks a piece that has come down hard: what of it `keeps` says stays one piece (given
     /// back); the rest goes in lumps some three cells across, each thrown out from the
     /// middle and up (`throw` of how fast the whole came down), turning, to land on its own.
-    /// What is too small to be a lump is dust, and gone.
+    /// What is too small to be a lump goes with the lump beside it; with none beside it, it
+    /// is a small stone of its own.
     fn shatter(&mut self, mut piece: Piece, speed: f32, throw: f32, keeps: impl Fn(IVec3) -> bool) -> Piece {
         let mut lumps: HashMap<IVec3, HashMap<IVec3, Part>> = HashMap::new();
         let all = std::mem::take(&mut piece.cells);
@@ -781,13 +782,27 @@ impl Loose {
             let shove = IVec3::new((cell.y / 2).rem_euclid(2), (cell.z / 3).rem_euclid(2), (cell.x / 2).rem_euclid(2));
             lumps.entry((cell + shove).div_euclid(IVec3::splat(3))).or_default().insert(cell, part);
         }
+        // What is too small to be a lump goes with the largest lump beside it. (It was dust,
+        // and gone: a boulder is mostly its outside, and a third to a half of one that came
+        // down was no longer anywhere, 2026-11-13.) In a fixed order, so the same fall
+        // breaks the same way.
+        let mut small: Vec<IVec3> = lumps.iter().filter(|(_, c)| c.len() < 4).map(|(k, _)| *k).collect();
+        small.sort_by_key(|k| (k.y, k.z, k.x));
+        for key in small {
+            let beside = round().map(|d| key + d).filter(|k| lumps.get(k).is_some_and(|c| c.len() >= 4)).max_by_key(|k| (lumps[k].len(), k.y, k.z, k.x));
+            if let Some(to) = beside {
+                let cells = lumps.remove(&key).unwrap_or_default();
+                lumps.get_mut(&to).unwrap().extend(cells);
+            }
+        }
         let heart = piece.pivot + Vec3::Y * piece.tall / 2.0;
         let mut keys: Vec<IVec3> = lumps.keys().copied().collect();
         keys.sort_by_key(|k| (k.y, k.z, k.x));
         for key in keys {
             let cells = lumps.remove(&key).unwrap_or_default();
             // (A lump of leaf alone is not a thing that falls: it is leaves, shed.)
-            if cells.len() < 4 || !cells.values().any(|p| match p { Part::Whole(b) => bears(*b), Part::Bits(b) => b.iter().any(|b| bears(*b)) }) {
+            // (And a scrap of stone with no lump beside it is a small stone, not nothing.)
+            if !cells.values().any(|p| match p { Part::Whole(b) => bears(*b), Part::Bits(b) => b.iter().any(|b| bears(*b)) }) {
                 continue;
             }
             let middle = cells.keys().map(|c| (c.as_vec3() + 0.5) * CELL).sum::<Vec3>() / cells.len() as f32;
@@ -973,8 +988,21 @@ fn land(world: &mut World, piece: &Piece) -> (usize, HashSet<IVec3>, IVec3, IVec
                     }
                     // (What bears and found no room: wood into wood, stone into the ground.
                     // Leaf that comes down into leaf or onto the ground is only crushed.)
+                    // (It lies on what is there, in the first room over it: a boulder that
+                    // came down lost a cell of stone for every cell of ground it met by
+                    // less than half, a fifth of itself, 2026-11-13.)
                     Part::Whole(b) => {
-                        lost += bears(*b) as usize;
+                        if bears(*b) {
+                            // (On what bears: over leaf it would be left in the air.)
+                            match (1..=4).map(|up| cell + IVec3::Y * up).find(|c| world.get(*c) == Block::Air && has(world, *c - IVec3::Y, false) && !piece.cells.contains_key(&at((c.as_vec3() + 0.5) * CELL))) {
+                                Some(room) => {
+                                    world.set(room, *b);
+                                    changed.insert(room.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
+                                    put += 1;
+                                }
+                                None => lost += 1,
+                            }
+                        }
                         continue;
                     }
                     Part::Bits(_) => {
@@ -994,6 +1022,11 @@ fn land(world: &mut World, piece: &Piece) -> (usize, HashSet<IVec3>, IVec3, IVec
                             };
                             if block.solid() && !world.bit(bit).solid() {
                                 world.set_bit(bit, block);
+                                any = true;
+                            } else if bears(block) && let Some(room) = (1..=2 * SPLIT).map(|up| bit + IVec3::Y * up).find(|b| !world.bit(*b).solid() && bears(world.bit(*b - IVec3::Y))) {
+                                // (And a bit of stone that finds its place taken, the same.)
+                                world.set_bit(room, block);
+                                changed.insert(room.div_euclid(IVec3::splat(SPLIT)).div_euclid(IVec3::splat(cube_voxel::CHUNK)));
                                 any = true;
                             }
                         }
