@@ -1,7 +1,7 @@
 # Measured by `cargo forge finish`; do not edit.
 height = 0.5
 length = 1.9200001
-width = 2.3672
+width = 2.3839998
 walk_speed = 3.0
 run_speed = 7.2000003
 sprint_speed = 0.0

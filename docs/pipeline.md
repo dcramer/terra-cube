@@ -113,7 +113,7 @@ back = [..]  belly = [..]  wing = [..]  mark = [..]   # body, underside, legs, h
 
 Then `cargo forge finish ID` and `cargo sandbox --shot ID --view three --clips idle,walk,attack,die --cols 6`. Forge makes the boxes, a skeleton (body, head, abdomen, two bones a leg), and every clip of the plan: legs step in two alternating sets, the set on the ground going back at the body's speed. Each box is held whole by one bone, so stretch is always 0%.
 
-Limits: one body shape for all of them (no pincers, no scorpion's tail, no long hind legs on the grasshopper).
+Its own parts, each a line in `[built]`: `claws = true` (pincers held out ahead: crab, scorpion), `sting = true` (a tail arched over its back: scorpion), `leaps = true` (long hind legs folded high: grasshopper; it still walks, it does not leap).
 
 **A bird on the ground** is `form = "fowl"` (the same file; heron, duck, pheasant, owl, hawk, crow, all in the world): `length` its body, `span` how long its legs are, `chord` its neck (of the body's length), `tail` its tail, `mark` its beak and feet. Two legs under it of three bones (thigh, shank, and a foot that stays flat); it steps at a bird's rate (two steps in 0.5 s walking, 0.3 s running) and goes as far as its legs take it; it pecks with its head, not its body. It does not fly: `cube_game::air` flies the small birds, which are other models. All five are in the world. Spider and scorpion at a hunter's numbers (`share = 0.1`, `range = 260`, `capacity = 4`): at the common share the goblins died out within sixteen years (`cargo world years 24`).
 

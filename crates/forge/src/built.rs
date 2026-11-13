@@ -36,6 +36,15 @@ pub struct Built {
     pub wing: [f32; 3],
     /// The wingtips, a bird's beak, a butterfly's wing edge, a fish's fins.
     pub mark: [f32; 3],
+    /// A crawler's own parts (`crawl`): pincers held out ahead (a crab, a scorpion); a tail
+    /// arched up over its back to a sting (a scorpion); hind legs long and folded high, to
+    /// leap with (a grasshopper).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub claws: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub sting: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub leaps: bool,
     /// A crawler's legs, all told (`crawl`): six, or a spider's eight.
     #[serde(default = "six", skip_serializing_if = "is_six")]
     pub legs: u8,

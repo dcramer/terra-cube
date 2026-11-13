@@ -94,8 +94,30 @@ impl Crawler {
         for x in [-1.0, 1.0] {
             put(Vec3::new(x * wide * 0.18, mid - thick * 0.1, l * 0.53), Vec3::new(l * 0.05, l * 0.04, l * 0.14), dark(b.mark, 0.7), 1);
         }
+        // Pincers: an arm out ahead and to each side from the head, and a claw of two fingers.
+        if b.claws {
+            for x in [-1.0f32, 1.0] {
+                let (from, to) = (Vec3::new(x * wide * 0.3, mid, l * 0.4), Vec3::new(x * wide * 0.75, mid, l * 0.72));
+                for i in 0..3 {
+                    put(from.lerp(to, (i as f32 + 0.5) / 3.0), Vec3::new(l * 0.11, l * 0.07, l * 0.14), b.wing, 1);
+                }
+                put(to + Vec3::new(x * l * 0.03, 0.0, l * 0.12), Vec3::new(l * 0.07, l * 0.08, l * 0.2), b.mark, 1);
+                put(to + Vec3::new(-x * l * 0.06, 0.0, l * 0.1), Vec3::new(l * 0.04, l * 0.05, l * 0.15), dark(b.mark, 0.8), 1);
+            }
+        }
         // Abdomen, in two pieces, the hinder smaller.
         let tail = l * b.tail;
+        // A sting: the tail goes on from the abdomen in pieces, up and back over the body.
+        if b.sting {
+            let root = Vec3::new(0.0, mid, -l * 0.25 - tail);
+            // (Round an arc as wide as a third of its body, each piece into the next.)
+            let r = l * 0.34;
+            for i in 0..10 {
+                let a = i as f32 / 9.0 * 2.7;
+                let at = root + Vec3::new(0.0, r * (1.0 - a.cos()), -r * a.sin());
+                put(at, Vec3::splat(r * (0.5 - 0.02 * i as f32)), if i == 9 { b.mark } else { dark(b.back, 0.8 + 0.03 * i as f32) }, 2);
+            }
+        }
         put(Vec3::new(0.0, mid + thick * 0.08, -l * 0.25 - tail * 0.3), Vec3::new(wide * 1.05, thick * 1.1, tail * 0.6), dark(b.back, 0.85), 2);
         put(Vec3::new(0.0, mid + thick * 0.05, -l * 0.25 - tail * 0.8), Vec3::new(wide * 0.75, thick * 0.8, tail * 0.4), dark(b.back, 0.7), 2);
         let mut places = vec![Vec3::new(0.0, mid, 0.0), Vec3::new(0.0, mid, l * 0.25), Vec3::new(0.0, mid, -l * 0.25)];
@@ -106,13 +128,18 @@ impl Crawler {
                 // (Along the body from fore to hind, and splayed: the fore reach ahead.)
                 let t = if side > 1 { k as f32 / (side - 1) as f32 } else { 0.5 };
                 let (z, splay) = (l * (0.2 - 0.4 * t), l * (0.16 - 0.32 * t));
-                let hip = Vec3::new(x * wide / 2.0, knee, z);
-                let end = Vec3::new(x * (wide / 2.0 + reach), knee, z + splay);
+                // (A leaper's hind legs: folded high over its back, and set down well behind.)
+                let leaper = b.leaps && k == side - 1;
+                let knee = if leaper { knee * 1.9 } else { knee };
+                let hip = Vec3::new(x * wide / 2.0, mid, z);
+                let hip = if leaper { hip } else { hip.with_y(knee) };
+                let end = Vec3::new(x * (wide / 2.0 + reach * if leaper { 0.6 } else { 1.0 }), knee, z + splay * if leaper { 2.0 } else { 1.0 });
                 let bone = places.len();
                 // The upper part, out to the knee (in three short boxes along its slant); the lower, down to the ground.
                 for i in 0..3 {
                     let at = hip.lerp(end, (i as f32 + 0.5) / 3.0);
-                    put(at, Vec3::new(reach / 3.0 + leg * 0.3, leg, leg + (splay.abs() / 3.0)), b.wing, bone);
+                    // (Each as long as its share of the way, whichever way that runs.)
+                    put(at, (end - hip).abs() / 3.0 + Vec3::splat(if leaper { leg * 1.5 } else { leg }), b.wing, bone);
                 }
                 put(Vec3::new(end.x, knee / 2.0, end.z), Vec3::new(leg * 0.8, knee, leg * 0.8), dark(b.wing, 0.8), bone + 1);
                 let name = format!("leg_{}{k}", if s == 0 { 'l' } else { 'r' });

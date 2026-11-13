@@ -1,11 +1,11 @@
 # Measured by `cargo forge finish`; do not edit.
 height = 0.12
-length = 0.22
-width = 0.4312
+length = 0.28800002
+width = 0.434
 walk_speed = 0.5
 run_speed = 1.2
 sprint_speed = 0.0
-triangles = 468
+triangles = 588
 joints = 19
 
 [clips.attack]

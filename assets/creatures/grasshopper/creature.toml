@@ -7,6 +7,7 @@ height = 0.05
 # Made by forge of boxes, with its own legs and gait (`crawl`): no Tripo, no credits.
 [built]
 form = "crawler"
+leaps = true
 length = 0.12
 span = 0.16
 tail = 0.7
