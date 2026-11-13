@@ -238,7 +238,7 @@ fn shape(puffs: &[Puff], reach: Vec3, cube: f32) -> Shape {
                         positions.push((at + (face * 0.5 + a * u + b * v) * cube).to_array());
                         normals.push(normal.to_array());
                         // Greyer is also bluer: what is deep in a cloud is lit by the sky more than the sun.
-                        colors.push([white * (0.8 + 0.2 * white), white * (0.9 + 0.1 * white), white, 1.0]);
+                        colors.push([white * (0.66 + 0.34 * white), white * (0.84 + 0.16 * white), white, 1.0]);
                     }
                     indices.extend([first, first + 1, first + 2, first, first + 2, first + 3]);
                 }

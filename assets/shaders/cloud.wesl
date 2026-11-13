@@ -52,7 +52,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let toward = max(dot(-pbr_input.V, sun.xyz), 0.0);
     let lining = LINING * edge * (0.2 + 1.8 * pow(toward, 6.0));
     // What comes out from under much cloud has come a long way through it and is bluer.
-    let deep = mix(vec3<f32>(0.7, 0.83, 1.0), vec3<f32>(1.0), open);
+    let deep = mix(vec3<f32>(0.5, 0.7, 1.0), vec3<f32>(1.0), open);
     out.color = vec4<f32>(out.color.rgb + glow.rgb * (within * deep + lining) + shade.rgb * away, out.color.a);
 
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);

@@ -87,7 +87,7 @@ fn bowl(colour: impl Fn(f32) -> [f32; 4]) -> Mesh {
 /// at its middle and gone at its rim, falling off fast at first as light round a lamp does.
 const GLOW: [(f32, f32); 6] = [(0.0, 1.0), (0.07, 0.66), (0.2, 0.36), (0.4, 0.14), (0.68, 0.04), (1.0, 0.0)];
 /// And a disc: all of it bright, to a soft rim.
-const DISC: [(f32, f32); 3] = [(0.0, 1.0), (0.86, 1.0), (1.0, 0.0)];
+const DISC: [(f32, f32); 4] = [(0.0, 1.0), (0.6, 1.0), (0.85, 0.5), (1.0, 0.0)];
 
 fn round(rings: &[(f32, f32)]) -> Mesh {
     const ROUND: u32 = 40;

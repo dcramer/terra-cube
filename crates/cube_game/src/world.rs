@@ -466,7 +466,7 @@ fn sky(
     // as bright as the sky lay on it like milk.)
     let lit = lit * (0.5 + 0.5 * day);
     let away = Vec3::new(0.62, 0.74, 0.88).lerp(Vec3::new(0.72, 0.57, 0.57), low) * lit + dark;
-    let toward = Vec3::new(1.0, 0.86, 0.62).lerp(Vec3::new(1.0, 0.56, 0.27), low);
+    let toward = Vec3::new(1.0, 0.86, 0.62).lerp(Vec3::new(1.0, 0.62, 0.4), low);
     for (mut exposure, mut fog, mut grade, mut skylight, mut bloom, eye) in &mut cameras {
         exposure.ev100 = by_height(&EXPOSURE, to_sun.y);
         // What has a light of its own (a flame, the moon, a firefly) has more of a glow
@@ -495,9 +495,11 @@ fn sky(
         // (The glare toward the sun is the sun's own light times this, and the exposure
         // opens three stops for a low sun: left alone it grew with it into a custard that
         // outshone the sky. It is held to what it is at noon.)
-        // (It stays on a while after the sun is under: the sky toward a sun just set is
-        // still its orange, and so must the sea under it be.)
-        let glare = 0.6 * 2f32.powf(exposure.ev100 - 14.4).min(1.0) * (1.0 + 1.2 * low) * ((to_sun.y + 0.14) / 0.1).clamp(0.0, 1.0);
+        // (A seventh of it stays on a while after the sun is under: the sky toward a sun just
+        // set is still its orange, and so must the sea under it be. All of it left on, the
+        // land glowed tan toward a sun that had set, where it should be dark under the sky.)
+        let after = 0.85 * ((to_sun.y + 0.02) / 0.04).clamp(0.0, 1.0) + 0.15 * ((to_sun.y + 0.14) / 0.1).clamp(0.0, 1.0);
+        let glare = 0.6 * 2f32.powf(exposure.ev100 - 14.4).min(1.0) * (1.0 + 0.8 * low) * after;
         fog.directional_light_color = Color::srgba(toward.x, toward.y, toward.z, glare);
         fog.directional_light_exponent = 14.0 - 8.0 * low;
         // Under the water: green-blue murk a few metres deep, dimmer the further down.
