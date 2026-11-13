@@ -607,7 +607,7 @@ fn torch(
     // The light that lights the way stands over the flame, not in it (see `LIFT`), and is
     // two lights in one place: most of it throws shadows, and a part does not.
     let over = at + Vec3::Y * LIFT + stir;
-    let glow = |shadows: bool, lumens: f32| PointLight { color: Color::srgb(1.0, 0.6, 0.26), intensity: lumens, range: 16.0, radius: 0.05, shadow_maps_enabled: shadows, ..default() };
+    let glow = |shadows: bool, lumens: f32| PointLight { color: Color::srgb(1.0, 0.54, 0.22), intensity: lumens, range: 16.0, radius: 0.05, shadow_maps_enabled: shadows, ..default() };
     if let Ok((_, mut place, mut light)) = torches.single_mut() {
         place.translation = over;
         light.intensity = TORCH * waver;
@@ -633,7 +633,7 @@ const TORCH: f32 = 3000.0;
 /// it gave the ground at his feet (by the square of how far): he was a white figure in a dim
 /// pool, and every blade of grass threw a shadow many times its own length. From overhead
 /// the ground and the bearer are lit alike, as a camera that could see both would have it.
-const LIFT: f32 = 1.4;
+const LIFT: f32 = 1.1;
 /// The part of it that throws no shadow, lumens: what a fire's light does by coming off
 /// everything it falls on. Without it a shadow from the torch was a black hole in the
 /// ground and grass was black sticks. (It is also seen faintly through a trunk or a wall.)
