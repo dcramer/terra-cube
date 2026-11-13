@@ -361,7 +361,7 @@ fn spawn_sun(commands: &mut Commands, mediums: &mut Assets<ScatteringMedium>, im
 /// the moon is brighter than a real one, so the land is dim and blue but can be read.
 const DAY_EV: f32 = 13.4;
 const NIGHT_EV: f32 = 1.3;
-const MOONLIGHT: f32 = 2.4;
+const MOONLIGHT: f32 = 3.6;
 
 /// A number read off a table of (the sine of the sun's height, the number) pairs, straight
 /// between one pair and the next.
@@ -445,7 +445,9 @@ fn sky(
     }
     // What the moon does not reach is not black.
     let fire = !torches.is_empty();
-    *ambient = GlobalAmbientLight { color: Color::srgb(0.45, 0.6, 1.0), brightness: (0.55 + 0.1 * cube_sim::sky::moonlight(hour)) * (1.0 - day), ..default() };
+    // (Less blue where a torch is: on pale bark beside the fire's amber it was cobalt.)
+    let cold = if fire { Color::srgb(0.6, 0.68, 0.86) } else { Color::srgb(0.45, 0.6, 1.0) };
+    *ambient = GlobalAmbientLight { color: cold, brightness: (0.55 + 0.1 * cube_sim::sky::moonlight(hour)) * (1.0 - day), ..default() };
     // The haze is what the far land and the far sea go into, so it has to be the colour the
     // sky has at its edge at that hour: where it was not, the sea was a bar under the sky.
     // It is as bright as the sky's edge is in the picture, which stays bright all through
@@ -453,14 +455,18 @@ fn sky(
     let low = (1.0 - to_sun.y.abs() * 4.0).clamp(0.0, 1.0);
     let lit = ((to_sun.y + 0.24) / 0.14).clamp(0.0, 1.0);
     let lit = lit * lit * (3.0 - 2.0 * lit);
-    let dark = (Vec3::new(0.014, 0.02, 0.04) + Vec3::splat(0.016) * cube_sim::sky::moonlight(hour)) * (1.0 - lit);
+    // (These are the picture's numbers, as `Color::srgb` takes them. The night's were first
+    // written as light, a twelfth as bright, and the sea was still a bar. And at night a
+    // little under the sky's edge: the far mountain goes into it too, and at the sky's own
+    // tone it stood lighter than the sky behind its top.)
+    let dark = (Vec3::new(0.086, 0.106, 0.165) + Vec3::new(0.1, 0.095, 0.075) * cube_sim::sky::moonlight(hour)) * (1.0 - lit);
     // Away from the sun the day's pale blue, mauve at a low sun; toward it warm, and at a
     // low sun the orange the sky has there, spread wide.
     // (Not quite as bright once the sun is under: the land near to is dark by then, and haze
     // as bright as the sky lay on it like milk.)
     let lit = lit * (0.5 + 0.5 * day);
-    let away = Vec3::new(0.62, 0.74, 0.88).lerp(Vec3::new(0.62, 0.52, 0.58), low) * lit + dark;
-    let toward = Vec3::new(1.0, 0.86, 0.62).lerp(Vec3::new(1.0, 0.56, 0.27), low) * lit;
+    let away = Vec3::new(0.62, 0.74, 0.88).lerp(Vec3::new(0.72, 0.57, 0.57), low) * lit + dark;
+    let toward = Vec3::new(1.0, 0.86, 0.62).lerp(Vec3::new(1.0, 0.56, 0.27), low);
     for (mut exposure, mut fog, mut grade, mut skylight, mut bloom, eye) in &mut cameras {
         exposure.ev100 = by_height(&EXPOSURE, to_sun.y);
         // What has a light of its own (a flame, the moon, a firefly) has more of a glow
@@ -489,9 +495,11 @@ fn sky(
         // (The glare toward the sun is the sun's own light times this, and the exposure
         // opens three stops for a low sun: left alone it grew with it into a custard that
         // outshone the sky. It is held to what it is at noon.)
-        let glare = 0.6 * 2f32.powf(exposure.ev100 - 14.4).min(1.0) * (1.0 + 0.5 * low) * ((to_sun.y + 0.02) / 0.08).clamp(0.0, 1.0);
+        // (It stays on a while after the sun is under: the sky toward a sun just set is
+        // still its orange, and so must the sea under it be.)
+        let glare = 0.6 * 2f32.powf(exposure.ev100 - 14.4).min(1.0) * (1.0 + 1.2 * low) * ((to_sun.y + 0.14) / 0.1).clamp(0.0, 1.0);
         fog.directional_light_color = Color::srgba(toward.x, toward.y, toward.z, glare);
-        fog.directional_light_exponent = 14.0 - 6.0 * low;
+        fog.directional_light_exponent = 14.0 - 8.0 * low;
         // Under the water: green-blue murk a few metres deep, dimmer the further down.
         let eye = eye.translation();
         let under = terrain.as_ref().is_some_and(|t| eye.y < SEA as f32 * CELL - 0.05 && t.ground(eye.x, eye.z) < eye.y);

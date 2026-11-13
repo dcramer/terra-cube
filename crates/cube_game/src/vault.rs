@@ -85,7 +85,7 @@ fn bowl(colour: impl Fn(f32) -> [f32; 4]) -> Mesh {
 
 /// A round thing one across, as rings of (how far out, how much of it): a glow, brightest
 /// at its middle and gone at its rim, falling off fast at first as light round a lamp does.
-const GLOW: [(f32, f32); 6] = [(0.0, 1.0), (0.06, 0.62), (0.16, 0.3), (0.34, 0.12), (0.62, 0.035), (1.0, 0.0)];
+const GLOW: [(f32, f32); 6] = [(0.0, 1.0), (0.07, 0.66), (0.2, 0.36), (0.4, 0.14), (0.68, 0.04), (1.0, 0.0)];
 /// And a disc: all of it bright, to a soft rim.
 const DISC: [(f32, f32); 3] = [(0.0, 1.0), (0.86, 1.0), (1.0, 0.0)];
 
@@ -188,13 +188,14 @@ fn turn(
     let tint = through(to_sun.y);
     // (Half white: laid on a sky already as red as a picture can be, its own colour alone
     // changes nothing.)
-    let sun = (tint / tint.max_element() * 0.5 + 0.5) * (0.6 * ((to_sun.y + 0.04) / 0.08).clamp(0.0, 1.0));
+    let sun = (tint / tint.max_element() * 0.5 + 0.5) * (1.0 * ((to_sun.y + 0.04) / 0.08).clamp(0.0, 1.0));
     // The moon's ring by how full it is, in the night only.
     let moon = Vec3::new(0.55, 0.68, 1.0) * (0.2 * sky::moon_lit(when) * (1.0 - day) * ((to_moon.y + 0.02) / 0.06).clamp(0.0, 1.0));
     // The sun itself while it is low: the engine's disc has no red at any brightness, so
     // under a quarter of the way up it is not drawn (`world::sky`) and this is: its colour
-    // at that height, deepened, and brighter than the picture's white so that it glows.
-    let own = (tint / tint.max_element()).powf(1.4) * 2.6;
+    // at that height, and several times the picture's white so that it glows. (Deepened and
+    // only twice white, the tonemapper made it a dull disc darker than the sky round it.)
+    let own = (tint / tint.max_element()).powf(0.6) * 7.0;
     let disc = own.extend(sunk.min(((to_sun.y + 0.03) / 0.03).clamp(0.0, 1.0)));
     let now = [floor.extend(1.0), BLUE.extend(blued), sun.extend(1.0), moon.extend(1.0), disc];
     for (i, colour) in now.into_iter().enumerate() {
