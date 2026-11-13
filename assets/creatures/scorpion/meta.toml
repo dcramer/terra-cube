@@ -6,7 +6,7 @@ walk_speed = 2.125
 run_speed = 5.1000004
 sprint_speed = 0.0
 triangles = 2052
-joints = 27
+joints = 32
 
 [clips.attack]
 seconds = 0.8

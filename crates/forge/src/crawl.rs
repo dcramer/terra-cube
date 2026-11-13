@@ -36,10 +36,10 @@ pub struct Crawler {
     high: f32,
     /// On two legs, under it: a bird. (Its `reach` is its legs' length.) And how wide it is.
     fowl: bool,
+    /// The first of the five bones of a sting's tail, each bent 0.6 radians on from the
+    /// last as it stands: what lets it straighten when the animal is dead.
+    sting: Option<usize>,
     wide: f32,
-    /// How far over its back anything of it stands (a scorpion's sting): on its back, dead,
-    /// it lies that much higher, on it.
-    over: f32,
 }
 
 /// Boxes, each held by one bone, and the bones: the model with its skeleton.
@@ -118,7 +118,8 @@ impl Crawler {
             for i in 0..10 {
                 let a = i as f32 / 9.0 * 2.7;
                 let at = root + Vec3::new(0.0, r * (1.0 - a.cos()), -r * a.sin());
-                put(at, Vec3::splat(r * (0.5 - 0.02 * i as f32)), if i == 9 { b.mark } else { dark(b.back, 0.8 + 0.03 * i as f32) }, 2);
+                // (Two pieces to a bone of its own, after the legs': `sting`.)
+                put(at, Vec3::splat(r * (0.5 - 0.02 * i as f32)), if i == 9 { b.mark } else { dark(b.back, 0.8 + 0.03 * i as f32) }, 3 + side * 6 + i / 2);
             }
         }
         put(Vec3::new(0.0, mid + thick * 0.08, -l * 0.25 - tail * 0.3), Vec3::new(wide * 1.05, thick * 1.1, tail * 0.6), dark(b.back, 0.85), 2);
@@ -172,7 +173,18 @@ impl Crawler {
                 names.extend([name.clone(), format!("{name}_knee"), format!("{name}_foot")]);
             }
         }
-        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side, reach, long: l, high: mid, fowl: false, wide, over: if b.sting { l * 0.34 * 1.9 - thick / 2.0 } else { 0.0 } }))
+        let mut sting = None;
+        if b.sting {
+            let (first, root, r) = (places.len(), Vec3::new(0.0, mid, -l * 0.25 - l * b.tail), l * 0.34);
+            for j in 0..5 {
+                let a = j as f32 * 0.6;
+                places.push(root + Vec3::new(0.0, r * (1.0 - a.cos()), -r * a.sin()));
+                parents.push(Some(if j == 0 { 2 } else { first + j - 1 }));
+                names.push(format!("sting_{j}"));
+            }
+            sting = Some(first);
+        }
+        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side, reach, long: l, high: mid, fowl: false, sting, wide }))
     }
 
     /// A bird on the ground: `length` its body, `span` how long its legs are, `chord` its
@@ -221,7 +233,7 @@ impl Crawler {
             parents.extend([Some(0), Some(bone)]);
             names.extend([format!("wing_{s}"), format!("wing_{s}_tip")]);
         }
-        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side: 1, reach: legs, long: l, high: mid, fowl: true, wide, over: 0.0 }))
+        Ok((assemble(&boxes, &places, &parents, &names)?, Self { side: 1, reach: legs, long: l, high: mid, fowl: true, sting: None, wide }))
     }
 
 
@@ -335,7 +347,22 @@ impl Crawler {
                 if self.fowl {
                     return self.pose(sk, Vec3::Y * (self.wide / 2.0 - self.high) * k, Quat::from_rotation_z(PI / 2.0 * k), |_| (0.0, 0.7 * k));
                 }
-                self.pose(sk, Vec3::Y * (self.high * 0.5 * (PI * k).sin() - self.high * 0.35 * k + self.over * k), Quat::from_rotation_z(PI * k), |_| (0.0, -1.1 * k))
+                // What is dead is limp (the developer, 2026-11-13: "dead things dont stay
+                // stiff"): its legs fold in over it at the knee, as a dead spider's do, and a
+                // sting's tail straightens and lies along the ground behind it. Stiff, a dead
+                // scorpion stood on its curled tail with its body in the air.
+                let limp = ease(((t - 0.35) / 0.5).clamp(0.0, 1.0));
+                let mut pose = self.pose(sk, Vec3::Y * (self.high * 0.5 * (PI * k).sin() - self.high * 0.35 * k), Quat::from_rotation_z(PI * k), |_| (0.0, -1.1 * k * (1.0 - 0.6 * limp)));
+                for n in 0..self.side * 2 {
+                    let x = if n < self.side { -1.0 } else { 1.0 };
+                    pose.rotations[4 + n * 3] = Quat::from_rotation_z(x * 1.2 * limp);
+                }
+                if let Some(first) = self.sting {
+                    for j in 1..5 {
+                        pose.rotations[first + j] = Quat::from_rotation_x(-0.6 * limp);
+                    }
+                }
+                pose
             }), false, None),
             "swim" => (frames_of(1.2, &|t| self.pose(sk, Vec3::ZERO, Quat::IDENTITY, |n| (self.reach * 0.4 * (TAU * t + self.set(n) as f32 * PI).sin(), 0.25))), true, None),
             // (A bird pecks: its head goes down on its neck, and its body stays on its feet.)

@@ -474,7 +474,8 @@ pub fn finish(source: &Path, creature: &Creature, plan: &Plan, _max_slide: f32) 
         if crawler.is_some() && !matches!(name.as_str(), "walk" | "run" | "sprint" | "idle" | "eat") {
             let under = crate::check::off_floor(&glb, &skeleton, &clip.frames);
             for (pose, under) in clip.frames.iter_mut().zip(under) {
-                pose.root_t += skeleton.base.inverse().transform_vector3(Vec3::Y * under.max(0.0));
+                // (And what dies is let down onto it: limp, it lay a hand's breadth up.)
+                pose.root_t += skeleton.base.inverse().transform_vector3(Vec3::Y * if name == "die" { under } else { under.max(0.0) });
             }
         }
         // And what has died rests on the ground, however its death was made: not under it
