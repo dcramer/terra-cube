@@ -213,7 +213,10 @@ impl Own {
                 let knee = line.iter().copied().filter(|p| p.y > hock.y + under * 0.2).reduce(|a, b| if b.z > a.z { b } else { a }).unwrap_or(top);
                 let hip = knee + Vec3::new(0.0, under * 0.34, -under * 0.26);
                 (hips[n], bone[n], lower[n], stand[n]) = (hip - middle, (hip.distance(knee), knee.distance(hock)), hock.distance(paw), glam::Vec2::new(paw.x - hip.x, paw.z - hip.z));
-                shank = ((paw.z - hock.z) / hock.y.max(1e-3)).clamp(0.0, 0.8);
+                // (No further forward than two parts in five of its height: a lynx's broad hind
+                // paw put the middle of its foot far ahead of a low hock, 0.68, and the part
+                // from hock to foot was laid so far over that the leg folded at every step.)
+                shank = ((paw.z - hock.z) / hock.y.max(1e-3)).clamp(0.0, 0.4);
                 read.push(format!("knee {:.2},{:.2} hock {:.2},{:.2}", knee.z, knee.y, hock.z, hock.y));
             }
         }
@@ -385,10 +388,17 @@ impl Own {
                     clips::turn_now(sk, &mut pose, bones[k], Quat::from_rotation_arc(now, want));
                 }
             }
-            // (A paw stays flat, as it stood, whatever the leg over it does.)
+            // (A paw stays flat, as it stood, whatever the leg over it does, while it is on
+            // the ground; lifted, its toes hang, as a foot's do that is carried forward. Held
+            // flat in the air a lynx's long hind foot made a square corner of its leg at
+            // every step.)
             let paw = bones[bones.len() - 1];
             let turned = sk.pose_world(&pose)[paw].to_scale_rotation_translation().1;
             clips::turn_now(sk, &mut pose, paw, turned.inverse());
+            let lifted = (limb[limb.len() - 1].y / (self.build.tall * 0.12).max(1e-3)).clamp(0.0, 1.0);
+            if lifted > 0.0 {
+                clips::turn_now(sk, &mut pose, paw, Quat::from_axis_angle(self.right, 1.0 * 0.75 * lifted));
+            }
         }
         // A tail that hangs as it stands would go into the ground as it lies: it is swung
         // out behind until its end is on the ground and not in it.
