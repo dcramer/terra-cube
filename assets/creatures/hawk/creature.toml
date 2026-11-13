@@ -19,9 +19,16 @@ mark = [0.8, 0.65, 0.15]
 
 [life]
 temper = "hunter"
+# Goes up from what frightens it and glides down after (`Sim::step`).
+flies = true
 voice = "hawk"
 habitat = "rock"
 cover = "open"
 hours = "day"
 group = 1
 groups = 2
+# It keeps the high rock and hunts the meadows under it: with a walker's range it found
+# nothing small enough up there and was gone in fourteen years (`cargo world years`). So
+# many to that much ground, or none is ever reared.
+range = 300.0
+capacity = 14
