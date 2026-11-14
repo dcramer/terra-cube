@@ -17,6 +17,10 @@ use crate::world::Terrain;
 use bevy::math::Affine3A;
 use bevy::prelude::*;
 
+/// How steeply the ground may fall between a body's hind feet and its fore feet and still be
+/// a slope it pitches to, as a rise over a run: steeper is an edge it stands at.
+const LEDGE: f32 = 0.8;
+
 pub struct FeetPlugin;
 
 impl Plugin for FeetPlugin {
@@ -175,7 +179,13 @@ pub(crate) fn plant(
                 (!of.is_empty()).then(|| (of.iter().map(|o| o.0).sum::<f32>() / of.len() as f32, of.iter().map(|o| o.1).sum::<f32>() / of.len() as f32))
             };
             if let (Some((za, ga)), Some((zb, gb))) = (side(true), side(false)) && (za - zb).abs() > 1e-3 {
-                let slope = (-((ga - gb) / (za - zb)).atan()).clamp(-0.42, 0.42) * legs.on;
+                // (A ledge is not a slope: where the ground under its fore feet is further
+                // below that under its hind feet than they are apart by four fifths and
+                // more, it stands at an edge, and stands level. Pitched to that as to a
+                // hillside, a rabbit at the rim of a terrace stood nose down at 24 degrees
+                // with its fore feet reaching down the wall, for as long as it stood there.)
+                let rise = (ga - gb) / (za - zb);
+                let slope = if rise.abs() > LEDGE { 0.0 } else { (-rise.atan()).clamp(-0.42, 0.42) * legs.on };
                 legs.pitch += (slope - legs.pitch) * ease;
                 turn_bone(root, Quat::from_axis_angle(Vec3::Y.cross(at.rotation * long), legs.pitch), entity, at, &parents, &mut poses);
             }

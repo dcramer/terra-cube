@@ -272,11 +272,14 @@ impl Kind {
     /// for a body longer than it is wide how far its capsule runs fore and aft of its middle.
     pub fn shape(&self) -> (f32, f32) {
         let (length, width) = (self.length, if self.width > 0.0 { self.width } else { self.length });
+        // (No wider than it is, down to a hand's breadth: what stands on the ground stands on
+        // what is under its box, and a rabbit 10 cm across in a box of 20 stood with its
+        // middle and all four feet past the edge of a terrace, on the air beside the wall.)
         if length > width * 1.3 {
-            let radius = (width * 0.425).clamp(0.1, 1.2);
+            let radius = (width * 0.425).clamp(SLIGHT, 1.2);
             (radius, (length / 2.0 - radius).max(0.0))
         } else {
-            (((length + width) / 4.0).clamp(0.1, 1.2), 0.0)
+            (((length + width) / 4.0).clamp(SLIGHT, 1.2), 0.0)
         }
     }
 
@@ -635,6 +638,8 @@ pub struct Sim {
 /// The size of a piece of grazing, metres; what a grazer a metre tall eats of one in a day
 /// (by its height squared: a moose eats forty rabbits' worth); and how lean the grazing is
 /// when what feeds on it begins to starve and to rear fewer young.
+/// The least a creature's box is across from its middle, metres: one bit of the ground.
+const SLIGHT: f32 = 0.05;
 pub const PASTURE: f32 = 64.0;
 /// As little grazing left on a piece of ground, of 1, is none: what grazes there in sight
 /// gets nothing by it.
