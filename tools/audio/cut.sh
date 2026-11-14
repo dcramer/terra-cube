@@ -82,3 +82,7 @@ for n in 1 2 3; do slow "$out/chop_$n.ogg" thud_$n 0 0.6 0.45 "lowpass=f=1400"; 
 if [ -s "$src/bigsoundbank-1299.ogg" ] && [ -s "$out/chop_1.ogg" ]; then
   ffmpeg -hide_banner -loglevel error -y -i "$out/chop_1.ogg" -ss 0.1 -t 1.9 -i "$src/bigsoundbank-1299.ogg" -filter_complex "[0]asetrate=44100*0.3,aresample=44100,lowpass=f=900,volume=2.5[low];[1]highpass=f=120,asetrate=44100*0.7,aresample=44100,adelay=60,volume=0.7[twigs];[low][twigs]amix=inputs=2:normalize=0:duration=longest,afade=t=in:d=0.005,areverse,afade=t=in:d=0.8,areverse" -ac 1 -ar 44100 -c:a libvorbis -q:a 4 "$out/crash_1.ogg" && echo "crash_1.ogg	chop_1 at 0.3 of its speed under bigsoundbank-1299.ogg at 0.7"
 fi
+# A spade in earth: a shovel dug into the ground. A pick on stone: a shovel struck, iron on
+# what is hard (no pick on rock was found).
+c bigsoundbank-1305.ogg dig --count 5 --min 0.15 --max 1.6 --high 60 --gap 0.2 --lead 0.02 --tail 0.15
+c bigsoundbank-1084.ogg pick --count 4 --min 0.04 --max 1.5 --high 80 --gap 0.15 --lead 0.015 --tail 0.3

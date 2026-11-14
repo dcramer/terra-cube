@@ -23,14 +23,5 @@ k 2 4350 0.046 3
 k 3 4900 0.040 4
 k 4 4150 0.050 3
 echo "ok made: cricket"
-# A spade in earth (a short scrape, two) and a pick on stone (a ring and a clack, two),
-# until recordings are found. (An axe in wood, a tree going and coming down, and rubble were
-# made here too, of noise, and were poor: they are recordings now, `cut.sh`.)
-d() { f -f lavfi -i "anoisesrc=color=brown:duration=0.34:seed=$2" -af "highpass=f=180,lowpass=f=$3,afade=t=in:d=0.03,afade=t=out:st=0.1:d=0.24,volume=2.2" -ar 44100 -c:a libvorbis -q:a 4 "dig_$1.ogg"; }
-d 1 21 1500
-d 2 22 1900
-p() { f -f lavfi -i "aevalsrc='(0.6*sin(2*PI*$2*t)*exp(-t*16)+0.35*sin(2*PI*$2*2.76*t)*exp(-t*26))':d=0.4:s=44100" -f lavfi -i "anoisesrc=color=white:duration=0.4:seed=$3" \
-    -filter_complex "[1]highpass=f=2000,lowpass=f=7000,afade=t=out:st=0.003:d=0.04,volume=0.8[n];[0][n]amix=inputs=2:normalize=0,afade=t=out:st=0.25:d=0.15" -ar 44100 -c:a libvorbis -q:a 4 "pick_$1.ogg"; }
-p 1 1250 31
-p 2 1480 32
-echo "ok made: dig pick"
+# (What cutting, digging and falling sound like was made here too, of noise, and was poor:
+# they are recordings now, `cut.sh`.)
