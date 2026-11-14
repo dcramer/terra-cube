@@ -273,12 +273,14 @@ fn told(mut commands: Commands, live: Option<ResMut<Live>>, bank: Option<ResMut<
         if std::env::var_os("LOOSE_TRACE").is_some() {
             println!("loose: landed {} cells at {:.1} m/s, {} put", landed.cells, landed.speed, landed.put);
         }
-        // A great thing is a crash, a lump a clatter; louder the faster it came.
-        let loud = (landed.speed / 12.0).clamp(0.25, 1.0);
+        // A heavy thing is a crash, a lump a clatter; louder the more it weighs and the
+        // faster it came (`matter`: a crown of leaf is as many cells as a boulder, and was
+        // as loud).
+        let loud = (landed.mass * landed.speed / 6000.0).sqrt().clamp(0.15, 1.0);
         // (A crown that breaks is ninety limbs landing in half a second: a clatter is heard a
         // few times in that, not ninety.)
         let now = time.elapsed_secs();
-        if landed.cells > 400 {
+        if landed.mass > 400.0 {
             bank.play(&mut commands, "crash", Some(landed.at), loud);
         } else if now - *clattered > 0.12 {
             *clattered = now;

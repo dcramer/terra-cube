@@ -16,8 +16,8 @@
 //!   it is the world and whoever was under it is struck ([`harm`]).
 //!
 //! What a thing weighs changes none of how fast it falls. It changes what it does: how hard
-//! it strikes ([`harm`]), and, as more is built on this, how loud it is, whether it breaks
-//! and whether it can be carried or pushed. So everything has a mass, from what it is made
+//! it strikes ([`harm`]), how loud it lands, how fast it is carried ([`burden`]) and, as
+//! more is built on this, whether it can be pushed. So everything has a mass, from what it is made
 //! of ([`density`]) and how much of it there is, and nothing has a weight of its own
 //! written anywhere else.
 
@@ -64,6 +64,18 @@ pub fn harm(mass: f32, speed: f32) -> f32 {
     (mass * speed / 50.0).min(400.0)
 }
 
+/// How much of their walking pace someone keeps with this in their arms, of 1: all of it up
+/// to 120 kg, and less as it is heavier, six tenths at the least. A hunk of wood is 80 kg
+/// and is walked with; one of stone is 325, and is hauled.
+pub fn burden(mass: f32) -> f32 {
+    (120.0 / mass.max(1.0)).clamp(0.6, 1.0)
+}
+
+/// What a hunk of this weighs, kilograms (`loose::HUNK` cells a side).
+pub fn hunk(block: Block) -> f32 {
+    density(block) * (crate::loose::HUNK as f32 * cube_voxel::CELL).powi(3)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,5 +87,8 @@ mod tests {
         // A cubic metre of leaf that comes down is nothing; of wood, a hard blow; of stone, death.
         let (leaf, wood, stone) = (harm(cubic(Block::Leaves), 8.0), harm(cubic(Block::Wood), 8.0), harm(cubic(Block::Stone), 8.0));
         assert!(leaf < 10.0 && (60.0..200.0).contains(&wood) && stone > 300.0, "{leaf} {wood} {stone}");
+        // A hunk of wood is carried at a walk; one of stone slower.
+        assert_eq!(burden(hunk(Block::Billet)), 1.0);
+        assert!((0.6..0.7).contains(&burden(hunk(Block::Cobble))), "{}", burden(hunk(Block::Cobble)));
     }
 }

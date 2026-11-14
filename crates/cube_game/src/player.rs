@@ -367,7 +367,9 @@ fn drive(mut controls: ResMut<Controls>, time: Res<Time>, args: Res<Args>, terra
         }
         // (With a hunk in his hands he walks: it is heavy, and hauling is meant to be work.)
         let gait = if live.agent(mover).is_some_and(|a| a.carries.is_some()) { Gait::Walk } else { controls.gait };
-        let Some(speed) = live.kind(mover).map(|k| k.speed(gait)) else { continue };
+        // (And no faster than what it weighs lets him: `matter::burden`.)
+        let burden = live.agent(mover).and_then(|a| a.carries).map_or(1.0, |b| cube_sim::matter::burden(cube_sim::matter::hunk(b)));
+        let Some(speed) = live.kind(mover).map(|k| k.speed(gait) * burden) else { continue };
         let Some(m) = live.agent_mut(mover) else { continue };
         // (F with a hunk in the hands puts it down.)
         if controls.grab && m.carries.is_some() {

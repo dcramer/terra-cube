@@ -925,9 +925,13 @@ impl Sim {
             }
             // (How far from where it came down it reaches, by how big it is; how hard it
             // strikes, by what it weighs and how fast it came: `matter::harm`.)
-            let size = (fallen.cells as f32).cbrt() * cube_voxel::CELL;
-            for (id, agent) in self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.body.pos.distance(fallen.at) < size * 0.9 + a.body.half + 0.4) {
-                let away = (agent.body.pos - fallen.at).with_y(0.0).normalize_or(Vec3::X);
+            // (A tree, all along its trunk: by its size about where its top struck, it missed
+            // whoever stood under its middle and struck whoever stood four metres to the
+            // side of its crown.)
+            let (from, wide) = fallen.along.unwrap_or((fallen.at, (fallen.cells as f32).cbrt() * cube_voxel::CELL * 0.9));
+            let nearest = |p: Vec3| { let line = fallen.at - from; from + line * ((p - from).dot(line) / line.length_squared().max(1e-6)).clamp(0.0, 1.0) };
+            for (id, agent) in self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.body.pos.distance(nearest(a.body.pos)) < wide + a.body.half + 0.4) {
+                let away = (agent.body.pos - nearest(agent.body.pos)).with_y(0.0).normalize_or(Vec3::X);
                 hits.push(Hit { on: *id, by: 0, harm: crate::matter::harm(fallen.mass, fallen.speed), push: away * 3.0 + Vec3::Y * 1.5, part: Part::Trunk });
             }
             self.loose.heard.push(fallen);
@@ -1685,15 +1689,21 @@ mod tests {
         let beside = sim.add(&world, 4, at(9.0, 0.0), 0.0, Driver::Stand);
         let full = sim.agents[&under].health;
         // A tree's worth, down fast; and a clod.
-        sim.loose.landed.push(crate::loose::Landed { at: at(0.3, 0.0) + Vec3::Y, cells: 6000, lost: 0, put: 6000, speed: 20.0, settled: false, mass: 3000.0 });
+        sim.loose.landed.push(crate::loose::Landed { at: at(0.3, 0.0) + Vec3::Y, cells: 6000, lost: 0, put: 6000, speed: 20.0, settled: false, mass: 3000.0, along: None });
         sim.step(&world);
         assert!(sim.agents[&under].dead.is_some(), "a tree came down on him and he has {} of {full}", sim.agents[&under].health);
         assert_eq!(sim.agents[&beside].health, full, "it struck someone nine metres off");
-        sim.loose.landed.push(crate::loose::Landed { at: at(9.0, 0.2) + Vec3::Y, cells: 8, lost: 0, put: 8, speed: 5.0, settled: false, mass: 80.0 });
+        sim.loose.landed.push(crate::loose::Landed { at: at(9.0, 0.2) + Vec3::Y, cells: 8, lost: 0, put: 8, speed: 5.0, settled: false, mass: 80.0, along: None });
         sim.step(&world);
+        // A tree that comes down strikes all along it, and not to the side of its top.
+        let (middle, aside) = (sim.add(&world, 4, at(30.0, 6.0), 0.0, Driver::Stand), sim.add(&world, 4, at(34.0, 12.0), 0.0, Driver::Stand));
+        sim.loose.landed.push(crate::loose::Landed { at: at(30.0, 12.0) + Vec3::Y, cells: 6000, lost: 0, put: 0, speed: 12.0, settled: false, mass: 2000.0, along: Some((at(30.0, 0.0) + Vec3::Y, 1.0)) });
+        sim.step(&world);
+        assert!(sim.agents[&middle].dead.is_some(), "under the middle of its trunk, and not struck");
+        assert_eq!(sim.agents[&aside].health, full, "four metres to the side of its top, and struck");
         let left = sim.agents[&beside].health;
         assert!(left < full && left > full * 0.5, "a clod took {} of {full}", full - left);
-        assert_eq!(sim.loose.heard.len(), 2, "what landed was not passed on to be heard");
+        assert_eq!(sim.loose.heard.len(), 3, "what landed was not passed on to be heard");
     }
 
     #[test]
