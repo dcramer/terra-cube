@@ -287,7 +287,10 @@ fn rest(world: &mut World, piece: &Piece) -> Vec<IVec3> {
                     for (i, block) in bits.iter().enumerate().filter(|b| b.1.solid()) {
                         let i = i as i32;
                         let bit = cell * SPLIT + IVec3::new(i % SPLIT, i / (SPLIT * SPLIT), i / SPLIT % SPLIT);
-                        if !world.bit(bit).solid() {
+                        // (Leaf gives way to it, as to a cell of it: where only what was free
+                        // of a bush's leaf was taken, one bit of a log lay alone in the bush.)
+                        let there = world.bit(bit);
+                        if !there.solid() || there.foliage() {
                             world.set_bit(bit, block.veiled());
                             any = true;
                         }
@@ -1682,6 +1685,20 @@ impl Loose {
                         let mut again: Vec<u32> = own.iter().filter_map(|c| self.owner.get(c).copied()).collect();
                         again.sort_unstable();
                         again.dedup();
+                        // (A thing at rest is one body: a crumb of it that nothing holds, a
+                        // bit that found room apart from the rest, does not let all of it
+                        // go. A log with one bit of itself in a bush came loose, fell where
+                        // it lay and came to rest, for ever: what the developer saw as a
+                        // hunk "infinitely falling on itself", found 2026-11-13 on a great
+                        // tree at -32,-40.)
+                        again.retain(|id| {
+                            let all = self.rested.iter().find(|r| r.id == *id).map_or(0, |r| r.placed.len());
+                            let loose = own.iter().filter(|c| self.owner.get(*c) == Some(id)).count();
+                            if loose * 2 < all {
+                                trace(format_args!("loosen: {loose} of the {all} cells of piece {id} at rest are held by nothing, and it stays"));
+                            }
+                            loose * 2 >= all
+                        });
                         for id in again {
                             changed.extend(self.rouse(world, id));
                         }
@@ -1696,9 +1713,10 @@ impl Loose {
                             // A hunk that comes loose again from where it has just come to
                             // rest, four times running, is left there: it is on something,
                             // whatever the rules above make of it, and let go it would fall
-                            // onto the same place for ever (the developer saw one do so,
-                            // 2026-11-13, and it has not been made to happen since:
-                            // `LOOSE_TRACE=1` says what was under it).
+                            // onto the same place for ever. (What the developer saw fall for
+                            // ever, 2026-11-13, was found to be a log let go for a crumb of
+                            // itself, below; this stays for a hunk that does the like, and
+                            // `LOOSE_TRACE=1` says what was under it.)
                             if let Some(corner) = corner {
                                 let times = self.restless.entry(corner).or_insert(0);
                                 *times += 1;
@@ -2110,13 +2128,16 @@ impl Loose {
                 // the air and a touch is felt at a few places of it, so it stopped a little
                 // in the ground or in the log beside it (a twentieth of a log, more of a
                 // lump in a heap: `cargo world lying`).
+                let mut lifted = 0;
                 for _ in 0..10 {
                     if sunk(world, &piece) <= SUNK {
                         break;
                     }
                     piece.shift.y += BIT;
+                    lifted += 1;
                 }
                 let placed = rest(world, &piece);
+                trace(format_args!("rest: piece {} of {} cells put up {} cm, {:.3} of it in something, in {} cells of the world", piece.id, piece.cells.len(), lifted * 5, sunk(world, &piece), placed.len()));
                 let (lo, hi) = placed.iter().fold((IVec3::MAX, IVec3::MIN), |(lo, hi), c| (lo.min(*c), hi.max(*c)));
                 for cell in &placed {
                     self.owner.insert(*cell, piece.id);
@@ -2406,6 +2427,37 @@ mod tests {
         assert!(thing.limbs.len() == 2 && thing.clumps.len() == 1 && thing.cuts.len() >= 2, "{} limbs, {} clumps, {} cuts", thing.limbs.len(), thing.clumps.len(), thing.cuts.len());
         let (_, _, turn) = thing.lies.expect("it came down and is not noted as lying");
         assert!((turn * Vec3::Y).y < 0.35, "noted as lying, but still upright: its up is {:?}", turn * Vec3::Y);
+    }
+
+    #[test]
+    fn a_crumb_of_a_log_that_nothing_holds_does_not_let_the_log_go() {
+        let mut w = floor();
+        let mut loose = Loose::default();
+        let cells: HashMap<IVec3, Part> = (0..12).flat_map(|x| (0..2).flat_map(move |y| (0..2).map(move |z| (IVec3::new(x, 4 + y, z), Part::Whole(Block::Balk))))).collect();
+        let piece = loose.made(cells, Vec3::new(1.5, 1.25, 0.25), Quat::from_rotation_y(0.4));
+        let id = piece.id;
+        loose.pieces.push(piece);
+        run(&mut loose, &mut w);
+        assert!(loose.pieces.is_empty() && loose.rested.len() == 1);
+        // One bit of it apart from the rest, in the air (as where a bush left room for one),
+        // and the place looked at again.
+        let crumb = IVec3::new(2, 6, 9);
+        w.set_bit(crumb * SPLIT, Block::Log);
+        loose.owner.insert(crumb, id);
+        loose.rested[0].placed.push(crumb);
+        loose.loosen(&mut w, crumb - 1, crumb + 1, Vec3::X);
+        assert!(loose.pieces.is_empty() && loose.rested.len() == 1, "the log came loose for a crumb of it: {} falling", loose.pieces.len());
+        // Leaf gives way to what comes to rest in it.
+        let mut w = floor();
+        w.fill(Vec3::new(0.0, 0.0, -1.0), Vec3::new(3.0, 0.75, 1.0), Block::Leaves);
+        let mut loose = Loose::default();
+        let cells: HashMap<IVec3, Part> = (0..12).flat_map(|x| (0..2).flat_map(move |y| (0..2).map(move |z| (IVec3::new(x, 8 + y, z), Part::Whole(Block::Balk))))).collect();
+        let piece = loose.made(cells, Vec3::new(1.5, 2.25, 0.25), Quat::from_rotation_y(0.4));
+        let wood = piece.cells.len() * 125;
+        loose.pieces.push(piece);
+        run(&mut loose, &mut w);
+        let there: usize = w.chunks.values().map(|c| (0..cube_voxel::CHUNK.pow(3)).map(|i| IVec3::new(i % 32, i / 1024, i / 32 % 32)).map(|l| match c.get(l) { Block::Broken => c.bits(l).map_or(0, |b| b.iter().filter(|b| b.whole()).count()), b if b.whole() => 125, _ => 0 }).sum::<usize>()).sum();
+        assert!(there * 10 > wood * 9, "{there} of {wood} bits of a log that came down in a bush are in the world");
     }
 
     #[test]

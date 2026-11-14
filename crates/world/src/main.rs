@@ -900,7 +900,9 @@ fn lying_command(args: &Args) -> ! {
         let drawn: std::collections::HashMap<(i32, i32), f32> = (lo.z..hi.z).flat_map(|z| (lo.x..hi.x).map(move |x| (x, z))).filter_map(|(x, z)| top(x, z).map(|y| ((x, z), y))).collect();
         for (&(x, z), &here) in &drawn {
             places += 1;
-            let own = |y: i32| loose.owner.get(&IVec3::new(x, y, z).div_euclid(IVec3::splat(cube_voxel::SPLIT))) == Some(&log.id) && world.bit(IVec3::new(x, y, z)).whole();
+            // (Its own: in a cell it has, and inside it as it lies. Two logs that lie against
+            // each other share cells, and a cell says one of them.)
+            let own = |y: i32| loose.owner.get(&IVec3::new(x, y, z).div_euclid(IVec3::splat(cube_voxel::SPLIT))) == Some(&log.id) && world.bit(IVec3::new(x, y, z)).whole() && log.cells.contains_key(&(log.was((IVec3::new(x, y, z).as_vec3() + 0.5) * BIT) / CELL).floor().as_ivec3());
             let solid = |y: i32| world.bit(IVec3::new(x, y, z)).solid();
             // Up from just under its top through whatever is there: the top of that is where
             // a body stands. Something else's (the ground it sank in, a log across it) is
