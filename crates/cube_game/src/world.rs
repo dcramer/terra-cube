@@ -486,7 +486,15 @@ fn sky(
         // set is still its orange, and so must the sea under it be. All of it left on, the
         // land glowed tan toward a sun that had set, where it should be dark under the sky.)
         let after = 0.85 * ((to_sun.y + 0.02) / 0.04).clamp(0.0, 1.0) + 0.15 * ((to_sun.y + 0.14) / 0.1).clamp(0.0, 1.0);
-        let glare = 0.6 * 2f32.powf(exposure.ev100 - 14.4).min(1.0) * (1.0 + 0.8 * low) * after;
+        // (And it is given as how bright the haze straight toward the sun is in the picture,
+        // whatever the sun's strength and the exposure are: three times white at noon, in a
+        // narrow lobe; little over one at a low sun, whose lobe is wide. Left to follow the sun it
+        // was ten at sunset, and a fifth of that, which is what sixty metres of air takes,
+        // painted the crowns across a lake one flat tan, brighter than the sky.)
+        let low_sun = 1.0 - ((to_sun.y - 0.05) / 0.4).clamp(0.0, 1.0);
+        let sunlight = lux::RAW_SUNLIGHT * ((to_sun.y + 0.26) / 0.1).clamp(0.0, 1.0) * (1.0 + 0.8 * low_sun * low_sun);
+        let shown = sunlight / (1.2 * 2f32.powf(exposure.ev100));
+        let glare = if shown > 1e-4 { (3.0 - 1.8 * low) * after / shown } else { 0.0 };
         fog.directional_light_color = Color::srgba(toward.x, toward.y, toward.z, glare);
         fog.directional_light_exponent = 14.0 - 8.0 * low;
         // Under the water: green-blue murk a few metres deep, dimmer the further down.
