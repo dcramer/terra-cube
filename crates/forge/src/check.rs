@@ -261,6 +261,9 @@ pub fn check(done: &Finished, required: &[String], bars: &Bars, max_stretch: f32
     out.push(line(meta.joints <= bars.max_joints, "joints", meta.joints.to_string(), format!("≤ {}", bars.max_joints)));
     if crate::crawl::made(&done.glb) {
         out.push(line(roles.legs.len() >= 2, "roles", format!("a body, a head, a tail and {} legs: built here", roles.legs.len()), "at least two legs".into()));
+    } else if crate::crawl::serpent(&done.glb) {
+        // (No legs, and none wanted: its bones are its head and the lengths of it, in order.)
+        out.push(line(sk.joints.len() >= 10, "roles", format!("a head and a body of {} lengths: built here", sk.joints.len() - 1), "a head and ten lengths or more".into()));
     } else if crate::own::made(&done.glb) {
         out.push(line(sk.joints.len() == crate::own::BONES.len(), "roles", "a trunk, neck, head, tail and four legs: the walker's own bones".into(), "rigged here".into()));
     } else if crate::shaped::made(&done.glb) {

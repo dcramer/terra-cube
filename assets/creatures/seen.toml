@@ -37,4 +37,6 @@ crab = ["walk", "attack", "die", "idle", "run", "hurt"]
 grasshopper = ["walk", "attack", "die", "idle", "run", "hurt"]
 spider = ["walk", "attack", "die", "idle", "run", "hurt"]
 toad = ["attack", "eat", "idle", "jump", "fall", "land", "swim", "hurt", "die", "lie", "walk", "run"]
+# (From above, `--view top`: from any side it is a line on the ground.)
+adder = ["idle", "walk", "run", "jump", "fall", "land", "attack", "hurt", "die"]
 lizard = ["attack", "eat", "idle", "sprint", "jump", "fall", "land", "swim", "hurt", "die", "lie", "walk", "run"]

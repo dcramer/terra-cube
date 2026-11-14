@@ -161,7 +161,7 @@ cargo sandbox --play --wild             the same in the living world: every crea
 cargo sandbox --spawn wolf,player       start with these in the world (`all` for one of each)
 cargo sandbox --list                    the creatures that can be spawned
 cargo sandbox --shot ID                 no window: shots/ID.png, every clip at six moments
-        [--view quarter|side|front] [--cols N] [--clips walk,run]
+        [--view quarter|side|front|top] [--cols N] [--clips walk,run]
 cargo sandbox --scene FILE --spawn all  no window: a picture of the world with creatures in it
 cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--yaw 2.16]
                                         no window: a set route (walk, run, jump, sprint, jump),

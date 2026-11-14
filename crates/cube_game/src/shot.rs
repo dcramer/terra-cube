@@ -98,10 +98,13 @@ fn layout(
     let names = rows(&id, &args);
     let (cols, n) = (args.cols, names.len());
     let cell = def.meta.height.max(def.meta.length) * 1.3;
-    let turn = match args.view.as_str() {
-        "front" => 0.0,
-        "side" => std::f32::consts::FRAC_PI_2,
-        _ => 0.65,
+    // (`top`: from above, its head up the picture: what lies flat on the ground, a serpent or
+    // a crab, is a line from any side.)
+    let (turn, lift) = match args.view.as_str() {
+        "front" => (Quat::IDENTITY, 0.0),
+        "side" => (Quat::from_rotation_y(std::f32::consts::FRAC_PI_2), 0.0),
+        "top" => (Quat::from_rotation_z(std::f32::consts::PI) * Quat::from_rotation_x(std::f32::consts::FRAC_PI_2), cell * 0.42),
+        _ => (Quat::from_rotation_y(0.65), 0.0),
     };
     let slab = meshes.add(Cuboid::new(cols as f32 * cell, cell * 0.02, cell * 0.7));
     let slab_material = materials.add(StandardMaterial { base_color: Color::srgb(0.25, 0.27, 0.3), perceptual_roughness: 1.0, ..default() });
@@ -126,7 +129,7 @@ fn layout(
             let mut creature = Creature::new(registry.index(&id).unwrap());
             creature.hold = Some(info.seconds * part * 0.999);
             creature.clip_name = Some(name.clone());
-            commands.spawn((creature, Transform::from_xyz(x, y, 0.0).with_rotation(Quat::from_rotation_y(turn)), Visibility::default()));
+            commands.spawn((creature, Transform::from_xyz(x, y + lift, 0.0).with_rotation(turn), Visibility::default()));
         }
         commands.spawn((
             Text::new(format!("{name} {:.1}s {}", info.seconds, info.source)),

@@ -93,6 +93,11 @@ pub fn made(glb: &Glb) -> bool {
     glb.array("nodes").iter().any(|n| n["name"] == "leg_l0_knee")
 }
 
+/// Whether a model is a serpent built here: a body of lengths and no legs.
+pub fn serpent(glb: &Glb) -> bool {
+    glb.array("nodes").iter().any(|n| n["name"] == "coil_1")
+}
+
 impl Crawler {
     /// The model with its bones: boxes, each held by one bone.
     pub fn model(b: &Built) -> Result<(Glb, Self)> {

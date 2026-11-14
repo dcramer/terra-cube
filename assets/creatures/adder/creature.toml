@@ -1,0 +1,28 @@
+name = "Adder"
+kind = "wildlife"
+plan = "crawler"
+subject = "an adder, a short thick snake with a dark zigzag down a grey-brown back and a pale belly"
+height = 0.08
+
+# Made by forge of boxes: a head and fourteen lengths that follow one wave (`crawl`, form
+# "serpent"). No Tripo, no credits.
+[built]
+form = "serpent"
+length = 0.9
+span = 0.1
+back = [0.36, 0.31, 0.24]
+belly = [0.62, 0.58, 0.46]
+wing = [0.36, 0.31, 0.24]
+mark = [0.2, 0.17, 0.13]
+
+[life]
+temper = "wary"
+voice = "hiss"
+habitat = "meadow"
+water = "away"
+cover = "open"
+hours = "day"
+# (It lies up the winter through.)
+winter = 0.02
+group = 1
+groups = 2

@@ -450,7 +450,7 @@ Built 2026-11-10. The rules are `cube_sim::body`; the game only feeds it keys an
 5. ~~Combat~~: health, the player's attack, death (2026-11-11), and what of a body a blow lands on (2026-11-13, above).
 6. ~~Shaped blocks, then textures~~: the land drawn in blocks sized to its slope, each surface a photographed grain (above).
 7. ~~Needs for creatures~~: hunger, thirst, the hours each kind is about, birth and age (`mind`, `ecology`; `cargo world years`).
-8. More body plans: ~~birds, insects, crawlers on six and eight legs, a fish~~ (built of boxes by forge). Not done: a serpent.
+8. More body plans: ~~birds, insects, crawlers on six and eight legs, a fish~~ (built of boxes by forge), ~~a serpent~~ (the adder, 2026-11-14).
 9. Player gear: ~~a sword and a torch in the hand~~ (`assets/world/held.toml`), and a hunk carried in both arms. Not done: anything worn that is seen (the jerkin is only a number).
 10. The large procedural world: ~~made from a seed and kept in cells near the player, made and meshed off the frame's thread~~. Not done: saving (the journal of edits is kept and replays, and is not written to disk; the developer has put it off).
 
