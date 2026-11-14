@@ -162,6 +162,10 @@ pub struct Piece {
     rolls: u8,
     /// Come to rest, it keeps its own cells and the way it lies ([`Rested`]): a log.
     keeps: bool,
+    /// It has touched, and is going over about where it touched until its weight is over
+    /// what it rests on: the place on it (as it was made), how fast it turns and how far
+    /// it has (radians), and how many times it has touched.
+    tips: Option<(Vec3, f32, f32, u8)>,
 }
 
 impl Piece {
@@ -1703,7 +1707,7 @@ impl Loose {
         let mut feel: Vec<Vec3> = cells.keys().map(|c| (c.as_vec3() + 0.5) * CELL).collect();
         feel.sort_by(|a, b| (a.x, a.y, a.z).partial_cmp(&(b.x, b.y, b.z)).unwrap_or(std::cmp::Ordering::Equal));
         self.next += 1;
-        Piece { id: self.next, mass: mass(&cells), cells, pivot, shift: Vec3::ZERO, turn, vel: Vec3::ZERO, over: None, spin: Vec3::ZERO, brittle: false, hunk: false, thing: None, base: Quat::IDENTITY, settling: false, spare: (pivot, 0.0), tall: (high - low + 1) as f32 * CELL, feel, age: 0.0, rolls: 0, keeps: true }
+        Piece { id: self.next, mass: mass(&cells), cells, pivot, shift: Vec3::ZERO, turn, vel: Vec3::ZERO, over: None, spin: Vec3::ZERO, brittle: false, hunk: false, thing: None, base: Quat::IDENTITY, settling: false, spare: (pivot, 0.0), tall: (high - low + 1) as f32 * CELL, feel, age: 0.0, rolls: 0, keeps: true, tips: None }
     }
 
     /// Takes cells out of the world as one piece, with the leaves that are theirs.
@@ -1800,7 +1804,7 @@ impl Loose {
             }
             None => feel,
         };
-        self.pieces.push(Piece { id: self.next, mass: mass(&cells), cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, spin: Vec3::ZERO, brittle, hunk, thing, base: Quat::IDENTITY, settling: false, spare: (pivot, tall * 0.3), tall, feel, age: 0.0, rolls: 0, keeps: false });
+        self.pieces.push(Piece { id: self.next, mass: mass(&cells), cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, spin: Vec3::ZERO, brittle, hunk, thing, base: Quat::IDENTITY, settling: false, spare: (pivot, tall * 0.3), tall, feel, age: 0.0, rolls: 0, keeps: false, tips: None });
         changed
     }
 
@@ -1857,6 +1861,7 @@ impl Loose {
                 // (A lump of stone lies as it tumbled, on what it came down on, and is not
                 // put into the grid: "rubble or something could also just be (physics-wise)
                 // laying on top", the developer, 2026-11-13. Earth is not: it heaps.)
+                tips: None,
                 keeps: cells.values().all(|p| match p { Part::Whole(b) => b.grown() == Block::Rock, Part::Bits(bits) => bits.iter().all(|b| *b == Block::Air || b.grown() == Block::Rock) }),
                 mass: mass(&cells),
                 cells,
@@ -1921,6 +1926,22 @@ impl Loose {
                     piece.turn = Quat::from_axis_angle(Vec3::Y.cross(*way).normalize_or(Vec3::Z), *tipped);
                     speed = *rate * piece.tall;
                 }
+                // Going over about where it touched, the way its weight leans from there,
+                // faster as it goes.
+                None if piece.tips.is_some() => {
+                    let (on, rate, turned, times) = piece.tips.unwrap_or_default();
+                    let (about, weight) = (piece.now(on), piece.now(piece.feel.iter().sum::<Vec3>() / piece.feel.len().max(1) as f32));
+                    let lean = (weight - about).with_y(0.0).try_normalize().unwrap_or(Vec3::X);
+                    let rate = (rate + 14.0 * dt).min(7.0);
+                    let by = Quat::from_axis_angle(Vec3::Y.cross(lean).normalize_or(Vec3::Z), rate * dt);
+                    (piece.shift, piece.turn) = (about + by * (piece.pivot + piece.shift - about) - piece.pivot, (by * piece.turn).normalize());
+                    piece.tips = Some((on, rate, turned + rate * dt, times));
+                    speed = rate * piece.tall.max(0.5) * 0.5;
+                    // (Right over and nothing met: it lies as it is.)
+                    if turned > 1.8 {
+                        piece.age = 99.0;
+                    }
+                }
                 None => {
                     piece.vel.y -= FALL * dt;
                     piece.shift += piece.vel * dt;
@@ -1949,7 +1970,7 @@ impl Loose {
                 }
                 (bears(b) || b == Block::Rock) && !(b.wood() && standing.iter().any(|(id, limbs)| Some(*id) != mine && limbs.iter().any(|l| outside(at, l) < 0.3)))
             };
-            let tried = |piece: &Piece, p: &Vec3| !going_over || p.distance(piece.spare.0) > piece.spare.1;
+            let tried = |piece: &Piece, p: &Vec3| !(going_over || piece.tips.is_some()) || p.distance(piece.spare.0) > piece.spare.1;
             let meets = |piece: &Piece| piece.feel.iter().filter(|p| tried(piece, p)).any(|p| stops(piece.now(*p)));
             let met = meets(piece);
             // `LOOSE_TRACE=1`: what stopped it, each time it is stopped: where on it (as it
@@ -2026,6 +2047,23 @@ impl Loose {
             // them is asked cell by cell what of it is there: a boulder's broken outside,
             // a bit thick, was mostly lost that way, a quarter of its stone (2026-11-13).
             // A tree lies as it fell: it is long, and squared it would jump.
+            // What keeps its shape does not stop where it first touches: it goes over about
+            // there until its weight is over what it rests on (a touch to either side of its
+            // middle, or one right under it), twice at the most. (Stopped at its first
+            // touch, a lump of rubble stood on a corner.)
+            if piece.keeps && piece.age < 20.0 {
+                let weight = piece.now(piece.feel.iter().sum::<Vec3>() / piece.feel.len().max(1) as f32);
+                let touches: Vec<Vec3> = piece.feel.iter().copied().filter(|p| { let at = piece.now(*p) - Vec3::Y * 0.08; let b = world.bit((at / BIT).floor().as_ivec3()); bears(b) || b == Block::Rock }).collect();
+                let off = |p: &Vec3| (piece.now(*p) - weight).with_y(0.0);
+                let nearest = touches.iter().copied().min_by(|a, b| off(a).length().total_cmp(&off(b).length()));
+                let held = touches.iter().any(|a| off(a).length() < 0.12 || touches.iter().any(|b| off(a).dot(off(b)) < -0.01));
+                let times = piece.tips.map_or(0, |t| t.3);
+                if let Some(on) = nearest.filter(|_| !held && times < 2) {
+                    (piece.tips, piece.spare, piece.vel, piece.spin) = (Some((on, 1.0, 0.0, times + 1)), (on, 0.3), Vec3::ZERO, Vec3::ZERO);
+                    settling.push(piece);
+                    continue;
+                }
+            }
             // What keeps its shape lies as it came down, and is not put into the world.
             if piece.keeps {
                 let placed = rest(world, &piece);
