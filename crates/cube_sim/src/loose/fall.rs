@@ -28,7 +28,7 @@ pub(super) fn square(piece: &mut Piece) {
 /// asked what of the piece is there, so it goes back without gaps however it is turned.
 /// Only into what is not solid already. Gives how many cells were written, their chunks, the
 /// box of cells it reached, and how many whole cells of what bears found no room.
-pub(super) fn land(world: &mut World, piece: &Piece) -> (usize, HashSet<IVec3>, IVec3, IVec3, usize) {
+pub(super) fn land(world: &mut World, piece: &Piece, rows: Option<(i32, i32)>) -> (usize, HashSet<IVec3>, IVec3, IVec3, usize) {
     let (mut lo, mut hi) = (Vec3::MAX, Vec3::MIN);
     for cell in piece.cells.keys() {
         for corner in 0..8 {
@@ -39,11 +39,25 @@ pub(super) fn land(world: &mut World, piece: &Piece) -> (usize, HashSet<IVec3>, 
     let (lo, hi) = ((lo / CELL).floor().as_ivec3(), (hi / CELL).floor().as_ivec3());
     let at = |now: Vec3| (piece.was(now) / CELL).floor().as_ivec3();
     let (mut put, mut changed, mut lost) = (0, HashSet::new(), 0);
-    for y in lo.y..=hi.y {
+    // (Along a row of the world, where each cell was in the piece is a step on from the last:
+    // one turn a row and an add a cell. And nothing of the piece is outside the box of its
+    // own cells: no map is asked. Turned and asked cell by cell, a great tree's million
+    // cells of box were 35 ms of the step it landed in.)
+    let (first, last) = piece.cells.keys().fold((IVec3::MAX, IVec3::MIN), |(a, b), c| (a.min(*c), b.max(*c)));
+    let along = piece.turn.inverse() * Vec3::X * CELL;
+    // (All of it, or the rows asked for: a great piece is put a few rows a step.)
+    let (from, to) = rows.map_or((lo.y, hi.y), |(from, many)| (from, (from + many - 1).min(hi.y)));
+    for y in from..=to {
         for z in lo.z..=hi.z {
+            let mut was = piece.was((IVec3::new(lo.x, y, z).as_vec3() + 0.5) * CELL);
             for x in lo.x..=hi.x {
                 let cell = IVec3::new(x, y, z);
-                let Some(part) = piece.cells.get(&at((cell.as_vec3() + 0.5) * CELL)) else { continue };
+                let from = (was / CELL).floor().as_ivec3();
+                was += along;
+                if from.cmplt(first).any() || from.cmpgt(last).any() {
+                    continue;
+                }
+                let Some(part) = piece.cells.get(&from) else { continue };
                 let there = world.get(cell);
                 match part {
                     // (Wood and stone go where leaf is: a limb fallen through a crown is not
@@ -165,7 +179,8 @@ impl Loose {
                             for z in a.z..=b.z {
                                 for x in a.x..=b.x {
                                     let block = chunk.get(IVec3::new(x, y, z));
-                                    if block != Block::Air && !block.ground() {
+                                    // (What bears, or may: leaf is begun from by nothing.)
+                                    if block == Block::Broken || bears(block) && !block.ground() {
                                         starts.push(at * size + IVec3::new(x, y, z));
                                     }
                                 }
@@ -433,7 +448,7 @@ impl Loose {
             }
             trace(format_args!("take: {} cells come loose as piece {}, of thing {thing:?}, going over {}, in {:.0} ms: {kinds:?}", cells.len(), self.next, over.is_some(), began.elapsed().as_secs_f32() * 1000.0));
         }
-        self.pieces.push(Piece { id: self.next, mass: mass(&cells), cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, spin: Vec3::ZERO, brittle, hunk, thing, base: Quat::IDENTITY, settling: false, spare: (pivot, tall * 0.3), tall, feel, age: 0.0, rolls: 0, keeps: false, tips: None });
+        self.pieces.push(Piece { id: self.next, mass: mass(&cells), cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, spin: Vec3::ZERO, brittle, hunk, thing, base: Quat::IDENTITY, settling: false, spare: (pivot, tall * 0.3), tall, feel, age: 0.0, rolls: 0, keeps: false, tips: None, landing: None });
         changed
     }
 
@@ -490,7 +505,7 @@ impl Loose {
                 // (A lump of stone lies as it tumbled, on what it came down on, and is not
                 // put into the grid: "rubble or something could also just be (physics-wise)
                 // laying on top", the developer, 2026-11-13. Earth is not: it heaps.)
-                tips: None,
+                tips: None, landing: None,
                 keeps: cells.values().all(|p| match p { Part::Whole(b) => b.grown() == Block::Rock, Part::Bits(bits) => bits.iter().all(|b| *b == Block::Air || b.grown() == Block::Rock) }),
                 mass: mass(&cells),
                 cells,
@@ -533,6 +548,14 @@ impl Loose {
         } else {
             self.pieces.iter().filter(|p| p.over.is_none() && p.tips.is_none()).flat_map(|p| { let at = (p.id, p.vel.y, middle(p)); p.feel.iter().map(move |f| ((p.now(*f) / CELL).floor().as_ivec3(), at)) }).collect()
         };
+        // Great pieces part way into the world go on being put, and are not moved.
+        let mut putting = Vec::new();
+        for piece in std::mem::take(&mut self.pieces) {
+            match piece.landing {
+                Some(_) => putting.extend(self.put_down(world, piece, 0.0, &mut changed)),
+                None => self.pieces.push(piece),
+            }
+        }
         for (n, piece) in self.pieces.iter_mut().enumerate() {
             piece.age += dt;
             let before = (piece.shift, piece.turn);
@@ -775,26 +798,58 @@ impl Loose {
                     piece.shift.y += CELL;
                 }
             }
-            let (put, touched, lo, hi, lost) = land(world, &piece);
-            changed.extend(touched);
-            if let Some(thing) = self.things.iter_mut().find(|t| Some(t.id) == piece.thing) {
-                // (Come down a second time, from where it lay: the one move after the other.)
-                thing.lies = Some(match thing.lies {
-                    Some((pivot, shift, turn)) => (pivot, piece.pivot + piece.shift + piece.turn * (pivot + shift - piece.pivot) - pivot, piece.turn * turn),
-                    None => (piece.pivot, piece.shift, piece.turn),
-                });
+            if let Some(piece) = self.put_down(world, piece, speed, &mut changed) {
+                settling.push(piece);
             }
-            // And what of it has come down on nothing (a limb left sticking out over a
-            // hollow, a part cut off from the rest by what it fell across) falls in its turn.
-            changed.extend(self.loosen(world, lo - 1, hi + 1, Vec3::X));
-            self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put, lost, speed, settled: piece.settling, mass: piece.mass, wood: woody(&piece.cells), along: None });
         }
         self.pieces.extend(settling);
         self.pieces.extend(settling_rolls);
+        self.pieces.extend(putting);
         // `LOOSE_TRACE=1`: a step that took long, and where it went.
         if began.elapsed().as_millis() >= 8 {
             trace(format_args!("step: {:.0} ms, {falling} pieces: {:.0} ms moving and trying them, {:.0} ms landing what came down and looking at what it let go", began.elapsed().as_secs_f32() * 1000.0, moved.as_secs_f32() * 1000.0, (began.elapsed() - moved).as_secs_f32() * 1000.0));
         }
         changed
+    }
+
+    /// Puts a piece that has come down into the world, where it is: all of it, or of a great
+    /// one ([`SPREAD`]) the next rows of it, in which case it is given back to be gone on
+    /// with at the next step. When all of it is in, what it lies as is noted, what it let go
+    /// is looked for, and its landing is told.
+    fn put_down(&mut self, world: &mut World, mut piece: Piece, speed: f32, changed: &mut HashSet<IVec3>) -> Option<Piece> {
+        // What it lies as is noted when it comes down, not when the last of it is in: it is
+        // drawn there from then.
+        if piece.landing.is_none()
+            && let Some(thing) = self.things.iter_mut().find(|t| Some(t.id) == piece.thing)
+        {
+            // (Come down a second time, from where it lay: the one move after the other.)
+            thing.lies = Some(match thing.lies {
+                Some((pivot, shift, turn)) => (pivot, piece.pivot + piece.shift + piece.turn * (pivot + shift - piece.pivot) - pivot, piece.turn * turn),
+                None => (piece.pivot, piece.shift, piece.turn),
+            });
+        }
+        let (put, lost, lo, hi, speed) = if piece.cells.len() > SPREAD {
+            let (row, had, gone, speed) = piece.landing.unwrap_or((i32::MIN, 0, 0, speed));
+            // (Its box, which `land` gives whatever rows it is asked for; then the next rows.)
+            let (_, _, lo, hi, _) = land(world, &piece, Some((0, 0)));
+            let from = row.max(lo.y);
+            let many = (ROWS / ((hi.x - lo.x + 1) * (hi.z - lo.z + 1)).max(1)).max(1);
+            let (put, touched, _, _, lost) = land(world, &piece, Some((from, many)));
+            changed.extend(touched);
+            if from + many <= hi.y {
+                piece.landing = Some((from + many, had + put, gone + lost, speed));
+                return Some(piece);
+            }
+            (had + put, gone + lost, lo, hi, speed)
+        } else {
+            let (put, touched, lo, hi, lost) = land(world, &piece, None);
+            changed.extend(touched);
+            (put, lost, lo, hi, speed)
+        };
+        // And what of it has come down on nothing (a limb left sticking out over a
+        // hollow, a part cut off from the rest by what it fell across) falls in its turn.
+        changed.extend(self.loosen(world, lo - 1, hi + 1, Vec3::X));
+        self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put, lost, speed, settled: piece.settling, mass: piece.mass, wood: woody(&piece.cells), along: None });
+        None
     }
 }

@@ -216,6 +216,6 @@ impl Loose {
         let mut feel: Vec<Vec3> = cells.keys().map(|c| (c.as_vec3() + 0.5) * CELL).collect();
         feel.sort_by(|a, b| (a.x, a.y, a.z).partial_cmp(&(b.x, b.y, b.z)).unwrap_or(std::cmp::Ordering::Equal));
         self.next += 1;
-        Piece { id: self.next, mass: mass(&cells), cells, pivot, shift: Vec3::ZERO, turn, vel: Vec3::ZERO, over: None, spin: Vec3::ZERO, brittle: false, hunk: false, thing: None, base: Quat::IDENTITY, settling: false, spare: (pivot, 0.0), tall: (high - low + 1) as f32 * CELL, feel, age: 0.0, rolls: 0, keeps: true, tips: None }
+        Piece { id: self.next, mass: mass(&cells), cells, pivot, shift: Vec3::ZERO, turn, vel: Vec3::ZERO, over: None, spin: Vec3::ZERO, brittle: false, hunk: false, thing: None, base: Quat::IDENTITY, settling: false, spare: (pivot, 0.0), tall: (high - low + 1) as f32 * CELL, feel, age: 0.0, rolls: 0, keeps: true, tips: None, landing: None }
     }
 }

@@ -141,6 +141,14 @@ impl std::hash::Hasher for ByCell {
     }
 }
 
+/// A piece of more cells than this is put into the world over several steps when it lands,
+/// as many rows of cells a step as come to [`ROWS`] cells of its box: a tree of 86,000 cells
+/// put in one step was 30 ms of it, two frames lost. Its cells cannot be seen (it is drawn
+/// as the tree it is), so nobody sees them come.
+const SPREAD: usize = 20_000;
+/// As many cells of a great piece's box are gone through in a step.
+const ROWS: i32 = 80_000;
+
 /// A place of more cells than this is wide: looked at for what is loose in it, the land in it
 /// is not begun from (`Loose::loosen`). A dug hole is a few thousand; a tree as it lies, a million.
 const WIDE: i64 = 100_000;
@@ -216,6 +224,9 @@ pub struct Piece {
     /// what it rests on: the place on it (as it was made), how fast it turns and how far
     /// it has (radians), and how many times it has touched.
     tips: Option<(Vec3, f32, f32, u8, Vec3)>,
+    /// A great piece part way into the world ([`SPREAD`]): the next row of cells of it to
+    /// put, how many are put and lost so far, and how fast it came down.
+    landing: Option<(i32, usize, usize, f32)>,
 }
 
 impl Piece {
