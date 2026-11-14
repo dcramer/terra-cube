@@ -442,6 +442,8 @@ pub enum Edit {
     /// A hunk taken up, and one put down.
     Lift { at: Vec3 },
     Lay { at: Vec3, block: Block },
+    /// A thing lying loose shoved along.
+    Shove { at: Vec3, push: Vec3 },
 }
 
 impl Edit {
@@ -449,7 +451,7 @@ impl Edit {
     pub fn at(&self) -> Vec3 {
         match *self {
             Edit::Cut { middle, .. } | Edit::Put { middle, .. } => middle,
-            Edit::Chop { at, .. } | Edit::Chip { at, .. } | Edit::Lift { at } | Edit::Lay { at, .. } => at,
+            Edit::Chop { at, .. } | Edit::Chip { at, .. } | Edit::Lift { at } | Edit::Lay { at, .. } | Edit::Shove { at, .. } => at,
         }
     }
 }
@@ -489,6 +491,7 @@ impl Replay {
                 Edit::Chip { at, push } => drop(self.loose.chip(world, at, push, forms)),
                 Edit::Lift { at } => drop(self.loose.lift(world, at)),
                 Edit::Lay { at, block } => drop(self.loose.lay(world, at, block)),
+                Edit::Shove { at, push } => drop(self.loose.shove(world, at, push)),
             }
             self.next += 1;
             if began.elapsed() > budget {
@@ -1759,6 +1762,26 @@ impl Loose {
         }
     }
 
+    /// A thing at rest as itself, at `at`, heaved a hand's breadth the way of `push` with
+    /// empty hands, if it is light enough ([`crate::matter::SHOVED`]); it comes to rest
+    /// again as anything let go does. Gives the chunks changed, if it moved anything.
+    /// (By hand and not by walking into it: what is light enough to shove is low enough to
+    /// step over, so nobody is ever stopped by it.)
+    pub fn shove(&mut self, world: &mut World, at: Vec3, push: Vec3) -> Option<HashSet<IVec3>> {
+        let way = push.with_y(0.0).try_normalize()?;
+        let id = self.owner.get(&(at / CELL).floor().as_ivec3()).copied()?;
+        let n = self.rested.iter().position(|r| r.id == id).filter(|n| mass(&self.rested[*n].cells) <= crate::matter::SHOVED)?;
+        self.journal.push((self.steps, Edit::Shove { at, push }));
+        let rested = self.rested.remove(n);
+        let mut changed = HashSet::new();
+        self.unrest(world, &rested, &mut changed);
+        let mut piece = self.made(rested.cells, rested.pivot, rested.turn);
+        (piece.id, piece.shift, piece.vel) = (rested.id, rested.shift + way * 0.1 + Vec3::Y * BIT, way * 1.6 + Vec3::Y * 1.0);
+        trace(format_args!("shove: piece {} of {:.0} kg heaved", piece.id, piece.mass));
+        self.pieces.push(piece);
+        Some(changed)
+    }
+
     /// What lay at rest as itself is loose again, as itself: out of the world, and a piece.
     fn rouse(&mut self, world: &mut World, id: u32) -> HashSet<IVec3> {
         let mut changed = HashSet::new();
@@ -2507,6 +2530,38 @@ mod tests {
         assert!(left <= alone && left * 100 >= alone * 97, "the log left lying has {left} of its {alone} bits");
         let first = &loose.rested[0];
         assert!(first.placed.iter().all(|c| loose.owner.get(c) == Some(&first.id)) && !loose.owner.values().any(|o| *o == id), "a cell of the one left is not said to be its");
+    }
+
+    #[test]
+    fn a_light_thing_at_rest_is_shoved_along_and_a_heavy_one_is_not() {
+        let mut w = floor();
+        let mut loose = Loose::default();
+        let log = |wide: i32| -> HashMap<IVec3, Part> { (0..8).flat_map(|z| (0..wide).flat_map(move |y| (0..wide).map(move |x| (IVec3::new(x, 4 + y, z), Part::Whole(Block::Balk))))).collect() };
+        for (wide, moves) in [(1, true), (3, false)] {
+            let piece = loose.made(log(wide), Vec3::new(0.125, 1.0, 1.0), Quat::IDENTITY);
+            let (id, weighs) = (piece.id, piece.mass);
+            loose.pieces.push(piece);
+            run(&mut loose, &mut w);
+            let lies = |loose: &Loose| loose.rested.iter().find(|r| r.id == id).map(|r| r.now(r.pivot));
+            let was = lies(&loose).expect("it came to rest");
+            // Heaved four times.
+            let mut heaved = 0;
+            for _ in 0..4 {
+                let at = loose.rested.iter().find(|r| r.id == id).map(|r| (r.placed[0].as_vec3() + 0.5) * CELL).unwrap();
+                heaved += loose.shove(&mut w, at, Vec3::X).is_some() as u32;
+                run(&mut loose, &mut w);
+            }
+            let went = lies(&loose).expect("it lies again").x - was.x;
+            if moves {
+                assert!(heaved == 4 && (0.3..3.0).contains(&went), "a log of {weighs:.0} kg leaned on four times went {went:.2} m in {heaved} heaves");
+            } else {
+                assert!(heaved == 0 && went == 0.0, "a log of {weighs:.0} kg was shoved {went:.2} m");
+            }
+            let all = std::mem::take(&mut loose.rested);
+            for r in &all {
+                loose.unrest(&mut w, r, &mut HashSet::new());
+            }
+        }
     }
 
     #[test]

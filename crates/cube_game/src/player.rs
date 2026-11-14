@@ -581,6 +581,10 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
                 }
                 terrain.touched(&mut dirty, changed);
                 live.0.lifted(mover.id, block);
+            } else if let Some(changed) = seen.and_then(|hit| live.0.loose.shove(&mut terrain.0, hit + along * 0.05, along)) {
+                // No hunk to take up, and what he looks at lies loose and is light: he
+                // heaves it away from him.
+                terrain.touched(&mut dirty, changed);
             }
         }
     }

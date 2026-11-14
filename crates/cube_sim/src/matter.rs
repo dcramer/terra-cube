@@ -57,6 +57,11 @@ pub fn density(block: Block) -> f32 {
     }
 }
 
+/// The heaviest thing lying loose that a person shoves along the ground by leaning on it,
+/// kilograms: a lump of rubble or a thin log, not a boulder's half or a great log (half a
+/// tonne of birch). What is heavier is broken up and carried.
+pub const SHOVED: f32 = 200.0;
+
 /// Health a thing that lands on a body takes from it: by what it weighs and how fast it
 /// came, 400 at the most. A clod of 90 kg dropped half a metre is a bruise (9); a tonne and
 /// a half of trunk at ten metres a second kills.
