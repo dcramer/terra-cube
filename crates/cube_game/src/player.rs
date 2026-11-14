@@ -592,6 +592,12 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
                 // No hunk to take up, and what he looks at lies loose and is light: he
                 // heaves it away from him.
                 terrain.touched(&mut dirty, changed);
+            } else {
+                // Nothing to take up or heave: then the meat of what lies dead at his feet.
+                let meat = live.0.butcher(mover.id);
+                if meat > 0 && std::env::var_os("LOOSE_TRACE").is_some() {
+                    println!("loose: took {meat} meat from what lay dead");
+                }
             }
         }
     }

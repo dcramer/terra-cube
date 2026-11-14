@@ -132,8 +132,8 @@ swim: ## no window: the player is put in deep water in the real game; passes if 
 window: ## the real window on a screenless display, driven by real key presses: the loading screen holds W off and lifts, then W walks, 2 takes the torch, I opens the pack
 	@cargo build -q --release -p cube_game && tools/xkeys/window.sh target/release/cube_game
 
-fight: ## no window: the player fights a goblin in the real game; passes if he is hit, kills it, and the sounds played
-	@cargo sandbox --scene shots/fight.png --play --script '0.5 stop; 1 spawn=goblin; 1.2 use; 2.4 use; 3.6 use; 4.8 use; 6 use; 7.2 use' --after 9 --view three --hour 13 2>&1 | awk '/^play/ { if (match($$0, /health=[0-9]+/)) { h = substr($$0, RSTART + 7, RLENGTH - 7) + 0; if (h < low || low == "") low = h } if ($$0 ~ /kills=1/) killed = 1 } /^sound swing/ { swing = 1 } /^sound monster_die|^sound goblin/ { voice = 1 } END { ok = (low < 100 && low > 0 && killed && swing && voice); printf "%s fight: lowest health %s, killed %d, swing heard %d, goblin heard %d\n", ok ? "ok" : "FAIL", low, killed, swing, voice; exit !ok }'
+fight: ## no window: the player fights a goblin in the real game; passes if he is hit, kills it, the sounds played, and he takes its meat from where it lies
+	@LOOSE_TRACE=1 cargo sandbox --scene shots/fight.png --play --script '0.5 stop; 1 spawn=goblin; 1.2 use; 2.4 use; 3.6 use; 4.8 use; 6 use; 7.2 use; 9 lift' --after 10.5 --view three --hour 13 2>&1 | awk '/^loose: took [0-9]+ meat/ { meat = $$3 } /^play/ { if (match($$0, /health=[0-9]+/)) { h = substr($$0, RSTART + 7, RLENGTH - 7) + 0; if (h < low || low == "") low = h } if ($$0 ~ /kills=1/) killed = 1 } /^sound swing/ { swing = 1 } /^sound monster_die|^sound goblin/ { voice = 1 } END { ok = (low < 100 && low > 0 && killed && swing && voice && meat > 0); printf "%s fight: lowest health %s, killed %d, swing heard %d, goblin heard %d, meat taken from where it lay %d\n", ok ? "ok" : "FAIL", low, killed, swing, voice, meat; exit !ok }'
 
 sheet: need-id ## no window: shots/ID.png, every clip of one creature (ID=wolf)
 	cargo forge sheet $(ID)

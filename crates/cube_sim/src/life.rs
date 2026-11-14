@@ -513,6 +513,8 @@ pub struct Agent {
     /// What it can take before it dies, of [`Kind::health`]; and once dead, for how long.
     pub health: f32,
     pub dead: Option<f32>,
+    /// What meat is on it as it lies dead, for whoever comes and takes it ([`Sim::butcher`]).
+    pub meat: u32,
     /// Seconds until a blow it has begun lands (a driven creature's: a mind times its own).
     pub swing: Option<f32>,
     /// What its blow takes from what it hits: its kind's, or its weapon's.
@@ -559,6 +561,10 @@ pub struct Hit {
 /// Seconds something lies where it fell before it is gone; seconds after that until another
 /// of its kind comes to live where it did; and seconds a person lies before waking at home.
 const LIES: f32 = 25.0;
+/// And how much longer one lies that still has its meat on it, seconds: time to walk to it.
+const KEEPS: f32 = 95.0;
+/// How near a person must be to what lies dead to take its meat, metres between them.
+const BUTCHERS: f32 = 1.2;
 /// How far a hunter out of sight hunts, in the reaches of its own ground; and how many of
 /// the hunted within that make a hunt as likely to succeed as it can be.
 const HUNT_REACH: f32 = 2.5;
@@ -724,6 +730,18 @@ impl Sim {
             agent.carries = None;
         }
     }
+    /// A person takes the meat from what lies dead nearest them, within arm's reach, into
+    /// their pack. Says how much, 0 if there was none to take.
+    pub fn butcher(&mut self, id: u32) -> u32 {
+        let Some(me) = self.agents.get(&id).filter(|a| a.dead.is_none() && a.pack.is_some()).map(|a| (a.body.pos, a.body.half)) else { return 0 };
+        let near = self.agents.iter().filter(|(_, a)| a.dead.is_some() && a.meat > 0).map(|(n, a)| (a.body.pos.distance(me.0) - a.body.half - a.body.long.length() - me.1, *n)).filter(|(gap, _)| *gap < BUTCHERS).min_by(|a, b| a.0.total_cmp(&b.0)).map(|b| b.1);
+        let Some(meat) = near.and_then(|n| self.agents.get_mut(&n)).map(|a| std::mem::take(&mut a.meat)) else { return 0 };
+        if let Some(pack) = self.agents.get_mut(&id).and_then(|a| a.pack.as_mut()) {
+            pack.add(crate::items::Item::Meat, meat);
+        }
+        meat
+    }
+
     /// Whether they could take a hunk up: alive, on their feet, and carrying none.
     pub fn free(&self, id: u32) -> bool {
         self.agents.get(&id).is_some_and(|a| a.dead.is_none() && a.carries.is_none() && a.act != Act::Swim)
@@ -814,7 +832,7 @@ impl Sim {
         let mind = Mind::new(Vec2::new(pos.x, pos.z), &mut self.rng);
         self.agents.insert(
             id,
-            Agent { carries: None, aim: None, kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), guard: false, calm: 0.0, awake: true, born, hunger, thirst, pack: (k.temper == Temper::Person).then(crate::items::Pack::starting), stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
+            Agent { carries: None, meat: 0, aim: None, kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), guard: false, calm: 0.0, awake: true, born, hunger, thirst, pack: (k.temper == Temper::Person).then(crate::items::Pack::starting), stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
         );
         id
     }
@@ -992,15 +1010,19 @@ impl Sim {
             if agent.health <= 0.0 {
                 (agent.health, agent.dead, agent.swing, agent.intent) = (0.0, Some(0.0), None, Intent::default());
                 agent.log.died += 1;
-                // Whoever killed it and carries a pack takes meat from it, by its size.
+                // Its meat is on it where it lies, by its size, for a person to come and
+                // take (`Sim::butcher`). (It was put in the pack of whoever killed it as it
+                // fell, from wherever the blow or the arrow came: nothing a creature left
+                // was ever on the ground.) What kills to eat eats it where it lies.
                 let meat = 1 + (self.kinds[agent.kind].height * 1.5) as u32;
+                let by_hunter = self.agents.get(&hit.by).is_some_and(|k| k.pack.is_none());
+                if let Some(dead) = self.agents.get_mut(&hit.on) {
+                    dead.meat = if by_hunter { 0 } else { meat };
+                }
                 if let Some(killer) = self.agents.get_mut(&hit.by) {
                     killer.log.kills += 1;
                     // What it killed, it eats: a hunter is fed for days.
                     killer.hunger = 0.0;
-                    if let Some(pack) = killer.pack.as_mut() {
-                        pack.add(crate::items::Item::Meat, meat);
-                    }
                 }
             }
         }
@@ -1031,7 +1053,7 @@ impl Sim {
                     }
                     (agent.body.vel, agent.before, agent.dead, agent.health, agent.hurt) = (Vec3::ZERO, agent.body.pos, None, self.kinds[agent.kind].health(), 0.0);
                 }
-            } else if *lain >= LIES {
+            } else if *lain >= LIES + if agent.meat > 0 { KEEPS } else { 0.0 } {
                 gone.push(id);
             }
         }
@@ -1702,8 +1724,13 @@ mod tests {
         run(&mut sim, &world, 1.0);
         assert!(sim.agents[&rabbit].dead.is_some() && sim.agents[&rabbit].act == Act::Die);
         assert_eq!(sim.agents[&person].log.kills, 1);
-        assert_eq!(sim.agents[&person].pack.as_ref().unwrap().count(crate::items::Item::Meat), 1);
+        // Its meat lies with it, and is his when he takes it: once.
+        assert_eq!(sim.agents[&person].pack.as_ref().unwrap().count(crate::items::Item::Meat), 0);
         run(&mut sim, &world, LIES + 1.0);
+        assert!(sim.agents.contains_key(&rabbit), "it was gone with its meat still on it");
+        assert_eq!((sim.butcher(person), sim.butcher(person)), (1, 0));
+        assert_eq!(sim.agents[&person].pack.as_ref().unwrap().count(crate::items::Item::Meat), 1);
+        run(&mut sim, &world, LIES + KEEPS + 1.0);
         assert!(!sim.agents.contains_key(&rabbit));
         run(&mut sim, &world, 200.0);
         assert_eq!(sim.agents.values().filter(|a| a.kind == 0).count(), 0);
