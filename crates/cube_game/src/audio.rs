@@ -531,7 +531,9 @@ fn small(mut commands: Commands, time: Res<Time>, mut bank: ResMut<Bank>, live: 
     if t >= due.hawk {
         due.hawk = t + 50.0 + bank.roll() * 110.0;
         if let Some(at) = out(&mut bank, "hawk", 200.0) {
-            bank.far(&mut commands, "hawk", at, 0.55, 1.0);
+            // (At 0.55 its loudest cry, alone in a quiet meadow, was within a tenth of a
+            // decibel of the bar on a sound over a footfall, and over it one run in a few.)
+            bank.far(&mut commands, "hawk", at, 0.45, 1.0);
         }
     }
     if t >= due.owl {
