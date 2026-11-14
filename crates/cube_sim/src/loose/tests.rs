@@ -486,6 +486,41 @@ fn a_wall_built_of_stone_stands_and_comes_down_when_its_foot_is_cut_away() {
 }
 
 #[test]
+fn a_tree_that_lies_comes_down_with_the_ground_dug_from_under_it_as_the_tree_it_is() {
+    use crate::plants::{Clump, Limb};
+    let (mut w, mut form) = (floor(), Form::default());
+    // (Stone two metres deeper than the floor is, to dig a metre of.)
+    w.fill(Vec3::new(-12.0, -3.0, -12.0), Vec3::new(12.0, -1.0, 12.0), Block::Stone);
+    let trunk = Limb { a: Vec3::new(0.1, 0.0, 0.1), b: Vec3::new(0.1, 8.0, 0.1), ra: 0.25, rb: 0.2, bark: Block::Wood, roots: 1, tree: 1 };
+    trunk.fill(CELL, |c| w.set(c, Block::Wood));
+    form.limbs.push(trunk);
+    let bough = Limb { a: Vec3::new(0.1, 6.0, 0.1), b: Vec3::new(0.1, 6.6, 1.7), ra: 0.06, rb: 0.05, bark: Block::Wood, roots: 0, tree: 1 };
+    bough.fill(CELL, |c| w.set(c, Block::Wood));
+    form.limbs.push(bough);
+    w.ellipsoid(Vec3::new(0.1, 6.7, 1.7), Vec3::splat(0.9), Block::Leaves, true);
+    form.clumps.push(Clump { middle: Vec3::new(0.1, 6.7, 1.7), radii: Vec3::splat(0.9), leaf: Block::Leaves, tree: 1 });
+    let mut loose = Loose::default();
+    for _ in 0..BLOWS(0.25) {
+        loose.chop(&mut w, Vec3::new(-0.2, 1.2, 0.1), Vec3::X, &[&form]);
+    }
+    assert_eq!(loose.pieces.len(), 1, "cut through, it stands: {} things", loose.things.len());
+    let took = run(&mut loose, &mut w);
+    assert!(loose.things[0].lies.is_some(), "after {took:.1} s: {} pieces, things {:?}", loose.pieces.len(), loose.things.iter().map(|t| (t.id, t.blows, t.felled, t.limbs.len())).collect::<Vec<_>>());
+    let lies = |loose: &Loose| { let (pivot, shift, turn) = loose.things[0].lies.expect("it did not come down"); pivot + shift + turn * (Vec3::new(0.1, 5.0, 0.1) - pivot) };
+    let was = lies(&loose);
+    // The ground it lies on, and a good way round it, taken a metre down.
+    w.fill(Vec3::new(1.0, -1.0, -1.0), Vec3::new(11.0, 0.0, 5.0), Block::Air);
+    loose.loosen(&mut w, IVec3::new(-8, -5, -12), IVec3::new(48, 8, 12), Vec3::X);
+    run(&mut loose, &mut w);
+    let now = lies(&loose);
+    assert!((0.6..1.4).contains(&(was.y - now.y)), "its trunk lay at {:.2} and, the ground gone from under it, lies at {:.2}", was.y, now.y);
+    // And what stops a body is where it is drawn: its wood is down there, none left above.
+    let high = (-8..48).flat_map(|x| (-12..12).flat_map(move |z| (0..8).map(move |y| IVec3::new(x, y, z)))).filter(|c| w.get(*c).wood() && (c.x > 6 || c.y > 3)).count();
+    // (But for a bough's end that came to lie on the edge of the pit.)
+    assert!(high < 6, "{high} cells of its wood are still where it lay before");
+}
+
+#[test]
 fn an_axe_fells_a_tree_by_its_blows_then_limbs_it_then_breaks_it_into_logs() {
     use crate::plants::{Clump, Limb};
     let (mut w, mut form) = (floor(), Form::default());

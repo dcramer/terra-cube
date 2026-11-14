@@ -312,7 +312,7 @@ impl Loose {
                     // nothing held, came loose and fell away from the tree that was
                     // drawn (four of 1,200 to 2,000 cells off one great tree, a step
                     // of 100 ms, and cells nobody could see on the ground).
-                    if corner.is_none() && cells.iter().all(|c| match world.get(*c) { Block::Broken => world.bits_at(*c).is_some_and(|b| b.iter().all(|b| !b.solid() || b.whole())), b => b.whole() }) && cells.iter().filter(|c| has(world, **c, false)).count() < TWIGS {
+                    if corner.is_none() && cells.iter().all(|c| match world.get(*c) { Block::Broken => world.bits_at(*c).is_some_and(|b| b.iter().all(|b| !b.solid() || b.whole())), b => b.whole() }) && cells.first().is_some_and(|c| self.things.iter().any(|t| t.lain_about((c.as_vec3() + 0.5) * CELL))) && !cells.iter().any(|c| self.things.iter().any(|t| t.lain_trunk((c.as_vec3() + 0.5) * CELL))) {
                         continue;
                     }
                     // A hunk that comes loose again from where it has just come to
@@ -421,6 +421,11 @@ impl Loose {
         self.begun.push((pivot, cells.len(), over.is_some()));
         // (A tree gone over is the thing whose trunk stood here.)
         let thing = over.and_then(|_| self.things.iter().find(|t| t.lies.is_none() && t.foot().is_some_and(|f| f.with_y(0.0).distance(pivot.with_y(0.0)) < 1.5)).map(|t| t.id));
+        // (And a tree that lies with its boughs on, come loose again as it lies because what
+        // it lay on is gone: still that tree, and drawn as it. Its cells, which nobody sees,
+        // came down without it and it was left drawn in the air.)
+        let veiled = cells.values().all(|p| match p { Part::Whole(b) => b.whole(), Part::Bits(bits) => bits.iter().all(|b| !b.solid() || b.whole()) });
+        let thing = thing.or_else(|| self.things.iter().find(|t| veiled && cells.keys().any(|c| t.lain_trunk((c.as_vec3() + 0.5) * CELL))).map(|t| t.id));
         // A tree comes down onto its trunk and its heavy boughs, not onto its twigs: what of
         // it is thinner than a third of its trunk gives way under it, and is not felt for.
         // (Felt for like the rest, every felled tree lay propped on its own branches, its

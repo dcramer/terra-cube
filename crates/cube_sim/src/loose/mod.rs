@@ -132,10 +132,6 @@ const ROWS: i32 = 80_000;
 /// is not begun from (`Loose::loosen`). A dug hole is a few thousand; a tree as it lies, a million.
 const WIDE: i64 = 100_000;
 
-/// As many cells of wood in a mass of a felled tree's leaf are twigs and not a trunk: such a
-/// mass is the tree's, and is not let go apart from it (`fall`).
-const TWIGS: usize = 50;
-
 /// How many cells a piece may be and still be looked through to its end: what reaches
 /// further is held to be standing on the land. A great oak with its crown is some 12,000.
 pub const HELD: usize = 30_000;
@@ -342,6 +338,19 @@ impl Thing {
     /// Whether a ball reaches it as it stood.
     fn reached(&self, middle: Vec3, radius: f32) -> bool {
         self.limbs.iter().any(|l| from_line(middle, l.a, l.b) < radius + l.ra.max(l.rb) * if l.roots > 0 { 2.6 } else { 1.0 } + CELL) || self.stone.as_ref().is_some_and(|s| ((middle - s.middle) / (s.radii + radius + CELL)).length_squared() < 1.0)
+    }
+    /// Whether a place is in or about it as it lies with its boughs on (a tree felled and not
+    /// yet limbed): within a couple of metres of a limb of it, or in a mass of its leaf.
+    fn lain_about(&self, p: Vec3) -> bool {
+        let Some((pivot, shift, turn)) = self.lies.filter(|_| !self.limbed) else { return false };
+        let was = pivot + turn.inverse() * (p - pivot - shift);
+        self.limbs.iter().any(|l| from_line(was, l.a, l.b) < l.ra.max(l.rb) + 2.0) || self.clumps.iter().any(|c| ((was - c.middle) / (c.radii + 1.0)).length_squared() < 1.0)
+    }
+    /// Whether a place is in its trunk as it lies with its boughs on.
+    fn lain_trunk(&self, p: Vec3) -> bool {
+        let Some((pivot, shift, turn)) = self.lies.filter(|_| !self.limbed) else { return false };
+        let was = pivot + turn.inverse() * (p - pivot - shift);
+        self.limbs.iter().find(|l| l.roots > 0).or(self.limbs.first()).is_some_and(|l| from_line(was, l.a, l.b) < l.ra.max(l.rb) + CELL)
     }
     /// Where it stands on the ground: the foot of its rooted trunk, or of its lowest limb.
     fn foot(&self) -> Option<Vec3> {
