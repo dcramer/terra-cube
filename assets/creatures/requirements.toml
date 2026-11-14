@@ -4,6 +4,8 @@
 # that must hold. `who` picks the creatures it applies to: by `plan`, by `temper`, by `diet`
 # (as in its `[life]`; a creature with no `[life]` or with `groups = 0` is not in the world
 # and is not held to anything). `recorded` clips must not be ones forge made up.
+# ("walked" is the plan nearly every four-legged animal is on since 2026-11-13, and until
+# 2026-11-14 nothing here named it: fifteen animals were held to standing, moving and dying.)
 #
 # Whether a clip looks right no check can say: `assets/creatures/seen.toml` lists, for each
 # creature, the clips somebody has looked at on a sheet and found right, and the report says
@@ -15,13 +17,13 @@ clips = ["idle"]
 clips = ["walk", "run"]
 speeds = true            # walk under run, both over nothing
 [sprints]
-who = { plan = ["biped", "quadruped"] }
+who = { plan = ["biped", "quadruped", "walked"] }
 clips = ["sprint"]
 [leaps]
-who = { plan = ["biped", "quadruped", "bird"] }
+who = { plan = ["biped", "quadruped", "walked", "bird", "crawler"] }
 clips = ["jump", "fall", "land"]
 [swims]
-who = { plan = ["biped", "quadruped"] }
+who = { plan = ["biped", "quadruped", "walked"] }
 clips = ["swim"]         # unless its creature.toml says `without = ["swim"]`
 [strikes]
 who = { temper = ["hunter", "hostile", "wary", "person"] }
@@ -29,10 +31,10 @@ clips = ["attack"]
 [flinches-and-dies]
 clips = ["hurt", "die"]
 [feeds]
-who = { plan = ["quadruped", "bird"] }
+who = { plan = ["quadruped", "walked", "bird"] }
 clips = ["eat"]
 [rests]
-who = { plan = ["quadruped"] }
+who = { plan = ["quadruped", "walked"] }
 clips = ["lie"]
 says = "rests"           # and its creature.toml says how: side, belly, crouch, curl or stands
 [is-heard]

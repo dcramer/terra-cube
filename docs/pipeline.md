@@ -97,6 +97,8 @@ Check after any change to the walker or the model:
 
 What is in a hand (`assets/world/held.toml`): `turn`, `shift` from the grip; `aim` which way it points; `droop` leaves the arm to the walker and only keeps the forearm low (sword, bow); `arm` holds the whole arm in a pose (torch, shovel).
 
+**The walked animals are held to what they can do** (2026-11-14). `requirements.toml` named the plans `biped`, `quadruped` and `bird`; nearly every four-legged animal has been on `walked` since 2026-11-13, so fifteen of them were held only to standing, moving, striking and dying. They are now held to sprinting, leaping, swimming, feeding and resting as well, and the crawlers to leaping: all had the clips (the bullfrog, toad and tortoise are `without` a sprint), and the 33 of those clips nobody had looked at were looked at on side sheets and are in `seen.toml`. A moose and a lynx rest standing (`rests = "stands"`): their `lie` is that.
+
 ### What crawls is built here, of boxes (`[built] form = "crawler"`, 2026-11-13)
 
 For anything on six or eight legs (`crates/forge/src/crawl.rs`): beetle, grasshopper, crab, spider, scorpion. Free; no Tripo. In its `creature.toml`:
