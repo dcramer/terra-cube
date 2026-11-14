@@ -38,6 +38,9 @@ shot torch-first --play --script '0.3 torch; 2 stop' --after 5 --view first --da
 shot torch-wood --play --at 19,34 --script '0.3 torch; 2 fwd walk' --after 6 --view three --day 7 --hour 22
 shot torch-dusk --play --script '0.3 torch; 2 fwd walk' --after 6 --view three --hour 18.6
 # A wood by day and a low sun through it: shafts and shade.
+# Across a lake toward a low sun, the far bank's crowns in the haze; and a torch on a shore at sunset.
+shot lake --at 173,-92 --dist 45 --pitch 0.1 --yaw 1.57 --hour 17.5 --after 6
+shot torch-shore --play --at 48,2 --yaw 0.7 --script '0.3 torch; 1 fwd walk; 2 stop' --after 5 --view three --hour 18.2
 shot wood --at 19,34 --dist 10 --pitch 0.1 --hour 15 --after 8
 shot wood-low --at 19,34 --dist 10 --pitch 0.05 --yaw 1.57 --hour 17.3 --after 8
-[ -n "$only" ] || ffmpeg -hide_banner -loglevel error -y -pattern_type glob -i 'shots/sky/*.png' -vf "scale=640:-1,tile=6x3" -frames:v 1 shots/sky.png
+[ -n "$only" ] || ffmpeg -hide_banner -loglevel error -y -pattern_type glob -i 'shots/sky/*.png' -vf "scale=640:-1,tile=5x4" -frames:v 1 shots/sky.png
