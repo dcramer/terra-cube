@@ -1762,6 +1762,13 @@ impl Loose {
         }
     }
 
+    /// A place in the nearest thing at rest within reach that is light enough to heave: for
+    /// a script, which has no eye to look at one with.
+    pub fn shovable(&self, from: Vec3, reach: f32) -> Option<Vec3> {
+        let light: HashSet<u32> = self.rested.iter().filter(|r| mass(&r.cells) <= crate::matter::SHOVED).map(|r| r.id).collect();
+        self.owner.iter().filter(|(_, id)| light.contains(id)).map(|(cell, _)| (cell.as_vec3() + 0.5) * CELL).filter(|p| p.distance(from) < reach).min_by(|a, b| a.distance(from).total_cmp(&b.distance(from)).then((a.x, a.y, a.z).partial_cmp(&(b.x, b.y, b.z)).unwrap_or(std::cmp::Ordering::Equal)))
+    }
+
     /// A thing at rest as itself, at `at`, heaved a hand's breadth the way of `push` with
     /// empty hands, if it is light enough ([`crate::matter::SHOVED`]); it comes to rest
     /// again as anything let go does. Gives the chunks changed, if it moved anything.
