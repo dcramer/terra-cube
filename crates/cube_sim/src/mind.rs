@@ -15,6 +15,9 @@ use crate::{
 use cube_voxel::{Block, CELL, World};
 use glam::{IVec3, Vec2, Vec3};
 
+/// How far off its den a creature that keeps one will bolt for it, metres.
+pub const DEN: f32 = 30.0;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum State {
     Rest,
@@ -411,6 +414,11 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
             if m.still > 4.0 && (m.about < 0.3 || m.easy) && kind.temper != Temper::Hostile {
                 doing = Some(Act::Lie);
             }
+            // And what keeps a den lies up in it, out of its hours and at its mouth: under
+            // the ground, a while at a time.
+            if kind.den && m.still > 4.0 && m.about < 0.3 && me.distance(m.home) < 2.5 {
+                agent.under = 20.0;
+            }
             // Thirst comes first: to the nearest water it can find, and drink. (None in reach,
             // and it makes do: there is dew, and rain.)
             if m.left <= 0.0 && agent.thirst >= THIRSTS && kind.diet != crate::life::Diet::None {
@@ -438,7 +446,7 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
                 }
             }
             // Out of its hours and away from where it lies up, it goes home.
-            if m.left <= 0.0 && m.state == State::Rest && m.about < 0.3 && me.distance(m.home) > 8.0 {
+            if m.left <= 0.0 && m.state == State::Rest && m.about < 0.3 && me.distance(m.home) > if kind.den { 1.5 } else { 8.0 } {
                 let reach = clear_way(world, agent, kind.step(), m.home);
                 if reach >= 2.0 {
                     (m.state, m.left, m.goal) = (State::Roam, 40.0, me + (m.home - me).clamp_length_max(reach));
@@ -536,10 +544,21 @@ pub fn think(id: u32, agent: &mut Agent, kind: &Kind, seen: &[Seen], world: &Wor
                 let away = (me - flat(t.pos)).try_normalize().unwrap_or(Vec2::X);
                 heading = Some(away);
                 gait = if gap < 6.0 { Gait::Sprint } else { Gait::Run };
+                // What keeps a den bolts for it, if it is near and not past what it runs
+                // from, and at its mouth goes to ground: for a while nothing sees or reaches it.
+                let den = m.home - me;
+                if kind.den && den.length() < DEN && den.normalize_or_zero().dot(away) > -0.3 {
+                    heading = Some(den.normalize_or(away));
+                    if den.length() < 0.9 {
+                        agent.under = rng.between(25.0, 45.0);
+                        (m.state, m.target, m.left) = (State::Rest, None, 0.0);
+                    }
+                }
             }
             _ => {
                 // It got away: this is where it lives now. (A bird goes back to where it rose from.)
-                if !kind.flies {
+                // (Nor what keeps a den: its den is where it lives.)
+                if !kind.flies && !kind.den {
                     m.home = me;
                 }
                 m.target = None;

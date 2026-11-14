@@ -101,6 +101,10 @@ pub struct Life {
     /// It takes to the air from what frightens it, and comes down when that is far (a bird).
     #[serde(default)]
     pub flies: bool,
+    /// It keeps a den where it lives: it bolts to it from what frightens it, lies up in it
+    /// out of its hours, and under the ground it is neither seen nor reached.
+    #[serde(default)]
+    pub den: bool,
 }
 
 /// What a creature eats.
@@ -224,6 +228,8 @@ pub struct Kind {
     pub share: f32,
     /// It takes to the air from what frightens it, and comes down when that is far (a bird).
     pub flies: bool,
+    /// It keeps a den where it lives ([`Agent::under`]).
+    pub den: bool,
 }
 
 impl Kind {
@@ -348,7 +354,7 @@ impl Kind {
                 }
             };
             // With no [life], a player is a person and anything else just stands its ground.
-            let life = spec.life.unwrap_or(Life { temper: if spec.kind == "player" { Temper::Person } else { Temper::Wary }, habitat: None, group: 1, groups: 0, water: Default::default(), cover: Default::default(), hours: Default::default(), winter: 1.0, voice: None, diet: None, litter: None, lifespan: None, capacity: None, range: None, meal: None, holds: None, share: 1.0, flies: false });
+            let life = spec.life.unwrap_or(Life { temper: if spec.kind == "player" { Temper::Person } else { Temper::Wary }, habitat: None, group: 1, groups: 0, water: Default::default(), cover: Default::default(), hours: Default::default(), winter: 1.0, voice: None, diet: None, litter: None, lifespan: None, capacity: None, range: None, meal: None, holds: None, share: 1.0, flies: false, den: false });
             let diet = life.diet.unwrap_or(match life.temper {
                 Temper::Hunter | Temper::Hostile => Diet::Meat,
                 Temper::Person => Diet::All,
@@ -392,6 +398,7 @@ impl Kind {
                 holds: life.holds.clone(),
                 share: life.share,
                 flies: life.flies,
+                den: life.den,
             });
         }
         kinds
@@ -513,6 +520,9 @@ pub struct Agent {
     /// What it can take before it dies, of [`Kind::health`]; and once dead, for how long.
     pub health: f32,
     pub dead: Option<f32>,
+    /// Seconds it has yet to stay in its den, under the ground: there it is not seen, not
+    /// reached and not drawn (a kind that keeps one, `Kind::den`).
+    pub under: f32,
     /// What meat is on it as it lies dead, for whoever comes and takes it ([`Sim::butcher`]).
     pub meat: u32,
     /// Seconds until a blow it has begun lands (a driven creature's: a mind times its own).
@@ -832,7 +842,7 @@ impl Sim {
         let mind = Mind::new(Vec2::new(pos.x, pos.z), &mut self.rng);
         self.agents.insert(
             id,
-            Agent { carries: None, meat: 0, aim: None, kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), guard: false, calm: 0.0, awake: true, born, hunger, thirst, pack: (k.temper == Temper::Person).then(crate::items::Pack::starting), stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
+            Agent { carries: None, meat: 0, under: 0.0, aim: None, kind, body, before: pos, facing_before: facing, facing, turn_to: None, intent: Intent::default(), gait: Gait::Walk, want_jump: 0.0, hold_jump: false, driver, mind, act: Act::Idle, doing: None, health: k.health(), dead: None, swing: None, power: k.harm(), guard: false, calm: 0.0, awake: true, born, hunger, thirst, pack: (k.temper == Temper::Person).then(crate::items::Pack::starting), stepped: 0.0, hurt: 0.0, landing: 0.0, airborne: 0.0, jumped: false, log: Log::default() },
         );
         id
     }
@@ -865,7 +875,7 @@ impl Sim {
         self.when = crate::sky::later(self.when, DT);
         self.wake(world);
         // Minds see the world as it was at the start of the tick.
-        let seen: Vec<mind::Seen> = self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.awake).map(|(&id, a)| mind::Seen { id, facing: a.facing, act: a.act, pos: a.body.pos, vel: a.body.vel, temper: self.kinds[a.kind].temper, kind: a.kind, errand: a.mind.errand(), reach: a.body.half + a.body.long.length() }).collect();
+        let seen: Vec<mind::Seen> = self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.awake && a.under <= 0.0).map(|(&id, a)| mind::Seen { id, facing: a.facing, act: a.act, pos: a.body.pos, vel: a.body.vel, temper: self.kinds[a.kind].temper, kind: a.kind, errand: a.mind.errand(), reach: a.body.half + a.body.long.length() }).collect();
         let mut hits = Vec::new();
         let when = self.when;
         // What is awake grows hungry and thirsty by the second, at the day's rates (`day`).
@@ -911,6 +921,12 @@ impl Sim {
         }
         for (&id, agent) in self.agents.iter_mut().filter(|(_, a)| a.driver == Driver::Mind && a.dead.is_none() && a.awake) {
             let k = &self.kinds[agent.kind];
+            // In its den it does nothing and nothing is done to it, until it comes up.
+            if agent.under > 0.0 {
+                agent.under -= DT;
+                (agent.intent, agent.doing, agent.act, agent.calm) = (Intent::default(), None, Act::Lie, agent.calm + DT);
+                continue;
+            }
             agent.mind.about = k.niche().about(when);
             // A beast of the dusk is about a good deal by day as well; a firefly is not.
             if k.hours == crate::ecology::Hours::Dusk {
@@ -991,7 +1007,7 @@ impl Sim {
             if self.agents.get(&hit.on).is_some_and(|a| a.dead.is_none()) && let Some(striker) = self.agents.get_mut(&hit.by) {
                 striker.log.landed = Some(hit.part);
             }
-            let Some(agent) = self.agents.get_mut(&hit.on).filter(|a| a.dead.is_none()) else { continue };
+            let Some(agent) = self.agents.get_mut(&hit.on).filter(|a| a.dead.is_none() && a.under <= 0.0) else { continue };
             agent.hurt = 0.5;
             agent.doing = None;
             agent.body.vel += hit.push;
@@ -1586,7 +1602,7 @@ mod tests {
     use cube_voxel::Block;
 
     fn kind(id: &str, temper: Temper, height: f32, speeds: [f32; 3]) -> Kind {
-        Kind { id: id.into(), parts: Vec::new(), feeding: Vec::new(), lying: Vec::new(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None, winter: 1.0, diet: if matches!(temper, Temper::Hunter | Temper::Hostile) { Diet::Meat } else { Diet::Plants }, litter: 2.0, lifespan: 8.0, capacity: 8, range: 80.0, meal: 6.0, holds: None, share: 1.0, flies: false }
+        Kind { id: id.into(), parts: Vec::new(), feeding: Vec::new(), lying: Vec::new(), height, length: height * 0.8, width: height * 0.4, walk: speeds[0], run: speeds[1], sprint: speeds[2], temper, habitat: Biome::Meadow, group: 2, groups: 3, water: Default::default(), cover: Default::default(), hours: Default::default(), voice: None, winter: 1.0, diet: if matches!(temper, Temper::Hunter | Temper::Hostile) { Diet::Meat } else { Diet::Plants }, litter: 2.0, lifespan: 8.0, capacity: 8, range: 80.0, meal: 6.0, holds: None, share: 1.0, flies: false, den: false }
     }
 
     /// Rabbit, wolf, bear, goblin and a person, on a floor of stone 60 m square.
@@ -1784,6 +1800,35 @@ mod tests {
         assert!(!a.blocked(&world, a.pos) && !b.blocked(&world, b.pos), "still in what came to rest in them");
         assert!(a.pos.x > was.0.x + 0.1 && a.pos.y < was.0.y + 0.2, "beside a log he steps aside from it: {:?} from {:?}", a.pos, was.0);
         assert!(b.pos.y > was.1.y + 0.5, "in the middle of a stone he is put up on it: {:?} from {:?}", b.pos, was.1);
+    }
+
+    #[test]
+    fn what_keeps_a_den_bolts_to_it_and_is_out_of_reach_there() {
+        let (world, mut sim) = stage();
+        sim.kinds[0].den = true;
+        // A rabbit whose den is six metres behind it, and a hungry wolf coming at it.
+        let rabbit = sim.add(&world, 0, at(0.0, 0.0), 0.0, Driver::Mind);
+        sim.agents.get_mut(&rabbit).unwrap().body.pos = at(6.0, 0.0);
+        let wolf = sim.add(&world, 1, at(15.0, 0.0), 0.0, Driver::Mind);
+        sim.agents.get_mut(&wolf).unwrap().hunger = 1.5;
+        let mut went_under = None;
+        for tick in 0..(20.0 / DT) as usize {
+            sim.step(&world);
+            if went_under.is_none() && sim.agents[&rabbit].under > 0.0 {
+                went_under = Some((tick as f32 * DT, sim.agents[&rabbit].body.pos));
+            }
+        }
+        let (when, there) = went_under.expect("it never went to ground");
+        assert!(when < 8.0 && there.distance(at(0.0, 0.0)) < 1.5, "it went under after {when:.1} s, {:.1} m from its den", there.distance(at(0.0, 0.0)));
+        let r = &sim.agents[&rabbit];
+        assert!(r.dead.is_none() && r.health == sim.kinds[0].health() && sim.agents[&wolf].log.kills == 0, "the wolf had it in its den: {:?}", r.log);
+        // And it comes up again when its time under is out.
+        let mut up = 0;
+        for _ in 0..(60.0 / DT) as usize {
+            sim.step(&world);
+            up += sim.agents.get(&rabbit).is_some_and(|r| r.under <= 0.0) as u32;
+        }
+        assert!(up > 0, "in a minute it never came up");
     }
 
     #[test]

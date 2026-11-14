@@ -6,6 +6,8 @@ height = 0.3
 rests = "belly"
 
 [life]
+# It keeps a sett.
+den = true
 temper = "wary"
 voice = "badger"
 habitat = "forest"

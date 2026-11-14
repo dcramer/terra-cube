@@ -72,7 +72,7 @@ impl Plugin for MotionPlugin {
                 sim
             }))
             .add_systems(FixedUpdate, tick)
-            .add_systems(Update, (populate, mirror, enrol, drivers, show, far_off).chain())
+            .add_systems(Update, (populate, mirror, enrol, drivers, show, far_off, dens).chain())
             .add_systems(Update, bodies)
             .add_systems(PostUpdate, watch.before(bevy::transform::TransformSystems::Propagate));
     }
@@ -347,17 +347,57 @@ fn bodies(show: Res<ShowBodies>, live: Res<Live>, creatures: Query<(&Mover, &Tra
 /// is a few pixels; the simulation goes on moving it all the same.
 const SEEN: f32 = 120.0;
 
+/// The mouth of a den, drawn where one is: which cell of the ground it is at.
+#[derive(Component)]
+struct Den(IVec2);
+
+/// A burrow is seen where something that keeps a den lives near the eye: a low heap of earth
+/// with a dark mouth in it, on the ground at its home. (What goes to ground went into
+/// nothing: there was no telling where a rabbit had gone, or that it had gone anywhere.)
+fn dens(mut commands: Commands, live: Res<Live>, terrain: Option<Res<Terrain>>, drawn: Query<(Entity, &Den)>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, mut made: Local<Option<(Handle<Mesh>, Handle<StandardMaterial>, Handle<StandardMaterial>)>>) {
+    let Some(terrain) = terrain else { return };
+    let cell = cube_voxel::CELL;
+    let wanted: std::collections::HashSet<IVec2> = live.0.agents.values().filter(|a| a.awake && a.dead.is_none() && live.0.kinds[a.kind].den).map(|a| (a.mind.home / cell).floor().as_ivec2()).collect();
+    let mut have = std::collections::HashSet::new();
+    for (entity, den) in &drawn {
+        if wanted.contains(&den.0) {
+            have.insert(den.0);
+        } else {
+            commands.entity(entity).despawn();
+        }
+    }
+    let (cube, earth, dark) = made.get_or_insert_with(|| (meshes.add(Cuboid::new(1.0, 1.0, 1.0)), materials.add(StandardMaterial { base_color: Color::srgb(0.33, 0.24, 0.16), perceptual_roughness: 1.0, ..default() }), materials.add(StandardMaterial { base_color: Color::srgb(0.03, 0.025, 0.02), perceptual_roughness: 1.0, ..default() }))).clone();
+    for at in wanted.difference(&have) {
+        let (x, z) = ((at.x as f32 + 0.5) * cell, (at.y as f32 + 0.5) * cell);
+        // (Only where the ground is made: its height is not known before.)
+        if !terrain.0.chunks.keys().any(|c| c.x == at.x.div_euclid(cube_voxel::CHUNK) && c.z == at.y.div_euclid(cube_voxel::CHUNK)) {
+            continue;
+        }
+        let ground = terrain.0.ground_height(x, z);
+        // (`DEN_TRACE=1` says where each is, to go and look at one: `--wild --at X,Z`.)
+        if std::env::var_os("DEN_TRACE").is_some() {
+            println!("den at {x:.0},{z:.0}");
+        }
+        commands.spawn((Den(*at), Transform::from_xyz(x, ground, z), Visibility::default())).with_children(|den| {
+            den.spawn((Mesh3d(cube.clone()), MeshMaterial3d(earth.clone()), Transform::from_xyz(0.0, 0.06, 0.0).with_scale(Vec3::new(0.6, 0.14, 0.6))));
+            den.spawn((Mesh3d(cube.clone()), MeshMaterial3d(earth.clone()), Transform::from_xyz(0.05, 0.16, -0.08).with_scale(Vec3::new(0.4, 0.12, 0.35))));
+            den.spawn((Mesh3d(cube.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(0.0, 0.1, 0.22).with_scale(Vec3::new(0.26, 0.18, 0.2))));
+        });
+    }
+}
+
 /// Creatures far from the camera are neither drawn nor animated. With every one of 280 posed
 /// and skinned each frame wherever it was, creatures were a quarter of the frame.
-fn far_off(cameras: Query<&GlobalTransform, With<Camera3d>>, mut movers: Query<(&Transform, &mut Visibility, Option<&crate::creatures::Rig>, Has<crate::player::Controlled>), With<Mover>>, mut players: Query<&mut AnimationPlayer>) {
+fn far_off(live: Res<Live>, cameras: Query<&GlobalTransform, With<Camera3d>>, mut movers: Query<(&Mover, &Transform, &mut Visibility, Option<&crate::creatures::Rig>, Has<crate::player::Controlled>)>, mut players: Query<&mut AnimationPlayer>) {
     let _slow = crate::Slow::new("far_off");
     let Some(eye) = cameras.iter().next().map(|c| c.translation()) else { return };
-    for (at, mut seen, rig, controlled) in &mut movers {
+    for (mover, at, mut seen, rig, controlled) in &mut movers {
         // The controlled creature's own showing is the player's to set (first person hides it).
         if controlled {
             continue;
         }
-        let near = at.translation.distance(eye) < SEEN;
+        // (Nor is what is in its den drawn: it is under the ground, `Agent::under`.)
+        let near = at.translation.distance(eye) < SEEN && !live.0.agents.get(&mover.id).is_some_and(|a| a.under > 0.0);
         let want = if near { Visibility::Inherited } else { Visibility::Hidden };
         if *seen == want {
             continue;

@@ -6,6 +6,8 @@ height = 0.5
 rests = "crouch"
 
 [life]
+# It keeps an earth.
+den = true
 temper = "hunter"
 share = 0.2
 voice = "fox"
