@@ -122,7 +122,7 @@ impl Bank {
     pub fn pitched(&mut self, commands: &mut Commands, name: &str, at: Option<Vec3>, volume: f32, pitch: f32) {
         let kind = if name.starts_with("step_") || name == "splash" || name == "swim" {
             Kind::Step
-        } else if ["swing", "hit", "hurt", "torch_ignite", "chop", "dig", "pick"].contains(&name) || name.starts_with("ui_") {
+        } else if ["swing", "hit", "hurt", "torch_ignite", "chop", "split", "dig", "pick"].contains(&name) || name.starts_with("ui_") {
             Kind::Hand
         } else {
             Kind::Voice

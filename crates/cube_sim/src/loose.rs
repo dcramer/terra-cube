@@ -181,6 +181,12 @@ impl Piece {
     }
 }
 
+/// Whether cells are wood, most of them (leaf is not counted either way).
+fn woody(cells: &HashMap<IVec3, Part>) -> bool {
+    let of = |want: &dyn Fn(Block) -> bool| cells.values().filter(|p| match p { Part::Whole(b) => want(*b), Part::Bits(bits) => bits.iter().any(|b| want(*b)) }).count();
+    of(&|b| b.wood() || b == Block::Billet) * 2 > of(&|b| b.solid() && !b.foliage())
+}
+
 /// What cells weigh, kilograms: each by what it is made of.
 fn mass(cells: &HashMap<IVec3, Part>) -> f32 {
     cells.values().map(|part| match part {
@@ -334,6 +340,8 @@ pub struct Landed {
     pub settled: bool,
     /// What it weighs, kilograms (`matter::density`).
     pub mass: f32,
+    /// It is wood, most of it: a log does not sound as a stone does.
+    pub wood: bool,
     /// A long thing gone over (a tree): its other end, and how far to either side of the
     /// line from there to `at` it strikes. A lump strikes round `at`, by its size.
     pub along: Option<(Vec3, f32)>,
@@ -2053,7 +2061,7 @@ impl Loose {
             if let (Some(top), Some((way, ..))) = (struck, piece.over) {
                 // (All along it, from its foot to where its top struck, and a metre to either
                 // side: whoever is under any of its trunk is under it.)
-                self.landed.push(Landed { at: piece.now(top), cells: piece.cells.len(), put: 0, lost: 0, speed, settled: false, mass: piece.mass, along: Some((piece.now(piece.pivot), 1.0)) });
+                self.landed.push(Landed { at: piece.now(top), cells: piece.cells.len(), put: 0, lost: 0, speed, settled: false, mass: piece.mass, wood: woody(&piece.cells), along: Some((piece.now(piece.pivot), 1.0)) });
                 // (It comes down whole: its outermost twigs broke from it here, each a lump
                 // of its own, until a felled tree was to keep the shape it stood in.)
                 (piece.shift, piece.pivot) = (piece.pivot + piece.shift + piece.turn * (top - piece.pivot) - top, top);
@@ -2062,7 +2070,7 @@ impl Loose {
                 continue;
             }
             if piece.brittle && speed > SHATTERS && piece.cells.len() >= 8 {
-                self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put: 0, lost: 0, speed, settled: false, mass: piece.mass, along: None });
+                self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put: 0, lost: 0, speed, settled: false, mass: piece.mass, wood: woody(&piece.cells), along: None });
                 self.shatter(piece, speed, 1.0, |_| false);
                 continue;
             }
@@ -2114,7 +2122,7 @@ impl Loose {
                     self.owner.insert(*cell, piece.id);
                     changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
                 }
-                self.landed.push(Landed { at: piece.now(piece.pivot), cells: piece.cells.len(), put: placed.len(), lost: 0, speed, settled: false, mass: piece.mass, along: None });
+                self.landed.push(Landed { at: piece.now(piece.pivot), cells: piece.cells.len(), put: placed.len(), lost: 0, speed, settled: false, mass: piece.mass, wood: woody(&piece.cells), along: None });
                 self.rested.push(Rested { id: piece.id, cells: piece.cells, pivot: piece.pivot, shift: piece.shift, turn: piece.turn, placed });
                 if lo.x <= hi.x {
                     changed.extend(self.loosen(world, lo - 1, hi + 1, Vec3::X));
@@ -2156,7 +2164,7 @@ impl Loose {
             // And what of it has come down on nothing (a limb left sticking out over a
             // hollow, a part cut off from the rest by what it fell across) falls in its turn.
             changed.extend(self.loosen(world, lo - 1, hi + 1, Vec3::X));
-            self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put, lost, speed, settled: piece.settling, mass: piece.mass, along: None });
+            self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put, lost, speed, settled: piece.settling, mass: piece.mass, wood: woody(&piece.cells), along: None });
         }
         self.pieces.extend(settling);
         self.pieces.extend(settling_rolls);

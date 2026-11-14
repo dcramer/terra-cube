@@ -1689,15 +1689,15 @@ mod tests {
         let beside = sim.add(&world, 4, at(9.0, 0.0), 0.0, Driver::Stand);
         let full = sim.agents[&under].health;
         // A tree's worth, down fast; and a clod.
-        sim.loose.landed.push(crate::loose::Landed { at: at(0.3, 0.0) + Vec3::Y, cells: 6000, lost: 0, put: 6000, speed: 20.0, settled: false, mass: 3000.0, along: None });
+        sim.loose.landed.push(crate::loose::Landed { wood: true, at: at(0.3, 0.0) + Vec3::Y, cells: 6000, lost: 0, put: 6000, speed: 20.0, settled: false, mass: 3000.0, along: None });
         sim.step(&world);
         assert!(sim.agents[&under].dead.is_some(), "a tree came down on him and he has {} of {full}", sim.agents[&under].health);
         assert_eq!(sim.agents[&beside].health, full, "it struck someone nine metres off");
-        sim.loose.landed.push(crate::loose::Landed { at: at(9.0, 0.2) + Vec3::Y, cells: 8, lost: 0, put: 8, speed: 5.0, settled: false, mass: 80.0, along: None });
+        sim.loose.landed.push(crate::loose::Landed { wood: true, at: at(9.0, 0.2) + Vec3::Y, cells: 8, lost: 0, put: 8, speed: 5.0, settled: false, mass: 80.0, along: None });
         sim.step(&world);
         // A tree that comes down strikes all along it, and not to the side of its top.
         let (middle, aside) = (sim.add(&world, 4, at(30.0, 6.0), 0.0, Driver::Stand), sim.add(&world, 4, at(34.0, 12.0), 0.0, Driver::Stand));
-        sim.loose.landed.push(crate::loose::Landed { at: at(30.0, 12.0) + Vec3::Y, cells: 6000, lost: 0, put: 0, speed: 12.0, settled: false, mass: 2000.0, along: Some((at(30.0, 0.0) + Vec3::Y, 1.0)) });
+        sim.loose.landed.push(crate::loose::Landed { wood: true, at: at(30.0, 12.0) + Vec3::Y, cells: 6000, lost: 0, put: 0, speed: 12.0, settled: false, mass: 2000.0, along: Some((at(30.0, 0.0) + Vec3::Y, 1.0)) });
         sim.step(&world);
         assert!(sim.agents[&middle].dead.is_some(), "under the middle of its trunk, and not struck");
         assert_eq!(sim.agents[&aside].health, full, "four metres to the side of its top, and struck");

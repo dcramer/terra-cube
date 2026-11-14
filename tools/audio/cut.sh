@@ -60,3 +60,25 @@ c $W rustle --count 5 --swell 3.2 --high 700
 c romo-MALLROMO672017BierstadtLake.mp3 duck --count 2 --min 0.12 --max 1.5 --high 400 --gap 0.15
 c Great_Blue_Heron.ogg heron --count 2 --min 0.15 --max 2 --high 300 --gap 0.15
 [ -s "$src/Phasianus_colchicus.ogg" ] && ffmpeg -hide_banner -loglevel error -y -i "$src/Phasianus_colchicus.ogg" -af "highpass=f=300,afade=t=in:d=0.02,afade=t=out:st=0.9:d=0.09" -ac 1 -ar 44100 -c:a libvorbis -q:a 4 "$out/pheasant_1.ogg"
+
+# What cutting and falling sound like, from recordings (BigSoundBank, CC0: an axe on a log,
+# an axe on wood, twigs broken, a stone let fall), in place of the noise `make.sh` made. A
+# blow is heard at once and its ring dies away: `--lead 0.015 --tail 0.3`.
+# An axe in a tree: the dull knock of an axe on a log. The blow that breaks something (limbs
+# off, a trunk into logs, a log into hunks): the bright crack of an axe on dry wood.
+c bigsoundbank-0705.ogg chop --count 6 --min 0.04 --max 1.2 --high 60 --gap 0.15 --lead 0.015 --tail 0.3
+c bigsoundbank-0536.ogg split --count 4 --min 0.04 --max 1.5 --high 60 --gap 0.15 --lead 0.015 --tail 0.3
+# Stone come down: a stone let fall on stone, with its bounces.
+c bigsoundbank-1022.ogg rubble --count 5 --min 0.08 --max 2 --high 60 --gap 0.2 --lead 0.015 --tail 0.2
+# From these, slowed (wood twice the size sounds an octave lower and lasts twice as long).
+# SOURCE NAME START SECONDS RATE [more filters]: a stretch played RATE times as fast.
+slow() { if [ -s "$1" ]; then ffmpeg -hide_banner -loglevel error -y -ss "$3" -t "$4" -i "$1" -af "highpass=f=60,asetrate=44100*$5,aresample=44100${6:+,$6},afade=t=in:d=0.005,areverse,afade=t=in:d=0.25,areverse" -ac 1 -ar 44100 -c:a libvorbis -q:a 4 "$out/$2.ogg" && echo "$2.ogg	of $(basename "$1") from $3 s for $4 s at $5 of its speed"; else echo "passed over: $1"; fi; }
+# A tree beginning to go: twigs breaking, at half speed.
+slow "$src/bigsoundbank-1300.ogg" crack_1 0 1.2 0.5
+slow "$src/bigsoundbank-1299.ogg" crack_2 0.1 1.3 0.5
+# Wood come down (a log, a hunk): the knock of the axe on a log at under half speed, its top taken off.
+for n in 1 2 3; do slow "$out/chop_$n.ogg" thud_$n 0 0.6 0.45 "lowpass=f=1400"; done
+# A tree come down: the same knock at a third of its speed, and over it branches breaking.
+if [ -s "$src/bigsoundbank-1299.ogg" ] && [ -s "$out/chop_1.ogg" ]; then
+  ffmpeg -hide_banner -loglevel error -y -i "$out/chop_1.ogg" -ss 0.1 -t 1.9 -i "$src/bigsoundbank-1299.ogg" -filter_complex "[0]asetrate=44100*0.3,aresample=44100,lowpass=f=900,volume=2.5[low];[1]highpass=f=120,asetrate=44100*0.7,aresample=44100,adelay=60,volume=0.7[twigs];[low][twigs]amix=inputs=2:normalize=0:duration=longest,afade=t=in:d=0.005,areverse,afade=t=in:d=0.8,areverse" -ac 1 -ar 44100 -c:a libvorbis -q:a 4 "$out/crash_1.ogg" && echo "crash_1.ogg	chop_1 at 0.3 of its speed under bigsoundbank-1299.ogg at 0.7"
+fi

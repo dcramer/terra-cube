@@ -267,8 +267,12 @@ fn told(mut commands: Commands, live: Option<ResMut<Live>>, bank: Option<ResMut<
             commands.spawn((Chip(out * reach * 2.5 + Vec3::Y * up * (0.5 + odd().abs()), 0.7 + 0.5 * odd().abs()), Mesh3d(cube.clone()), MeshMaterial3d(paint.clone()), Transform { translation: at + out * reach * 0.3 + Vec3::Y * 0.1, scale: Vec3::splat(size), ..default() }, bevy::light::NotShadowCaster));
         }
     };
+    // A blow that knocked something off (limbs, a trunk into logs, a log into hunks) is the
+    // crack of wood parting, not the knock of an axe going in: the developer, of a tree
+    // being worked, "when it breaks it should kind of be more obvious".
+    let broke = !loose.shed.is_empty();
     for (at, taken) in loose.cuts.drain(..) {
-        let (name, block) = if taken[1] >= taken[0] && taken[1] >= taken[2] { ("chop", Block::Wood) } else if taken[2] > taken[0] { ("pick", Block::Stone) } else { ("dig", Block::Dirt) };
+        let (name, block) = if taken[1] >= taken[0] && taken[1] >= taken[2] { (if broke { "split" } else { "chop" }, Block::Wood) } else if taken[2] > taken[0] { ("pick", Block::Stone) } else { ("dig", Block::Dirt) };
         bank.play(&mut commands, name, Some(at), 0.8);
         throw(&mut commands, at, block, 7, 0.4, 2.2);
     }
@@ -294,11 +298,14 @@ fn told(mut commands: Commands, live: Option<ResMut<Live>>, bank: Option<ResMut<
         // (A crown that breaks is ninety limbs landing in half a second: a clatter is heard a
         // few times in that, not ninety.)
         let now = time.elapsed_secs();
-        if landed.mass > 400.0 {
+        // (The crash is a tree's: its trunk striking and its branches breaking. A log of
+        // half a tonne played it too, three times as a trunk was bucked.)
+        if landed.along.is_some() {
             bank.play(&mut commands, "crash", Some(landed.at), loud);
         } else if now - *clattered > 0.12 {
             *clattered = now;
-            bank.pitched(&mut commands, "rubble", Some(landed.at), loud * 0.6, (1.6 - size * 0.5).clamp(0.8, 1.5));
+            // (Wood come down is a knock, stone a clatter; lower the bigger it is.)
+            bank.pitched(&mut commands, if landed.wood { "thud" } else { "rubble" }, Some(landed.at), loud * if landed.wood { 0.9 } else { 0.6 }, (1.6 - size * 0.5).clamp(0.8, 1.5));
         }
         throw(&mut commands, landed.at.with_y(landed.at.y - size * 0.3), Block::Dirt, (6.0 + size * 10.0).min(40.0) as usize, size.max(0.5), 2.5);
     }

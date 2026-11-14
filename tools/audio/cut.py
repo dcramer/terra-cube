@@ -11,7 +11,8 @@ never stops (leaves in a wind: the gusts), well apart, each faded in and out ove
 its length.
 
 `cut.py SOURCE NAME [--count 4] [--min 0.4] [--max 3] [--high 1000] [--low 0] [--gap 0.3]
-[--from N] [--clear 10] [--out DIR]`. A call less than --clear dB over the quiet is not taken: it
+[--from N] [--clear 10] [--out DIR] [--tail 0] [--lead 0.06]`. A blow (an axe, a stone) wants
+`--lead 0.015 --tail 0.3`: heard at once, and its ring let die away, not cut. A call less than --clear dB over the quiet is not taken: it
 could as well be the quiet. Needs ffmpeg. Run `level.py --fix` after it."""
 import math, pathlib, struct, subprocess, sys
 
@@ -29,6 +30,7 @@ def opt(name, default):
 
 count, shortest, longest, high, low, gap, first = opt("--count", 4), opt("--min", 0.4), opt("--max", 3.0), opt("--high", 1000), opt("--low", 0), opt("--gap", 0.3), opt("--from", 1)
 clear_bar = opt("--clear", 10.0)
+tail, lead = opt("--tail", 0.0), opt("--lead", 0.06)
 swell = opt("--swell", 0.0)
 out = pathlib.Path(opt("--out", str(pathlib.Path(__file__).resolve().parents[2] / "assets" / "audio")))
 if len(args) != 2:
@@ -75,8 +77,8 @@ chosen = sorted(calls[:count], key=lambda c: c[1])
 if not chosen:
     sys.exit(f"FAIL {name}: no call of {shortest} to {longest} s stands out of {source} ({len(runs)} runs over the bar)")
 for n, (clear, at, length) in enumerate(chosen, first):
-    a, d = max(at - 0.06, 0.0), length + 0.2
-    fades = f"afade=t=in:d={d / 3:.3f},afade=t=out:st={d * 2 / 3:.3f}:d={d / 3:.3f}" if swell else f"afade=t=in:d=0.04,afade=t=out:st={d - 0.12:.3f}:d=0.12"
+    a, d = max(at - lead, 0.0), length + 0.2 + tail
+    fades = f"afade=t=in:d={d / 3:.3f},afade=t=out:st={d * 2 / 3:.3f}:d={d / 3:.3f}" if swell else f"afade=t=in:d={min(0.04, lead * 0.6):.3f},afade=t=out:st={d - 0.12 - tail:.3f}:d={0.12 + tail:.3f}"
     path = out / f"{name}_{n}.ogg"
     subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{a:.3f}", "-t", f"{d:.3f}", "-i", source, "-af", f"{band},{fades}", "-ac", "1", "-ar", "44100", "-c:a", "libvorbis", "-q:a", "4", str(path)], check=True)
     print(f"{path.name}\t{d:.2f}\t{a:.2f} to {a + d:.2f} s of {len(s) / RATE:.0f} s\t{clear:.0f} dB over the quiet\t{pathlib.Path(source).name}")
