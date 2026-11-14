@@ -160,6 +160,8 @@ pub struct Piece {
     pub age: f32,
     /// Times a lump has rolled off what it came down on ([`Loose::step`]).
     rolls: u8,
+    /// Come to rest, it keeps its own cells and the way it lies ([`Rested`]): a log.
+    keeps: bool,
 }
 
 impl Piece {
@@ -181,6 +183,61 @@ fn mass(cells: &HashMap<IVec3, Part>) -> f32 {
         Part::Whole(b) => crate::matter::density(*b) * CELL * CELL * CELL,
         Part::Bits(bits) => bits.iter().map(|b| crate::matter::density(*b)).sum::<f32>() * BIT * BIT * BIT,
     }).sum()
+}
+
+/// A piece come to rest that is still itself: its own cells, as it was made, and how it lies
+/// (a point of it that was at `p` is at pivot + shift + turn (p - pivot), as a [`Piece`]'s).
+/// The world is a grid, and what is put into it is asked cell by cell where it is: a log
+/// lying across the grid came out as steps, or was turned to lie along it. So what should
+/// keep its shape is not put into the world. It stays as it is, and whoever draws it draws
+/// it so; the world gets only the cells it is in, of a kind that is not drawn
+/// ([`Block::whole`]), so that it stops a body, bears what is put on it and falls when what
+/// is under it goes. (The developer, 2026-11-13: "one issue we have in the game right now
+/// things cant have angles ... it'd be nice if those logs could just lay at an angle ...
+/// we still wanna rely on voxels but forcing everything to be exact on the grid is not
+/// amazing visually".)
+#[derive(Clone)]
+pub struct Rested {
+    pub id: u32,
+    pub cells: HashMap<IVec3, Part>,
+    pub pivot: Vec3,
+    pub shift: Vec3,
+    pub turn: Quat,
+    /// The cells of the world it is in.
+    placed: Vec<IVec3>,
+}
+
+impl Rested {
+    pub fn now(&self, was: Vec3) -> Vec3 {
+        self.pivot + self.shift + self.turn * (was - self.pivot)
+    }
+}
+
+/// Puts into the world the cells a piece that keeps its shape is in, where there is room:
+/// of what it is, not drawn. Gives them.
+fn rest(world: &mut World, piece: &Piece) -> Vec<IVec3> {
+    let (mut lo, mut hi) = (Vec3::MAX, Vec3::MIN);
+    for cell in piece.cells.keys() {
+        for corner in 0..8 {
+            let p = piece.now((*cell + IVec3::new(corner & 1, corner >> 1 & 1, corner >> 2 & 1)).as_vec3() * CELL);
+            (lo, hi) = (lo.min(p), hi.max(p));
+        }
+    }
+    let (lo, hi) = ((lo / CELL).floor().as_ivec3(), (hi / CELL).floor().as_ivec3());
+    let mut placed = Vec::new();
+    for y in lo.y..=hi.y {
+        for z in lo.z..=hi.z {
+            for x in lo.x..=hi.x {
+                let cell = IVec3::new(x, y, z);
+                let Some(Part::Whole(b)) = piece.cells.get(&(piece.was((cell.as_vec3() + 0.5) * CELL) / CELL).floor().as_ivec3()) else { continue };
+                if room(world, cell) {
+                    world.set(cell, b.grown().felled());
+                    placed.push(cell);
+                }
+            }
+        }
+    }
+    placed
 }
 
 /// What has come down: where, how many cells of it were put back, and how many it had.
@@ -394,6 +451,10 @@ pub struct Loose {
     /// how many times running: one that does it four times is left where it is
     /// ([`Loose::loosen`]).
     restless: HashMap<IVec3, u8>,
+    /// What lies at rest as itself ([`Rested`]), and whose each cell of the world is that
+    /// one of them is in.
+    pub rested: Vec<Rested>,
+    owner: HashMap<IVec3, u32>,
     /// Every edit made, with how many steps had been taken when it was ([`replay`]).
     pub journal: Vec<(u64, Edit)>,
     steps: u64,
@@ -1010,7 +1071,7 @@ impl Loose {
                             for x in bl.x..=bh.x {
                                 let cell = IVec3::new(x, y, z);
                                 let b = world.get(cell);
-                                if !(b.wood() || b.foliage()) || b.shaped() {
+                                if !(b.wood() || b.foliage()) || b.shaped() || self.owner.contains_key(&cell) {
                                     continue;
                                 }
                                 let here = (cell.as_vec3() + 0.5) * CELL;
@@ -1080,6 +1141,40 @@ impl Loose {
         if stands((first.as_vec3() + 0.5) * CELL) {
             return None;
         }
+        // A log: split into hunks, which lie where it lay, nearest its middle line first.
+        if let Some(n) = self.owner.get(&first).and_then(|id| self.rested.iter().position(|r| r.id == *id)) {
+            let log = self.rested.remove(n);
+            let mut cut = Cut::default();
+            for cell in &log.placed {
+                if self.owner.remove(cell).is_some() && world.get(*cell).whole() {
+                    world.set(*cell, Block::Air);
+                    cut.changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
+                }
+            }
+            let (low, high) = log.cells.keys().fold((IVec3::MAX, IVec3::MIN), |(l, h), c| (l.min(*c), h.max(*c)));
+            let middle = (low + high + 1).as_vec3() * CELL / 2.0;
+            let (a, b) = (log.now(middle.with_x(low.x as f32 * CELL)), log.now(middle.with_x((high.x + 1) as f32 * CELL)));
+            let mut places: Vec<(f32, IVec3)> = log.placed.iter().flat_map(|c| [0, -1].map(|down| IVec3::new(c.x.div_euclid(HUNK) * HUNK, c.y + down, c.z.div_euclid(HUNK) * HUNK))).collect::<HashSet<_>>().into_iter().map(|corner| (from_line((corner.as_vec3() + HUNK as f32 * 0.5) * CELL, a, b), corner)).collect();
+            places.sort_by(|x, y| x.0.total_cmp(&y.0).then_with(|| (x.1.y, x.1.z, x.1.x).cmp(&(y.1.y, y.1.z, y.1.x))));
+            // (Two from a small log and three from a large, `SPLITS`: large is three cells
+            // thick, a great tree's, which is more than sixty cells of it.)
+            let many = SPLITS[(log.cells.len() > 60) as usize];
+            let put = strew(world, places, many, Block::Billet, &mut cut.changed);
+            for k in 0..6 {
+                self.shed.push((a.lerp(b, (k as f32 + 0.5) / 6.0) + Vec3::Y * 0.3, Block::Timber));
+            }
+            trace(format_args!("chop: a log {:.1} m long split into {put} hunks of {many}", a.distance(b)));
+            let (lo, hi) = log.placed.iter().fold((IVec3::MAX, IVec3::MIN), |(l, h), c| (l.min(*c), h.max(*c)));
+            if lo.x <= hi.x {
+                cut.changed.extend(self.loosen(world, lo - HUNK - 1, hi + HUNK + 1, push));
+            }
+            cut.taken[Stuff::Wood as usize] = (log.cells.len() * 125) as u32;
+            self.cuts.push((at, cut.taken));
+            return Some(cut);
+        }
+        // (A piece of timber is not the logs that lie against it: each of those is its own.)
+        let logs: HashSet<IVec3> = self.owner.keys().copied().collect();
+        let holds = |world: &World, cell: IVec3| !logs.contains(&cell) && holds(world, cell);
         let (mut cut, tree) = self.worked(world, first, at, push, &holds);
         // A trunk is bucked whole at the one blow, though it lies in more than one piece:
         // every other piece of that tree's wood that is still as it fell is bucked too. (A
@@ -1087,7 +1182,7 @@ impl Loose {
         if let Some(thing) = tree.and_then(|id| self.things.iter().find(|t| t.id == id)).cloned() {
             let (pivot, shift, turn) = thing.lies.unwrap_or((Vec3::ZERO, Vec3::ZERO, Quat::IDENTITY));
             for _ in 0..12 {
-                let left = thing.limbs.iter().flat_map(|l| (0..=(l.a.distance(l.b) / CELL) as i32).map(move |k| l.a.lerp(l.b, k as f32 * CELL / l.a.distance(l.b).max(CELL)))).map(|p| ((pivot + shift + turn * (p - pivot)) / CELL).floor().as_ivec3()).flat_map(|c| std::iter::once(c).chain(round().map(move |d| c + d))).find(|c| { let b = world.get(*c); b.whole() && b.wood() });
+                let left = thing.limbs.iter().flat_map(|l| (0..=(l.a.distance(l.b) / CELL) as i32).map(move |k| l.a.lerp(l.b, k as f32 * CELL / l.a.distance(l.b).max(CELL)))).map(|p| ((pivot + shift + turn * (p - pivot)) / CELL).floor().as_ivec3()).flat_map(|c| std::iter::once(c).chain(round().map(move |d| c + d))).find(|c| { let b = world.get(*c); b.whole() && b.wood() && !logs.contains(c) });
                 let Some(next) = left else { break };
                 let (more, _) = self.worked(world, next, (next.as_vec3() + 0.5) * CELL, push, &holds);
                 cut.changed.extend(more.changed);
@@ -1157,20 +1252,15 @@ impl Loose {
             cut.changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
             (lo, hi) = (lo.min(cell), hi.max(cell));
         };
-        // Logs already, most of it: split, with whatever scrap lies against it. Anything
-        // else is a trunk, and is bucked. (By every cell of it: a log that had come down on
-        // a splinter of the trunk was a trunk again, was bucked into itself at each blow,
-        // and could not be split.)
-        let logs = body.iter().filter(|c| world.get(**c).balk()).count() * 2 >= body.len();
         let birch = body.iter().filter(|c| world.get(**c).grown() == Block::Birch).count() * 2 > body.len();
-        if !logs && long < LOG * 0.5 {
+        if long < 0.75 {
             // A scrap: a bough's stub, a splinter. Chips.
             for cell in &body {
                 empty(world, *cell, &mut cut);
             }
             self.shed.push((a.lerp(b, 0.5) + Vec3::Y * 0.2, Block::Timber));
             trace(format_args!("chop: a scrap {long:.1} m long, gone in chips"));
-        } else if !logs {
+        } else {
             // Bucked: all of it at the one blow into logs, each a straight length of one
             // thickness lying along the grid where that part of it lay, bark on its sides
             // and cut wood at its ends. As many as it is long, as thick as it has wood for.
@@ -1184,50 +1274,33 @@ impl Loose {
             let volume = wood as f32 * BIT * BIT * BIT;
             let many = ((long / LOG).round() as usize).max(1);
             let wide = (((volume / long.max(LOG * 0.5)).sqrt() / CELL).round() as i32).clamp(1, 3);
-            let (axis, across) = if along.x.abs() >= along.z.abs() { (IVec3::X, IVec3::Z) } else { (IVec3::Z, IVec3::X) };
-            let block = match (birch, axis == IVec3::X) {
-                (false, true) => Block::Balk,
-                (false, false) => Block::BalkAcross,
-                (true, true) => Block::BalkBirch,
-                (true, false) => Block::BalkBirchAcross,
-            };
+            // Each a piece of its own that keeps its shape ([`Rested`]): a straight beam,
+            // its length along its own x, turned to lie along the line the trunk lay on,
+            // and let go a little over where it lay to come down onto what is under it.
+            let block = if birch { Block::BalkBirch } else { Block::Balk };
             // (A cell short of its share of the length: a gap between it and the next.)
             let each = long / many as f32;
             let length = ((each / CELL).floor() as i32 - 1).clamp(3, (LOG / CELL) as i32 - 1);
+            let turn = Quat::from_rotation_arc(Vec3::X, along);
             for k in 0..many {
                 let middle = a + along * each * (k as f32 + 0.5);
-                let from = (middle / CELL).floor().as_ivec3() - axis * (length / 2) - (across + IVec3::Y) * (wide / 2);
-                let beam = |up: i32| (0..length).flat_map(move |i| (0..wide).flat_map(move |j| (0..wide).map(move |y| from + axis * i + across * j + IVec3::Y * (y + up))));
-                // (Where it lay, or as little over that as gives all of it room: it comes
-                // down from there onto what is under it.)
-                if let Some(up) = (0..=8).find(|up| beam(*up).all(|cell| room(world, cell))) {
-                    for cell in beam(up) {
-                        world.set(cell, block);
-                        cut.changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
-                        (lo, hi) = (lo.min(cell), hi.max(cell));
+                let from = (middle / CELL).floor().as_ivec3() - IVec3::new(length / 2, wide / 2, wide / 2);
+                let cells: HashMap<IVec3, Part> = (0..length).flat_map(|i| (0..wide).flat_map(move |j| (0..wide).map(move |y| from + IVec3::new(i, y, j)))).map(|c| (c, Part::Whole(block))).collect();
+                let mut log = self.made(cells, middle, turn);
+                // (Up out of what it lay sunk in, a cell at a time.)
+                for _ in 0..8 {
+                    if !log.feel.iter().any(|p| bears(world.bit((log.now(*p) / BIT).floor().as_ivec3()))) {
+                        break;
                     }
+                    log.shift.y += CELL;
                 }
+                self.pieces.push(log);
                 for end in [-0.5f32, 0.5] {
                     self.shed.push((middle + along * each * end + Vec3::Y * 0.2, Block::Timber));
                 }
             }
             bucked = true;
-            trace(format_args!("chop: a trunk {long:.1} m long bucked into {many} logs, each {wide} cells thick, lying along {}", if axis == IVec3::X { "x" } else { "z" }));
-        } else {
-            // A log: all of it into hunks, nearest its middle line first.
-            let mut places: Vec<(f32, IVec3)> = body.iter().flat_map(|c| [0, -1].map(|down| IVec3::new(c.x.div_euclid(HUNK) * HUNK, c.y + down, c.z.div_euclid(HUNK) * HUNK))).collect::<HashSet<_>>().into_iter().map(|corner| (from_line((corner.as_vec3() + HUNK as f32 * 0.5) * CELL, a, b), corner)).collect();
-            places.sort_by(|x, y| x.0.total_cmp(&y.0).then_with(|| (x.1.y, x.1.z, x.1.x).cmp(&(y.1.y, y.1.z, y.1.x))));
-            for cell in &body {
-                empty(world, *cell, &mut cut);
-            }
-            // (Two from a small log and three from a large, `SPLITS`: large is three cells
-            // thick, a great tree's, which is more than sixty cells of it.)
-            let many = SPLITS[(body.len() > 60) as usize];
-            let put = strew(world, places, many, Block::Billet, &mut cut.changed);
-            for k in 0..6 {
-                self.shed.push((a.lerp(b, (k as f32 + 0.5) / 6.0) + Vec3::Y * 0.3, Block::Timber));
-            }
-            trace(format_args!("chop: a log {long:.1} m long split into {put} hunks of {many}"));
+            trace(format_args!("chop: a trunk {long:.1} m long bucked into {many} logs, each {wide} cells thick"));
         }
         if lo.x <= hi.x {
             cut.changed.extend(self.loosen(world, lo - HUNK - 1, hi + HUNK + 1, push));
@@ -1490,6 +1563,14 @@ impl Loose {
                         // that lay on one came down with it as one piece, which landed as
                         // cells do, and the hunk's cells that met the ground were put
                         // wherever there was room (seed 7, 2026-11-13).
+                        // And what lay at rest as itself falls as itself, all of it.
+                        let mut again: Vec<u32> = own.iter().filter_map(|c| self.owner.get(c).copied()).collect();
+                        again.sort_unstable();
+                        again.dedup();
+                        for id in again {
+                            changed.extend(self.rouse(world, id));
+                        }
+                        let own: Vec<IVec3> = own.into_iter().filter(|c| world.get(*c) != Block::Air).collect();
                         let mut apart: HashMap<Option<IVec3>, Vec<IVec3>> = HashMap::new();
                         for cell in own {
                             apart.entry(hunk_at(world, cell).map(|h| h.0)).or_default().push(cell);
@@ -1520,6 +1601,33 @@ impl Loose {
             }
         }
         changed
+    }
+
+    /// What lay at rest as itself is loose again, as itself: out of the world, and a piece.
+    fn rouse(&mut self, world: &mut World, id: u32) -> HashSet<IVec3> {
+        let mut changed = HashSet::new();
+        let Some(n) = self.rested.iter().position(|r| r.id == id) else { return changed };
+        let rested = self.rested.remove(n);
+        for cell in &rested.placed {
+            if self.owner.remove(cell).is_some() && world.get(*cell).whole() {
+                world.set(*cell, Block::Air);
+                changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
+            }
+        }
+        let mut piece = self.made(rested.cells, rested.pivot, rested.turn);
+        (piece.id, piece.shift) = (rested.id, rested.shift);
+        self.pieces.push(piece);
+        changed
+    }
+
+    /// A piece made, not cut loose: these cells, turned so about a point, to fall from
+    /// there and lie as itself where it comes to rest ([`Rested`]).
+    fn made(&mut self, cells: HashMap<IVec3, Part>, pivot: Vec3, turn: Quat) -> Piece {
+        let (low, high) = cells.keys().fold((i32::MAX, i32::MIN), |(l, h), c| (l.min(c.y), h.max(c.y)));
+        let mut feel: Vec<Vec3> = cells.keys().map(|c| (c.as_vec3() + 0.5) * CELL).collect();
+        feel.sort_by(|a, b| (a.x, a.y, a.z).partial_cmp(&(b.x, b.y, b.z)).unwrap_or(std::cmp::Ordering::Equal));
+        self.next += 1;
+        Piece { id: self.next, mass: mass(&cells), cells, pivot, shift: Vec3::ZERO, turn, vel: Vec3::ZERO, over: None, spin: Vec3::ZERO, brittle: false, hunk: false, thing: None, base: Quat::IDENTITY, settling: false, spare: (pivot, 0.0), tall: (high - low + 1) as f32 * CELL, feel, age: 0.0, rolls: 0, keeps: true }
     }
 
     /// Takes cells out of the world as one piece, with the leaves that are theirs.
@@ -1616,7 +1724,7 @@ impl Loose {
             }
             None => feel,
         };
-        self.pieces.push(Piece { id: self.next, mass: mass(&cells), cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, spin: Vec3::ZERO, brittle, hunk, thing, base: Quat::IDENTITY, settling: false, spare: (pivot, tall * 0.3), tall, feel, age: 0.0, rolls: 0 });
+        self.pieces.push(Piece { id: self.next, mass: mass(&cells), cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, spin: Vec3::ZERO, brittle, hunk, thing, base: Quat::IDENTITY, settling: false, spare: (pivot, tall * 0.3), tall, feel, age: 0.0, rolls: 0, keeps: false });
         changed
     }
 
@@ -1670,6 +1778,7 @@ impl Loose {
             self.pieces.push(Piece {
                 id: self.next,
                 hunk: false,
+                keeps: false,
                 mass: mass(&cells),
                 cells,
                 // (Turning about its own middle, from where the whole had brought it.)
@@ -1802,7 +1911,7 @@ impl Loose {
             // (Not wood: a thin log rolled from where its tree lay, and the axe, which asks
             // the tree where its logs are, could not find it to split. Seed 2, 2026-11-13.)
             let wooden = || piece.cells.values().any(|p| matches!(p, Part::Whole(b) if b.wood()));
-            if piece.thing.is_none() && piece.over.is_none() && !piece.settling && !piece.hunk && piece.cells.len() < 80 && piece.rolls < 3 && !wooden() {
+            if piece.thing.is_none() && piece.over.is_none() && !piece.settling && !piece.hunk && piece.cells.len() < 80 && piece.rolls < 3 && !piece.keeps && !wooden() {
                 let (middle, reach) = (piece.now(piece.pivot), piece.tall.max(2.0 * CELL));
                 let below = |at: Vec3| world.raycast(at, Vec3::NEG_Y, 12.0);
                 let sides = [Vec3::X, Vec3::NEG_X, Vec3::Z, Vec3::NEG_Z].map(|d| middle + d * reach);
@@ -1838,6 +1947,21 @@ impl Loose {
             // them is asked cell by cell what of it is there: a boulder's broken outside,
             // a bit thick, was mostly lost that way, a quarter of its stone (2026-11-13).
             // A tree lies as it fell: it is long, and squared it would jump.
+            // What keeps its shape lies as it came down, and is not put into the world.
+            if piece.keeps {
+                let placed = rest(world, &piece);
+                let (lo, hi) = placed.iter().fold((IVec3::MAX, IVec3::MIN), |(lo, hi), c| (lo.min(*c), hi.max(*c)));
+                for cell in &placed {
+                    self.owner.insert(*cell, piece.id);
+                    changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
+                }
+                self.landed.push(Landed { at: piece.now(piece.pivot), cells: piece.cells.len(), put: placed.len(), lost: 0, speed, settled: false, mass: piece.mass, along: None });
+                self.rested.push(Rested { id: piece.id, cells: piece.cells, pivot: piece.pivot, shift: piece.shift, turn: piece.turn, placed });
+                if lo.x <= hi.x {
+                    changed.extend(self.loosen(world, lo - 1, hi + 1, Vec3::X));
+                }
+                continue;
+            }
             if piece.thing.is_none() && piece.over.is_none() && !piece.settling {
                 square(&mut piece);
             }

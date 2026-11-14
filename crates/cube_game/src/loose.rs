@@ -168,6 +168,9 @@ fn fall(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<crate:
             // settles about its top. Drawn about where it first stood, it was gone for the
             // second it took to settle.)
             Some(piece) => *at = Transform { translation: piece.pivot + piece.shift - piece.turn * piece.pivot, rotation: piece.turn, scale: Vec3::ONE },
+            // (Come to rest as itself, it is drawn on as it lies: `Rested`. It is not in
+            // the world to be drawn there.)
+            None if let Some(lies) = live.0.loose.rested.iter().find(|r| r.id == falling.0) => *at = Transform { translation: lies.pivot + lies.shift - lies.turn * lies.pivot, rotation: lies.turn, scale: Vec3::ONE },
             None => {
                 let left = falling.1.unwrap_or(0.25) - time.delta_secs();
                 falling.1 = Some(left);
@@ -180,11 +183,15 @@ fn fall(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<crate:
     // Each new piece's mesh is made on another thread (a tree is ten thousand cells, and made
     // here it was a frame of 40 ms as it came loose) and drawn when it is ready, a frame or
     // two on: the chunks it was cut from are still drawn as they were for as long.
-    making.retain(|id, _| pieces.iter().any(|p| p.id == *id));
-    for piece in pieces.iter().filter(|p| !drawn.iter().any(|(_, f, _)| f.0 == p.id)) {
-        match making.get_mut(&piece.id).map(bevy::tasks::futures::check_ready) {
+    // (And each thing lying at rest as itself that is not drawn yet: it came to rest before
+    // its shape was ready.)
+    let rested = &live.0.loose.rested;
+    let all: Vec<(u32, &std::collections::HashMap<IVec3, Part>, Vec3, Vec3, Quat)> = pieces.iter().map(|p| (p.id, &p.cells, p.pivot, p.shift, p.turn)).chain(rested.iter().map(|r| (r.id, &r.cells, r.pivot, r.shift, r.turn))).collect();
+    making.retain(|id, _| all.iter().any(|p| p.0 == *id));
+    for (id, cells, pivot, shift, turn) in all.iter().filter(|p| !drawn.iter().any(|(_, f, _)| f.0 == p.0)).copied() {
+        match making.get_mut(&id).map(bevy::tasks::futures::check_ready) {
             Some(Some(data)) => {
-                making.remove(&piece.id);
+                making.remove(&id);
                 let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
                     .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
                     .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
@@ -192,12 +199,12 @@ fn fall(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<crate:
                     .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs)
                     .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, data.tangents)
                     .with_inserted_indices(Indices::U32(data.indices));
-                commands.spawn((Falling(piece.id, None), Mesh3d(meshes.add(mesh)), MeshMaterial3d(look.solid.clone()), Transform { translation: piece.pivot + piece.shift - piece.turn * piece.pivot, rotation: piece.turn, scale: Vec3::ONE }));
+                commands.spawn((Falling(id, None), Mesh3d(meshes.add(mesh)), MeshMaterial3d(look.solid.clone()), Transform { translation: pivot + shift - turn * pivot, rotation: turn, scale: Vec3::ONE }));
             }
             Some(None) => {}
             None => {
-                let cells = piece.cells.clone();
-                making.insert(piece.id, bevy::tasks::AsyncComputeTaskPool::get().spawn(async move { shape(&cells) }));
+                let cells = cells.clone();
+                making.insert(id, bevy::tasks::AsyncComputeTaskPool::get().spawn(async move { shape(&cells) }));
             }
         }
     }
