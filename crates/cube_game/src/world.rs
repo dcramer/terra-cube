@@ -1028,9 +1028,14 @@ fn regions(args: Res<crate::Args>, loading: Res<crate::loading::Loading>, terrai
         if let std::collections::hash_map::Entry::Vacant(slot) = regions.pending.entry(r) {
             let land = terrain.1.clone();
             let (lo, hi) = ((r.0 * terrain::REGION, r.1 * terrain::REGION), ((r.0 + 1) * terrain::REGION, (r.1 + 1) * terrain::REGION));
+            // (How much grazing is left at its middle: ground eaten down is made with less
+            // growing on it, `terrain::graze`. A region is half a pasture across.)
+            // (`GRAZED=0.3` makes all of it as if grazed to that, to be looked at.)
+            let left = std::env::var("GRAZED").ok().and_then(|v| v.parse().ok()).unwrap_or_else(|| live.as_ref().map_or(1.0, |live| live.0.pasture(Vec2::new((lo.0 + hi.0) as f32, (lo.1 + hi.1) as f32) * cube_voxel::CELL / 2.0)));
             slot.insert(pool.spawn(async move {
                 let mut part = Voxels::default();
                 let ((), form) = cube_sim::plants::recorded(|| terrain::fill(&mut part, &land, lo, hi));
+                terrain::graze(&mut part, &land, lo, hi, left);
                 (part, form)
             }));
         }

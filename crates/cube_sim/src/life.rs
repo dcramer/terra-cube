@@ -620,10 +620,19 @@ pub struct Sim {
 /// (by its height squared: a moose eats forty rabbits' worth); and how lean the grazing is
 /// when what feeds on it begins to starve and to rear fewer young.
 pub const PASTURE: f32 = 64.0;
+/// As little grazing left on a piece of ground, of 1, is none: what grazes there in sight
+/// gets nothing by it.
+const BARE: f32 = 0.05;
 const GRAZED: f32 = 0.0013;
 const LEAN: f32 = 0.3;
 
 impl Sim {
+    /// What grazing was left at a place when the day began, of 1: for whoever makes the
+    /// ground there ([`crate::terrain::graze`]), which must make it the same all day.
+    pub fn pasture(&self, at: Vec2) -> f32 {
+        self.forage.get(&((at.x / PASTURE).floor() as i32, (at.y / PASTURE).floor() as i32)).copied().unwrap_or(1.0)
+    }
+
     /// What there is to graze at a place, of 1.
     pub fn forage_at(&self, at: Vec2) -> f32 {
         let piece = ((at.x / PASTURE).floor() as i32, (at.y / PASTURE).floor() as i32);
@@ -851,6 +860,14 @@ impl Sim {
             // hours a day's grazing takes (`day` takes it for the ones out of sight).
             if agent.mind.state == mind::State::Graze && matches!(kind.diet, Diet::Plants | Diet::All) {
                 let piece = ((agent.body.pos.x / PASTURE).floor() as i32, (agent.body.pos.z / PASTURE).floor() as i32);
+                // (On ground eaten bare there is nothing to eat: it is no less hungry for
+                // standing there with its head down, and it moves on. In sight it fed as
+                // well on bare ground as on a meadow, and only what was out of sight starved.)
+                let left = (self.forage.get(&piece).copied().unwrap_or(1.0) - self.nibbled.get(&piece).copied().unwrap_or(0.0)).max(0.0);
+                if left < BARE {
+                    agent.hunger += DT / (crate::sky::DAY / 6.0);
+                    agent.mind.left = agent.mind.left.min(0.0);
+                }
                 *self.nibbled.entry(piece).or_insert(0.0) += kind.height * kind.height * GRAZED * 12.0 * days * if kind.diet == Diet::All { 0.3 } else { 1.0 };
                 // And what stands at its feet is eaten, to be seen: a tuft, a flower or a fern
                 // every second or so, the nearest to its head first. (It grows again when the
@@ -1975,6 +1992,19 @@ mod tests {
         assert!(grazed > 5.0 && left < 1.0 && left > 0.99, "it grazed {grazed:.0} s and left {left}");
         // (No grass stands on the test floor: nothing there to be eaten and seen to go.)
         assert!(sim.eaten.is_empty());
+        // On ground eaten bare it is no better fed for trying, where on grass it is.
+        let fed = |left: f32| {
+            let (world, mut sim) = stage();
+            let rabbit = sim.add(&world, 0, at(2.0, 2.0), 0.0, Driver::Mind);
+            for piece in [(0, 0), (-1, 0), (0, -1), (-1, -1)] {
+                sim.forage.insert(piece, left);
+            }
+            sim.agents.get_mut(&rabbit).unwrap().hunger = 0.9;
+            run(&mut sim, &world, 300.0);
+            0.9 - sim.agents[&rabbit].hunger
+        };
+        let (on_grass, on_bare) = (fed(1.0), fed(0.0));
+        assert!(on_grass > 0.02 && on_bare < on_grass * 0.2, "in five minutes its hunger fell by {on_grass:.3} on grass and {on_bare:.3} on bare ground");
     }
 
     #[test]

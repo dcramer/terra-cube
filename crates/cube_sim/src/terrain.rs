@@ -411,6 +411,37 @@ thread_local! {
     static SPENT: std::cell::Cell<[f64; 5]> = const { std::cell::Cell::new([0.0; 5]) };
 }
 
+/// As much grazing left, of 1, as leaves the ground as it grew: under this, grass is seen to
+/// be eaten down.
+pub const LUSH: f32 = 0.8;
+
+/// Eats down what grows on a part of the land that has just been made, by how much grazing
+/// is left there of 1 (`Sim::pasture`): at [`LUSH`] and over, none of it; under that, the
+/// tufts, flowers and ferns of meadow and wood go, more of them the less is left and all of
+/// them at nothing, each by its own place so that the same ground thins the same way. (What
+/// grazes ate its ground down in numbers and starved on it while the grass stood as thick as
+/// ever: a meadow with a hundred deer on it and one with none looked the same.)
+pub fn graze(world: &mut World, land: &Land, lo: (i32, i32), hi: (i32, i32), left: f32) {
+    let keep = (left / LUSH).clamp(0.0, 1.0);
+    if keep >= 1.0 {
+        return;
+    }
+    for z in lo.1..hi.1 {
+        for x in lo.0..hi.0 {
+            if !matches!(land.biome(x, z), Biome::Meadow | Biome::Forest) || hash2(x, z, 0x6A2E) < keep {
+                continue;
+            }
+            let h = land.height(x, z);
+            for y in h..h + 3 {
+                let cell = IVec3::new(x, y, z);
+                if world.get(cell).sprig() {
+                    world.set(cell, Block::Air);
+                }
+            }
+        }
+    }
+}
+
 /// What `fill` has cost on this thread since this was last asked, seconds: the ground, what
 /// stands on it, the ground cover; and of what stands, its wood and its leaf. For `cargo
 /// world cost`.
@@ -617,6 +648,23 @@ mod tests {
             }
             assert!(wood > 500 && apart.chunks.len() <= whole.chunks.len(), "no trees to speak of ({wood} cells of wood)");
         }
+    }
+
+    #[test]
+    fn ground_that_is_grazed_bare_has_less_growing_on_it() {
+        let land = Land::new(7, 3);
+        let (lo, hi) = ((-64, -64), (64, 64));
+        let sprigs = |left: f32| {
+            let mut world = World::default();
+            fill(&mut world, &land, lo, hi);
+            graze(&mut world, &land, lo, hi, left);
+            (lo.1..hi.1).flat_map(|z| (lo.0..hi.0).map(move |x| (x, z))).filter(|(x, z)| matches!(land.biome(*x, *z), Biome::Meadow | Biome::Forest)).map(|(x, z)| { let h = land.height(x, z); (h..h + 3).filter(|y| world.get(IVec3::new(x, *y, z)).sprig()).count() }).sum::<usize>()
+        };
+        let (full, lush, lean, bare) = (sprigs(1.0), sprigs(LUSH), sprigs(0.3), sprigs(0.0));
+        assert!(full > 500, "only {full} tufts on the meadow and wood of this ground");
+        assert_eq!(full, lush);
+        assert!((0.25..0.5).contains(&(lean as f32 / full as f32)), "grazed to 0.3, {lean} of {full} tufts stand");
+        assert_eq!(bare, 0);
     }
 
     #[test]
