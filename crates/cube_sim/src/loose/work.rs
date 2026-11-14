@@ -198,6 +198,7 @@ impl Loose {
     /// of the ball and leaves the earth); with none, everything in the ball goes.
     pub fn cut(&mut self, world: &mut World, middle: Vec3, radius: f32, push: Vec3, forms: &[&Form], stuff: Option<Stuff>) -> Cut {
         self.journal.push((self.steps, Edit::Cut { middle, radius, push, stuff }));
+        let (noted, falling) = (self.journal.len() - 1, self.pieces.len());
         let began = std::time::Instant::now();
         let (lo, hi) = (((middle - radius) / CELL).floor().as_ivec3() - 1, ((middle + radius) / CELL).floor().as_ivec3() + 1);
         // (A tree is made wrought only by what cuts wood, a boulder by what cuts stone.)
@@ -245,6 +246,12 @@ impl Loose {
             eprintln!("loose: cut at {middle:.2?} r {radius:.2} of {stuff:?} · took {:?} · made wrought {} in {:.1} ms · {} loose · cells at the cut {} · over it {}", cut.taken, cut.worked, began.elapsed().as_secs_f32() * 1000.0, self.pieces.len(), around(middle.y), around(middle.y + radius + 0.3));
         }
         let _ = began;
+        // A cut that took nothing, made nothing its cells and loosed nothing is not an edit:
+        // the world is its seed and its journal, and every swing at the air was kept in it
+        // (sixty blows of a pick at a stone already broken were sixty edits, 2026-11-13).
+        if cut.taken == [0, 0, 0] && cut.worked == 0 && self.pieces.len() == falling {
+            self.journal.remove(noted);
+        }
         Cut { changed, ..cut }
     }
 
@@ -264,6 +271,18 @@ impl Loose {
     /// Says what changed as a cut does; a tree it made cells of is in `trees`.
     pub fn chop(&mut self, world: &mut World, at: Vec3, push: Vec3, forms: &[&Form]) -> Cut {
         self.journal.push((self.steps, Edit::Chop { at, push }));
+        // (A blow that did nothing is not an edit, as a cut that did nothing is not: by
+        // whether anything it could do was done.)
+        let state = |l: &Loose| (l.things.len(), l.things.iter().map(|t| t.blows + t.limbed as u32 + t.felled as u32 + t.cells as u32).sum::<u32>(), l.rested.len(), l.pieces.len(), l.cuts.len(), l.shed.len());
+        let (noted, before) = (self.journal.len() - 1, state(self));
+        let cut = self.chopped(world, at, push, forms);
+        if cut.changed.is_empty() && state(self) == before {
+            self.journal.remove(noted);
+        }
+        cut
+    }
+
+    fn chopped(&mut self, world: &mut World, at: Vec3, push: Vec3, forms: &[&Form]) -> Cut {
         // The tree struck: one already cut into, as it stands or as it lies; or one still as
         // it grew, which is made cells and noted first.
         let reached = |t: &Thing| {
@@ -719,6 +738,13 @@ impl Loose {
             let its = |here: Vec3| here.distance(stone.middle) < reach;
             let held = emptied(world, lo, hi, |b| b == Block::Shard, its, &mut cut.changed);
             let many = ((held as f32 / (SPLIT * SPLIT * SPLIT * HUNK * HUNK * HUNK) as f32).round() as usize).max(1);
+            // A rock is often two or three stones that lie in each other: the stone of any
+            // whose middle is within this one went with it, and it is broken too. (Left
+            // unbroken it took three more blows and broke into nothing, with no stone in
+            // it: in the game at -69,23, 2026-11-13.)
+            for other in self.things.iter_mut().filter(|t| t.stone.as_ref().is_some_and(|s| its(s.middle))) {
+                other.blows = other.blows.max(CHIPS(other.stone.as_ref().map_or(0.0, |s| s.radii.max_element())));
+            }
             // From the ground up and from its middle out: a heap where it lay.
             let mut places = Vec::new();
             for y in lo.y..=hi.y {
@@ -732,8 +758,14 @@ impl Loose {
                     }
                 }
             }
-            let put = if held > 0 { strew(world, places, many, Block::Cobble, &mut cut.changed) } else { 0 };
-            trace(format_args!("chip: a boulder {:.1} m across broke at blow {needs} into {put} hunks of {many}", stone.radii.max_element() * 2.0));
+            let mut put = if held > 0 { strew(world, places, many, Block::Cobble, &mut cut.changed) } else { 0 };
+            // (A small stone lies half in the ground and no hunk's place within it is all
+            // free: what found no place among them is set down where it lay, on what is
+            // there. In the game a stone of 30 to 70 cm broke into nothing, 2026-11-13.)
+            while held > 0 && put < many && set_down(world, stone.middle, Block::Cobble, &mut cut.changed).is_some() {
+                put += 1;
+            }
+            trace(format_args!("chip: a boulder {:.1} m across broke at blow {needs} into {put} hunks of {many}, {held} bits of stone in it", stone.radii.max_element() * 2.0));
             for k in 0..8 {
                 let turn = k as f32 * 0.8;
                 self.shed.push((stone.middle + Vec3::new(turn.cos(), 0.4, turn.sin()) * stone.radii * 0.7, Block::Shard));

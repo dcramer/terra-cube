@@ -272,6 +272,10 @@ fn told(mut commands: Commands, live: Option<ResMut<Live>>, bank: Option<ResMut<
     // being worked, "when it breaks it should kind of be more obvious".
     let broke = !loose.shed.is_empty();
     for (at, taken) in loose.cuts.drain(..) {
+        // (A blow that took nothing is not heard as wood, which nothing of each is.)
+        if taken == [0, 0, 0] {
+            continue;
+        }
         let (name, block) = if taken[1] >= taken[0] && taken[1] >= taken[2] { (if broke { "split" } else { "chop" }, Block::Wood) } else if taken[2] > taken[0] { ("pick", Block::Stone) } else { ("dig", Block::Dirt) };
         bank.play(&mut commands, name, Some(at), 0.8);
         throw(&mut commands, at, block, 7, 0.4, 2.2);
