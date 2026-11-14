@@ -226,6 +226,19 @@ impl Rested {
     pub fn was(&self, now: Vec3) -> Vec3 {
         self.pivot + self.turn.inverse() * (now - self.pivot - self.shift)
     }
+
+    /// Whether a place in the world is in it as it lies.
+    pub fn has(&self, now: Vec3) -> bool {
+        let was = self.was(now);
+        match self.cells.get(&(was / CELL).floor().as_ivec3()) {
+            Some(Part::Whole(_)) => true,
+            Some(Part::Bits(bits)) => {
+                let l = ((was / BIT).floor().as_ivec3()).rem_euclid(IVec3::splat(SPLIT));
+                bits[(l.x + l.z * SPLIT + l.y * SPLIT * SPLIT) as usize].solid()
+            }
+            None => false,
+        }
+    }
 }
 
 /// As much of a piece may lie in something else when it comes to rest, of 1 ([`sunk`]).
@@ -303,29 +316,6 @@ fn rest(world: &mut World, piece: &Piece) -> Vec<IVec3> {
         }
     }
     placed
-}
-
-/// Takes out of a cell of the world what a thing at rest as itself had there ([`rest`]):
-/// all of it, or its bits of a cell that holds something else too. Says whether it did.
-fn unrest(world: &mut World, cell: IVec3) -> bool {
-    match world.get(cell) {
-        Block::Broken => {
-            let mut any = false;
-            for i in 0..SPLIT * SPLIT * SPLIT {
-                let bit = cell * SPLIT + IVec3::new(i % SPLIT, i / (SPLIT * SPLIT), i / SPLIT % SPLIT);
-                if world.bit(bit).whole() {
-                    world.set_bit(bit, Block::Air);
-                    any = true;
-                }
-            }
-            any
-        }
-        b if b.whole() => {
-            world.set(cell, Block::Air);
-            true
-        }
-        _ => false,
-    }
 }
 
 /// What has come down: where, how many cells of it were put back, and how many it had.
@@ -1234,11 +1224,7 @@ impl Loose {
             let lump = self.rested.remove(n);
             self.journal.push((self.steps, Edit::Chip { at, push }));
             let mut cut = Cut::default();
-            for cell in &lump.placed {
-                if self.owner.remove(cell).is_some() && unrest(world, *cell) {
-                    cut.changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
-                }
-            }
+            self.unrest(world, &lump, &mut cut.changed);
             let stone = lump.cells.values().map(|p| match p { Part::Whole(_) => (SPLIT * SPLIT * SPLIT) as u32, Part::Bits(bits) => bits.iter().filter(|b| b.solid()).count() as u32 }).sum::<u32>();
             let many = (stone as f32 / (SPLIT * SPLIT * SPLIT * HUNK * HUNK * HUNK) as f32).round() as usize;
             let middle = lump.now(lump.pivot);
@@ -1264,11 +1250,7 @@ impl Loose {
         if let Some(n) = self.owner.get(&first).and_then(|id| self.rested.iter().position(|r| r.id == *id)) {
             let log = self.rested.remove(n);
             let mut cut = Cut::default();
-            for cell in &log.placed {
-                if self.owner.remove(cell).is_some() && unrest(world, *cell) {
-                    cut.changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
-                }
-            }
+            self.unrest(world, &log, &mut cut.changed);
             let (low, high) = log.cells.keys().fold((IVec3::MAX, IVec3::MIN), |(l, h), c| (l.min(*c), h.max(*c)));
             let middle = (low + high + 1).as_vec3() * CELL / 2.0;
             let (a, b) = (log.now(middle.with_x(low.x as f32 * CELL)), log.now(middle.with_x((high.x + 1) as f32 * CELL)));
@@ -1736,16 +1718,53 @@ impl Loose {
         changed
     }
 
+    /// Takes out of the world what a thing at rest as itself had in it ([`rest`]): its own
+    /// bits of each cell it is in, and no other's. Two things that lie against each other
+    /// have bits in the same cells, and a cell is said to be one's (`owner`): what is left
+    /// in a cell is then the other's, and the cell is said to be its. (All of a cell went
+    /// with whichever was taken up first, and the other was left with a hole in it.)
+    fn unrest(&mut self, world: &mut World, rested: &Rested, changed: &mut HashSet<IVec3>) {
+        for cell in &rested.placed {
+            let (mut gone, mut left) = (false, false);
+            match world.get(*cell) {
+                Block::Broken => {
+                    for i in 0..SPLIT * SPLIT * SPLIT {
+                        let bit = *cell * SPLIT + IVec3::new(i % SPLIT, i / (SPLIT * SPLIT), i / SPLIT % SPLIT);
+                        if !world.bit(bit).whole() {
+                            continue;
+                        }
+                        if rested.has((bit.as_vec3() + 0.5) * BIT) {
+                            world.set_bit(bit, Block::Air);
+                            gone = true;
+                        } else {
+                            left = true;
+                        }
+                    }
+                }
+                b if b.whole() => {
+                    world.set(*cell, Block::Air);
+                    gone = true;
+                }
+                _ => {}
+            }
+            if gone {
+                changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
+            }
+            if self.owner.get(cell) == Some(&rested.id) {
+                match self.rested.iter().find(|r| left && r.id != rested.id && r.placed.contains(cell)) {
+                    Some(other) => self.owner.insert(*cell, other.id),
+                    None => self.owner.remove(cell),
+                };
+            }
+        }
+    }
+
     /// What lay at rest as itself is loose again, as itself: out of the world, and a piece.
     fn rouse(&mut self, world: &mut World, id: u32) -> HashSet<IVec3> {
         let mut changed = HashSet::new();
         let Some(n) = self.rested.iter().position(|r| r.id == id) else { return changed };
         let rested = self.rested.remove(n);
-        for cell in &rested.placed {
-            if self.owner.remove(cell).is_some() && unrest(world, *cell) {
-                changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
-            }
-        }
+        self.unrest(world, &rested, &mut changed);
         let mut piece = self.made(rested.cells, rested.pivot, rested.turn);
         (piece.id, piece.shift) = (rested.id, rested.shift);
         self.pieces.push(piece);
@@ -2458,6 +2477,36 @@ mod tests {
         run(&mut loose, &mut w);
         let there: usize = w.chunks.values().map(|c| (0..cube_voxel::CHUNK.pow(3)).map(|i| IVec3::new(i % 32, i / 1024, i / 32 % 32)).map(|l| match c.get(l) { Block::Broken => c.bits(l).map_or(0, |b| b.iter().filter(|b| b.whole()).count()), b if b.whole() => 125, _ => 0 }).sum::<usize>()).sum();
         assert!(there * 10 > wood * 9, "{there} of {wood} bits of a log that came down in a bush are in the world");
+    }
+
+    #[test]
+    fn one_of_two_logs_that_lie_against_each_other_is_taken_up_and_the_other_is_whole() {
+        let mut w = floor();
+        let mut loose = Loose::default();
+        let log = |x: i32| -> HashMap<IVec3, Part> { (0..12).flat_map(|i| (0..2).flat_map(move |y| (0..2).map(move |z| (IVec3::new(x + i, 4 + y, z), Part::Whole(Block::Balk))))).collect() };
+        let bits = |w: &World| -> usize { w.chunks.values().map(|c| (0..cube_voxel::CHUNK.pow(3)).map(|i| IVec3::new(i % 32, i / 1024, i / 32 % 32)).map(|l| match c.get(l) { Block::Broken => c.bits(l).map_or(0, |b| b.iter().filter(|b| b.whole()).count()), b if b.whole() => 125, _ => 0 }).sum::<usize>()).sum() };
+        // One along the ground at an angle to the grid; then another beside it and at
+        // another angle, so that they lie in some of the same cells.
+        let first = loose.made(log(0), Vec3::new(1.5, 1.25, 0.25), Quat::from_rotation_y(0.3));
+        loose.pieces.push(first);
+        run(&mut loose, &mut w);
+        let alone = bits(&w);
+        let second = loose.made(log(0), Vec3::new(1.5, 1.25, 0.25), Quat::from_rotation_y(0.3) * Quat::from_rotation_y(0.12));
+        let id = second.id;
+        loose.pieces.push(second);
+        loose.pieces[0].shift = Vec3::new(0.0, 0.0, 0.55);
+        run(&mut loose, &mut w);
+        assert_eq!(loose.rested.len(), 2);
+        let shared = loose.rested[0].placed.iter().filter(|c| loose.rested[1].placed.contains(c)).count();
+        assert!(shared > 0 && bits(&w) > alone, "the two do not lie in any of the same cells");
+        // The second taken out of the world: the first is all there, and every cell of it its own.
+        let second = loose.rested.remove(loose.rested.iter().position(|r| r.id == id).unwrap());
+        loose.unrest(&mut w, &second, &mut HashSet::new());
+        // (But for what of it was in the other: they may lie a little in each other, `SUNK`.)
+        let left = bits(&w);
+        assert!(left <= alone && left * 100 >= alone * 97, "the log left lying has {left} of its {alone} bits");
+        let first = &loose.rested[0];
+        assert!(first.placed.iter().all(|c| loose.owner.get(c) == Some(&first.id)) && !loose.owner.values().any(|o| *o == id), "a cell of the one left is not said to be its");
     }
 
     #[test]
