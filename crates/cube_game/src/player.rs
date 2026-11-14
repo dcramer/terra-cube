@@ -261,7 +261,8 @@ fn script(time: Res<Time>, args: Res<Args>, stage: Option<Res<crate::shot::Stage
                 "sprint" => controls.gait = Gait::Sprint,
                 "jump" => clock.1 = now + 0.4,
                 "dive" => controls.dive = true,
-                "attack" | "use" => controls.use_held = true,
+                // (And a script's reach: it aims at the ground before it, `edit`.)
+                "attack" | "use" => (controls.use_held, controls.far) = (true, true),
                 "torch" => controls.hold = Some(usize::MAX),
                 "save" => controls.save = true,
                 "load" => controls.load = true,
@@ -664,8 +665,21 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
             at - away * HOLE * 0.3
         }
         None => {
-            let Some(far) = terrain.0.raycast(camera.translation, along, REACH + camera.translation.distance(eyes)) else { return };
-            camera.translation + along * far
+            let seen = terrain.0.raycast(camera.translation, along, REACH + camera.translation.distance(eyes)).map(|far| camera.translation + along * far).filter(|hit| hit.distance(eyes) <= REACH);
+            match seen {
+                Some(hit) => hit,
+                // (A script has no eye to aim with, and where the ground falls away before
+                // him the middle of the picture is out of his reach: then at the ground a
+                // stride on. Until this a script's spade or pick dug only on a hillside it
+                // happened to face, and the land's stone had never been dug in a trial.)
+                None if controls.far => {
+                    let over = eyes + along.with_y(0.0).normalize_or(Vec3::X) * 0.8;
+                    let Some(far) = terrain.0.raycast(over, Vec3::NEG_Y, 4.0) else { return };
+                    along = Vec3::NEG_Y;
+                    over + Vec3::NEG_Y * far
+                }
+                None => return,
+            }
         }
     };
     if aimed.is_none() && hit.distance(eyes) > REACH {
