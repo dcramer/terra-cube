@@ -442,6 +442,12 @@ fn follow(
                 orbit.distance = (orbit.distance * (1.0 - scroll.delta.y * 0.1)).clamp(1.2, 30.0);
             }
         }
+        if let (Some((eye, look)), true) = (args.eye, args.scene.is_some()) {
+            // Put where it was asked and looking where it was asked: a place a body's own
+            // camera cannot stand, as the far end of a cave.
+            *transform = Transform::from_translation(eye).looking_at(look, Vec3::Y);
+            continue;
+        }
         if args.scene.is_some() && (args.view == "hand" || args.view == "lefthand") {
             let side = if args.view == "hand" { 1.0 } else { -1.0 };
             // Close on what the right hand holds (`lefthand`: the left), from that side and a little ahead: whether

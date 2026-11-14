@@ -13,6 +13,7 @@
 mod air;
 mod audio;
 mod camera;
+mod cave;
 mod clouds;
 mod creatures;
 mod far;
@@ -106,6 +107,10 @@ pub struct Args {
     pub speed: f32,
     /// The player starts with a torch lit.
     pub torch: bool,
+    /// A scene's camera put at one point and looking at another, whatever the view (`--eye`).
+    pub eye: Option<(Vec3, Vec3)>,
+    /// A cave is dug into the hillside ahead of where the player starts (`cave`).
+    pub cave: bool,
     /// The player starts with a hunk of wood in his hands (to try F on, with real keys).
     pub carry: bool,
     /// A trial body of boxes, moved by its skeleton and its feet and no clips (`limbs`).
@@ -198,6 +203,9 @@ cargo sandbox --scene FILE --play [--as ID] [--after SECONDS] [--view first] [--
         … --play --view fell [--yaw R] [--dist 14]   on what is over the player's head, from that side
                                         and distance: a tree he cuts seen coming down (in a wood
                                         most sides have a trunk in the way: try a few)
+        … --play --cave                 a cave dug into the nearest hillside to look at light in: a passage,
+                                        a hall with a shaft to the sky, a gallery and a pool (it prints where)
+        … --play --eye X,Y,Z --look X,Y,Z   the camera at one point looking at another, metres, whatever the view
         … --view sky [--yaw 1.57] [--pitch 0.16]
                                         from over the trees looking out and a little up, wide: the
                                         sky over the land's edge (yaw 0 north, 1.57 west, 3.14 south;
@@ -293,6 +301,14 @@ fn parse_args() -> Args {
             "--quiet" => args.quiet = true,
             "--speed" => args.speed = it.next().and_then(|v| v.parse().ok()).unwrap_or(1.0),
             "--torch" => args.torch = true,
+            "--cave" => args.cave = true,
+            "--eye" => {
+                // `--eye X,Y,Z --look X,Y,Z`: where the camera is and what it looks at, metres.
+                let point = |v: Option<String>| v.map(|v| v.split(',').filter_map(|n| n.parse::<f32>().ok()).collect::<Vec<_>>()).filter(|p| p.len() == 3).map(|p| Vec3::new(p[0], p[1], p[2]));
+                let eye = point(it.next());
+                let look = if it.next().as_deref() == Some("--look") { point(it.next()) } else { None };
+                args.eye = eye.zip(look);
+            }
             "--carry" => args.carry = true,
             "--limbs" => args.limbs = true,
             "--clips-only" => args.clips_only = true,
@@ -401,14 +417,14 @@ fn main() {
         app.insert_resource(bevy::winit::WinitSettings { focused_mode: at_once, unfocused_mode: at_once });
     }
     if scene {
-        app.add_plugins((world::WorldPlugin, far::FarPlugin, flora::FloraPlugin, air::AirPlugin, clouds::CloudsPlugin, vault::VaultPlugin, audio::SoundPlugin, motion::MotionPlugin, player::PlayPlugin, shot::ScenePlugin));
+        app.add_plugins((world::WorldPlugin, far::FarPlugin, flora::FloraPlugin, air::AirPlugin, clouds::CloudsPlugin, vault::VaultPlugin, cave::CavePlugin, audio::SoundPlugin, motion::MotionPlugin, player::PlayPlugin, shot::ScenePlugin));
         if app.world().resource::<Args>().hud.is_some() {
             app.add_plugins((bevy_egui::EguiPlugin::default(), hud::HudPlugin));
         }
     } else if shot {
         app.add_plugins(shot::ShotPlugin);
     } else {
-        app.add_plugins((world::WorldPlugin, far::FarPlugin, flora::FloraPlugin, air::AirPlugin, clouds::CloudsPlugin, vault::VaultPlugin, audio::SoundPlugin, camera::CameraPlugin, motion::MotionPlugin, player::PlayPlugin, ui::UiPlugin, hud::HudPlugin));
+        app.add_plugins((world::WorldPlugin, far::FarPlugin, flora::FloraPlugin, air::AirPlugin, clouds::CloudsPlugin, vault::VaultPlugin, cave::CavePlugin, audio::SoundPlugin, camera::CameraPlugin, motion::MotionPlugin, player::PlayPlugin, ui::UiPlugin, hud::HudPlugin));
         // The window opens on a loading screen when someone is to play in it. Never a scene:
         // a picture does its own waiting (`shot`).
         if app.world().resource::<Args>().play {

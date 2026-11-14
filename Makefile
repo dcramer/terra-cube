@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: digpace forget dig shatter build stone fells sky wind blow moves limbs person beside features legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: cave digpace forget dig shatter build stone fells sky wind blow moves limbs person beside features legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -179,6 +179,9 @@ legs: ## no window: the player walked up and down a hillside and stood on a ledg
 feet: ## no window: the player and a deer walked over a hillside with feet as the clip has them and then put on the ground: how far the standing foot strays each way (tools/feet.sh ID X,Z YAW for another)
 	@tools/feet.sh player -60,20 2.0
 	@tools/feet.sh deer 30,-40 0.5
+
+cave: ## no window: shots/cave.png, light under the ground on one sheet: a cave dug into a hillside (--cave), by day, with the sun down its shaft, by torch and at night; look after any change to exposure, the sky's fill or the torch
+	@tools/cave.sh
 
 sky: ## no window: shots/sky.png, the sky and the light at twenty fixed hours and places (dawn to full night, the clouds, the torch, a wood, a lake), one sheet; look after any change to sky, sun, moon, cloud, exposure or a light (tools/sky.sh dusk for one)
 	@tools/sky.sh
