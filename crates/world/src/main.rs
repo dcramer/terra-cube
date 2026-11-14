@@ -930,13 +930,57 @@ fn lying_command(args: &Args) -> ! {
             (over, under) = (was.0, was.1);
         }
     }
+    // A person walked across each log at its middle, from either side, on foot and then
+    // with a jump: over it or stopped by it, never in it and never held fast.
+    let tuning = cube_sim::body::Tuning::default();
+    let (mut walks, mut stepped, mut jumped, mut inside, mut stuck) = (0u32, 0u32, 0u32, 0u32, 0u32);
+    for log in &loose.rested {
+        let middle = log.now(log.cells.keys().map(|c| (c.as_vec3() + 0.5) * CELL).sum::<Vec3>() / log.cells.len().max(1) as f32);
+        let across = (log.turn * Vec3::X).cross(Vec3::Y).with_y(0.0).normalize_or(Vec3::Z);
+        for (side, jumps) in [(1.0, false), (-1.0, false), (1.0, true), (-1.0, true)] {
+            let from = middle - across * side * 2.0;
+            let Some(down) = world.raycast(from + Vec3::Y * 3.0, Vec3::NEG_Y, 12.0) else { continue };
+            let mut body = cube_sim::body::Body::new(from + Vec3::Y * (3.2 - down), 0.3, 1.75);
+            // (Not from inside a tree that stands beside it, nor where one stands in the way:
+            // a log is not a metre and a half high.)
+            let tall = (-8..=8).any(|i| world.bit(((middle + across * (i as f32 * 0.25) + Vec3::Y * 1.5) / BIT).floor().as_ivec3()).solid());
+            if tall || body.blocked(&world, body.pos) {
+                continue;
+            }
+            let (mut far, mut still, mut was) = (f32::MIN, 0u32, 0u32);
+            for tick in 0..6 * TICKS {
+                let ahead = (body.pos - middle).dot(across) * side;
+                // (A jump when the log has stopped him, as a person does.)
+                let jump = jumps && body.grounded && tick > 40 && (-1.6..0.5).contains(&ahead) && body.vel.with_y(0.0).dot(across) * side < 0.5;
+                let before = body.pos;
+                body.step(&world, cube_sim::body::Intent { dir: if tick < 30 { glam::Vec2::ZERO } else { glam::Vec2::new(across.x, across.z) * side }, speed: 2.0, jump, hold: jumps, ..Default::default() }, &tuning);
+                was += body.blocked(&world, body.pos) as u32;
+                if std::env::var("LYING_TRACE").is_ok_and(|v| v == log.id.to_string()) && tick % 20 == 0 {
+                    println!("    {tick}: {:.2?} vel {:.2?} grounded {}", body.pos, body.vel, body.grounded);
+                }
+                still = if tick > 60 && body.pos.distance(before) < 1e-4 { still + 1 } else { 0 };
+                far = far.max((body.pos - middle).dot(across) * side);
+            }
+            walks += 1;
+            inside += was;
+            if std::env::var_os("LYING_TRACE").is_some() {
+                println!("  walk log {} side {side} jump {jumps}: got {far:.2} m past its middle, {was} ticks inside, {still} ticks still, ends {:.2?} (log middle {middle:.2?})", log.id, body.pos);
+            }
+            (stepped, jumped) = (stepped + (!jumps && far > 1.0) as u32, jumped + (jumps && far > 1.0) as u32);
+            // (Stopped by a log too high to step on is right; stopped on top of it is not.)
+            stuck += (far > -0.3 && far <= 1.0 && still > 60) as u32;
+        }
+    }
+    checks.bar("in a log", inside as f32, inside == 0, "ticks a body walking over the logs was inside something (0)");
+    checks.bar("held fast", stuck as f32, stuck == 0, "walks that ended stopped on top of a log (0)");
+    checks.bar("jumped", jumped as f32 / (walks / 2).max(1) as f32, jumped * 10 >= walks / 2 * 9, "of the walks with a jump, as many got over (0.9)");
     checks.bar("logs", loose.rested.len() as f32, !loose.rested.is_empty(), "the tree came to logs that lie as themselves");
     checks.bar("stands over", over * 100.0, over <= 0.08, "cm at worst a body stands above a log as it is drawn (8)");
     checks.bar("stands in", under * 100.0, under <= 0.08, "cm at worst a body stands in a log as it is drawn (8)");
     checks.bar("in something", covered as f32 / wood.max(1) as f32, covered * 100 <= wood * 3, "of a log's wood, as much lies in the ground or another log (0.03)");
     checks.bar("still falling", loose.pieces.len() as f32, loose.pieces.is_empty(), "every piece came to rest");
     checks.bar("bare", bare as f32 / places.max(1) as f32, bare * 20 <= places, "of a log, as much has nothing to stand on (0.05)");
-    println!("{} logs, the steepest {tilt:.0} degrees from level · what a body stands on is {:.1} cm from the log drawn at the mean, {:.0} over and {:.0} in it at worst · {:.1}% of a log bare, {:.1}% of its wood in the ground or another log", loose.rested.len(), sum / places.max(1) as f32 * 100.0, over * 100.0, under * 100.0, bare as f32 / places.max(1) as f32 * 100.0, covered as f32 / wood.max(1) as f32 * 100.0);
+    println!("{} logs, the steepest {tilt:.0} degrees from level · what a body stands on is {:.1} cm from the log drawn at the mean, {:.0} over and {:.0} in it at worst · {:.1}% of a log bare, {:.1}% of its wood in the ground or another log · walked across {} times: {stepped} over on foot, {jumped} with a jump", loose.rested.len(), sum / places.max(1) as f32 * 100.0, over * 100.0, under * 100.0, bare as f32 / places.max(1) as f32 * 100.0, covered as f32 / wood.max(1) as f32 * 100.0, walks / 2);
     checks.finish()
 }
 
