@@ -251,6 +251,10 @@ pub struct Thing {
     /// cut, and are not drawn): the middle of its trunk there, the way the blows go in,
     /// how thick it is there and how deep the notch has got.
     pub notch: Option<(Vec3, Vec3, f32, f32)>,
+    /// Its stump stands as it grew, and is drawn so ([`Thing::stumped`]): from when it is
+    /// cut through until an axe is taken to the stump. (Made cells drawn as cells when the
+    /// tree went, it was a heap of them beside a tree drawn as a tree.)
+    pub stump: bool,
 }
 
 impl Thing {
@@ -271,6 +275,15 @@ impl Thing {
             crate::plants::Limb { a: l.a.lerp(l.b, up), ra: l.ra + (l.rb - l.ra) * up, roots: 0, ..*l }
         }).collect();
         Form { limbs, clumps: if self.limbed { Vec::new() } else { self.clumps.clone() }, stones: Vec::new() }
+    }
+    /// Its stump as it is to be drawn while it stands ([`Thing::stump`]): its trunk from its
+    /// roots up to where it was cut through.
+    pub fn stumped(&self) -> Form {
+        let limbs = self.limbs.iter().find(|l| l.roots > 0).or(self.limbs.first()).map(|l| {
+            let up = ((crate::plants::Limb::UNDER + 0.9) / (l.b.y - l.a.y).max(0.1)).min(0.8) - CELL * 0.5 / l.a.distance(l.b).max(0.1);
+            crate::plants::Limb { b: l.a.lerp(l.b, up), rb: l.ra + (l.rb - l.ra) * up, ..*l }
+        });
+        Form { limbs: limbs.into_iter().collect(), clumps: Vec::new(), stones: Vec::new() }
     }
     /// Whether a ball reaches it as it stood.
     fn reached(&self, middle: Vec3, radius: f32) -> bool {
@@ -785,14 +798,14 @@ impl Loose {
                 continue;
             }
             self.next += 1;
-            self.things.push(Thing { id: self.next, limbs, clumps: forms[*n].clumps.iter().filter(|c| c.tree == *tree).copied().collect(), stone: None, cuts: Vec::new(), lies: None, blows: 0, limbed: false, felled: false, cells, notch: None });
+            self.things.push(Thing { id: self.next, limbs, clumps: forms[*n].clumps.iter().filter(|c| c.tree == *tree).copied().collect(), stone: None, cuts: Vec::new(), lies: None, blows: 0, limbed: false, felled: false, cells, notch: None, stump: false });
         }
         for (n, stone) in &cut.stones {
             if self.things.iter().any(|t| t.stone.as_ref().map(|s| s.middle) == forms[*n].stones.get(*stone).map(|s| s.middle)) {
                 continue;
             }
             self.next += 1;
-            self.things.push(Thing { id: self.next, limbs: Vec::new(), clumps: Vec::new(), stone: forms[*n].stones.get(*stone).cloned(), cuts: Vec::new(), lies: None, blows: 0, limbed: false, felled: false, cells, notch: None });
+            self.things.push(Thing { id: self.next, limbs: Vec::new(), clumps: Vec::new(), stone: forms[*n].stones.get(*stone).cloned(), cuts: Vec::new(), lies: None, blows: 0, limbed: false, felled: false, cells, notch: None, stump: false });
         }
     }
 
@@ -951,24 +964,11 @@ impl Loose {
                     cut.changed.extend(self.loosen(world, c - IVec3::new(r, 1, r), c + IVec3::new(r, 2, r), push));
                     self.whole = false;
                     // It is no longer among the shapes that stand: whoever keeps those drops
-                    // it, and draws it as it goes over and lies (`felled`). Its stump is
-                    // cells from now, and drawn as cells.
+                    // it, and draws it as it goes over and lies (`felled`), and its stump
+                    // where it stands (`Thing::stump`).
                     self.things[n].felled = true;
                     cut.trees.extend(forms.iter().enumerate().filter_map(|(k, form)| form.limbs.iter().find(|l| l.a == trunk.a).map(|l| (k, l.tree))));
-                    let wide = ((trunk.ra * 2.6 + 0.75) / CELL).ceil() as i32;
-                    let foot = (trunk.a / CELL).floor().as_ivec3();
-                    for y in foot.y..=c.y + 1 {
-                        for z in -wide..=wide {
-                            for x in -wide..=wide {
-                                let cell = IVec3::new(c.x + x, y, c.z + z);
-                                let there = world.get(cell);
-                                if there.whole() || there == Block::Broken {
-                                    world.map(cell, |b| if b.whole() { b.wrought() } else { b });
-                                    cut.changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
-                                }
-                            }
-                        }
-                    }
+                    self.things[n].stump = true;
 // What of its leaf did not go with it is shed where it hung: a piece takes the
                     // leaf near its wood, and a weeping tree's long strands were left hanging in
                     // the air where it had stood (seen in the game, 2026-11-13).
@@ -1080,6 +1080,26 @@ impl Loose {
         if stands((first.as_vec3() + 0.5) * CELL) {
             return None;
         }
+        let (mut cut, tree) = self.worked(world, first, at, push, &holds);
+        // A trunk is bucked whole at the one blow, though it lies in more than one piece:
+        // every other piece of that tree's wood that is still as it fell is bucked too. (A
+        // thick trunk lay in two or three, and took as many blows.)
+        if let Some(thing) = tree.and_then(|id| self.things.iter().find(|t| t.id == id)).cloned() {
+            let (pivot, shift, turn) = thing.lies.unwrap_or((Vec3::ZERO, Vec3::ZERO, Quat::IDENTITY));
+            for _ in 0..12 {
+                let left = thing.limbs.iter().flat_map(|l| (0..=(l.a.distance(l.b) / CELL) as i32).map(move |k| l.a.lerp(l.b, k as f32 * CELL / l.a.distance(l.b).max(CELL)))).map(|p| ((pivot + shift + turn * (p - pivot)) / CELL).floor().as_ivec3()).flat_map(|c| std::iter::once(c).chain(round().map(move |d| c + d))).find(|c| { let b = world.get(*c); b.whole() && b.wood() });
+                let Some(next) = left else { break };
+                let (more, _) = self.worked(world, next, (next.as_vec3() + 0.5) * CELL, push, &holds);
+                cut.changed.extend(more.changed);
+                cut.taken[Stuff::Wood as usize] += more.taken[Stuff::Wood as usize];
+            }
+        }
+        Some(cut)
+    }
+
+    /// What a blow at timber does to the piece that has this cell in it ([`Loose::timber`]).
+    /// Says what changed, and which tree it was the trunk of, if it bucked one.
+    fn worked(&mut self, world: &mut World, first: IVec3, at: Vec3, push: Vec3, holds: &dyn Fn(&World, IVec3) -> bool) -> (Cut, Option<u32>) {
         // The piece: every cell of cut wood joined to that one.
         let body = joined(world, first, holds);
         // From here it is cells, drawn as cells: the tree it was is no longer drawn as one.
@@ -1094,11 +1114,21 @@ impl Loose {
         // (The tree whose trunk is in this piece, by the middle of its trunk as it lies:
         // not one a scrap of which was struck, whose trunk then lay there unseen.)
         let own: HashSet<IVec3> = body.iter().copied().collect();
+        let (mut tree, mut bucked) = (None, false);
+        // (And a stump this piece has the middle of is cells from now, as it is.)
+        for thing in self.things.iter_mut().filter(|t| t.stump) {
+            let Some(trunk) = thing.limbs.iter().find(|l| l.roots > 0).or(thing.limbs.first()) else { continue };
+            let foot = trunk.a + Vec3::Y * crate::plants::Limb::UNDER;
+            if [0.2, 0.45].iter().any(|up| own.contains(&((foot + Vec3::Y * *up) / CELL).floor().as_ivec3())) {
+                thing.stump = false;
+            }
+        }
         for thing in self.things.iter_mut().filter(|t| t.felled && !t.cells) {
             let (Some((pivot, shift, turn)), Some(trunk)) = (thing.lies, thing.limbs.iter().find(|l| l.roots > 0).or(thing.limbs.first())) else { continue };
             let stem = [0.4, 0.55, 0.7].map(|along| ((pivot + shift + turn * (trunk.a.lerp(trunk.b, along) - pivot)) / CELL).floor().as_ivec3());
             if stem.iter().filter(|c| round().any(|d| own.contains(&(**c + d))) || own.contains(*c)).count() >= 2 {
                 thing.cells = true;
+                tree = Some(thing.id);
             }
         }
         // Its length: from the cell furthest from the blow to the one furthest from that.
@@ -1181,6 +1211,7 @@ impl Loose {
                     self.shed.push((middle + along * each * end + Vec3::Y * 0.2, Block::Timber));
                 }
             }
+            bucked = true;
             trace(format_args!("chop: a trunk {long:.1} m long bucked into {many} logs, each {wide} cells thick, lying along {}", if axis == IVec3::X { "x" } else { "z" }));
         } else {
             // A log: all of it into hunks, nearest its middle line first.
@@ -1203,7 +1234,7 @@ impl Loose {
         }
         cut.taken[Stuff::Wood as usize] = wood;
         self.cuts.push((at, cut.taken));
-        Some(cut)
+        (cut, tree.filter(|_| bucked))
     }
 
     /// A blow of a pick at loose stone: rubble, what a boulder or a cliff became when it came

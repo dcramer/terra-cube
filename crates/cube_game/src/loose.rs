@@ -17,52 +17,59 @@ impl Plugin for LoosePlugin {
     }
 }
 
-/// A felled tree, drawn as the tree it was: which ([`cube_sim::loose::Thing::id`]), and
-/// whether as drawn it had its boughs and leaf.
+/// A felled tree, drawn as the tree it was: which ([`cube_sim::loose::Thing::id`]), and as
+/// what: with its boughs and leaf (0), bare (1), or its stump (2).
 #[derive(Component)]
-struct Felled(u32, bool);
+struct Felled(u32, u8);
 
 /// A tree an axe has cut through is drawn as the tree it grew as, where the simulation has
 /// it: going over, lying, and bare once its boughs are off, until it is broken into logs
-/// and is cells (`Thing::cells`). Its cells are in the world all the while and are not
-/// drawn (`Block::whole`). Its shape is made on another thread from its first blow, so it
-/// is ready when it goes.
-fn felled(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<crate::world::Look>>, terrain: Option<Res<crate::world::Terrain>>, mut drawn: Query<(Entity, &Felled, &mut Transform, &mut Visibility)>, mut meshes: ResMut<Assets<Mesh>>, mut making: Local<std::collections::HashMap<(u32, bool), bevy::tasks::Task<Mesh>>>) {
+/// and is cells (`Thing::cells`); and its stump where it stands, until an axe is taken to
+/// that (`Thing::stump`). Its cells are in the world all the while and are not drawn
+/// (`Block::whole`). Its shape is made on another thread from its first blow, so it is
+/// ready when it goes.
+fn felled(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<crate::world::Look>>, terrain: Option<Res<crate::world::Terrain>>, mut drawn: Query<(Entity, &Felled, &mut Transform, &mut Visibility)>, mut meshes: ResMut<Assets<Mesh>>, mut making: Local<std::collections::HashMap<(u32, u8), bevy::tasks::Task<Mesh>>>) {
     let (Some(live), Some(look), Some(terrain)) = (live, look, terrain) else { return };
     let loose = &live.0.loose;
-    let trees = || loose.things.iter().filter(|t| !t.limbs.is_empty() && !t.cells);
+    // What is to be drawn of each tree: itself as it now is, and its stump.
+    let wanted: Vec<(&cube_sim::loose::Thing, u8)> = loose.things.iter().filter(|t| !t.limbs.is_empty()).flat_map(|t| [(!t.cells).then_some((t, t.limbed as u8)), (t.stump || !t.felled && !t.cells).then_some((t, 2))].into_iter().flatten()).collect();
     // Where it is: where it grew, moved as it lies and then as the piece it is while it
-    // falls or settles moves it.
-    let place = |t: &cube_sim::loose::Thing| {
+    // falls or settles moves it. Its stump is where it grew.
+    let place = |t: &cube_sim::loose::Thing, what: u8| {
         let origin = t.limbs[0].a;
+        if what == 2 {
+            return Transform::from_translation(origin);
+        }
         let lain = |p: Vec3| t.lies.map_or(p, |(pivot, shift, turn)| pivot + shift + turn * (p - pivot));
         let piece = loose.pieces.iter().find(|p| p.of() == Some(t.id));
         let at = piece.map_or(lain(origin), |p| p.now(lain(origin)));
         let turn = piece.map_or(Quat::IDENTITY, |p| p.turn) * t.lies.map_or(Quat::IDENTITY, |l| l.2);
         Transform { translation: at, rotation: turn, scale: Vec3::ONE }
     };
+    let shown = |t: &cube_sim::loose::Thing| if t.felled { Visibility::Inherited } else { Visibility::Hidden };
     // (As it was drawn, until it is ready as it now is: bare, once its boughs are off.)
-    let have: std::collections::HashSet<(u32, bool)> = drawn.iter().map(|(_, f, ..)| (f.0, f.1)).collect();
+    let have: std::collections::HashSet<(u32, u8)> = drawn.iter().map(|(_, f, ..)| (f.0, f.1)).collect();
     for (entity, felled, mut at, mut seen) in &mut drawn {
-        match trees().find(|t| t.id == felled.0 && (t.limbed == felled.1 || !have.contains(&(t.id, t.limbed)))) {
-            Some(tree) => (*at, *seen) = (place(tree), if tree.felled { Visibility::Inherited } else { Visibility::Hidden }),
+        let still = wanted.iter().find(|(t, what)| (t.id, *what) == (felled.0, felled.1)).or_else(|| wanted.iter().find(|(t, what)| t.id == felled.0 && felled.1 == 0 && *what == 1 && !have.contains(&(t.id, 1))));
+        match still {
+            Some((tree, _)) => (*at, *seen) = (place(tree, felled.1), shown(tree)),
             None => commands.entity(entity).despawn(),
         }
     }
-    making.retain(|key, _| trees().any(|t| (t.id, t.limbed) == *key));
-    for tree in trees() {
-        let key = (tree.id, tree.limbed);
-        if drawn.iter().any(|(_, f, ..)| (f.0, f.1) == key) {
+    making.retain(|key, _| wanted.iter().any(|(t, what)| (t.id, *what) == *key));
+    for (tree, what) in &wanted {
+        let key = (tree.id, *what);
+        if have.contains(&key) {
             continue;
         }
         match making.get_mut(&key).map(bevy::tasks::futures::check_ready) {
             Some(Some(mesh)) => {
                 making.remove(&key);
-                commands.spawn((Felled(key.0, key.1), Mesh3d(meshes.add(mesh)), MeshMaterial3d(look.whole.clone()), place(tree), if tree.felled { Visibility::Inherited } else { Visibility::Hidden }));
+                commands.spawn((Felled(key.0, key.1), Mesh3d(meshes.add(mesh)), MeshMaterial3d(look.whole.clone()), place(tree, *what), shown(tree)));
             }
             Some(None) => {}
             None => {
-                let (form, land, origin) = (tree.form(), terrain.1.clone(), tree.limbs[0].a);
+                let (form, land, origin) = (if *what == 2 { tree.stumped() } else { tree.form() }, terrain.1.clone(), tree.limbs[0].a);
                 making.insert(key, bevy::tasks::AsyncComputeTaskPool::get().spawn(async move { crate::flora::alone(&form, &land, origin) }));
             }
         }
