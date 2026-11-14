@@ -71,7 +71,7 @@ impl Grain {
         // the cut end is a photograph of a round log on black, for the one top of a trunk
         // that is drawn whole, and on the top of each cell of a felled birch it was a patch
         // of black. The developer's picture, 2026-11-13.)
-        let top = top && !matches!(block, Block::Timber | Block::TimberBirch);
+        let top = top && !matches!(block, Block::Timber | Block::TimberBirch) && !block.balk();
         match block.grown() {
             Block::Grass | Block::Turf => Grain::Grass,
             Block::Dirt => Grain::Soil,
@@ -91,6 +91,7 @@ impl Grain {
             // (Never reached: `grown` has made each of these the block it was.)
             Block::Timber | Block::TimberBirch | Block::Shard | Block::Brush | Block::BrushPale | Block::BrushDeep | Block::BrushNeedles => Grain::Plain,
             Block::Log | Block::LogBirch | Block::Bough | Block::BoughPale | Block::BoughDeep | Block::BoughNeedles => Grain::Plain,
+            Block::Balk | Block::BalkAcross | Block::BalkBirch | Block::BalkBirchAcross => Grain::Plain,
         }
     }
 

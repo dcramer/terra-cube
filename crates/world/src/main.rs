@@ -897,9 +897,9 @@ fn hunks_command(args: &Args) -> ! {
     let left = bits(&timber(&world, &loose));
     let per = HUNK.pow(3) as usize;
     checks.bar("hunks of wood", (billets.len() / per) as f32, billets.len() >= per, "the tree came to hunks");
-    // (Of what a log gives, `YIELD`: the rest of it is chips.)
-    let gave = (billets.len() * 125) as f32 / (logs.max(1) as f32 * cube_sim::loose::YIELD);
-    checks.bar("wood in hunks", gave, (0.6..1.4).contains(&gave), "the share of its logs that hunks are to be, of 1");
+    // (Two or three from each log that was split: `SPLITS`.)
+    let each = billets.len() as f32 / per as f32 / did[3].max(1) as f32;
+    checks.bar("hunks a log", each, (1.5..=3.0).contains(&each), "two or three hunks from each log split");
     checks.bar("wood left in logs", left as f32 / (left + logs).max(1) as f32, left * 3 < logs, "under a quarter of the timber is left unsplit, of 1");
     // The boulder: a pick at its top until it breaks.
     // (Its stone to the bit, in cells' worth: its outside is broken cells, part stone.)
@@ -928,7 +928,10 @@ fn hunks_command(args: &Args) -> ! {
     checks.bar("hunks of stone", (cobbles.len() / per) as f32, cobbles.len() >= per, "the boulder came to hunks");
     checks.bar("stone in hunks", cobbles.len() as f32 / whole.max(1) as f32, (0.5..1.2).contains(&(cobbles.len() as f32 / whole.max(1) as f32)), "as much stone in hunks as was in it, of 1");
     checks.bar("boulder left", stone_cells(&world) as f32 / whole.max(1) as f32, stone_cells(&world) * 10 < whole, "under a tenth of it is left where it lay, of 1");
-    // Every cell of a hunk is a whole hunk, and every hunk lies on something.
+    // Every cell of a hunk is a whole hunk, and every hunk lies on something. (As they
+    // are now: two that lay on the boulder came down when it broke, and were looked for
+    // where they had been.)
+    let billets = cells(&world, &|b| b == Block::Billet);
     let all: Vec<IVec3> = billets.iter().chain(&cobbles).copied().collect();
     let broken = all.iter().filter(|c| hunk_at(&world, **c).is_none()).count();
     let hanging = all.iter().filter_map(|c| hunk_at(&world, *c)).filter(|(corner, _)| !(0..HUNK * HUNK).any(|i| world.get(*corner + IVec3::new(i % HUNK, -1, i / HUNK)).solid())).count() / per;
@@ -960,7 +963,7 @@ fn hunks_command(args: &Args) -> ! {
     cube_sim::loose::replay(&mut again, &[&form2], &loose.journal);
     let differ = [Block::Billet, Block::Cobble].iter().map(|k| { let (a, b): (std::collections::HashSet<IVec3>, std::collections::HashSet<IVec3>) = (cells(&world, &|b| b == *k).into_iter().collect(), cells(&again, &|b| b == *k).into_iter().collect()); a.symmetric_difference(&b).count() }).sum::<usize>();
     checks.bar("replay differs", differ as f32, differ == 0, "the same blows on the same land put every hunk where it was");
-    println!("a tree {tall:.0} m tall: felled in {} blows, limbed in {}, broken into logs in {}, split in {} · {} hunks of wood ({:.0}% of its logs) · a boulder {:.1} m across broke at the {needs}th blow into {} hunks · {} edits", did[0], did[1], did[2], did[3], billets.len() / per, (billets.len() * 125) as f32 / logs.max(1) as f32 * 100.0, stone.radii.max_element() * 2.0, cobbles.len() / per, loose.journal.len());
+    println!("a tree {tall:.0} m tall: felled in {} blows, limbed in {}, bucked in {}, {} logs split · {} hunks of wood · a boulder {:.1} m across broke at the {needs}th blow into {} hunks · {} edits", did[0], did[1], did[2], did[3], billets.len() / per, stone.radii.max_element() * 2.0, cobbles.len() / per, loose.journal.len());
     checks.finish()
 }
 

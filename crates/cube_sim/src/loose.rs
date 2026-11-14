@@ -74,8 +74,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 pub fn BLOWS(thick: f32) -> u32 {
     ((thick * 2.0 / 0.15).ceil() as u32).clamp(2, 8)
 }
-/// How long the logs are that a bare trunk breaks into, metres.
-pub const LOG: f32 = 2.0;
+/// How long the logs are that a bare trunk is bucked into, metres. (At two, a tree of 17 m
+/// was eight logs and, at three hunks a log, as many hunks as the developer had called too
+/// many.)
+pub const LOG: f32 = 3.0;
 
 /// How many cells a side a piece to carry is: half a metre, of wood ([`Block::Billet`]) or of
 /// stone ([`Block::Cobble`]). One size for both, and the one place it is said. (Called a hunk
@@ -84,9 +86,11 @@ pub const LOG: f32 = 2.0;
 /// similar size ... you have to carry them in your hands, probably one at a time"; the
 /// size was left to us.
 pub const HUNK: i32 = 2;
-/// How much of a log's wood comes away as hunks, of 1: the rest is chips. (A tree gave 20 to
-/// 30 at all of it, and the developer, having felled one: "it changed into too many".)
-pub const YIELD: f32 = 0.5;
+/// How many hunks a log splits into: two from a small one (one or two cells thick), three
+/// from a large (three: a great tree's). Not by how much wood it has: the developer, having felled a tree that gave 26,
+/// "it changed into too many", and then, "logs should probably be like... 2 blocks for a
+/// small log and 3 for a large? shouldnt be an excessive amount by any means" (2026-11-13).
+pub const SPLITS: [usize; 2] = [2, 3];
 /// How many blows of a pick a boulder takes before it breaks into hunks, by how far across
 /// it is at its widest (metres, its radius): three to five ("maybe that takes 3-5 chips
 /// depending on size of rock").
@@ -1056,9 +1060,10 @@ impl Loose {
 
     /// A blow of an axe at timber: wood that lies cut, whatever tree it was and wherever it
     /// has come to rest since. The piece struck is all the cut wood joined to what the blow
-    /// landed on. Longer than a log and a half, it is broken through at the nearest of its
-    /// break points, one to each [`LOG`] from its end; a log, it is split into hunks, as
-    /// many as it has wood for, which lie where it lay. Nothing, if no cut wood is there.
+    /// landed on. A trunk, it is bucked: all of it becomes logs at the one blow, one to each
+    /// [`LOG`] of its length, each a straight length lying where that part of it lay. A
+    /// log, it is split into hunks, which lie where it lay. Nothing, if no cut wood is
+    /// there.
     ///
     /// (By what is there, not by where a tree's logs ought to be: asked of the tree, a log
     /// that had dropped a metre when its trunk was broken was not found by any blow, and
@@ -1086,11 +1091,13 @@ impl Loose {
                 made.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
             }
         }
-        let struck = (first.as_vec3() + 0.5) * CELL;
+        // (The tree whose trunk is in this piece, by the middle of its trunk as it lies:
+        // not one a scrap of which was struck, whose trunk then lay there unseen.)
+        let own: HashSet<IVec3> = body.iter().copied().collect();
         for thing in self.things.iter_mut().filter(|t| t.felled && !t.cells) {
-            let Some((pivot, shift, turn)) = thing.lies else { continue };
-            let p = pivot + turn.inverse() * (struck - pivot - shift);
-            if thing.limbs.iter().any(|l| from_line(p, l.a, l.b) < l.ra.max(l.rb) + 0.75) {
+            let (Some((pivot, shift, turn)), Some(trunk)) = (thing.lies, thing.limbs.iter().find(|l| l.roots > 0).or(thing.limbs.first())) else { continue };
+            let stem = [0.4, 0.55, 0.7].map(|along| ((pivot + shift + turn * (trunk.a.lerp(trunk.b, along) - pivot)) / CELL).floor().as_ivec3());
+            if stem.iter().filter(|c| round().any(|d| own.contains(&(**c + d))) || own.contains(*c)).count() >= 2 {
                 thing.cells = true;
             }
         }
@@ -1120,19 +1127,61 @@ impl Loose {
             cut.changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
             (lo, hi) = (lo.min(cell), hi.max(cell));
         };
-        let places = ((long - LOG * 0.5) / LOG).floor().max(0.0) as u32;
-        if long > LOG * 1.5 && places > 0 {
-            // Broken through, a cell's width of it, at the place nearest the blow.
-            let k = ((at - a).dot(along) / LOG).round().clamp(1.0, places as f32);
+        // Logs already, most of it: split, with whatever scrap lies against it. Anything
+        // else is a trunk, and is bucked. (By every cell of it: a log that had come down on
+        // a splinter of the trunk was a trunk again, was bucked into itself at each blow,
+        // and could not be split.)
+        let logs = body.iter().filter(|c| world.get(**c).balk()).count() * 2 >= body.len();
+        let birch = body.iter().filter(|c| world.get(**c).grown() == Block::Birch).count() * 2 > body.len();
+        if !logs && long < LOG * 0.5 {
+            // A scrap: a bough's stub, a splinter. Chips.
             for cell in &body {
-                if ((middle(cell) - a).dot(along) - k * LOG).abs() < CELL * 0.75 {
-                    empty(world, *cell, &mut cut);
-                    if (cell.x + cell.y + cell.z).rem_euclid(4) == 0 {
-                        self.shed.push((middle(cell), Block::Timber));
+                empty(world, *cell, &mut cut);
+            }
+            self.shed.push((a.lerp(b, 0.5) + Vec3::Y * 0.2, Block::Timber));
+            trace(format_args!("chop: a scrap {long:.1} m long, gone in chips"));
+        } else if !logs {
+            // Bucked: all of it at the one blow into logs, each a straight length of one
+            // thickness lying along the grid where that part of it lay, bark on its sides
+            // and cut wood at its ends. As many as it is long, as thick as it has wood for.
+            // (One break a blow, a cell's width out of what was already cells, took eight
+            // blows a tree and could hardly be seen: "when it breaks it should kind of be
+            // more obvious, and the detail of it ... getting closer to the wood chunks
+            // should make it more refined", the developer, 2026-11-13.)
+            for cell in &body {
+                empty(world, *cell, &mut cut);
+            }
+            let volume = wood as f32 * BIT * BIT * BIT;
+            let many = ((long / LOG).round() as usize).max(1);
+            let wide = (((volume / long.max(LOG * 0.5)).sqrt() / CELL).round() as i32).clamp(1, 3);
+            let (axis, across) = if along.x.abs() >= along.z.abs() { (IVec3::X, IVec3::Z) } else { (IVec3::Z, IVec3::X) };
+            let block = match (birch, axis == IVec3::X) {
+                (false, true) => Block::Balk,
+                (false, false) => Block::BalkAcross,
+                (true, true) => Block::BalkBirch,
+                (true, false) => Block::BalkBirchAcross,
+            };
+            // (A cell short of its share of the length: a gap between it and the next.)
+            let each = long / many as f32;
+            let length = ((each / CELL).floor() as i32 - 1).clamp(3, (LOG / CELL) as i32 - 1);
+            for k in 0..many {
+                let middle = a + along * each * (k as f32 + 0.5);
+                let from = (middle / CELL).floor().as_ivec3() - axis * (length / 2) - (across + IVec3::Y) * (wide / 2);
+                let beam = |up: i32| (0..length).flat_map(move |i| (0..wide).flat_map(move |j| (0..wide).map(move |y| from + axis * i + across * j + IVec3::Y * (y + up))));
+                // (Where it lay, or as little over that as gives all of it room: it comes
+                // down from there onto what is under it.)
+                if let Some(up) = (0..=8).find(|up| beam(*up).all(|cell| room(world, cell))) {
+                    for cell in beam(up) {
+                        world.set(cell, block);
+                        cut.changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
+                        (lo, hi) = (lo.min(cell), hi.max(cell));
                     }
                 }
+                for end in [-0.5f32, 0.5] {
+                    self.shed.push((middle + along * each * end + Vec3::Y * 0.2, Block::Timber));
+                }
             }
-            trace(format_args!("chop: timber {long:.1} m long, broken at place {k} of {places}"));
+            trace(format_args!("chop: a trunk {long:.1} m long bucked into {many} logs, each {wide} cells thick, lying along {}", if axis == IVec3::X { "x" } else { "z" }));
         } else {
             // A log: all of it into hunks, nearest its middle line first.
             let mut places: Vec<(f32, IVec3)> = body.iter().flat_map(|c| [0, -1].map(|down| IVec3::new(c.x.div_euclid(HUNK) * HUNK, c.y + down, c.z.div_euclid(HUNK) * HUNK))).collect::<HashSet<_>>().into_iter().map(|corner| (from_line((corner.as_vec3() + HUNK as f32 * 0.5) * CELL, a, b), corner)).collect();
@@ -1140,10 +1189,9 @@ impl Loose {
             for cell in &body {
                 empty(world, *cell, &mut cut);
             }
-            // (To the nearest hunk, and none from a scrap of under half of one: with one
-            // at the least from anything, a tree's twigs' ends made a fifth more wood than
-            // it had.)
-            let many = (wood as f32 * YIELD / (SPLIT * SPLIT * SPLIT * HUNK * HUNK * HUNK) as f32).round() as usize;
+            // (Two from a small log and three from a large, `SPLITS`: large is three cells
+            // thick, a great tree's, which is more than sixty cells of it.)
+            let many = SPLITS[(body.len() > 60) as usize];
             let put = strew(world, places, many, Block::Billet, &mut cut.changed);
             for k in 0..6 {
                 self.shed.push((a.lerp(b, (k as f32 + 0.5) / 6.0) + Vec3::Y * 0.3, Block::Timber));
@@ -2344,9 +2392,8 @@ mod tests {
         let stump = (-4..=4).flat_map(|x| (-4..=4).flat_map(move |z| (0..8).map(move |y| IVec3::new(x, y, z)))).filter(|c| w.get(*c).wood()).count();
         let (left, after) = (left - stump, after - stump);
         assert!(left * 10 < after, "{left} cells of wood left in logs, of {after}");
-        // (Half the wood that was in logs, `YIELD`, to the nearest hunk a log.)
-        let share = billets as f32 / (after as f32 * YIELD);
-        assert!(billets % 8 == 0 && (0.6..1.4).contains(&share), "{billets} cells of hunks from {after} of logs");
+        // (Two or three hunks a log, `SPLITS`, and it was split at least twice.)
+        assert!(billets % 8 == 0 && (4..=3 * splits as usize).contains(&(billets / 8)), "{} hunks from {splits} logs split", billets / 8);
         // Every cell of them is a hunk that can be found, taken up, and put down elsewhere.
         let cells = |w: &World| -> Vec<IVec3> { (-60..60).flat_map(|x| (-40..40).flat_map(move |z| (0..24).map(move |y| IVec3::new(x, y, z)))).filter(|c| w.get(*c) == Block::Billet).collect() };
         let all = cells(&w);

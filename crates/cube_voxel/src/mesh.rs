@@ -501,6 +501,9 @@ pub fn eased_under(world: &World, feet: Vec3) -> Option<f32> {
 /// and so not here as cubes. The cells are there all the same.
 pub static MODELLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// The colour of wood where a log has been cut across: its ends.
+const CUT: [f32; 3] = [0.56, 0.42, 0.24];
+
 fn modelled(block: Block) -> bool {
     (block.shaped() || block.whole()) && MODELLED.load(std::sync::atomic::Ordering::Relaxed)
 }
@@ -735,6 +738,7 @@ pub fn mesh_chunk(world: &World, chunk: IVec3, liquid: bool) -> MeshData {
                     }
                     let base = if n == IVec3::Y { top } else { side };
                     let grain = Grain::of(block, n.y != 0);
+                    let (base, grain) = if block.ends(n) { (CUT, Grain::Split) } else { (base, grain) };
                     let start = m.positions.len() as u32;
                     let mut ao = [0.0f32; 4];
                     let mut at = [Vec3::ZERO; 4];
@@ -829,6 +833,7 @@ fn bits(world: &World, cell: IVec3, m: &mut MeshData) {
             }
             let base = if n == IVec3::Y { top } else { side };
             let grain = Grain::of(block, n.y != 0);
+            let (base, grain) = if block.ends(n) { (CUT, Grain::Split) } else { (base, grain) };
             let start = m.positions.len() as u32;
             let mut ao = [0.0f32; 4];
             for (i, (su, sv)) in [(0, 0), (1, 0), (1, 1), (0, 1)].into_iter().enumerate() {
@@ -1167,6 +1172,7 @@ pub fn mesh_chunk_far(world: &World, chunk: IVec3, liquid: bool, step: i32) -> M
                     }
                     let base = if normal == IVec3::Y { top } else { side_colour };
                     let grain = Grain::of(block, normal.y != 0);
+                    let (base, grain) = if block.ends(normal) { (CUT, Grain::Split) } else { (base, grain) };
                     let start = m.positions.len() as u32;
                     let mut ao = [0.0f32; 4];
                     let mut at = [Vec3::ZERO; 4];

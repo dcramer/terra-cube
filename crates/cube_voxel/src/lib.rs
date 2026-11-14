@@ -105,6 +105,13 @@ pub enum Block {
     BoughPale,
     BoughDeep,
     BoughNeedles,
+    /// A log: a straight length a felled trunk is broken into, lying along x, or across
+    /// (along z). Bark on its sides and cut wood on its two ends ([`Block::ends`]). Of wood,
+    /// and of birch.
+    Balk,
+    BalkAcross,
+    BalkBirch,
+    BalkBirchAcross,
 }
 
 impl Block {
@@ -125,12 +132,24 @@ impl Block {
     }
     /// A tree's wood, standing or cut.
     pub fn wood(self) -> bool {
-        matches!(self, Block::Wood | Block::Birch | Block::Timber | Block::TimberBirch | Block::Log | Block::LogBirch)
+        matches!(self, Block::Wood | Block::Birch | Block::Timber | Block::TimberBirch | Block::Log | Block::LogBirch) || self.balk()
     }
     /// Drawn by someone else as part of a whole shape (a tree, a boulder: `cube_game::flora`)
     /// and not as cells: wood, a boulder's stone and leaf, as they grew.
     pub fn shaped(self) -> bool {
         matches!(self, Block::Wood | Block::Birch | Block::Rock | Block::Leaves | Block::LeavesPale | Block::LeavesDeep | Block::Needles)
+    }
+    /// A log's.
+    pub fn balk(self) -> bool {
+        matches!(self, Block::Balk | Block::BalkAcross | Block::BalkBirch | Block::BalkBirchAcross)
+    }
+    /// Whether a face of it that looks this way is a log's cut end.
+    pub fn ends(self, normal: IVec3) -> bool {
+        match self {
+            Block::Balk | Block::BalkBirch => normal.x != 0,
+            Block::BalkAcross | Block::BalkBirchAcross => normal.z != 0,
+            _ => false,
+        }
     }
     /// A felled tree's: cells in every way but that they are not drawn as cells.
     pub fn whole(self) -> bool {
@@ -170,8 +189,8 @@ impl Block {
     /// What it was as it grew: a wrought block's colour and grain are that one's.
     pub fn grown(self) -> Block {
         match self {
-            Block::Timber | Block::Log => Block::Wood,
-            Block::TimberBirch | Block::LogBirch => Block::Birch,
+            Block::Timber | Block::Log | Block::Balk | Block::BalkAcross => Block::Wood,
+            Block::TimberBirch | Block::LogBirch | Block::BalkBirch | Block::BalkBirchAcross => Block::Birch,
             Block::Bough => Block::Leaves,
             Block::BoughPale => Block::LeavesPale,
             Block::BoughDeep => Block::LeavesDeep,
@@ -228,6 +247,7 @@ impl Block {
             // (Never reached: `grown` has made each of these the block it was.)
             Block::Timber | Block::TimberBirch | Block::Shard | Block::Brush | Block::BrushPale | Block::BrushDeep | Block::BrushNeedles => ([0.0; 3], [0.0; 3]),
             Block::Log | Block::LogBirch | Block::Bough | Block::BoughPale | Block::BoughDeep | Block::BoughNeedles => ([0.0; 3], [0.0; 3]),
+            Block::Balk | Block::BalkAcross | Block::BalkBirch | Block::BalkBirchAcross => ([0.0; 3], [0.0; 3]),
         }
     }
 }
