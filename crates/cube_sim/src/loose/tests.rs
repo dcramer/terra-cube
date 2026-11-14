@@ -117,7 +117,7 @@ fn a_tree_that_is_cut_into_is_cells_from_then_on_and_one_whose_limbs_touch_it_is
 fn a_crumb_of_a_log_that_nothing_holds_does_not_let_the_log_go() {
     let mut w = floor();
     let mut loose = Loose::default();
-    let cells: HashMap<IVec3, Part> = (0..12).flat_map(|x| (0..2).flat_map(move |y| (0..2).map(move |z| (IVec3::new(x, 4 + y, z), Part::Whole(Block::Balk))))).collect();
+    let cells: Cells<Part> = (0..12).flat_map(|x| (0..2).flat_map(move |y| (0..2).map(move |z| (IVec3::new(x, 4 + y, z), Part::Whole(Block::Balk))))).collect();
     let piece = loose.made(cells, Vec3::new(1.5, 1.25, 0.25), Quat::from_rotation_y(0.4));
     let id = piece.id;
     loose.pieces.push(piece);
@@ -135,7 +135,7 @@ fn a_crumb_of_a_log_that_nothing_holds_does_not_let_the_log_go() {
     let mut w = floor();
     w.fill(Vec3::new(0.0, 0.0, -1.0), Vec3::new(3.0, 0.75, 1.0), Block::Leaves);
     let mut loose = Loose::default();
-    let cells: HashMap<IVec3, Part> = (0..12).flat_map(|x| (0..2).flat_map(move |y| (0..2).map(move |z| (IVec3::new(x, 8 + y, z), Part::Whole(Block::Balk))))).collect();
+    let cells: Cells<Part> = (0..12).flat_map(|x| (0..2).flat_map(move |y| (0..2).map(move |z| (IVec3::new(x, 8 + y, z), Part::Whole(Block::Balk))))).collect();
     let piece = loose.made(cells, Vec3::new(1.5, 2.25, 0.25), Quat::from_rotation_y(0.4));
     let wood = piece.cells.len() * 125;
     loose.pieces.push(piece);
@@ -148,7 +148,7 @@ fn a_crumb_of_a_log_that_nothing_holds_does_not_let_the_log_go() {
 fn one_of_two_logs_that_lie_against_each_other_is_taken_up_and_the_other_is_whole() {
     let mut w = floor();
     let mut loose = Loose::default();
-    let log = |x: i32| -> HashMap<IVec3, Part> { (0..12).flat_map(|i| (0..2).flat_map(move |y| (0..2).map(move |z| (IVec3::new(x + i, 4 + y, z), Part::Whole(Block::Balk))))).collect() };
+    let log = |x: i32| -> Cells<Part> { (0..12).flat_map(|i| (0..2).flat_map(move |y| (0..2).map(move |z| (IVec3::new(x + i, 4 + y, z), Part::Whole(Block::Balk))))).collect() };
     let bits = |w: &World| -> usize { w.chunks.values().map(|c| (0..cube_voxel::CHUNK.pow(3)).map(|i| IVec3::new(i % 32, i / 1024, i / 32 % 32)).map(|l| match c.get(l) { Block::Broken => c.bits(l).map_or(0, |b| b.iter().filter(|b| b.whole()).count()), b if b.whole() => 125, _ => 0 }).sum::<usize>()).sum() };
     // One along the ground at an angle to the grid; then another beside it and at
     // another angle, so that they lie in some of the same cells.
@@ -178,7 +178,7 @@ fn one_of_two_logs_that_lie_against_each_other_is_taken_up_and_the_other_is_whol
 fn a_light_thing_at_rest_is_shoved_along_and_a_heavy_one_is_not() {
     let mut w = floor();
     let mut loose = Loose::default();
-    let log = |wide: i32| -> HashMap<IVec3, Part> { (0..8).flat_map(|z| (0..wide).flat_map(move |y| (0..wide).map(move |x| (IVec3::new(x, 4 + y, z), Part::Whole(Block::Balk))))).collect() };
+    let log = |wide: i32| -> Cells<Part> { (0..8).flat_map(|z| (0..wide).flat_map(move |y| (0..wide).map(move |x| (IVec3::new(x, 4 + y, z), Part::Whole(Block::Balk))))).collect() };
     for (wide, moves) in [(1, true), (3, false)] {
         let piece = loose.made(log(wide), Vec3::new(0.125, 1.0, 1.0), Quat::IDENTITY);
         let (id, weighs) = (piece.id, piece.mass);
@@ -210,7 +210,7 @@ fn a_light_thing_at_rest_is_shoved_along_and_a_heavy_one_is_not() {
 fn what_comes_down_on_another_piece_in_the_air_does_not_go_through_it() {
     let mut w = floor();
     let mut loose = Loose::default();
-    let block = |y: i32| -> HashMap<IVec3, Part> { (0..2).flat_map(|x| (0..2).flat_map(move |dy| (0..2).map(move |z| (IVec3::new(x, y + dy, z), Part::Whole(Block::Balk))))).collect() };
+    let block = |y: i32| -> Cells<Part> { (0..2).flat_map(|x| (0..2).flat_map(move |dy| (0..2).map(move |z| (IVec3::new(x, y + dy, z), Part::Whole(Block::Balk))))).collect() };
     // One let go eight metres up; another right over it, already dropping fast.
     let (lower, mut upper) = (loose.made(block(32), Vec3::new(0.25, 8.25, 0.25), Quat::IDENTITY), loose.made(block(35), Vec3::new(0.25, 9.0, 0.25), Quat::IDENTITY));
     upper.vel.y = -7.0;

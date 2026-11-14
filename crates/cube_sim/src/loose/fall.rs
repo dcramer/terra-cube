@@ -127,9 +127,11 @@ impl Loose {
     /// each such thing out of the world as a piece.
     pub fn loosen(&mut self, world: &mut World, lo: IVec3, hi: IVec3, push: Vec3) -> HashSet<IVec3> {
         let mut changed = HashSet::new();
+        let began = std::time::Instant::now();
+        let wide = (hi - lo + 1).as_i64vec3().element_product() > WIDE;
         // Every cell looked through, and in which search: one that meets an earlier search's
         // cells is of the same body, and that body was held (a loose one is out of the world).
-        let mut seen: HashMap<IVec3, u32> = HashMap::new();
+        let mut seen: Cells<u32> = Cells::default();
         let mut search = 0;
         // A tree holds only itself up. Where two that have been cut into stand close, a cell
         // is the one's whose wood it is nearest, and what is one tree's is not joined to
@@ -145,142 +147,191 @@ impl Loose {
             })
         };
         let rivals = trees.len() > 1;
-        for y in lo.y..=hi.y {
-            for z in lo.z..=hi.z {
-                for x in lo.x..=hi.x {
-                    let from = IVec3::new(x, y, z);
-                    if seen.contains_key(&from) || !has(world, from, false) {
-                        continue;
-                    }
-                    search += 1;
-                    // Through what bears weight, until it is plainly the land's or it ends.
-                    let (mut own, mut queue, mut held, mut land) = (vec![from], VecDeque::from([from]), false, 0);
-                    seen.insert(from, search);
-                    'through: while let Some(cell) = queue.pop_front() {
-                        // (Earth is joined to earth by its faces, which is enough for a
-                        // thing with no thin parts and a quarter of the looking.)
-                        let earth = world.get(cell).ground();
-                        land += earth as usize;
-                        if land > LAND {
-                            held = true;
-                            break;
-                        }
-                        for side in round().filter(|d| !earth || d.abs().element_sum() == 1) {
-                            let next = cell + side;
-                            if !has(world, next, false) {
-                                // (What lies on a boulder nobody has cut lies on something:
-                                // a boulder as it grew is no body to look through, and a
-                                // hunk that came down on one was let go again the moment it
-                                // landed, for as long as anyone waited. Seed 5, 2026-11-13.)
-                                // (Not so a tree nobody has cut: a felled one would hang on
-                                // its neighbour's boughs.)
-                                // (A hunk does lie on one's foot: it is no part of any tree.)
-                                // (Its outside is cells part filled: by what is in them.)
-                                let under = |of: &dyn Fn(Block) -> bool| match world.get(next) {
-                                    Block::Broken => world.bits_at(next).is_some_and(|bits| bits.iter().any(|b| of(*b))),
-                                    b => of(b),
-                                };
-                                if side == IVec3::NEG_Y && (under(&|b| b == Block::Rock) || world.get(cell).hunk() && under(&|b| b.wood())) {
-                                    held = true;
-                                    break 'through;
-                                }
-                                continue;
-                            }
-                            // A hunk is a body of its own, held by what is under it and by
-                            // nothing beside it: joined as cells are, one put against
-                            // another that lay on the ground hung in the air (four of a
-                            // tree's twelve did, `cargo world hunks`, 2026-11-13).
-                            let (this, that) = (world.get(cell), world.get(next));
-                            if (this.hunk() || that.hunk()) && side != IVec3::NEG_Y && !(this == that && hunk_at(world, cell).map(|h| h.0) == hunk_at(world, next).map(|h| h.0)) {
-                                continue;
-                            }
-                            if rivals && !earth && !world.get(next).ground() {
-                                let (mine, its) = (of(cell), of(next));
-                                if mine != 0 && its != 0 && mine != its {
-                                    continue;
-                                }
-                            }
-                            match seen.get(&next) {
-                                Some(by) if *by == search => continue,
-                                Some(_) => {
-                                    held = true;
-                                    break 'through;
-                                }
-                                None => {}
-                            }
-                            seen.insert(next, search);
-                            own.push(next);
-                            queue.push_back(next);
-                        }
-                        if own.len() > HELD && !self.whole {
-                            held = true;
-                            break;
-                        }
-                    }
-                    if !held {
-                        // Each hunk of it falls as itself, apart from the rest: a log's end
-                        // that lay on one came down with it as one piece, which landed as
-                        // cells do, and the hunk's cells that met the ground were put
-                        // wherever there was room (seed 7, 2026-11-13).
-                        // And what lay at rest as itself falls as itself, all of it.
-                        let mut again: Vec<u32> = own.iter().filter_map(|c| self.owner.get(c).copied()).collect();
-                        again.sort_unstable();
-                        again.dedup();
-                        // (A thing at rest is one body: a crumb of it that nothing holds, a
-                        // bit that found room apart from the rest, does not let all of it
-                        // go. A log with one bit of itself in a bush came loose, fell where
-                        // it lay and came to rest, for ever: what the developer saw as a
-                        // hunk "infinitely falling on itself", found 2026-11-13 on a great
-                        // tree at -32,-40.)
-                        again.retain(|id| {
-                            let all = self.rested.iter().find(|r| r.id == *id).map_or(0, |r| r.placed.len());
-                            let loose = own.iter().filter(|c| self.owner.get(*c) == Some(id)).count();
-                            if loose * 2 < all {
-                                trace(format_args!("loosen: {loose} of the {all} cells of piece {id} at rest are held by nothing, and it stays"));
-                            }
-                            loose * 2 >= all
-                        });
-                        for id in again {
-                            changed.extend(self.rouse(world, id));
-                        }
-                        let own: Vec<IVec3> = own.into_iter().filter(|c| world.get(*c) != Block::Air).collect();
-                        let mut apart: HashMap<Option<IVec3>, Vec<IVec3>> = HashMap::new();
-                        for cell in own {
-                            apart.entry(hunk_at(world, cell).map(|h| h.0)).or_default().push(cell);
-                        }
-                        let mut apart: Vec<(Option<IVec3>, Vec<IVec3>)> = apart.into_iter().collect();
-                        apart.sort_by_key(|(corner, _)| corner.map(|c| (c.y, c.z, c.x)));
-                        for (corner, cells) in apart {
-                            // A hunk that comes loose again from where it has just come to
-                            // rest, four times running, is left there: it is on something,
-                            // whatever the rules above make of it, and let go it would fall
-                            // onto the same place for ever. (What the developer saw fall for
-                            // ever, 2026-11-13, was found to be a log let go for a crumb of
-                            // itself, below; this stays for a hunk that does the like, and
-                            // `LOOSE_TRACE=1` says what was under it.)
-                            if let Some(corner) = corner {
-                                let times = self.restless.entry(corner).or_insert(0);
-                                *times += 1;
-                                if *times > 4 {
-                                    if *times == 5 {
-                                        trace(format_args!("a hunk at {corner} would not settle, and is left there: under it {:?}", hunk().filter(|d| d.y == 0).map(|d| world.get(corner + d - IVec3::Y)).collect::<Vec<_>>()));
+        // Where to begin from: every cell of the place; or of a wide one, taken chunk by chunk,
+        // only what is neither air nor the land (above): a tree as it lies is in a box of a
+        // million cells, nearly all of them air or ground, and asking the world for each was
+        // 40 to 60 ms.
+        let starts: Vec<IVec3> = if wide {
+            let size = cube_voxel::CHUNK;
+            let (from, to) = (lo.div_euclid(IVec3::splat(size)), hi.div_euclid(IVec3::splat(size)));
+            let mut starts = Vec::new();
+            for cy in from.y..=to.y {
+                for cz in from.z..=to.z {
+                    for cx in from.x..=to.x {
+                        let at = IVec3::new(cx, cy, cz);
+                        let Some(chunk) = world.chunks.get(&at) else { continue };
+                        let (a, b) = ((lo - at * size).max(IVec3::ZERO), (hi - at * size).min(IVec3::splat(size - 1)));
+                        for y in a.y..=b.y {
+                            for z in a.z..=b.z {
+                                for x in a.x..=b.x {
+                                    let block = chunk.get(IVec3::new(x, y, z));
+                                    if block != Block::Air && !block.ground() {
+                                        starts.push(at * size + IVec3::new(x, y, z));
                                     }
-                                    continue;
                                 }
                             }
-                            changed.extend(self.take(world, cells, push));
                         }
                     }
                 }
             }
+            starts.sort_unstable_by_key(|c| (c.y, c.z, c.x));
+            starts
+        } else {
+            (lo.y..=hi.y).flat_map(|y| (lo.z..=hi.z).flat_map(move |z| (lo.x..=hi.x).map(move |x| IVec3::new(x, y, z)))).collect()
+        };
+        for from in starts {
+            if seen.contains_key(&from) || !has(world, from, false) {
+                continue;
+            }
+            // (Over a wide place, not from the land itself: the land is looked at
+            // where it was dug, which is a small place. Round a great tree as it
+            // lies every cell of the ground under it was looked through, 460,000 to
+            // 620,000 of them, each time it landed, was limbed and was bucked: 60 to
+            // 170 ms, a frame lost each time. What stands on the land still finds
+            // it under itself.)
+            if wide && world.get(from).ground() {
+                continue;
+            }
+            search += 1;
+            // Through what bears weight, until it is plainly the land's or it ends.
+            let (mut own, mut queue, mut held, mut land) = (vec![from], VecDeque::from([from]), false, 0);
+            seen.insert(from, search);
+            'through: while let Some(cell) = queue.pop_front() {
+                // (Earth is joined to earth by its faces, which is enough for a
+                // thing with no thin parts and a quarter of the looking.)
+                let earth = world.get(cell).ground();
+                land += earth as usize;
+                if land > LAND {
+                    held = true;
+                    break;
+                }
+                for side in round().filter(|d| !earth || d.abs().element_sum() == 1) {
+                    let next = cell + side;
+                    if !has(world, next, false) {
+                        // (What lies on a boulder nobody has cut lies on something:
+                        // a boulder as it grew is no body to look through, and a
+                        // hunk that came down on one was let go again the moment it
+                        // landed, for as long as anyone waited. Seed 5, 2026-11-13.)
+                        // (Not so a tree nobody has cut: a felled one would hang on
+                        // its neighbour's boughs.)
+                        // (A hunk does lie on one's foot: it is no part of any tree.)
+                        // (Its outside is cells part filled: by what is in them.)
+                        let under = |of: &dyn Fn(Block) -> bool| match world.get(next) {
+                            Block::Broken => world.bits_at(next).is_some_and(|bits| bits.iter().any(|b| of(*b))),
+                            b => of(b),
+                        };
+                        if side == IVec3::NEG_Y && (under(&|b| b == Block::Rock) || world.get(cell).hunk() && under(&|b| b.wood())) {
+                            held = true;
+                            break 'through;
+                        }
+                        continue;
+                    }
+                    // A hunk is a body of its own, held by what is under it and by
+                    // nothing beside it: joined as cells are, one put against
+                    // another that lay on the ground hung in the air (four of a
+                    // tree's twelve did, `cargo world hunks`, 2026-11-13).
+                    let (this, that) = (world.get(cell), world.get(next));
+                    if (this.hunk() || that.hunk()) && side != IVec3::NEG_Y && !(this == that && hunk_at(world, cell).map(|h| h.0) == hunk_at(world, next).map(|h| h.0)) {
+                        continue;
+                    }
+                    if rivals && !earth && !world.get(next).ground() {
+                        let (mine, its) = (of(cell), of(next));
+                        if mine != 0 && its != 0 && mine != its {
+                            continue;
+                        }
+                    }
+                    match seen.get(&next) {
+                        Some(by) if *by == search => continue,
+                        Some(_) => {
+                            held = true;
+                            break 'through;
+                        }
+                        None => {}
+                    }
+                    seen.insert(next, search);
+                    own.push(next);
+                    queue.push_back(next);
+                }
+                if own.len() > HELD && !self.whole {
+                    held = true;
+                    break;
+                }
+            }
+            if !held {
+                // Each hunk of it falls as itself, apart from the rest: a log's end
+                // that lay on one came down with it as one piece, which landed as
+                // cells do, and the hunk's cells that met the ground were put
+                // wherever there was room (seed 7, 2026-11-13).
+                // And what lay at rest as itself falls as itself, all of it.
+                let mut again: Vec<u32> = own.iter().filter_map(|c| self.owner.get(c).copied()).collect();
+                again.sort_unstable();
+                again.dedup();
+                // (A thing at rest is one body: a crumb of it that nothing holds, a
+                // bit that found room apart from the rest, does not let all of it
+                // go. A log with one bit of itself in a bush came loose, fell where
+                // it lay and came to rest, for ever: what the developer saw as a
+                // hunk "infinitely falling on itself", found 2026-11-13 on a great
+                // tree at -32,-40.)
+                again.retain(|id| {
+                    let all = self.rested.iter().find(|r| r.id == *id).map_or(0, |r| r.placed.len());
+                    let loose = own.iter().filter(|c| self.owner.get(*c) == Some(id)).count();
+                    if loose * 2 < all {
+                        trace(format_args!("loosen: {loose} of the {all} cells of piece {id} at rest are held by nothing, and it stays"));
+                    }
+                    loose * 2 >= all
+                });
+                for id in again {
+                    changed.extend(self.rouse(world, id));
+                }
+                let own: Vec<IVec3> = own.into_iter().filter(|c| world.get(*c) != Block::Air).collect();
+                let mut apart: HashMap<Option<IVec3>, Vec<IVec3>> = HashMap::new();
+                for cell in own {
+                    apart.entry(hunk_at(world, cell).map(|h| h.0)).or_default().push(cell);
+                }
+                let mut apart: Vec<(Option<IVec3>, Vec<IVec3>)> = apart.into_iter().collect();
+                apart.sort_by_key(|(corner, _)| corner.map(|c| (c.y, c.z, c.x)));
+                for (corner, cells) in apart {
+                    // The leaf of a tree that lies felled is the tree's: it is drawn as
+                    // the whole tree it was until an axe limbs it, and its leaf bears
+                    // nothing, so each mass of it with a few twigs in it was a body
+                    // nothing held, came loose and fell away from the tree that was
+                    // drawn (four of 1,200 to 2,000 cells off one great tree, a step
+                    // of 100 ms, and cells nobody could see on the ground).
+                    if corner.is_none() && cells.iter().all(|c| match world.get(*c) { Block::Broken => world.bits_at(*c).is_some_and(|b| b.iter().all(|b| !b.solid() || b.whole())), b => b.whole() }) && cells.iter().filter(|c| has(world, **c, false)).count() < TWIGS {
+                        continue;
+                    }
+                    // A hunk that comes loose again from where it has just come to
+                    // rest, four times running, is left there: it is on something,
+                    // whatever the rules above make of it, and let go it would fall
+                    // onto the same place for ever. (What the developer saw fall for
+                    // ever, 2026-11-13, was found to be a log let go for a crumb of
+                    // itself, below; this stays for a hunk that does the like, and
+                    // `LOOSE_TRACE=1` says what was under it.)
+                    if let Some(corner) = corner {
+                        let times = self.restless.entry(corner).or_insert(0);
+                        *times += 1;
+                        if *times > 4 {
+                            if *times == 5 {
+                                trace(format_args!("a hunk at {corner} would not settle, and is left there: under it {:?}", hunk().filter(|d| d.y == 0).map(|d| world.get(corner + d - IVec3::Y)).collect::<Vec<_>>()));
+                            }
+                            continue;
+                        }
+                    }
+                    changed.extend(self.take(world, cells, push));
+                }
+            }
+        }
+        if began.elapsed().as_millis() >= 8 {
+            trace(format_args!("loosen: {:.0} ms looking at {:?} cells, {} looked through", began.elapsed().as_secs_f32() * 1000.0, hi - lo + 1, seen.len()));
         }
         changed
     }
 
     /// Takes cells out of the world as one piece, with the leaves that are theirs.
     pub(super) fn take(&mut self, world: &mut World, mut own: Vec<IVec3>, push: Vec3) -> HashSet<IVec3> {
+        let began = std::time::Instant::now();
         // Its leaves: what foliage is within a few cells of it, through foliage.
-        let mut near: HashMap<IVec3, u8> = own.iter().map(|c| (*c, 0)).collect();
+        let mut near: Cells<u8> = own.iter().map(|c| (*c, 0)).collect();
         // (A hunk has none: one that came down beside leaf lying on the ground took it up,
         // was no longer hunks and nothing else, and landed as cells do. Seed 7, 2026-11-13.)
         let bare = own.iter().all(|c| world.get(*c).hunk());
@@ -299,7 +350,7 @@ impl Loose {
                 }
             }
         }
-        let mut cells = HashMap::with_capacity(own.len());
+        let mut cells = Cells::with_capacity_and_hasher(own.len(), Default::default());
         let mut changed = HashSet::new();
         for cell in own {
             // (Stone that comes loose is rubble from then on, not the land: the land is drawn
@@ -371,6 +422,17 @@ impl Loose {
             }
             None => feel,
         };
+        if std::env::var_os("LOOSE_TRACE").is_some() && cells.len() >= 100 {
+            let mut kinds: Vec<(Block, usize)> = Vec::new();
+            for part in cells.values() {
+                let b = match part { Part::Whole(b) => *b, Part::Bits(_) => Block::Broken };
+                match kinds.iter_mut().find(|k| k.0 == b) {
+                    Some(k) => k.1 += 1,
+                    None => kinds.push((b, 1)),
+                }
+            }
+            trace(format_args!("take: {} cells come loose as piece {}, of thing {thing:?}, going over {}, in {:.0} ms: {kinds:?}", cells.len(), self.next, over.is_some(), began.elapsed().as_secs_f32() * 1000.0));
+        }
         self.pieces.push(Piece { id: self.next, mass: mass(&cells), cells, pivot, shift: Vec3::ZERO, turn: Quat::IDENTITY, vel: Vec3::ZERO, over, spin: Vec3::ZERO, brittle, hunk, thing, base: Quat::IDENTITY, settling: false, spare: (pivot, tall * 0.3), tall, feel, age: 0.0, rolls: 0, keeps: false, tips: None });
         changed
     }
@@ -381,7 +443,7 @@ impl Loose {
     /// What is too small to be a lump goes with the lump beside it; with none beside it, it
     /// is a small stone of its own.
     pub(super) fn shatter(&mut self, mut piece: Piece, speed: f32, throw: f32, keeps: impl Fn(IVec3) -> bool) -> Piece {
-        let mut lumps: HashMap<IVec3, HashMap<IVec3, Part>> = HashMap::new();
+        let mut lumps: HashMap<IVec3, Cells<Part>> = HashMap::new();
         let all = std::mem::take(&mut piece.cells);
         for (cell, part) in all {
             if keeps(cell) {
@@ -457,6 +519,7 @@ impl Loose {
     /// meets the world is put back into it. Gives the chunks that changed.
     pub fn step(&mut self, world: &mut World, dt: f32) -> HashSet<IVec3> {
         self.steps += 1;
+        let (began, falling) = (std::time::Instant::now(), self.pieces.len());
         let mut changed = HashSet::new();
         let mut down = Vec::new();
         // (Every tree that has been cut into and still stands, for what falls to go through: below.)
@@ -587,6 +650,7 @@ impl Loose {
                 down.push((n, speed, struck));
             }
         }
+        let moved = began.elapsed();
         let mut settling = Vec::new();
         let mut settling_rolls: Vec<Piece> = Vec::new();
         for (n, speed, struck) in down.into_iter().rev() {
@@ -675,7 +739,7 @@ impl Loose {
                     lifted += 1;
                 }
                 let placed = rest(world, &piece);
-                trace(format_args!("rest: piece {} of {} cells put up {} cm, {:.3} of it in something, in {} cells of the world", piece.id, piece.cells.len(), lifted * 5, sunk(world, &piece), placed.len()));
+                trace(format_args!("rest: piece {} of {} cells put up {} cm, in {} cells of the world", piece.id, piece.cells.len(), lifted * 5, placed.len()));
                 let (lo, hi) = placed.iter().fold((IVec3::MAX, IVec3::MIN), |(lo, hi), c| (lo.min(*c), hi.max(*c)));
                 for cell in &placed {
                     self.owner.insert(*cell, piece.id);
@@ -727,6 +791,10 @@ impl Loose {
         }
         self.pieces.extend(settling);
         self.pieces.extend(settling_rolls);
+        // `LOOSE_TRACE=1`: a step that took long, and where it went.
+        if began.elapsed().as_millis() >= 8 {
+            trace(format_args!("step: {:.0} ms, {falling} pieces: {:.0} ms moving and trying them, {:.0} ms landing what came down and looking at what it let go", began.elapsed().as_secs_f32() * 1000.0, moved.as_secs_f32() * 1000.0, (began.elapsed() - moved).as_secs_f32() * 1000.0));
+        }
         changed
     }
 }

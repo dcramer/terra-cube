@@ -186,7 +186,7 @@ fn fall(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<crate:
     // (And each thing lying at rest as itself that is not drawn yet: it came to rest before
     // its shape was ready.)
     let rested = &live.0.loose.rested;
-    let all: Vec<(u32, &std::collections::HashMap<IVec3, Part>, Vec3, Vec3, Quat)> = pieces.iter().map(|p| (p.id, &p.cells, p.pivot, p.shift, p.turn)).chain(rested.iter().map(|r| (r.id, &r.cells, r.pivot, r.shift, r.turn))).collect();
+    let all: Vec<(u32, &cube_sim::loose::Cells<Part>, Vec3, Vec3, Quat)> = pieces.iter().map(|p| (p.id, &p.cells, p.pivot, p.shift, p.turn)).chain(rested.iter().map(|r| (r.id, &r.cells, r.pivot, r.shift, r.turn))).collect();
     making.retain(|id, _| all.iter().any(|p| p.0 == *id));
     for (id, cells, pivot, shift, turn) in all.iter().filter(|p| !drawn.iter().any(|(_, f, _)| f.0 == p.0)).copied() {
         match making.get_mut(&id).map(bevy::tasks::futures::check_ready) {
@@ -213,7 +213,7 @@ fn fall(mut commands: Commands, live: Option<Res<Live>>, look: Option<Res<crate:
 /// A piece drawn as the world draws its cells, where it stood: a world of its own holding
 /// only the piece, meshed by the world's own mesher, so that what falls is what stood and
 /// what will lie. (Drawn first as plain cubes of one colour, a birch went grey as it fell.)
-fn shape(cells: &std::collections::HashMap<IVec3, Part>) -> cube_voxel::mesh::MeshData {
+fn shape(cells: &cube_sim::loose::Cells<Part>) -> cube_voxel::mesh::MeshData {
     let mut alone = cube_voxel::World::default();
     for (cell, part) in cells {
         match part {

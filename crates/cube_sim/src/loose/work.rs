@@ -278,6 +278,7 @@ impl Loose {
         let cut = self.chopped(world, at, push, forms);
         if cut.changed.is_empty() && state(self) == before {
             self.journal.remove(noted);
+            trace(format_args!("chop: a blow at {at:.1?} did nothing: {} trees known, {} lying, {} limbed, {} at rest", self.things.iter().filter(|t| !t.limbs.is_empty()).count(), self.things.iter().filter(|t| t.lies.is_some()).count(), self.things.iter().filter(|t| t.limbed).count(), self.rested.len()));
         }
         cut
     }
@@ -642,7 +643,7 @@ impl Loose {
             for k in 0..many {
                 let middle = a + along * each * (k as f32 + 0.5);
                 let from = (middle / CELL).floor().as_ivec3() - IVec3::new(length / 2, wide / 2, wide / 2);
-                let cells: HashMap<IVec3, Part> = (0..length).flat_map(|i| (0..wide).flat_map(move |j| (0..wide).map(move |y| from + IVec3::new(i, y, j)))).map(|c| (c, Part::Whole(block))).collect();
+                let cells: Cells<Part> = (0..length).flat_map(|i| (0..wide).flat_map(move |j| (0..wide).map(move |y| from + IVec3::new(i, y, j)))).map(|c| (c, Part::Whole(block))).collect();
                 let mut log = self.made(cells, middle, turn);
                 // (Up out of what it lay sunk in, a cell at a time.)
                 for _ in 0..8 {

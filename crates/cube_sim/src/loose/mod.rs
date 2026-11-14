@@ -113,6 +113,42 @@ pub fn CHIPS(wide: f32) -> u32 {
     3 + (wide > 0.8) as u32 + (wide > 1.5) as u32
 }
 
+/// What is kept by the cell it is in: a map that is quick to ask. (With the standard hasher,
+/// which is made to withstand an attacker and not to be fast, a great tree's landing asked a
+/// million times what of it was in a cell and took 60 ms doing it; nothing here is keyed by
+/// what a stranger sends.) Its order is not the same from one build to the next and nothing
+/// may be done in it: as with any map here, what is done in an order is sorted first.
+pub type Cells<V> = HashMap<IVec3, V, std::hash::BuildHasherDefault<ByCell>>;
+
+/// The hasher of [`Cells`]: each number of a cell folded in with a turn and a multiply.
+#[derive(Default, Clone, Copy)]
+pub struct ByCell(u64);
+
+impl std::hash::Hasher for ByCell {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for b in bytes {
+            self.write_u32(*b as u32);
+        }
+    }
+    fn write_u32(&mut self, n: u32) {
+        self.0 = (self.0.rotate_left(5) ^ n as u64).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+    fn write_i32(&mut self, n: i32) {
+        self.write_u32(n as u32);
+    }
+}
+
+/// A place of more cells than this is wide: looked at for what is loose in it, the land in it
+/// is not begun from (`Loose::loosen`). A dug hole is a few thousand; a tree as it lies, a million.
+const WIDE: i64 = 100_000;
+
+/// As many cells of wood in a mass of a felled tree's leaf are twigs and not a trunk: such a
+/// mass is the tree's, and is not let go apart from it (`fall`).
+const TWIGS: usize = 50;
+
 /// How many cells a piece may be and still be looked through to its end: what reaches
 /// further is held to be standing on the land. A great oak with its crown is some 12,000.
 pub const HELD: usize = 30_000;
@@ -140,7 +176,7 @@ pub enum Part {
 #[derive(Clone)]
 pub struct Piece {
     pub id: u32,
-    pub cells: HashMap<IVec3, Part>,
+    pub cells: Cells<Part>,
     /// What it turns about (where it stood on the ground, for what goes over), how far that
     /// has moved, and how it is turned.
     pub pivot: Vec3,
@@ -196,13 +232,13 @@ impl Piece {
 }
 
 /// Whether cells are wood, most of them (leaf is not counted either way).
-fn woody(cells: &HashMap<IVec3, Part>) -> bool {
+fn woody(cells: &Cells<Part>) -> bool {
     let of = |want: &dyn Fn(Block) -> bool| cells.values().filter(|p| match p { Part::Whole(b) => want(*b), Part::Bits(bits) => bits.iter().any(|b| want(*b)) }).count();
     of(&|b| b.wood() || b == Block::Billet) * 2 > of(&|b| b.solid() && !b.foliage())
 }
 
 /// What cells weigh, kilograms: each by what it is made of.
-fn mass(cells: &HashMap<IVec3, Part>) -> f32 {
+fn mass(cells: &Cells<Part>) -> f32 {
     cells.values().map(|part| match part {
         Part::Whole(b) => crate::matter::density(*b) * CELL * CELL * CELL,
         Part::Bits(bits) => bits.iter().map(|b| crate::matter::density(*b)).sum::<f32>() * BIT * BIT * BIT,

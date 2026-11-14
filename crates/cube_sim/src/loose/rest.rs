@@ -17,7 +17,7 @@ use super::*;
 #[derive(Clone)]
 pub struct Rested {
     pub id: u32,
-    pub cells: HashMap<IVec3, Part>,
+    pub cells: Cells<Part>,
     pub pivot: Vec3,
     pub shift: Vec3,
     pub turn: Quat,
@@ -52,17 +52,19 @@ impl Rested {
 /// As much of a piece may lie in something else when it comes to rest, of 1 ([`sunk`]).
 pub(super) const SUNK: f32 = 0.03;
 
-/// How much of a piece is where something already is, of 1: at every 5 cm of it.
+/// How much of a piece is where something already is, of 1: at every other 5 cm of it each
+/// way (27 places a cell; at all 125, a log's coming to rest was 6 ms and several in one
+/// tick a frame lost).
 pub(super) fn sunk(world: &World, piece: &Piece) -> f32 {
     let mut inside = 0;
     for cell in piece.cells.keys() {
-        for i in 0..SPLIT * SPLIT * SPLIT {
-            let was = (*cell * SPLIT + IVec3::new(i % SPLIT, i / (SPLIT * SPLIT), i / SPLIT % SPLIT)).as_vec3() * BIT + BIT / 2.0;
+        for i in 0..27 {
+            let was = (*cell * SPLIT + IVec3::new(i % 3, i / 9, i / 3 % 3) * 2).as_vec3() * BIT + BIT / 2.0;
             let b = world.bit((piece.now(was) / BIT).floor().as_ivec3());
             inside += (bears(b) || b == Block::Rock) as u32;
         }
     }
-    inside as f32 / (piece.cells.len() as i32 * SPLIT * SPLIT * SPLIT).max(1) as f32
+    inside as f32 / (piece.cells.len() * 27).max(1) as f32
 }
 
 /// Puts into the world the cells a piece that keeps its shape is in, where there is room:
@@ -209,7 +211,7 @@ impl Loose {
 
     /// A piece made, not cut loose: these cells, turned so about a point, to fall from
     /// there and lie as itself where it comes to rest ([`Rested`]).
-    pub(super) fn made(&mut self, cells: HashMap<IVec3, Part>, pivot: Vec3, turn: Quat) -> Piece {
+    pub(super) fn made(&mut self, cells: Cells<Part>, pivot: Vec3, turn: Quat) -> Piece {
         let (low, high) = cells.keys().fold((i32::MAX, i32::MIN), |(l, h), c| (l.min(c.y), h.max(c.y)));
         let mut feel: Vec<Vec3> = cells.keys().map(|c| (c.as_vec3() + 0.5) * CELL).collect();
         feel.sort_by(|a, b| (a.x, a.y, a.z).partial_cmp(&(b.x, b.y, b.z)).unwrap_or(std::cmp::Ordering::Equal));

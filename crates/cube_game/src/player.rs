@@ -601,6 +601,9 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
     // along it as it lies (`Loose::chop` says what each does: limbs it, then breaks it).
     // (Not while what it cut is still coming down: it went on to the trees beyond, a blow each.)
     let mut aimed = None;
+    if chop && std::env::var_os("LOOSE_TRACE").is_some() && live.0.loose.pieces.iter().any(|p| p.cells.len() >= 200) {
+        println!("loose: a script's blow waits for what is in the air: {:?}", live.0.loose.pieces.iter().filter(|p| p.cells.len() >= 200).map(|p| (p.id, p.cells.len(), p.now(p.pivot).round())).collect::<Vec<_>>());
+    }
     if chop && live.0.loose.pieces.iter().all(|p| p.cells.len() < 200) {
         // (A tree, not a stump: something over three metres of trunk.)
         let near = |l: &&cube_sim::plants::Limb| l.roots > 0 && l.b.y - l.a.y > 3.0 && l.a.with_y(0.0).distance(at.translation.with_y(0.0)) < 14.0;
@@ -616,10 +619,12 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
         // (At cut wood that is there, as a person aims, a different piece of it each blow:
         // aimed along where the tree had lain, the blows went on at the same two logs when
         // the rest had dropped or been broken away, and a great willow came to three hunks.)
+        // (And wood that is in a cell as bits: a thin log at rest at its own angle is in
+        // no whole cell, and a birch's logs were never split by a script.)
         let lying = || {
             let stump = chopping.map(|c| c.0);
             let (c, r) = ((at.translation / cube_voxel::CELL).floor().as_ivec3(), (16.0 / cube_voxel::CELL) as i32);
-            let mut wood: Vec<IVec3> = (-16..=24).flat_map(|y| (-r..=r).flat_map(move |z| (-r..=r).map(move |x| c + IVec3::new(x, y, z)))).filter(|cell| { let b = terrain.0.get(*cell); b.wood() && !b.shaped() }).filter(|cell| stump.is_none_or(|s| ((cell.as_vec3() + 0.5) * cube_voxel::CELL).with_y(0.0).distance(s.with_y(0.0)) > 1.5)).collect();
+            let mut wood: Vec<IVec3> = (-16..=24).flat_map(|y| (-r..=r).flat_map(move |z| (-r..=r).map(move |x| c + IVec3::new(x, y, z)))).filter(|cell| { let cut = |b: cube_voxel::Block| b.wood() && !b.shaped(); match terrain.0.get(*cell) { cube_voxel::Block::Broken => terrain.0.bits_at(*cell).is_some_and(|bits| bits.iter().any(|b| cut(*b))), b => cut(b) } }).filter(|cell| stump.is_none_or(|s| ((cell.as_vec3() + 0.5) * cube_voxel::CELL).with_y(0.0).distance(s.with_y(0.0)) > 1.5)).collect();
             wood.sort_by_key(|c| (c.x, c.z, c.y));
             let pick = chopping.map_or(0, |c| c.1) as usize * 37;
             (!wood.is_empty()).then(|| (wood[pick % wood.len()].as_vec3() + 0.5) * cube_voxel::CELL)
