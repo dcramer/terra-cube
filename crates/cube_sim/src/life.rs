@@ -920,6 +920,24 @@ impl Sim {
         // What has come down (`loose`) strikes whoever was under it: by how fast it came and
         // how big it was, a falling tree a killing blow and a clod a bruise.
         for fallen in std::mem::take(&mut self.loose.landed) {
+            let (from, wide) = fallen.along.unwrap_or((fallen.at, (fallen.cells as f32).cbrt() * cube_voxel::CELL * 0.9));
+            let nearest = |p: Vec3| { let line = fallen.at - from; from + line * ((p - from).dot(line) / line.length_squared().max(1e-6)).clamp(0.0, 1.0) };
+            // Whoever it came to rest in is put out of it: to the side away from it where
+            // there is room within a metre, else up onto it. (What comes to rest is put into
+            // the world as cells, and a body does not stop it: a log bucked beside a person
+            // lay through his legs, and he could not move. Pieces do not meet bodies in the
+            // air; this is where they meet.)
+            for agent in self.agents.values_mut().filter(|a| a.body.pos.distance(nearest(a.body.pos)) < wide + a.body.half + 1.5) {
+                let at = agent.body.pos;
+                if !agent.body.blocked(world, at) {
+                    continue;
+                }
+                let away = (at - nearest(at)).with_y(0.0).normalize_or(Vec3::X);
+                let out = (1..=20).map(|i| at + away * (i as f32 * cube_voxel::BIT)).chain((1..=60).map(|i| at + Vec3::Y * (i as f32 * cube_voxel::BIT))).find(|p| !agent.body.blocked(world, *p));
+                if let Some(out) = out {
+                    (agent.body.pos, agent.before) = (out, out);
+                }
+            }
             if fallen.settled {
                 continue;
             }
@@ -928,8 +946,6 @@ impl Sim {
             // (A tree, all along its trunk: by its size about where its top struck, it missed
             // whoever stood under its middle and struck whoever stood four metres to the
             // side of its crown.)
-            let (from, wide) = fallen.along.unwrap_or((fallen.at, (fallen.cells as f32).cbrt() * cube_voxel::CELL * 0.9));
-            let nearest = |p: Vec3| { let line = fallen.at - from; from + line * ((p - from).dot(line) / line.length_squared().max(1e-6)).clamp(0.0, 1.0) };
             for (id, agent) in self.agents.iter().filter(|(_, a)| a.dead.is_none() && a.body.pos.distance(nearest(a.body.pos)) < wide + a.body.half + 0.4) {
                 let away = (agent.body.pos - nearest(agent.body.pos)).with_y(0.0).normalize_or(Vec3::X);
                 hits.push(Hit { on: *id, by: 0, harm: crate::matter::harm(fallen.mass, fallen.speed), push: away * 3.0 + Vec3::Y * 1.5, part: Part::Trunk });
@@ -1704,6 +1720,26 @@ mod tests {
         let left = sim.agents[&beside].health;
         assert!(left < full && left > full * 0.5, "a clod took {} of {full}", full - left);
         assert_eq!(sim.loose.heard.len(), 3, "what landed was not passed on to be heard");
+    }
+
+    #[test]
+    fn what_comes_to_rest_in_somebody_puts_them_out_of_it() {
+        let (mut world, mut sim) = stage();
+        let (beside, under) = (sim.add(&world, 4, at(0.0, 0.0), 0.0, Driver::Stand), sim.add(&world, 4, at(20.0, 0.0), 0.0, Driver::Stand));
+        // A log come to rest through one's legs, its middle a little to one side; and a
+        // stone all round the other.
+        for (id, lo, hi, middle) in [(beside, Vec3::new(-0.5, 0.0, -2.0), Vec3::new(0.25, 0.5, 2.0), Vec3::new(-0.2, 0.25, 0.0)), (under, Vec3::new(-2.0, 0.0, -2.0), Vec3::new(2.0, 0.75, 2.0), Vec3::new(0.0, 0.4, 0.0))] {
+            let feet = sim.agents[&id].body.pos;
+            world.fill(feet + lo, feet + hi, Block::Stone);
+            assert!(sim.agents[&id].body.blocked(&world, feet));
+            sim.loose.landed.push(crate::loose::Landed { wood: true, at: feet + middle, cells: 16, lost: 0, put: 16, speed: 0.5, settled: true, mass: 20.0, along: None });
+        }
+        let was = (sim.agents[&beside].body.pos, sim.agents[&under].body.pos);
+        sim.step(&world);
+        let (a, b) = (&sim.agents[&beside].body, &sim.agents[&under].body);
+        assert!(!a.blocked(&world, a.pos) && !b.blocked(&world, b.pos), "still in what came to rest in them");
+        assert!(a.pos.x > was.0.x + 0.1 && a.pos.y < was.0.y + 0.2, "beside a log he steps aside from it: {:?} from {:?}", a.pos, was.0);
+        assert!(b.pos.y > was.1.y + 0.5, "in the middle of a stone he is put up on it: {:?} from {:?}", b.pos, was.1);
     }
 
     #[test]
