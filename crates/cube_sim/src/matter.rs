@@ -46,7 +46,7 @@ pub fn density(block: Block) -> f32 {
         b if b.wood() => 650.0,
         Billet => 650.0,
         b if b.foliage() => 40.0,
-        Stone | Slate | Chalk | Rock | Shard | Cobble => 2600.0,
+        Stone | Slate | Chalk | Rock | Shard | Cobble | Scree => 2600.0,
         Gravel => 1800.0,
         Sand => 1600.0,
         Grass | Dirt | Turf | Moss => 1500.0,

@@ -38,7 +38,7 @@ impl Stuff {
         use cube_voxel::Block;
         match block {
             b if b.wood() || b.foliage() => Some(Stuff::Wood),
-            Block::Stone | Block::Slate | Block::Chalk | Block::Rock | Block::Shard => Some(Stuff::Stone),
+            Block::Stone | Block::Slate | Block::Chalk | Block::Rock | Block::Shard | Block::Scree => Some(Stuff::Stone),
             Block::Grass | Block::Dirt | Block::Sand | Block::Snow | Block::Turf | Block::Gravel | Block::Moss | Block::Litter => Some(Stuff::Earth),
             _ => None,
         }

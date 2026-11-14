@@ -112,6 +112,9 @@ pub enum Block {
     BalkAcross,
     BalkBirch,
     BalkBirchAcross,
+    /// Loose stone lying at rest as itself: where a lump of rubble is, for whatever falls,
+    /// rests or walks, and not drawn, as a felled tree's wood is not ([`Block::whole`]).
+    Scree,
 }
 
 impl Block {
@@ -153,7 +156,15 @@ impl Block {
     }
     /// A felled tree's: cells in every way but that they are not drawn as cells.
     pub fn whole(self) -> bool {
-        matches!(self, Block::Log | Block::LogBirch | Block::Bough | Block::BoughPale | Block::BoughDeep | Block::BoughNeedles)
+        matches!(self, Block::Log | Block::LogBirch | Block::Bough | Block::BoughPale | Block::BoughDeep | Block::BoughNeedles | Block::Scree)
+    }
+    /// What marks where a thing of this lies when it is at rest as itself and is drawn by
+    /// someone else: the same stuff, a cell in every way but that it is not drawn.
+    pub fn veiled(self) -> Block {
+        match self.grown() {
+            Block::Rock | Block::Stone | Block::Slate | Block::Chalk => Block::Scree,
+            other => other.felled(),
+        }
     }
     /// The same stuff of a tree an axe is bringing down: cells, drawn still as the tree.
     pub fn felled(self) -> Block {
@@ -170,6 +181,7 @@ impl Block {
     /// The same stuff once it has been cut into or brought down: drawn as the cells it is.
     pub fn wrought(self) -> Block {
         match self {
+            Block::Scree => Block::Shard,
             Block::Log => Block::Timber,
             Block::LogBirch => Block::TimberBirch,
             Block::Bough => Block::Brush,
@@ -195,7 +207,7 @@ impl Block {
             Block::BoughPale => Block::LeavesPale,
             Block::BoughDeep => Block::LeavesDeep,
             Block::BoughNeedles => Block::Needles,
-            Block::Shard => Block::Rock,
+            Block::Shard | Block::Scree => Block::Rock,
             Block::Brush => Block::Leaves,
             Block::BrushPale => Block::LeavesPale,
             Block::BrushDeep => Block::LeavesDeep,
@@ -247,7 +259,7 @@ impl Block {
             // (Never reached: `grown` has made each of these the block it was.)
             Block::Timber | Block::TimberBirch | Block::Shard | Block::Brush | Block::BrushPale | Block::BrushDeep | Block::BrushNeedles => ([0.0; 3], [0.0; 3]),
             Block::Log | Block::LogBirch | Block::Bough | Block::BoughPale | Block::BoughDeep | Block::BoughNeedles => ([0.0; 3], [0.0; 3]),
-            Block::Balk | Block::BalkAcross | Block::BalkBirch | Block::BalkBirchAcross => ([0.0; 3], [0.0; 3]),
+            Block::Balk | Block::BalkAcross | Block::BalkBirch | Block::BalkBirchAcross | Block::Scree => ([0.0; 3], [0.0; 3]),
         }
     }
 }

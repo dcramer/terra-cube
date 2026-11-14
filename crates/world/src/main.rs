@@ -534,7 +534,10 @@ fn quarry_command(args: &Args) -> ! {
     // (By its stone, not by cells put: what comes loose has earth and grass on it, and
     // broken on landing it is counted lump by lump. 98 to 100% on seven seeds; it was a half
     // to two thirds before what breaks kept its stuff and lay square: engine.md.)
-    let kept = stone_bits(&world) as f32 / before.max(1) as f32;
+    // (What lies in the grid, and what lies at rest as itself, whose stone is its own and
+    // is in the world only as where it is: `loose::Rested`.)
+    let own = loose.rested.iter().flat_map(|r| r.cells.values()).map(|p| match p { cube_sim::loose::Part::Whole(b) => if b.grown() == Block::Rock { 125 } else { 0 }, cube_sim::loose::Part::Bits(bits) => bits.iter().filter(|b| b.grown() == Block::Rock).count() }).sum::<usize>();
+    let kept = (stone_bits(&world) + own) as f32 / before.max(1) as f32;
     checks.bar("quarry stone kept", kept, kept > 0.95, "nineteen twentieths of its stone is in the world again");
     // And nothing of it is left on nothing.
     let (lo, hi) = (((stone.middle - stone.radii - 3.0) / CELL).floor().as_ivec3(), ((stone.middle + stone.radii + 3.0) / CELL).floor().as_ivec3());
