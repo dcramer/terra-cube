@@ -211,7 +211,7 @@ impl Plugin for WorldPlugin {
                 bevy::pbr::ScreenSpaceReflections { min_perceptual_roughness: 0.0..0.0, linear_steps: 48, thickness: 1.5, ..default() }, bevy::core_pipeline::prepass::DepthPrepass, bevy::core_pipeline::prepass::DeferredPrepass, bevy::anti_alias::taa::TemporalAntiAliasing::default()));
             });
         }
-        app.add_plugins(MaterialPlugin::<Windy>::default()).insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().init_resource::<Cost>().init_resource::<Breeze>().add_systems(Startup, setup).add_systems(Update, (regions, stream).chain()).add_systems(Update, (sky, ripple, seasons));
+        app.add_plugins(MaterialPlugin::<Windy>::default()).insert_resource(ClearColor(Color::BLACK)).init_resource::<Dirty>().init_resource::<Drawn>().init_resource::<Cost>().init_resource::<Breeze>().add_systems(Startup, setup).add_systems(Update, (regions, stream).chain()).init_resource::<Roofed>().add_systems(Update, (roofed, sky, ripple, seasons));
     }
 }
 
@@ -367,16 +367,57 @@ fn by_height(table: &[(f32, f32)], sun_up: f32) -> f32 {
 /// land alone leaves a sunset white.
 const EXPOSURE: [(f32, f32); 8] = [(-0.24, NIGHT_EV), (-0.16, 4.0), (-0.105, 7.0), (-0.03, 10.8), (0.05, 12.2), (0.2, 12.4), (0.35, 13.4), (0.85, 14.4)];
 
-/// How many stops the eye is shut from the night's at this hour: what has a light of its own
-/// must be that much stronger to look as it does at night (`player::torch` gives it most of
-/// them).
-pub(crate) fn shut(hour: f32) -> f32 {
-    by_height(&EXPOSURE, cube_sim::sky::sun(hour).y) - NIGHT_EV
+/// How much of the sky is hidden from the eye by the land over it: 0 in the open, 1 in a cave
+/// (already eased: it changes over a second or two, as an eye takes to opening).
+#[derive(Resource, Default)]
+pub struct Roofed(pub f32);
+
+/// The exposure under a roof of rock by day: four stops open from noon's. What comes down a
+/// shaft from the sky is then too bright to look at, as it is. (At five the patch of sun on
+/// a cave's floor was white with nothing in it.)
+const CAVE_EV: f32 = 10.5;
+/// How much of the sky's fill still shows under a roof of rock, as it looks in the picture.
+/// (At a twentieth, the shadows a torch threw in a cave by day were blue.)
+const CAVE_SKY: f32 = 0.025;
+
+/// The exposure at an hour, with that much of the sky hidden ([`Roofed`]).
+fn exposed(sun_up: f32, roofed: f32) -> f32 {
+    let open = by_height(&EXPOSURE, sun_up);
+    open + (open.min(CAVE_EV) - open) * roofed
 }
-/// How much the sky lights the land, against what the air alone would give: more while the
-/// sun is low or just under, so that the land is not a silhouette at the hours the sky is
-/// at its best.
-const SKYLIGHT: [(f32, f32); 6] = [(-0.26, 1.0), (-0.16, 3.5), (-0.105, 3.4), (0.05, 3.8), (0.2, 1.9), (0.4, 1.0)];
+
+/// How many stops the eye is shut from the night's at this hour and under this much roof:
+/// what has a light of its own must be that much stronger to look as it does at night
+/// (`player::torch` gives it most of them).
+pub(crate) fn shut(hour: f32, roofed: f32) -> f32 {
+    exposed(cube_sim::sky::sun(hour).y, roofed) - NIGHT_EV
+}
+
+/// Measures [`Roofed`]: thirteen lines from the eye up into the sky, each asked whether land
+/// stops it within forty metres (land: not a tree, whose shade is the sun's own business).
+/// Nothing happens until two thirds of the sky is hidden, so a gorge and the foot of a cliff
+/// are open country, and the mouth of a cave is where the eye begins to open.
+fn roofed(time: Res<Time>, terrain: Option<Res<Terrain>>, cameras: Query<&GlobalTransform, With<Camera3d>>, mut roofed: ResMut<Roofed>) {
+    let (Some(terrain), Some(eye)) = (terrain, cameras.iter().next().map(|c| c.translation())) else { return };
+    let stopped = |way: Vec3| {
+        (1..=80).any(|k| {
+            let block = terrain.0.get(((eye + way * (k as f32 * 0.5)) / CELL).floor().as_ivec3());
+            block.solid() && !block.foliage() && !block.wood()
+        })
+    };
+    let ways = std::iter::once((Vec3::Y, 1.0)).chain((0..12).map(|n| {
+        let (turn, up) = (n as f32 * std::f32::consts::TAU / 6.0 + (n / 6) as f32 * 0.5, if n < 6 { 1.05f32 } else { 0.45 });
+        (Vec3::new(turn.cos() * up.cos(), up.sin(), turn.sin() * up.cos()), up.sin())
+    }));
+    let (mut hidden, mut all) = (0.0, 0.0);
+    for (way, weight) in ways {
+        hidden += if stopped(way) { weight } else { 0.0 };
+        all += weight;
+    }
+    let under = ((hidden / all - 0.65) / 0.35).clamp(0.0, 1.0);
+    let want = under * under * (3.0 - 2.0 * under);
+    roofed.0 += (want - roofed.0) * (time.delta_secs() * 1.5).min(1.0);
+}
 
 /// The sky follows the hour: the sun goes round and under, the moon comes up opposite it, the
 /// camera opens as the light goes, and the haze takes the colour of the hour.
@@ -387,9 +428,10 @@ fn sky(
     mut sun: Query<(&mut Transform, &mut DirectionalLight, &mut SunDisk), (With<Sun>, Without<Moon>)>,
     mut moon: Query<(&mut Transform, &mut DirectionalLight), (With<Moon>, Without<Sun>)>,
     terrain: Option<Res<Terrain>>,
-    mut cameras: Query<(&mut Exposure, &mut DistanceFog, &mut ColorGrading, &mut AtmosphereEnvironmentMapLight, &mut Bloom, &GlobalTransform)>,
+    mut cameras: Query<(&mut Exposure, &mut DistanceFog, &mut ColorGrading, &mut AtmosphereEnvironmentMapLight, Option<&mut bevy::light::EnvironmentMapLight>, &mut Bloom, &GlobalTransform)>,
     mut mists: Query<&mut FogVolume>,
     torches: Query<(), With<crate::player::Torch>>,
+    roofed: Res<Roofed>,
 ) {
     let _slow = crate::Slow::new("sky");
     let hour = live.map_or(cube_sim::sky::START, |l| l.0.when);
@@ -441,7 +483,11 @@ fn sky(
     let fire = !torches.is_empty();
     // (Less blue where a torch is: on pale bark beside the fire's amber it was cobalt.)
     let cold = if fire { Color::srgb(0.6, 0.68, 0.86) } else { Color::srgb(0.45, 0.6, 1.0) };
-    *ambient = GlobalAmbientLight { color: cold, brightness: (0.55 + 0.1 * cube_sim::sky::moonlight(hour)) * (1.0 - day), ..default() };
+    // Under a roof of rock the sky's fill is all but gone, and the eye opens (`Roofed`): what
+    // is left of it is set by how it looks in the picture, whatever the exposure has become.
+    let open = by_height(&EXPOSURE, to_sun.y);
+    let sheltered = 1.0 + (CAVE_SKY * 2f32.powf(exposed(to_sun.y, 1.0) - open) - 1.0) * roofed.0;
+    *ambient = GlobalAmbientLight { color: cold, brightness: (0.55 + 0.1 * cube_sim::sky::moonlight(hour)) * (1.0 - day) * sheltered, ..default() };
     // The haze is what the far land and the far sea go into, so it has to be the colour the
     // sky has at its edge at that hour: where it was not, the sea was a bar under the sky.
     // It is as bright as the sky's edge is in the picture, which stays bright all through
@@ -461,12 +507,20 @@ fn sky(
     let lit = lit * (0.5 + 0.5 * day);
     let away = Vec3::new(0.62, 0.74, 0.88).lerp(Vec3::new(0.72, 0.57, 0.57), low) * lit + dark;
     let toward = Vec3::new(1.0, 0.86, 0.62).lerp(Vec3::new(1.0, 0.62, 0.4), low);
-    for (mut exposure, mut fog, mut grade, mut skylight, mut bloom, eye) in &mut cameras {
-        exposure.ev100 = by_height(&EXPOSURE, to_sun.y);
+    for (mut exposure, mut fog, mut grade, mut skylight, filled, mut bloom, eye) in &mut cameras {
+        exposure.ev100 = exposed(to_sun.y, roofed.0);
         // What has a light of its own (a flame, the moon, a firefly) has more of a glow
         // round it in the dark, as to an eye opened for it.
         bloom.intensity = 0.06 + 0.1 * (1.0 - day);
-        skylight.intensity = by_height(&SKYLIGHT, to_sun.y);
+        // (As the air gives it at every hour. A table that gave it three times over at a low
+        // sun was written on 2026-11-12 and, set where the engine does not look, never did
+        // anything; with it working the evening's land was noon-green under a sunset.)
+        skylight.intensity = sheltered;
+        // (The engine reads the strength from what it made of that when it was put on the
+        // camera, and never again: set there alone, as it was until 2026-11-14, it did nothing.)
+        if let Some(mut filled) = filled {
+            filled.intensity = skylight.intensity;
+        }
         // By moonlight there is little colour to see.
         // No more colour than the light gives: the grade only takes some away at night.
         // (Moonlight, not twilight: the hour after sunset has the most colour of the day.
@@ -695,7 +749,7 @@ fn mesh_level(voxels: &Voxels, chunk: IVec3, level: usize) -> Vec<(bool, cube_vo
 }
 
 /// Spawns what a chunk's meshes draw.
-fn draw_level(commands: &mut Commands, meshes: &mut Assets<Mesh>, look: &Look, chunk: IVec3, level: usize, made: Vec<(bool, cube_voxel::mesh::MeshData)>) -> Vec<Entity> {
+fn draw_level(commands: &mut Commands, meshes: &mut Assets<Mesh>, look: &Look, terrain: &Terrain, chunk: IVec3, level: usize, made: Vec<(bool, cube_voxel::mesh::MeshData)>) -> Vec<Entity> {
     let middle = middle_of(chunk);
     let (_, from, to) = LEVELS[level];
     let range = VisibilityRange { start_margin: (from - FADE).max(0.0)..from, end_margin: if to == f32::MAX { 1.0e9..1.1e9 } else { to - FADE..to }, use_aabb: false };
@@ -713,7 +767,12 @@ fn draw_level(commands: &mut Commands, meshes: &mut Assets<Mesh>, look: &Look, c
         if liquid {
             // Water takes no shadows: at a low sun the shadow map breaks up on a flat sheet
             // and the whole lake was white speckle.
-            drawn.insert((MeshMaterial3d(look.water.clone()), bevy::light::NotShadowReceiver, bevy::light::NotShadowCaster));
+            // (Unless it lies under the land, as a pool in a cave does: there the sun's whole
+            // light came through the rock onto it, and it shone in the dark.)
+            drawn.insert((MeshMaterial3d(look.water.clone()), bevy::light::NotShadowCaster));
+            if terrain.ground(middle.x, middle.z) < middle.y + CHUNK as f32 * CELL + 2.0 {
+                drawn.insert(bevy::light::NotShadowReceiver);
+            }
         } else {
             drawn.insert(MeshMaterial3d(look.solid.clone()));
         }
@@ -826,7 +885,7 @@ fn stream(mut commands: Commands, time: Res<Time>, args: Res<crate::Args>, loadi
         let Some(made) = drawn.pending.get_mut(&key).and_then(bevy::tasks::futures::check_ready) else { continue };
         drawn.pending.remove(&key);
         taken += made.iter().map(|(_, data)| data.positions.len()).sum::<usize>();
-        let spawned = draw_level(&mut commands, &mut meshes, &look, key.0, key.1, made);
+        let spawned = draw_level(&mut commands, &mut meshes, &look, &terrain, key.0, key.1, made);
         drawn.made.insert(key, spawned);
         for entity in drawn.old.remove(&key).into_iter().flatten() {
             commands.entity(entity).despawn();

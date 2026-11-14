@@ -743,6 +743,7 @@ fn torch(
     mut embers: Query<(Entity, &Ember, &mut Transform, &mut PointLight), (Without<Torch>, Without<Controlled>)>,
     mut cores: Query<(Entity, &mut Transform, &mut SpotLight), (With<Core>, Without<Torch>, Without<Ember>, Without<Controlled>)>,
     cameras: Query<&GlobalTransform, With<Camera3d>>,
+    roofed: Res<crate::world::Roofed>,
 ) {
     // Lit while the torch is the thing in hand (T takes it from the bar); `--torch` lights
     // it whatever is held, for pictures.
@@ -763,7 +764,7 @@ fn torch(
     // given three quarters of what the eye has shut, so that at sunset it warms who holds it
     // and the ground at his feet, and by day (where it is given no more than at sunset) it
     // is a flame and no light.
-    let waver = waver * 2f32.powf(SEEN * crate::world::shut(live.0.when).min(11.0));
+    let waver = waver * 2f32.powf(SEEN * crate::world::shut(live.0.when, roofed.0).min(11.0));
     let stir = Vec3::new((t * 7.0).sin(), (t * 9.0).cos(), (t * 6.0).sin()) * 0.015;
     // The light that lights the way stands over the flame, not in it (see `LIFT`).
     let over = at + Vec3::Y * LIFT + stir;
