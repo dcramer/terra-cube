@@ -1995,6 +1995,15 @@ impl Loose {
         let mut down = Vec::new();
         // (Every tree that has been cut into and still stands, for what falls to go through: below.)
         let standing: Vec<(u32, Vec<(Vec3, Vec3, f32, f32)>)> = if self.pieces.is_empty() { Vec::new() } else { self.things.iter().filter(|t| t.lies.is_none() && !t.limbs.is_empty()).map(|t| (t.id, t.limbs.iter().map(|l| (l.a, l.b, l.ra, l.rb)).collect())).collect() };
+        // Where each piece that drops is, by the cell, with how fast it drops and how high its
+        // middle is: for one that comes down on another in the air (below). Only where there
+        // are two.
+        let middle = |p: &Piece| p.now(p.feel.iter().sum::<Vec3>() / p.feel.len().max(1) as f32).y;
+        let air: HashMap<IVec3, (u32, f32, f32)> = if self.pieces.len() < 2 {
+            HashMap::new()
+        } else {
+            self.pieces.iter().filter(|p| p.over.is_none() && p.tips.is_none()).flat_map(|p| { let at = (p.id, p.vel.y, middle(p)); p.feel.iter().map(move |f| ((p.now(*f) / CELL).floor().as_ivec3(), at)) }).collect()
+        };
         for (n, piece) in self.pieces.iter_mut().enumerate() {
             piece.age += dt;
             let before = (piece.shift, piece.turn);
@@ -2046,6 +2055,20 @@ impl Loose {
                     piece.vel.y -= FALL * dt;
                     piece.shift += piece.vel * dt;
                     piece.turn = (Quat::from_scaled_axis(piece.spin * dt) * piece.turn).normalize();
+                    // What comes down on another piece in the air does not go through it: it
+                    // drops no faster than the one under it, and is on it when that one lands.
+                    // (Pieces met only the world, and each other once one had come to rest: a
+                    // hunk let go over a falling log went through it and lay under it. The
+                    // developer, of what the physics must do: "how everything collides with
+                    // each other".)
+                    if !air.is_empty() {
+                        let mine = middle(piece);
+                        let under = piece.feel.iter().filter_map(|f| air.get(&(piece.now(*f) / CELL).floor().as_ivec3())).filter(|(id, drops, at)| *id != piece.id && *at < mine - BIT && piece.vel.y < *drops).map(|o| o.1).fold(f32::MIN, f32::max);
+                        if under > f32::MIN {
+                            piece.shift.y += (under - piece.vel.y) * dt;
+                            piece.vel.y = under;
+                        }
+                    }
                     speed = piece.vel.length();
                 }
             }
@@ -2569,6 +2592,31 @@ mod tests {
                 loose.unrest(&mut w, r, &mut HashSet::new());
             }
         }
+    }
+
+    #[test]
+    fn what_comes_down_on_another_piece_in_the_air_does_not_go_through_it() {
+        let mut w = floor();
+        let mut loose = Loose::default();
+        let block = |y: i32| -> HashMap<IVec3, Part> { (0..2).flat_map(|x| (0..2).flat_map(move |dy| (0..2).map(move |z| (IVec3::new(x, y + dy, z), Part::Whole(Block::Balk))))).collect() };
+        // One let go eight metres up; another right over it, already dropping fast.
+        let (lower, mut upper) = (loose.made(block(32), Vec3::new(0.25, 8.25, 0.25), Quat::IDENTITY), loose.made(block(35), Vec3::new(0.25, 9.0, 0.25), Quat::IDENTITY));
+        upper.vel.y = -7.0;
+        let (low, high) = (lower.id, upper.id);
+        loose.pieces.extend([lower, upper]);
+        let (mut least, mut together) = (f32::MAX, 0);
+        for _ in 0..(8.0 / crate::DT) as usize {
+            loose.step(&mut w, crate::DT);
+            let at = |id: u32| loose.pieces.iter().find(|p| p.id == id).map(|p| p.now(p.pivot).y);
+            if let (Some(a), Some(b)) = (at(low), at(high)) {
+                (least, together) = (least.min(b - a), together + 1);
+            }
+        }
+        // (Each is half a metre high: nearer than that, middle to middle, and one is in the other.)
+        assert!(together > 10 && least > 0.4, "over {together} ticks in the air together the upper came within {least:.2} m of the lower");
+        assert!(loose.pieces.is_empty() && loose.rested.len() == 2);
+        let lies = |id: u32| loose.rested.iter().find(|r| r.id == id).map(|r| r.now(r.pivot).y).unwrap();
+        assert!(lies(high) > lies(low) + 0.3, "the upper lies at {:.2} and the lower at {:.2}", lies(high), lies(low));
     }
 
     #[test]
