@@ -505,31 +505,6 @@ impl Loose {
         // (Not what stands: a tree cut into and not yet down is for the blows that fell it.)
         let stands = |p: Vec3| self.things.iter().any(|t| t.lies.is_none() && t.limbs.iter().any(|l| from_line(p, l.a, l.b) < l.ra.max(l.rb) * if l.roots > 0 { 2.6 } else { 1.0 } + CELL * 2.0));
         let c = (at / CELL).floor().as_ivec3();
-        // A lump lying at rest as itself: broken into hunks, as many as it has stone for,
-        // which lie where it lay.
-        let lump = (-2..=2).flat_map(|y| (-2..=2).flat_map(move |z| (-2..=2).map(move |x| c + IVec3::new(x, y, z)))).filter(|cell| self.owner.contains_key(cell) && (world.get(*cell) == Block::Scree || world.get(*cell) == Block::Broken && world.bits_at(*cell).is_some_and(|b| b.contains(&Block::Scree))) && ((cell.as_vec3() + 0.5) * CELL).distance(at) < 0.45).min_by(|a, b| ((a.as_vec3() + 0.5) * CELL).distance(at).total_cmp(&((b.as_vec3() + 0.5) * CELL).distance(at)).then_with(|| (a.y, a.z, a.x).cmp(&(b.y, b.z, b.x))));
-        if let Some(n) = lump.and_then(|cell| self.owner.get(&cell)).and_then(|id| self.rested.iter().position(|r| r.id == *id)) {
-            let lump = self.rested.remove(n);
-            self.journal.push((self.steps, Edit::Chip { at, push }));
-            let mut cut = Cut::default();
-            self.unrest(world, &lump, &mut cut.changed);
-            let stone = lump.cells.values().map(|p| match p { Part::Whole(_) => (SPLIT * SPLIT * SPLIT) as u32, Part::Bits(bits) => bits.iter().filter(|b| b.solid()).count() as u32 }).sum::<u32>();
-            let many = (stone as f32 / (SPLIT * SPLIT * SPLIT * HUNK * HUNK * HUNK) as f32).round() as usize;
-            let middle = lump.now(lump.pivot);
-            let places: Vec<(f32, IVec3)> = lump.placed.iter().map(|c| IVec3::new(c.x.div_euclid(HUNK) * HUNK, c.y, c.z.div_euclid(HUNK) * HUNK)).collect::<HashSet<_>>().into_iter().map(|corner| (corner.y as f32 * 8.0 + ((corner.as_vec3() + HUNK as f32 * 0.5) * CELL - middle).with_y(0.0).length(), corner)).collect();
-            let put = strew(world, places, many, Block::Cobble, &mut cut.changed);
-            for k in 0..4 {
-                self.shed.push((middle + Vec3::new(k as f32 * 0.15 - 0.2, 0.2, 0.0), Block::Shard));
-            }
-            trace(format_args!("chip: a lump of {} cells broke into {put} hunks of {many}", lump.cells.len()));
-            let (lo, hi) = lump.placed.iter().fold((IVec3::MAX, IVec3::MIN), |(l, h), c| (l.min(*c), h.max(*c)));
-            if lo.x <= hi.x {
-                cut.changed.extend(self.loosen(world, lo - HUNK - 1, hi + HUNK + 1, push));
-            }
-            cut.taken[Stuff::Stone as usize] = stone;
-            self.cuts.push((at, cut.taken));
-            return Some(cut);
-        }
         let first = (-2..=2).flat_map(|y| (-2..=2).flat_map(move |z| (-2..=2).map(move |x| c + IVec3::new(x, y, z)))).filter(|cell| holds(world, *cell)).map(|cell| (((cell.as_vec3() + 0.5) * CELL).distance(at), cell)).filter(|(d, _)| *d < 0.45).min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| (a.1.y, a.1.z, a.1.x).cmp(&(b.1.y, b.1.z, b.1.x))))?.1;
         if stands((first.as_vec3() + 0.5) * CELL) {
             return None;
@@ -709,6 +684,33 @@ impl Loose {
             b => b == Block::Shard,
         };
         let c = (at / CELL).floor().as_ivec3();
+        // (This was among what an axe does to timber, and a pick did nothing to a lump:
+        // found when a script first struck one in the real game, 2026-11-14.)
+        // A lump lying at rest as itself: broken into hunks, as many as it has stone for,
+        // which lie where it lay.
+        let lump = (-2..=2).flat_map(|y| (-2..=2).flat_map(move |z| (-2..=2).map(move |x| c + IVec3::new(x, y, z)))).filter(|cell| self.owner.contains_key(cell) && (world.get(*cell) == Block::Scree || world.get(*cell) == Block::Broken && world.bits_at(*cell).is_some_and(|b| b.contains(&Block::Scree))) && ((cell.as_vec3() + 0.5) * CELL).distance(at) < 0.45).min_by(|a, b| ((a.as_vec3() + 0.5) * CELL).distance(at).total_cmp(&((b.as_vec3() + 0.5) * CELL).distance(at)).then_with(|| (a.y, a.z, a.x).cmp(&(b.y, b.z, b.x))));
+        if let Some(n) = lump.and_then(|cell| self.owner.get(&cell)).and_then(|id| self.rested.iter().position(|r| r.id == *id)) {
+            let lump = self.rested.remove(n);
+            self.journal.push((self.steps, Edit::Chip { at, push }));
+            let mut cut = Cut::default();
+            self.unrest(world, &lump, &mut cut.changed);
+            let stone = lump.cells.values().map(|p| match p { Part::Whole(_) => (SPLIT * SPLIT * SPLIT) as u32, Part::Bits(bits) => bits.iter().filter(|b| b.solid()).count() as u32 }).sum::<u32>();
+            let many = (stone as f32 / (SPLIT * SPLIT * SPLIT * HUNK * HUNK * HUNK) as f32).round() as usize;
+            let middle = lump.now(lump.pivot);
+            let places: Vec<(f32, IVec3)> = lump.placed.iter().map(|c| IVec3::new(c.x.div_euclid(HUNK) * HUNK, c.y, c.z.div_euclid(HUNK) * HUNK)).collect::<HashSet<_>>().into_iter().map(|corner| (corner.y as f32 * 8.0 + ((corner.as_vec3() + HUNK as f32 * 0.5) * CELL - middle).with_y(0.0).length(), corner)).collect();
+            let put = strew(world, places, many, Block::Cobble, &mut cut.changed);
+            for k in 0..4 {
+                self.shed.push((middle + Vec3::new(k as f32 * 0.15 - 0.2, 0.2, 0.0), Block::Shard));
+            }
+            trace(format_args!("chip: a lump of {} cells broke into {put} hunks of {many}", lump.cells.len()));
+            let (lo, hi) = lump.placed.iter().fold((IVec3::MAX, IVec3::MIN), |(l, h), c| (l.min(*c), h.max(*c)));
+            if lo.x <= hi.x {
+                cut.changed.extend(self.loosen(world, lo - HUNK - 1, hi + HUNK + 1, push));
+            }
+            cut.taken[Stuff::Stone as usize] = stone;
+            self.cuts.push((at, cut.taken));
+            return Some(cut);
+        }
         let first = (-2..=2).flat_map(|y| (-2..=2).flat_map(move |z| (-2..=2).map(move |x| c + IVec3::new(x, y, z)))).filter(|cell| holds(world, *cell)).map(|cell| (((cell.as_vec3() + 0.5) * CELL).distance(at), cell)).filter(|(d, _)| *d < 0.45).min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| (a.1.y, a.1.z, a.1.x).cmp(&(b.1.y, b.1.z, b.1.x))))?.1;
         let body = joined(world, first, holds);
         if body.len() > 800 {

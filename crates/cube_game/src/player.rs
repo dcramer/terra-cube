@@ -645,8 +645,12 @@ fn edit(mut regions: ResMut<crate::world::Regions>, mut controls: ResMut<Control
         }
     }
     // A script's pick: a blow at the top of the nearest boulder.
-    if pick && let Some(stone) = forms.0.values().flat_map(|f| f.stones.iter()).map(|s| (s.middle, s.radii)).chain(live.0.loose.things.iter().filter_map(|t| t.stone.as_ref().map(|s| (s.middle, s.radii)))).min_by(|a, b| a.0.distance(at.translation).total_cmp(&b.0.distance(at.translation))).filter(|s| s.0.distance(at.translation) < 14.0) {
+    if pick && let Some(stone) = forms.0.values().flat_map(|f| f.stones.iter()).map(|s| (s.middle, s.radii)).chain(live.0.loose.things.iter().filter(|t| t.stone.as_ref().is_some_and(|s| t.blows < cube_sim::loose::CHIPS(s.radii.max_element()))).filter_map(|t| t.stone.as_ref().map(|s| (s.middle, s.radii)))).min_by(|a, b| a.0.distance(at.translation).total_cmp(&b.0.distance(at.translation))).filter(|s| s.0.distance(at.translation) < 14.0) {
         aimed = Some((stone.0 + Vec3::Y * (stone.1.y - 0.1 + HOLE * 0.3), Vec3::NEG_Y));
+        (dig, tool) = (true, Some((cube_sim::items::Stuff::Stone, 0.6)));
+    } else if pick && let Some(lump) = live.0.loose.lump(at.translation, 14.0) {
+        // (No boulder near that is not yet broken: then at the nearest lump of rubble.)
+        aimed = Some((lump + Vec3::Y * HOLE * 0.3, Vec3::NEG_Y));
         (dig, tool) = (true, Some((cube_sim::items::Stuff::Stone, 0.6)));
     }
     let Some(height) = live.kind(mover).map(|k| k.height) else { return };

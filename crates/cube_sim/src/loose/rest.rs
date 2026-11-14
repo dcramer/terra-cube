@@ -170,6 +170,12 @@ impl Loose {
         }
     }
 
+    /// A place in the nearest lump of stone at rest within reach: for a script's pick.
+    pub fn lump(&self, from: Vec3, reach: f32) -> Option<Vec3> {
+        let stone: HashSet<u32> = self.rested.iter().filter(|r| !woody(&r.cells)).map(|r| r.id).collect();
+        self.owner.iter().filter(|(_, id)| stone.contains(id)).map(|(cell, _)| (cell.as_vec3() + 0.5) * CELL).filter(|p| p.distance(from) < reach).min_by(|a, b| a.distance(from).total_cmp(&b.distance(from)).then((a.x, a.y, a.z).partial_cmp(&(b.x, b.y, b.z)).unwrap_or(std::cmp::Ordering::Equal)))
+    }
+
     /// A place in the nearest thing at rest within reach that is light enough to heave: for
     /// a script, which has no eye to look at one with.
     pub fn shovable(&self, from: Vec3, reach: f32) -> Option<Vec3> {
