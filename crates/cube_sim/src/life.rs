@@ -929,6 +929,8 @@ impl Sim {
             // In its den it does nothing and nothing is done to it, until it comes up.
             if agent.under > 0.0 {
                 agent.under -= DT;
+                // (Lying up, as whoever counts what it did must know: `Log::lain`.)
+                agent.log.lain += DT;
                 (agent.intent, agent.doing, agent.act, agent.calm) = (Intent::default(), None, Act::Lie, agent.calm + DT);
                 continue;
             }

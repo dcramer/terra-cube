@@ -3,7 +3,7 @@ kind = "wildlife"
 plan = "walked"
 subject = "a lynx with black-tufted ears, a short bobbed tail and a spotted tawny coat"
 height = 0.7
-rests = "stands"
+rests = "belly"
 
 [life]
 temper = "hunter"
