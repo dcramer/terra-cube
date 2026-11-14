@@ -645,7 +645,7 @@ impl Shape {
         let (a, b, ra, rb, bark, roots) = (limb.a, limb.b, limb.ra, limb.rb, limb.bark, limb.roots);
         let (thick, along, length) = (ra.max(rb), (b - a).normalize_or(Vec3::Y), a.distance(b));
         const UNDER: f32 = cube_sim::plants::Limb::UNDER;
-        let (colour, pale) = (bark.colors().1, bark.colors().0.map(|c| c * 1.5));
+        let colour = bark.colors().1;
         let grain = if bark == Block::Birch { Grain::BirchBark } else { Grain::Bark };
         let moss = Block::Moss.colors().0;
         self.cubes(set, g, origin, free, |c, face| {
@@ -654,7 +654,10 @@ impl Shape {
             let end = face.as_vec3().dot(along);
             // Cut wood, where nothing grows on from an end.
             if thick > 0.12 && ((end > 0.9 && cut[1] && axial > length - g * 1.5) || (end < -0.9 && cut[0] && axial < g * 1.5)) {
-                return (pale.map(|v| v * (0.9 + 0.2 * hashed(c, 4))), Grain::EndGrain);
+                // (The colour and grain of cut wood wherever it is cut, `mesh::CUT`: a half
+                // again of the bark's first colour was near black on a birch, whose first
+                // colour is its dark marks, and a felled birch's stump and butt were black.)
+                return (cube_voxel::mesh::CUT.map(|v| v * (0.9 + 0.2 * hashed(c, 4))), Grain::Split);
             }
             // Every cube its own shade, and a line of them along the grain shares one: furrows.
             let line = ((p - a - along * axial) / g).round().as_ivec3();

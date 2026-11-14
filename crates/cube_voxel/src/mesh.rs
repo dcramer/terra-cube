@@ -502,7 +502,7 @@ pub fn eased_under(world: &World, feet: Vec3) -> Option<f32> {
 pub static MODELLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// The colour of wood where a log has been cut across: its ends.
-const CUT: [f32; 3] = [0.56, 0.42, 0.24];
+pub const CUT: [f32; 3] = [0.56, 0.42, 0.24];
 
 fn modelled(block: Block) -> bool {
     (block.shaped() || block.whole()) && MODELLED.load(std::sync::atomic::Ordering::Relaxed)
