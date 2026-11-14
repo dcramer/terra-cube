@@ -754,6 +754,12 @@ fn torch(
     let at = flames.iter().next().map_or(bearer.translation + bearer.rotation * Vec3::new(0.3, 1.55, -0.2), |f| f.translation() + Vec3::Y * 0.08);
     let t = time.elapsed_secs();
     let waver = 1.0 + 0.1 * (t * 11.0).sin() + 0.06 * (t * 23.0 + 1.3).sin() + 0.04 * (t * 5.3).sin();
+    // A flame is as strong at dusk as at midnight, and the eye is shut ten stops further: by
+    // its true strength it lit nothing until night proper, not the hand that held it. It is
+    // given three quarters of what the eye has shut, so that at sunset it warms who holds it
+    // and the ground at his feet, and by day (where it is given no more than at sunset) it
+    // is a flame and no light.
+    let waver = waver * 2f32.powf(SEEN * crate::world::shut(live.0.when).min(11.0));
     let stir = Vec3::new((t * 7.0).sin(), (t * 9.0).cos(), (t * 6.0).sin()) * 0.015;
     // The light that lights the way stands over the flame, not in it (see `LIFT`).
     let over = at + Vec3::Y * LIFT + stir;
@@ -797,6 +803,8 @@ fn torch(
 
 /// How bright the torch is, lumens. Set for the camera as it is at night; by day it is lost
 /// in the sun, as a real one is.
+/// How much of the stops the eye has shut since night a flame's light is given back.
+const SEEN: f32 = 0.75;
 const TORCH: f32 = 2600.0;
 /// How far over the flame that light stands, metres. In the flame itself, a hand from the
 /// bearer's face and a man's height from the ground, it gave his face thirty times the light

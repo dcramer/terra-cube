@@ -366,6 +366,13 @@ fn by_height(table: &[(f32, f32)], sun_up: f32) -> f32 {
 /// the sky round it is far brighter than anything it lights, and an exposure set for the
 /// land alone leaves a sunset white.
 const EXPOSURE: [(f32, f32); 8] = [(-0.24, NIGHT_EV), (-0.16, 4.0), (-0.105, 7.0), (-0.03, 10.8), (0.05, 12.2), (0.2, 12.4), (0.35, 13.4), (0.85, 14.4)];
+
+/// How many stops the eye is shut from the night's at this hour: what has a light of its own
+/// must be that much stronger to look as it does at night (`player::torch` gives it most of
+/// them).
+pub(crate) fn shut(hour: f32) -> f32 {
+    by_height(&EXPOSURE, cube_sim::sky::sun(hour).y) - NIGHT_EV
+}
 /// How much the sky lights the land, against what the air alone would give: more while the
 /// sun is low or just under, so that the land is not a silhouette at the hours the sky is
 /// at its best.
