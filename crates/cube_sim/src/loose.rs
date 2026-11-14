@@ -165,7 +165,7 @@ pub struct Piece {
     /// It has touched, and is going over about where it touched until its weight is over
     /// what it rests on: the place on it (as it was made), how fast it turns and how far
     /// it has (radians), and how many times it has touched.
-    tips: Option<(Vec3, f32, f32, u8)>,
+    tips: Option<(Vec3, f32, f32, u8, Vec3)>,
 }
 
 impl Piece {
@@ -220,6 +220,22 @@ impl Rested {
     pub fn was(&self, now: Vec3) -> Vec3 {
         self.pivot + self.turn.inverse() * (now - self.pivot - self.shift)
     }
+}
+
+/// As much of a piece may lie in something else when it comes to rest, of 1 ([`sunk`]).
+const SUNK: f32 = 0.03;
+
+/// How much of a piece is where something already is, of 1: at every 5 cm of it.
+fn sunk(world: &World, piece: &Piece) -> f32 {
+    let mut inside = 0;
+    for cell in piece.cells.keys() {
+        for i in 0..SPLIT * SPLIT * SPLIT {
+            let was = (*cell * SPLIT + IVec3::new(i % SPLIT, i / (SPLIT * SPLIT), i / SPLIT % SPLIT)).as_vec3() * BIT + BIT / 2.0;
+            let b = world.bit((piece.now(was) / BIT).floor().as_ivec3());
+            inside += (bears(b) || b == Block::Rock) as u32;
+        }
+    }
+    inside as f32 / (piece.cells.len() as i32 * SPLIT * SPLIT * SPLIT).max(1) as f32
 }
 
 /// Puts into the world the cells a piece that keeps its shape is in, where there is room:
@@ -1939,13 +1955,12 @@ impl Loose {
                 // Going over about where it touched, the way its weight leans from there,
                 // faster as it goes.
                 None if piece.tips.is_some() => {
-                    let (on, rate, turned, times) = piece.tips.unwrap_or_default();
-                    let (about, weight) = (piece.now(on), piece.now(piece.feel.iter().sum::<Vec3>() / piece.feel.len().max(1) as f32));
-                    let lean = (weight - about).with_y(0.0).try_normalize().unwrap_or(Vec3::X);
+                    let (on, rate, turned, times, lean) = piece.tips.unwrap_or_default();
+                    let about = piece.now(on);
                     let rate = (rate + 14.0 * dt).min(7.0);
                     let by = Quat::from_axis_angle(Vec3::Y.cross(lean).normalize_or(Vec3::Z), rate * dt);
                     (piece.shift, piece.turn) = (about + by * (piece.pivot + piece.shift - about) - piece.pivot, (by * piece.turn).normalize());
-                    piece.tips = Some((on, rate, turned + rate * dt, times));
+                    piece.tips = Some((on, rate, turned + rate * dt, times, lean));
                     speed = rate * piece.tall.max(0.5) * 0.5;
                     // (Right over and nothing met: it lies as it is.)
                     if turned > 1.8 {
@@ -2021,7 +2036,7 @@ impl Loose {
             // (Not wood: a thin log rolled from where its tree lay, and the axe, which asks
             // the tree where its logs are, could not find it to split. Seed 2, 2026-11-13.)
             let wooden = || piece.cells.values().any(|p| matches!(p, Part::Whole(b) if b.wood()));
-            if piece.thing.is_none() && piece.over.is_none() && !piece.settling && !piece.hunk && piece.cells.len() < 80 && piece.rolls < 3 && !piece.keeps && !wooden() {
+            if piece.thing.is_none() && piece.over.is_none() && !piece.settling && !piece.hunk && piece.cells.len() < 80 && piece.rolls < 3 && !wooden() {
                 let (middle, reach) = (piece.now(piece.pivot), piece.tall.max(2.0 * CELL));
                 let below = |at: Vec3| world.raycast(at, Vec3::NEG_Y, 12.0);
                 let sides = [Vec3::X, Vec3::NEG_X, Vec3::Z, Vec3::NEG_Z].map(|d| middle + d * reach);
@@ -2059,23 +2074,40 @@ impl Loose {
             // A tree lies as it fell: it is long, and squared it would jump.
             // What keeps its shape does not stop where it first touches: it goes over about
             // there until its weight is over what it rests on (a touch to either side of its
-            // middle, or one right under it), twice at the most. (Stopped at its first
+            // middle, or three with one right under it), three times at the most. (Stopped at its first
             // touch, a lump of rubble stood on a corner.)
             if piece.keeps && piece.age < 20.0 {
                 let weight = piece.now(piece.feel.iter().sum::<Vec3>() / piece.feel.len().max(1) as f32);
                 let touches: Vec<Vec3> = piece.feel.iter().copied().filter(|p| { let at = piece.now(*p) - Vec3::Y * 0.08; let b = world.bit((at / BIT).floor().as_ivec3()); bears(b) || b == Block::Rock }).collect();
                 let off = |p: &Vec3| (piece.now(*p) - weight).with_y(0.0);
-                let nearest = touches.iter().copied().min_by(|a, b| off(a).length().total_cmp(&off(b).length()));
-                let held = touches.iter().any(|a| off(a).length() < 0.12 || touches.iter().any(|b| off(a).dot(off(b)) < -0.01));
+                // Held: whichever way one looks from its middle, something it touches is at
+                // least a hand that way, or none of it reaches further that way than what
+                // it touches (a thin log lies on a line). The way it is least held is the
+                // way it goes, about what it touches furthest that way. (A touch to each
+                // side of the middle was the test: a lump lay on one edge, at 45 degrees.)
+                let ways = (0..16).map(|i| Vec3::new((i as f32 * std::f32::consts::TAU / 16.0).cos(), 0.0, (i as f32 * std::f32::consts::TAU / 16.0).sin()));
+                let reach = |n: Vec3, of: &mut dyn Iterator<Item = &Vec3>| of.map(|p| off(p).dot(n)).fold(f32::MIN, f32::max);
+                let least = ways.map(|n| (n, reach(n, &mut touches.iter()), reach(n, &mut piece.feel.iter()))).filter(|(_, held, all)| *held < 0.06 && *all > held + 0.1).min_by(|a, b| a.1.total_cmp(&b.1));
                 let times = piece.tips.map_or(0, |t| t.3);
-                if let Some(on) = nearest.filter(|_| !held && times < 2) {
-                    (piece.tips, piece.spare, piece.vel, piece.spin) = (Some((on, 1.0, 0.0, times + 1)), (on, 0.3), Vec3::ZERO, Vec3::ZERO);
+                if let Some((lean, _, _)) = least.filter(|_| times < 3 && !touches.is_empty()) {
+                    let on = touches.iter().copied().max_by(|a, b| off(a).dot(lean).total_cmp(&off(b).dot(lean))).unwrap_or(piece.pivot);
+                    (piece.tips, piece.spare, piece.vel, piece.spin) = (Some((on, 1.0, 0.0, times + 1, lean)), (on, 0.3), Vec3::ZERO, Vec3::ZERO);
                     settling.push(piece);
                     continue;
                 }
             }
             // What keeps its shape lies as it came down, and is not put into the world.
             if piece.keeps {
+                // Out of what it came down into, first: pieces do not meet each other in
+                // the air and a touch is felt at a few places of it, so it stopped a little
+                // in the ground or in the log beside it (a twentieth of a log, more of a
+                // lump in a heap: `cargo world lying`).
+                for _ in 0..10 {
+                    if sunk(world, &piece) <= SUNK {
+                        break;
+                    }
+                    piece.shift.y += BIT;
+                }
                 let placed = rest(world, &piece);
                 let (lo, hi) = placed.iter().fold((IVec3::MAX, IVec3::MIN), |(lo, hi), c| (lo.min(*c), hi.max(*c)));
                 for cell in &placed {

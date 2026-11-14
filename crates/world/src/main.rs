@@ -872,7 +872,7 @@ fn lying_command(args: &Args) -> ! {
     let mut checks = Checks(Vec::new());
     // (Over, under: the worst the body stands above the log drawn and in it; bare: places
     // of a log with nothing to stand on.)
-    let (mut over, mut under, mut sum, mut places, mut bare, mut tilt, mut covered) = (0.0f32, 0.0f32, 0.0f32, 0u32, 0u32, 0.0f32, 0u32);
+    let (mut over, mut under, mut sum, mut places, mut bare, mut tilt, mut covered, mut wood) = (0.0f32, 0.0f32, 0.0f32, 0u32, 0u32, 0.0f32, 0u32, 0u32);
     for log in &loose.rested {
         let (mut lo, mut hi) = (Vec3::MAX, Vec3::MIN);
         for cell in log.cells.keys() {
@@ -882,6 +882,15 @@ fn lying_command(args: &Args) -> ! {
             }
         }
         tilt = tilt.max((log.turn * Vec3::X).y.abs().asin().to_degrees());
+        // How much of its wood is where something else is: every 5 cm of it.
+        for cell in log.cells.keys() {
+            for i in 0..125 {
+                let bit = (log.now((*cell * 5 + IVec3::new(i % 5, i / 25, i / 5 % 5)).as_vec3() * BIT + BIT / 2.0) / BIT).floor().as_ivec3();
+                let mine = loose.owner.get(&bit.div_euclid(IVec3::splat(cube_voxel::SPLIT))) == Some(&log.id) && world.bit(bit).whole();
+                let b = world.bit(bit);
+                (covered, wood) = (covered + (!mine && b.solid() && !b.foliage() && !b.shaped()) as u32, wood + 1);
+            }
+        }
         let was = (over, under, bare, places);
         let (lo, hi) = ((lo / BIT).floor().as_ivec3(), (hi / BIT).ceil().as_ivec3());
         // (Against the log drawn there or 5 cm to any side: at a log's steep side 5 cm
@@ -900,7 +909,7 @@ fn lying_command(args: &Args) -> ! {
             let stands = if solid(start) {
                 let y = (start..start + 40).find(|y| !solid(y + 1)).unwrap_or(start);
                 if !own(y) {
-                    covered += 1;
+                    places -= 1;
                     continue;
                 }
                 Some(y)
@@ -924,8 +933,10 @@ fn lying_command(args: &Args) -> ! {
     checks.bar("logs", loose.rested.len() as f32, !loose.rested.is_empty(), "the tree came to logs that lie as themselves");
     checks.bar("stands over", over * 100.0, over <= 0.08, "cm at worst a body stands above a log as it is drawn (8)");
     checks.bar("stands in", under * 100.0, under <= 0.08, "cm at worst a body stands in a log as it is drawn (8)");
+    checks.bar("in something", covered as f32 / wood.max(1) as f32, covered * 100 <= wood * 3, "of a log's wood, as much lies in the ground or another log (0.03)");
+    checks.bar("still falling", loose.pieces.len() as f32, loose.pieces.is_empty(), "every piece came to rest");
     checks.bar("bare", bare as f32 / places.max(1) as f32, bare * 20 <= places, "of a log, as much has nothing to stand on (0.05)");
-    println!("{} logs, the steepest {tilt:.0} degrees from level · what a body stands on is {:.1} cm from the log drawn at the mean, {:.0} over and {:.0} in it at worst · {:.1}% of a log bare, {:.0}% under the ground or another log", loose.rested.len(), sum / places.max(1) as f32 * 100.0, over * 100.0, under * 100.0, bare as f32 / places.max(1) as f32 * 100.0, covered as f32 / places.max(1) as f32 * 100.0);
+    println!("{} logs, the steepest {tilt:.0} degrees from level · what a body stands on is {:.1} cm from the log drawn at the mean, {:.0} over and {:.0} in it at worst · {:.1}% of a log bare, {:.1}% of its wood in the ground or another log", loose.rested.len(), sum / places.max(1) as f32 * 100.0, over * 100.0, under * 100.0, bare as f32 / places.max(1) as f32 * 100.0, covered as f32 / wood.max(1) as f32 * 100.0);
     checks.finish()
 }
 
