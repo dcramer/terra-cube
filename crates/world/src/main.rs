@@ -35,6 +35,8 @@ cargo world dig [--holes 120]                     HOLES (120) holes and stones c
                                                   creatures still live among them
 cargo world fell [--seed N]                       a tree near the start cut through: that it comes
                                                   (`fell X,Z`: the tree nearest a place)
+cargo world lying [--seed N]                      a tree felled and bucked: how far what a body stands on
+                                                  is from each log as it is drawn, lying at its angle
 cargo world hunks [--seed N]                      a tree and a boulder near the start worked as a person
                                                   works them, to the pieces that are carried: felled,
                                                   limbed, broken into logs, split; chipped, broken
@@ -829,6 +831,104 @@ fn grown(args: &Args) -> (World, Land, cube_sim::plants::Form) {
     (world, land, form)
 }
 
+/// `cargo world lying`: a tree felled, limbed and bucked, and of each log that lies at its
+/// own angle ([`cube_sim::loose::Rested`]) how far the top of what stops a body is from the
+/// top of the log as it is drawn, at every 5 cm of it.
+fn lying_command(args: &Args) -> ! {
+    use cube_sim::loose::Loose;
+    use cube_voxel::BIT;
+    let (mut world, _, mut form) = grown(args);
+    let inside = (2 * cube_sim::terrain::REGION) as f32 * CELL - 12.0;
+    let within = |p: Vec3| p.x.abs() < inside && p.z.abs() < inside;
+    let Some(trunk) = form.limbs.iter().copied().filter(|l| l.roots > 0 && (0.18..0.4).contains(&l.ra) && (l.b.y - l.a.y) > 5.0 && within(l.a)).min_by(|a, b| a.a.length().total_cmp(&b.a.length())) else { fail("no tree to fell near the start") };
+    let mut loose = Loose::default();
+    let up = trunk.a + (trunk.b - trunk.a) * ((cube_sim::plants::Limb::UNDER + 1.0) / (trunk.b.y - trunk.a.y));
+    for blow in 0..60 {
+        if !loose.rested.is_empty() {
+            break;
+        }
+        let lies = loose.things.iter().any(|t| t.lies.is_some() && t.limbs.first().is_some_and(|l| l.a == trunk.a));
+        // (As `hunks` aims: at cut wood that is not a tree still standing.)
+        let line = |p: Vec3, a: Vec3, b: Vec3| (a + (b - a) * ((p - a).dot(b - a) / (b - a).length_squared().max(1e-6)).clamp(0.0, 1.0)).distance(p);
+        let stands = |p: Vec3| loose.things.iter().any(|t| t.lies.is_none() && t.limbs.iter().any(|l| line(p, l.a, l.b) < l.ra.max(l.rb) * 2.6 + 0.6));
+        let mut wood = world.chunks.iter().flat_map(|(at, c)| (0..cube_voxel::CHUNK.pow(3)).map(|i| IVec3::new(i % 32, i / 1024, i / 32 % 32)).filter(|l| { let b = c.get(*l); b.wood() && !b.shaped() }).map(|l| ((*at * cube_voxel::CHUNK + l).as_vec3() + 0.5) * CELL).collect::<Vec<_>>()).filter(|p| (1.5..30.0).contains(&p.with_y(0.0).distance(trunk.a.with_y(0.0))) && !stands(*p)).collect::<Vec<_>>();
+        wood.sort_by(|a, b| (a.x, a.z, a.y).partial_cmp(&(b.x, b.z, b.y)).unwrap());
+        let (at, way) = match wood.get(blow * 37 % wood.len().max(1)).copied() {
+            Some(at) if lies => (at, Vec3::NEG_Y),
+            _ => (up - Vec3::X * (trunk.ra + 0.2), Vec3::X),
+        };
+        let cut = loose.chop(&mut world, at, way, &[&form]);
+        form.limbs.retain(|l| !cut.trees.contains(&(0, l.tree)));
+        form.clumps.retain(|c| !cut.trees.contains(&(0, c.tree)));
+        if std::env::var_os("LYING_TRACE").is_some() {
+            println!("blow {blow}: lies {lies}, wood {}, at {at:.1?}, things {}, pieces {}", wood.len(), loose.things.len(), loose.pieces.len());
+        }
+        let mut ticks = 0;
+        while !loose.pieces.is_empty() && ticks < 30 * TICKS {
+            loose.step(&mut world, cube_sim::DT);
+            ticks += 1;
+        }
+    }
+    let mut checks = Checks(Vec::new());
+    // (Over, under: the worst the body stands above the log drawn and in it; bare: places
+    // of a log with nothing to stand on.)
+    let (mut over, mut under, mut sum, mut places, mut bare, mut tilt, mut covered) = (0.0f32, 0.0f32, 0.0f32, 0u32, 0u32, 0.0f32, 0u32);
+    for log in &loose.rested {
+        let (mut lo, mut hi) = (Vec3::MAX, Vec3::MIN);
+        for cell in log.cells.keys() {
+            for corner in 0..8 {
+                let p = log.now((*cell + IVec3::new(corner & 1, corner >> 1 & 1, corner >> 2 & 1)).as_vec3() * CELL);
+                (lo, hi) = (lo.min(p), hi.max(p));
+            }
+        }
+        tilt = tilt.max((log.turn * Vec3::X).y.abs().asin().to_degrees());
+        let was = (over, under, bare, places);
+        let (lo, hi) = ((lo / BIT).floor().as_ivec3(), (hi / BIT).ceil().as_ivec3());
+        // (Against the log drawn there or 5 cm to any side: at a log's steep side 5 cm
+        // across is its whole depth, and that is not a body standing wrong.)
+        let at = |x: i32, y: f32, z: i32| Vec3::new((x as f32 + 0.5) * BIT, y, (z as f32 + 0.5) * BIT);
+        let top = |x: i32, z: i32| (0..=((hi.y - lo.y) * 5)).map(|i| hi.y as f32 * BIT - i as f32 * 0.01).find(|y| log.cells.contains_key(&(log.was(at(x, *y, z)) / CELL).floor().as_ivec3()));
+        let drawn: std::collections::HashMap<(i32, i32), f32> = (lo.z..hi.z).flat_map(|z| (lo.x..hi.x).map(move |x| (x, z))).filter_map(|(x, z)| top(x, z).map(|y| ((x, z), y))).collect();
+        for (&(x, z), &here) in &drawn {
+            places += 1;
+            let own = |y: i32| loose.owner.get(&IVec3::new(x, y, z).div_euclid(IVec3::splat(cube_voxel::SPLIT))) == Some(&log.id) && world.bit(IVec3::new(x, y, z)).whole();
+            let solid = |y: i32| world.bit(IVec3::new(x, y, z)).solid();
+            // Up from just under its top through whatever is there: the top of that is where
+            // a body stands. Something else's (the ground it sank in, a log across it) is
+            // not this log standing a body wrong.
+            let start = ((here - 0.03) / BIT).floor() as i32;
+            let stands = if solid(start) {
+                let y = (start..start + 40).find(|y| !solid(y + 1)).unwrap_or(start);
+                if !own(y) {
+                    covered += 1;
+                    continue;
+                }
+                Some(y)
+            } else {
+                (lo.y..start).rev().find(|y| own(*y))
+            };
+            match stands {
+                Some(y) => {
+                    let stands = (y + 1) as f32 * BIT;
+                    let gap = (-1..=1).flat_map(|dz| (-1..=1).map(move |dx| (dx, dz))).filter_map(|(dx, dz)| drawn.get(&(x + dx, z + dz))).map(|d| stands - d).min_by(|a, b| a.abs().total_cmp(&b.abs())).unwrap_or(0.0);
+                    (over, under, sum) = (over.max(gap), under.max(-gap), sum + gap.abs());
+                }
+                None => bare += 1,
+            }
+        }
+        if std::env::var_os("LYING_TRACE").is_some() {
+            println!("log {} cells {} owned {} tilt {:.0} shift {:.2?} · over {:.0} in {:.0} bare {} of {}", log.id, log.cells.len(), loose.owner.values().filter(|o| **o == log.id).count(), (log.turn * Vec3::X).y.abs().asin().to_degrees(), log.shift, over * 100.0, under * 100.0, bare - was.2, places - was.3);
+            (over, under) = (was.0, was.1);
+        }
+    }
+    checks.bar("logs", loose.rested.len() as f32, !loose.rested.is_empty(), "the tree came to logs that lie as themselves");
+    checks.bar("stands over", over * 100.0, over <= 0.08, "cm at worst a body stands above a log as it is drawn (8)");
+    checks.bar("stands in", under * 100.0, under <= 0.08, "cm at worst a body stands in a log as it is drawn (8)");
+    checks.bar("bare", bare as f32 / places.max(1) as f32, bare * 20 <= places, "of a log, as much has nothing to stand on (0.05)");
+    println!("{} logs, the steepest {tilt:.0} degrees from level · what a body stands on is {:.1} cm from the log drawn at the mean, {:.0} over and {:.0} in it at worst · {:.1}% of a log bare, {:.0}% under the ground or another log", loose.rested.len(), sum / places.max(1) as f32 * 100.0, over * 100.0, under * 100.0, bare as f32 / places.max(1) as f32 * 100.0, covered as f32 / places.max(1) as f32 * 100.0);
+    checks.finish()
+}
+
 /// A world is its seed and what was done to it (`cube_sim::loose::replay`): edits are made
 /// to the land, the land is made again and the edits done again, and the two are compared.
 /// `cargo world hunks`: what is carried and built with, made as a person makes it, on real
@@ -1174,6 +1274,7 @@ fn main() {
         "roots" => roots_command(&args),
         "quarry" => quarry_command(&args),
         "hunks" => hunks_command(&args),
+        "lying" => lying_command(&args),
         "replay" => replay_command(&args),
         "grade" => grade_command(&args),
         "life" => life_command(&args),

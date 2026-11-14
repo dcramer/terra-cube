@@ -215,6 +215,11 @@ impl Rested {
     pub fn now(&self, was: Vec3) -> Vec3 {
         self.pivot + self.shift + self.turn * (was - self.pivot)
     }
+
+    /// Where in it, as it was made, a place in the world is.
+    pub fn was(&self, now: Vec3) -> Vec3 {
+        self.pivot + self.turn.inverse() * (now - self.pivot - self.shift)
+    }
 }
 
 /// Puts into the world the cells a piece that keeps its shape is in, where there is room:
@@ -233,36 +238,41 @@ fn rest(world: &mut World, piece: &Piece) -> Vec<IVec3> {
         for z in lo.z..=hi.z {
             for x in lo.x..=hi.x {
                 let cell = IVec3::new(x, y, z);
-                match piece.cells.get(&(piece.was((cell.as_vec3() + 0.5) * CELL) / CELL).floor().as_ivec3()) {
-                    Some(Part::Whole(b)) if room(world, cell) => {
-                        world.set(cell, b.veiled());
+                // To the bit, 5 cm: what lies at an angle, asked cell by cell, stood a body as
+                // much as 13 cm over or in the log that is drawn, and a fifth of it bore
+                // nothing (`cargo world lying`). A cell wholly in it is one cell.
+                let mut bits = [Block::Air; (SPLIT * SPLIT * SPLIT) as usize];
+                let mut full = 0;
+                for (i, slot) in bits.iter_mut().enumerate() {
+                    let i = i as i32;
+                    let bit = cell * SPLIT + IVec3::new(i % SPLIT, i / (SPLIT * SPLIT), i / SPLIT % SPLIT);
+                    let was = piece.was((bit.as_vec3() + 0.5) * BIT);
+                    *slot = match piece.cells.get(&(was / CELL).floor().as_ivec3()) {
+                        Some(Part::Whole(b)) => *b,
+                        Some(Part::Bits(bits)) => {
+                            let l = ((was / BIT).floor().as_ivec3()).rem_euclid(IVec3::splat(SPLIT));
+                            bits[(l.x + l.z * SPLIT + l.y * SPLIT * SPLIT) as usize]
+                        }
+                        None => Block::Air,
+                    };
+                    full += slot.solid() as i32;
+                }
+                if full == SPLIT * SPLIT * SPLIT && bits.iter().all(|b| *b == bits[0]) && room(world, cell) {
+                    world.set(cell, bits[0].veiled());
+                    placed.push(cell);
+                } else if full > 0 {
+                    let mut any = false;
+                    for (i, block) in bits.iter().enumerate().filter(|b| b.1.solid()) {
+                        let i = i as i32;
+                        let bit = cell * SPLIT + IVec3::new(i % SPLIT, i / (SPLIT * SPLIT), i / SPLIT % SPLIT);
+                        if !world.bit(bit).solid() {
+                            world.set_bit(bit, block.veiled());
+                            any = true;
+                        }
+                    }
+                    if any {
                         placed.push(cell);
                     }
-                    // What of it is finer than a cell, to the bit: a boulder's outside is
-                    // all such, and with whole cells alone a lump of one was mostly nothing.
-                    Some(Part::Bits(_)) => {
-                        let mut any = false;
-                        for i in 0..SPLIT * SPLIT * SPLIT {
-                            let bit = cell * SPLIT + IVec3::new(i % SPLIT, i / (SPLIT * SPLIT), i / SPLIT % SPLIT);
-                            let was = piece.was((bit.as_vec3() + 0.5) * BIT);
-                            let block = match piece.cells.get(&(was / CELL).floor().as_ivec3()) {
-                                Some(Part::Whole(b)) => *b,
-                                Some(Part::Bits(bits)) => {
-                                    let l = ((was / BIT).floor().as_ivec3()).rem_euclid(IVec3::splat(SPLIT));
-                                    bits[(l.x + l.z * SPLIT + l.y * SPLIT * SPLIT) as usize]
-                                }
-                                None => Block::Air,
-                            };
-                            if block.solid() && !world.bit(bit).solid() {
-                                world.set_bit(bit, block.veiled());
-                                any = true;
-                            }
-                        }
-                        if any {
-                            placed.push(cell);
-                        }
-                    }
-                    _ => {}
                 }
             }
         }
@@ -507,7 +517,7 @@ pub struct Loose {
     /// What lies at rest as itself ([`Rested`]), and whose each cell of the world is that
     /// one of them is in.
     pub rested: Vec<Rested>,
-    owner: HashMap<IVec3, u32>,
+    pub owner: HashMap<IVec3, u32>,
     /// Every edit made, with how many steps had been taken when it was ([`replay`]).
     pub journal: Vec<(u64, Edit)>,
     steps: u64,
@@ -2263,8 +2273,14 @@ mod tests {
 
     fn count(w: &World, lo: Vec3, hi: Vec3, b: Block) -> usize {
         let (lo, hi) = ((lo / CELL).floor().as_ivec3(), (hi / CELL).floor().as_ivec3());
-        // (Rubble is rubble whether it lies in the grid or at rest as itself: `Rested`.)
-        (lo.y..hi.y).flat_map(|y| (lo.z..hi.z).flat_map(move |z| (lo.x..hi.x).map(move |x| IVec3::new(x, y, z)))).filter(|c| w.get(*c) == b || b == Block::Shard && w.get(*c) == Block::Scree).count()
+        (lo.y..hi.y).flat_map(|y| (lo.z..hi.z).flat_map(move |z| (lo.x..hi.x).map(move |x| IVec3::new(x, y, z)))).filter(|c| w.get(*c) == b).count()
+    }
+
+    /// The cells of rubble in a box: what lies in the grid and what lies at rest as itself
+    /// ([`Rested`]: its stone is its own, and the world has only where it is, to the bit).
+    fn rubble(w: &World, loose: &Loose, lo: Vec3, hi: Vec3) -> usize {
+        let own = loose.rested.iter().flat_map(|r| r.cells.keys().map(move |c| r.now((c.as_vec3() + 0.5) * CELL))).filter(|p| p.cmpge(lo).all() && p.cmplt(hi).all()).count();
+        count(w, lo, hi, Block::Shard) + own
     }
 
     #[test]
@@ -2309,7 +2325,7 @@ mod tests {
         let cells = loose.pieces[0].cells.len();
         run(&mut loose, &mut w);
         // (Come loose, stone is rubble.)
-        let (low, up) = (count(&w, Vec3::new(-1.0, 0.0, -1.0), Vec3::new(4.0, 1.5, 2.0), Block::Shard), count(&w, Vec3::new(-1.0, 1.75, -1.0), Vec3::new(4.0, 4.0, 2.0), Block::Shard));
+        let (low, up) = (rubble(&w, &loose, Vec3::new(-1.0, 0.0, -1.0), Vec3::new(4.0, 1.5, 2.0)), rubble(&w, &loose, Vec3::new(-1.0, 1.75, -1.0), Vec3::new(4.0, 4.0, 2.0)));
         assert!(low as f32 > cells as f32 * 0.85 && up == 0, "{low} of {cells} cells are down, {up} are still up");
     }
 
@@ -2368,9 +2384,9 @@ mod tests {
                 most = most.max(loose.pieces.len());
                 t += crate::DT;
             }
-            let lies = if block == Block::Stone { Block::Shard } else { block };
-            let down = count(&w, Vec3::new(-8.0, 0.0, -8.0), Vec3::new(10.0, 3.0, 10.0), lies);
-            let block_shape = count(&w, Vec3::new(0.0, 0.0, 0.0), Vec3::new(2.0, 1.5, 2.0), lies);
+            let lies = |lo: Vec3, hi: Vec3| if block == Block::Stone { rubble(&w, &loose, lo, hi) } else { count(&w, lo, hi, block) };
+            let down = lies(Vec3::new(-8.0, 0.0, -8.0), Vec3::new(10.0, 3.0, 10.0));
+            let block_shape = lies(Vec3::new(0.0, 0.0, 0.0), Vec3::new(2.0, 1.5, 2.0));
             if breaks {
                 // Many lumps, thrown wider than the block was, most of it still there, all at rest.
                 assert!(most >= 8, "it broke into {most}");
