@@ -9,7 +9,7 @@ WINDOWS := x86_64-pc-windows-gnu
 WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo 1)
 
 .DEFAULT_GOAL := setup
-.PHONY: cave digpace forget dig shatter build stone fells sky wind blow moves limbs person beside features legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
+.PHONY: cave digpace forget dig shatter build stone trees fells sky wind blow moves limbs person beside features legs feet held pace gaits sound years seasons grown floors prove swim window fight slice help setup run play windows list scene sheet gif status creature finish world map test lint cross check
 
 help: ## this list
 	@awk -F ':.*## ' '/^[a-z]+:.*## / { printf "make %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -88,6 +88,7 @@ prove: ## every judgment there is, a line each: code, land, creatures, ecology, 
 	@tools/shatter.sh
 	@tools/build.sh
 	@tools/stone.sh
+	@tools/trees.sh
 	@tools/digpace.sh
 	@cargo world drawn | tail -1 | sed 's/^ok$$/ok drawn: a body rests on the ground as it is drawn/'
 	@python3 tools/audio/level.py | tail -1
@@ -151,6 +152,9 @@ dig: ## no window: the ground dug with the shovel and the earth put back in the 
 
 build: ## no window: a tree felled, limbed, broken and split into hunks in the real game, four taken up one at a time and put down each on the last; the region made again is the same
 	@tools/build.sh
+
+trees: ## no window: a tree limbed, bucked and split in the real game at four places, two of them great trees; nothing of it comes loose unseen and no tick over 60 ms
+	@tools/trees.sh
 
 stone: ## no window: a rock broken with a pick into hunks in the real game, one taken up and put down; blows that do nothing are not kept; the region made again is the same
 	@tools/stone.sh

@@ -848,7 +848,12 @@ impl Loose {
         };
         // And what of it has come down on nothing (a limb left sticking out over a
         // hollow, a part cut off from the rest by what it fell across) falls in its turn.
-        changed.extend(self.loosen(world, lo - 1, hi + 1, Vec3::X));
+        // (Not of a tree that lies as itself: it is one body, drawn whole, and no part of it
+        // goes without the rest; and what it came down on has lost nothing by it. Looking
+        // through a great one's box was 20 to 35 ms for nothing.)
+        if piece.thing.is_none() {
+            changed.extend(self.loosen(world, lo - 1, hi + 1, Vec3::X));
+        }
         self.landed.push(Landed { at: piece.now(piece.pivot + Vec3::Y * piece.tall / 2.0), cells: piece.cells.len(), put, lost, speed, settled: piece.settling, mass: piece.mass, wood: woody(&piece.cells), along: None });
         None
     }

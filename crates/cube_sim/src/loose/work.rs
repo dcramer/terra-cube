@@ -298,6 +298,13 @@ impl Loose {
         let mut cut = Cut::default();
         let mut which = near(&self.things);
         // (No tree that stands or lies in its boughs: then it is at timber, if any is there.)
+        // (A blow among the boughs of a tree that lies with its boughs still on is at that
+        // tree, though no limb of it is within a stride: its crown is leaf and twigs metres
+        // from any limb, and a blow there was taken for one at timber, which bucked the
+        // trunk it was joined to with its crown still on. A great tree at -32,-40.)
+        if which.is_none() {
+            which = self.things.iter().enumerate().filter(|(_, t)| t.lies.is_some() && !t.limbed && !t.limbs.is_empty()).map(|(n, t)| (reached(t), n)).filter(|(d, _)| *d < 4.0).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, n)| n);
+        }
         if which.is_none() && let Some(cut) = self.timber(world, at, push) {
             return cut;
         }
@@ -409,6 +416,29 @@ impl Loose {
                             for x in bl.x..=bh.x {
                                 let cell = IVec3::new(x, y, z);
                                 let b = world.get(cell);
+                                // (Of a cell in bits, what of this tree is in it: its twigs
+                                // near the ground are bits, and what of it came down into a
+                                // cell part filled. Passed over, a hundred such cells at a
+                                // time were left in the air by the blow, came loose and lay
+                                // where nobody could see them.)
+                                if b == Block::Broken && !self.owner.contains_key(&cell) {
+                                    let p = was((cell.as_vec3() + 0.5) * CELL);
+                                    let its = thing.limbs.iter().filter(|l| l.ra.max(l.rb) < stout).any(|l| from_line(p, l.a, l.b) < l.ra.max(l.rb) + CELL * 2.0) || thing.clumps.iter().any(|c| ((p - c.middle) / (c.radii + CELL * 1.5)).length_squared() < 1.0);
+                                    if its && !heavy.iter().any(|l| from_line(p, l.a, l.b) < l.ra.max(l.rb) + CELL * 1.5) {
+                                        let mut any = false;
+                                        for i in 0..SPLIT * SPLIT * SPLIT {
+                                            let bit = cell * SPLIT + IVec3::new(i % SPLIT, i / (SPLIT * SPLIT), i / SPLIT % SPLIT);
+                                            if world.bit(bit).whole() {
+                                                world.set_bit(bit, Block::Air);
+                                                any = true;
+                                            }
+                                        }
+                                        if any {
+                                            cut.changed.insert(cell.div_euclid(IVec3::splat(cube_voxel::CHUNK)));
+                                        }
+                                    }
+                                    continue;
+                                }
                                 if !(b.wood() || b.foliage()) || b.shaped() || self.owner.contains_key(&cell) {
                                     continue;
                                 }
